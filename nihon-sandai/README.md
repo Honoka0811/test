@@ -58,14 +58,14 @@ node capture.js --frames 3.0,10,30 output/frames   # 指定秒のフレームを
 | 2 | Open JTalk CLI(nitech-jp-atr503-m001、男性) | `apt install open-jtalk open-jtalk-mecab-naist-jdic hts-voice-nitech-jp-atr503-m001` | Open JTalk |
 | 3 | pyopenjtalk | `pip install pyopenjtalk` | Open JTalk |
 
-現在の `upload/` は **Open JTalk(2)** で作成しています。VOICEVOX を使う場合は VOICEVOX CORE の GitHub リリースから次を取得し、環境変数でパスを渡して `./build.sh` を再実行してください。
+現在の `upload/` は **VOICEVOX(青山龍星)** で作成しています。VOICEVOX を使うには VOICEVOX CORE の GitHub リリースから次を取得し、既定のパス(`/home/user/vv/...`)以外に置いた場合は環境変数でパスを渡して `./build.sh` を実行してください。
 
 | 必要なもの | 取得元 | 環境変数 |
 |---|---|---|
 | Python ラッパー `voicevox_core-0.17.1-cp310-abi3-manylinux_2_34_x86_64.whl` | VOICEVOX/voicevox_core releases → `pip install` | — |
 | ONNX Runtime `voicevox_onnxruntime-linux-x64-1.17.3.tgz` | VOICEVOX/onnxruntime-builder releases | `VOICEVOX_ORT`(展開後の `lib/libvoicevox_onnxruntime.so`) |
 | 音声モデル `15.vvm`(青山龍星) | VOICEVOX/voicevox_vvm releases | `VOICEVOX_VVMS`(置いたディレクトリ) |
-| Open JTalk 辞書 | apt の `/var/lib/mecab/dic/open-jtalk/naist-jdic` か pyopenjtalk 同梱のもの | `VOICEVOX_DICT` |
+| Open JTalk 辞書 | apt の `/var/lib/mecab/dic/open-jtalk/naist-jdic`(あれば自動使用)か pyopenjtalk 同梱のもの | `VOICEVOX_DICT`(任意) |
 
 VOICEVOX の音声を公開する場合は、利用規約に従い「VOICEVOX:青山龍星」のクレジット表記が必要です(動画末尾に自動で入ります)。
 

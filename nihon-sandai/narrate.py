@@ -58,6 +58,8 @@ SUBTITLES.append('全部言えましたか?答えはコメントで。')
 def _dict_dir():
     d = os.environ.get('VOICEVOX_DICT')
     if d: return d
+    apt_dic = '/var/lib/mecab/dic/open-jtalk/naist-jdic'   # apt の open-jtalk-mecab-naist-jdic
+    if os.path.isdir(apt_dic): return apt_dic
     import pyopenjtalk
     return os.path.join(os.path.dirname(pyopenjtalk.__file__), 'open_jtalk_dic_utf_8-1.11')
 

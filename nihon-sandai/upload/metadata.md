@@ -35,7 +35,7 @@
 ※「日本三大○○」には公式な定義がなく、カテゴリによって諸説あります。
 
 ▼クレジット
-ナレーション: Open JTalk(nitech-jp-atr503-m001)
+ナレーション: VOICEVOX:青山龍星
 BGM: 自作(権利フリー)
 地図: dataofjapan/land(japan.geojson)を簡略化
 
