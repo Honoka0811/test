@@ -25,7 +25,7 @@ const C = {
   jp: '#E8524F', us: '#3F8DE8', jpSoft: 'rgba(232,82,79,0.22)', usSoft: 'rgba(63,141,232,0.22)',
   accent: '#F5C451'
 };
-const FPS = 30, DURATION = 60;
+const FPS = 30, DURATION = 71.5;
 
 // ---------- データ(概数) ----------
 const YEARS = [1941, 1942, 1943, 1944, 1945];
@@ -134,6 +134,7 @@ function sceneTitle(t, a) {
   text('日米戦力差の推移', W / 2, 1010, { size: 92, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .8) });
   text('1941 → 1945', W / 2, 1120, { size: 70, color: C.accent, align: 'center', alpha: a * easeOut((t - .6) / .8) });
   text('数字でたどる4年間', W / 2, 1330, { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.0) / .8) });
+  text('1941年12月 真珠湾攻撃 → 1945年8月 終戦', W / 2, 1420, { size: 36, color: C.ink3, align: 'center', alpha: a * easeOut((t - 3.0) / .8) });
 }
 
 function scenePower(t, a) {
@@ -380,14 +381,14 @@ function sceneSummary(t, a) {
 
 // ---------- タイムライン(開始秒, 長さ秒) ----------
 const SCENES = [
-  { s: 0, d: 4.5, f: sceneTitle },
-  { s: 4.5, d: 7.5, f: scenePower },
-  { s: 12, d: 7.5, f: sceneCarriers1941 },
-  { s: 19.5, d: 10.5, f: sceneAircraft },
-  { s: 30, d: 10.5, f: sceneCarrierTrend },
-  { s: 40.5, d: 8.5, f: sceneShipping },
-  { s: 49, d: 6.5, f: scenePilots },
-  { s: 55.5, d: 4.5, f: sceneSummary },
+  { s: 0, d: 8.5, f: sceneTitle },
+  { s: 8.5, d: 8.5, f: scenePower },
+  { s: 17, d: 8.5, f: sceneCarriers1941 },
+  { s: 25.5, d: 12, f: sceneAircraft },
+  { s: 37.5, d: 12, f: sceneCarrierTrend },
+  { s: 49.5, d: 9, f: sceneShipping },
+  { s: 58.5, d: 8.5, f: scenePilots },
+  { s: 67, d: 4.5, f: sceneSummary },
 ];
 const XF = 0.35; // クロスフェード秒
 
