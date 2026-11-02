@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Pacific War Power Gap</title>
+<style>
+  html,body{margin:0;background:#0f1115;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 日米戦力差の推移 1941→1945  (9:16 ショート動画 / 60秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0f1115', panel: '#171a21', grid: '#2a2f3a',
+  ink: '#f3f4f6', ink2: '#b7bcc7', ink3: '#7d8390',
+  jp: '#E8524F', us: '#3F8DE8', jpSoft: 'rgba(232,82,79,0.22)', usSoft: 'rgba(63,141,232,0.22)',
+  accent: '#F5C451'
+};
+const FPS = 30, DURATION = 60;
+
+// ---------- データ(概数) ----------
+const YEARS = [1941, 1942, 1943, 1944, 1945];
+// 航空機生産(機) Overy / USSBS
+const AIR_JP = [5088, 8861, 16693, 28180, 11066];
+const AIR_US = [26277, 47836, 85898, 96318, 49761];
+// 空母保有数(正規+軽空母, 護衛空母除く, 各年末/45年は8月, 概数)
+const CV_LABEL = ['41.12', '42.12', '43.12', '44.12', '45.8'];
+const CV_JP = [10, 7, 9, 5, 4];
+const CV_US = [7, 4, 18, 25, 28];
+// 日本商船保有量(百万総トン, 500総トン以上, 概数)
+const MS_JP = [6.4, 5.9, 5.0, 2.8, 1.5];
+// 1941年 国力比較
+const POWER = [
+  { label: 'GDP', jp: '1,960億ドル', us: '1兆940億ドル', ratio: 5.6, note: '1990年国際ドル' },
+  { label: '鉄鋼生産', jp: '680万t', us: '7,500万t', ratio: 11, note: '年産' },
+  { label: '石油生産', jp: '260万バレル', us: '14億バレル', ratio: 540, note: '年産(国内)' },
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);          // s から d 秒かけて 0→1
+function fmtMan(n) { return (n / 10000).toFixed(1) + '万'; }
+function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function dot(x, y, r, color, alpha = 1, ring = true) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (ring) { ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// 折れ線を進捗 p(0..1) まで描く
+function polyline(pts, color, p, width = 5, alpha = 1) {
+  if (pts.length < 2) return;
+  const total = pts.length - 1, prog = p * total;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i <= total; i++) {
+    if (i <= prog) ctx.lineTo(pts[i][0], pts[i][1]);
+    else { const f = prog - (i - 1); ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f)); break; }
+  }
+  ctx.stroke(); ctx.restore();
+}
+function legend(x, y, alpha = 1) {
+  rrect(x, y - 14, 28, 28, 6, C.jp, alpha); text('日本', x + 40, y + 14, { size: 36, color: C.ink2, alpha });
+  rrect(x + 170, y - 14, 28, 28, 6, C.us, alpha); text('米国', x + 210, y + 14, { size: 36, color: C.ink2, alpha });
+}
+function header(title, sub, alpha) {
+  text(title, 80, 300, { size: 64, weight: 'bold', alpha });
+  if (sub) text(sub, 80, 370, { size: 36, color: C.ink2, alpha });
+}
+function caption(str, y, alpha, color = C.accent, size = 46) {
+  rrect(60, y - size - 22, W - 120, size + 48, 18, C.panel, alpha);
+  text(str, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha });
+}
+function footnote(str, alpha) { text(str, W / 2, 1640, { size: 28, color: C.ink3, align: 'center', alpha }); }
+
+// 上部の年タイムライン
+function timeline(year, alpha) {
+  const x0 = 110, x1 = W - 110, y = 200;
+  line(x0, y, x1, y, C.grid, 4, alpha);
+  YEARS.forEach((yr, i) => {
+    const x = lerp(x0, x1, i / 4);
+    const on = yr === year;
+    dot(x, y, on ? 14 : 8, on ? C.accent : C.grid, alpha, false);
+    text(String(yr), x, y - 28, { size: 30, color: on ? C.accent : C.ink3, align: 'center', weight: on ? 'bold' : 'normal', alpha });
+  });
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const p = easeOut(t / 1.2);
+  // 2色のバー(国力差のメタファー)
+  rrect(140, 700, 800 * p, 10, 5, C.jp, a);
+  rrect(140, 1200, 800 * p, 10, 5, C.us, a);
+  text('太平洋戦争', W / 2, 870, { size: 150, weight: 'bold', align: 'center', alpha: a * easeOut(t / .8), ls: 8 });
+  text('日米戦力差の推移', W / 2, 1010, { size: 92, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .8) });
+  text('1941 → 1945', W / 2, 1120, { size: 70, color: C.accent, align: 'center', alpha: a * easeOut((t - .6) / .8) });
+  text('数字でたどる4年間', W / 2, 1330, { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.0) / .8) });
+}
+
+function scenePower(t, a) {
+  timeline(1941, a);
+  header('1941年 開戦時の国力', '米国は日本の何倍か', a);
+  const rows = POWER;
+  rows.forEach((r, i) => {
+    const y0 = 520 + i * 330;
+    const la = a * easeOut((t - .3 - i * 1.1) / .6);
+    const p = easeOut((t - .5 - i * 1.1) / 1.2);
+    rrect(60, y0 - 70, W - 120, 290, 22, C.panel, la);
+    text(r.label, 100, y0, { size: 50, weight: 'bold', alpha: la });
+    text(r.note, 100, y0 + 44, { size: 28, color: C.ink3, alpha: la });
+    const bx = 100, bw = 620;
+    // 日本バー(最小幅 8px で可視化)
+    const jpw = Math.max(8, bw / r.ratio);
+    rrect(bx, y0 + 90, jpw * p, 36, 4, C.jp, la);
+    text('日本 ' + r.jp, bx + Math.max(jpw, 0) * p + 16, y0 + 118, { size: 30, color: C.ink2, alpha: la });
+    rrect(bx, y0 + 150, bw * p, 36, 4, C.us, la);
+    text('米国 ' + r.us, bx, y0 + 215, { size: 30, color: C.ink2, alpha: la });
+    const val = r.ratio * p;
+    text('×' + (r.ratio >= 10 ? Math.round(val) : val.toFixed(1)), W - 100, y0 + 150, { size: 96, weight: 'bold', color: C.accent, align: 'right', alpha: la });
+  });
+  caption('経済力では開戦時から圧倒的な差', 1560, a * easeOut((t - 4.6) / .6));
+  footnote('出典: Harrison (1998) ほか / 概数', a * easeOut((t - 4.6) / .6));
+}
+
+function drawCarrier(x, y, w, color, alpha) {
+  // 簡略化した空母の記号
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - 10, y + 22); ctx.lineTo(x + 14, y + 22); ctx.closePath(); ctx.fill();
+  ctx.fillRect(x + w * .62, y - 12, 14, 12);
+  ctx.restore();
+}
+function sceneCarriers1941(t, a) {
+  timeline(1941, a);
+  header('しかし海軍力は日本が優位', '空母保有数 1941年12月(正規・軽空母)', a);
+  const cols = 5, cw = 180, ch = 70;
+  const draw = (n, x0, y0, color, hl) => {
+    for (let i = 0; i < n; i++) {
+      const la = a * easeOut((t - .5 - i * .12) / .4);
+      const x = x0 + (i % cols) * cw, y = y0 + Math.floor(i / cols) * ch;
+      drawCarrier(x, y, 150, hl && i >= hl ? '#2f4f74' : color, la);
+    }
+  };
+  text('日本', 80, 560, { size: 48, weight: 'bold', color: C.jp, alpha: a });
+  text('10隻', W - 80, 560, { size: 110, weight: 'bold', color: C.jp, align: 'right', alpha: a * easeOut((t - 1.3) / .6) });
+  draw(10, 90, 610, C.jp);
+  text('米国(全世界)', 80, 900, { size: 48, weight: 'bold', color: C.us, alpha: a });
+  text('7隻', W - 80, 900, { size: 110, weight: 'bold', color: C.us, align: 'right', alpha: a * easeOut((t - 1.8) / .6) });
+  draw(7, 90, 950, C.us, 3);
+  text('■ うち太平洋配備は 3隻 (濃色は大西洋など)', 90, 1130, { size: 32, color: C.ink2, alpha: a * easeOut((t - 2.4) / .6) });
+  const ca = a * easeOut((t - 3.2) / .6);
+  rrect(60, 1230, W - 120, 220, 22, C.panel, ca);
+  text('真珠湾攻撃と緒戦の快進撃は', 100, 1310, { size: 44, alpha: ca });
+  text('この「局地的優位」が支えた', 100, 1390, { size: 44, alpha: ca, color: C.accent, weight: 'bold' });
+  caption('ただし国力の差はまだ数字に表れていない', 1560, a * easeOut((t - 4.6) / .6), C.ink2, 40);
+  footnote('出典: 各種戦史資料 / 概数', ca);
+}
+
+function sceneAircraft(t, a) {
+  const yearIdx = clamp(Math.floor((t - .6) / 1.5), 0, 4);
+  const year = t < .6 ? null : YEARS[yearIdx];
+  timeline(year, a);
+  header('航空機生産数の推移', '年間生産機数', a);
+  legend(80, 450, a);
+  const px0 = 120, px1 = W - 60, py0 = 560, py1 = 1360;
+  const maxV = 100000;
+  // グリッド
+  for (let v = 0; v <= maxV; v += 25000) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v === 0 ? '0' : (v / 10000) + '万', px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const gw = (px1 - px0) / 5, bw = 62;
+  YEARS.forEach((yr, i) => {
+    const p = easeOut((t - .6 - i * 1.5) / .9);
+    const cx = px0 + gw * i + gw / 2;
+    text(String(yr), cx, py1 + 44, { size: 32, color: yr === year ? C.accent : C.ink2, align: 'center', weight: yr === year ? 'bold' : 'normal', alpha: a });
+    const hj = (py1 - py0) * AIR_JP[i] / maxV * p, hu = (py1 - py0) * AIR_US[i] / maxV * p;
+    rrect(cx - bw - 2, py1 - hj, bw, hj, 4, C.jp, a);
+    rrect(cx + 2, py1 - hu, bw, hu, 4, C.us, a);
+    if (p > 0) {
+      text(fmtMan(AIR_JP[i] * p), cx - bw / 2 - 2, py1 - hj - 12, { size: 24, color: C.ink2, align: 'center', alpha: a * p });
+      text(fmtMan(AIR_US[i] * p), cx + bw / 2 + 2, py1 - hu - 12, { size: 24, color: C.ink2, align: 'center', alpha: a * p });
+    }
+  });
+  // 右上の差分表示
+  if (year) {
+    const i = yearIdx, la = a * easeOut((t - .6 - i * 1.5) / .5);
+    rrect(600, 410, W - 660, 110, 18, C.panel, la);
+    text(`${year}年の差`, 630, 455, { size: 28, color: C.ink3, alpha: la });
+    text(`約${fmtMan(AIR_US[i] - AIR_JP[i])}機 (${(AIR_US[i] / AIR_JP[i]).toFixed(1)}倍)`, 630, 500, { size: 38, weight: 'bold', color: C.accent, alpha: la });
+  }
+  const ca = a * easeOut((t - 7.6) / .6);
+  caption('4年間の累計  日本 約7万機 vs 米国 約31万機', 1560, ca, C.accent, 42);
+  footnote('出典: Overy (1995), USSBS / 概数', ca);
+}
+
+function sceneCarrierTrend(t, a) {
+  const idx = clamp(Math.floor((t - .5) / 1.2), 0, 4);
+  timeline(YEARS[idx], a);
+  header('空母保有数の推移', '正規・軽空母(護衛空母を除く)・概数', a);
+  legend(80, 450, a);
+  const px0 = 140, px1 = W - 100, py0 = 560, py1 = 1300, maxV = 30;
+  for (let v = 0; v <= maxV; v += 10) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v + '隻', px0 - 16, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const xs = CV_LABEL.map((_, i) => lerp(px0, px1, i / 4));
+  CV_LABEL.forEach((l, i) => text(l, xs[i], py1 + 44, { size: 30, color: C.ink2, align: 'center', alpha: a }));
+  const toPt = (arr) => arr.map((v, i) => [xs[i], lerp(py1, py0, v / maxV)]);
+  const pj = toPt(CV_JP), pu = toPt(CV_US);
+  const prog = easeInOut((t - .5) / 4.8);
+  polyline(pj, C.jp, prog, 6, a);
+  polyline(pu, C.us, prog, 6, a);
+  CV_JP.forEach((v, i) => {
+    const show = prog * 4 >= i - 0.01;
+    if (!show) return;
+    const la = a;
+    dot(pj[i][0], pj[i][1], 10, C.jp, la);
+    dot(pu[i][0], pu[i][1], 10, C.us, la);
+    const jpAbove = CV_JP[i] >= CV_US[i];
+    text(String(CV_JP[i]), pj[i][0], pj[i][1] + (jpAbove ? -24 : 50), { size: 30, color: C.ink2, align: 'center', alpha: la });
+    text(String(CV_US[i]), pu[i][0], pu[i][1] + (jpAbove ? 50 : -24), { size: 30, color: C.ink2, align: 'center', alpha: la });
+  });
+  // 逆転の注記
+  const xa = a * easeOut((t - 3.4) / .6);
+  line(xs[2], py0, xs[2], py1, C.accent, 3, xa, [12, 12]);
+  rrect(xs[2] - 150, py0 - 70, 300, 56, 14, C.accent, xa);
+  text('1943年 逆転', xs[2], py0 - 30, { size: 30, weight: 'bold', color: '#1a1a1a', align: 'center', alpha: xa });
+  const na = a * easeOut((t - 5.4) / .6);
+  rrect(60, 1350, W - 120, 140, 22, C.panel, na);
+  text('1945年8月: 日本は燃料・搭乗員不足で稼働空母ほぼ0', 100, 1405, { size: 34, alpha: na });
+  text('米国はさらに護衛空母 約70隻を保有', 100, 1462, { size: 34, color: C.ink2, alpha: na });
+  const ca = a * easeOut((t - 7.2) / .6);
+  caption('ミッドウェー(1942)の損失を日本は埋められず', 1560, ca, C.accent, 40);
+  footnote('就役数ベース(損傷艦含む) / 各種戦史資料より概数', ca);
+}
+
+function sceneShipping(t, a) {
+  const idx = clamp(Math.floor((t - .5) / 1.0), 0, 4);
+  timeline(YEARS[idx], a);
+  header('日本の商船保有量', '500総トン以上・各年末(1945年は8月)', a);
+  const px0 = 150, px1 = W - 100, py0 = 500, py1 = 1080, maxV = 7;
+  for (let v = 0; v <= 6; v += 2) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v === 0 ? '0' : v + '00万t', px0 - 16, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const xs = MS_JP.map((_, i) => lerp(px0, px1, i / 4));
+  CV_LABEL.forEach((l, i) => text(l, xs[i], py1 + 44, { size: 30, color: C.ink2, align: 'center', alpha: a }));
+  const pts = MS_JP.map((v, i) => [xs[i], lerp(py1, py0, v / maxV)]);
+  const prog = easeInOut((t - .5) / 4.0);
+  // エリア
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.beginPath(); ctx.moveTo(pts[0][0], py1); ctx.lineTo(pts[0][0], pts[0][1]);
+  const total = 4, pr = prog * total;
+  let endX = pts[0][0];
+  for (let i = 1; i <= total; i++) {
+    if (i <= pr) { ctx.lineTo(pts[i][0], pts[i][1]); endX = pts[i][0]; }
+    else { const f = pr - (i - 1); endX = lerp(pts[i - 1][0], pts[i][0], f); ctx.lineTo(endX, lerp(pts[i - 1][1], pts[i][1], f)); break; }
+  }
+  ctx.lineTo(endX, py1); ctx.closePath(); ctx.fillStyle = C.jpSoft; ctx.fill(); ctx.restore();
+  polyline(pts, C.jp, prog, 6, a);
+  MS_JP.forEach((v, i) => {
+    if (prog * 4 < i - 0.01) return;
+    dot(pts[i][0], pts[i][1], 10, C.jp, a);
+    text(Math.round(v * 100) + '万t', pts[i][0], pts[i][1] - 24, { size: 28, color: C.ink2, align: 'center', alpha: a });
+  });
+  const sa = a * easeOut((t - 4.6) / .6);
+  rrect(60, 1170, (W - 140) / 2, 250, 22, C.panel, sa);
+  text('撃沈された商船', 100, 1230, { size: 30, color: C.ink3, alpha: sa });
+  text('約880万t', 100, 1310, { size: 64, weight: 'bold', color: C.jp, alpha: sa });
+  text('うち約55%は米潜水艦', 100, 1370, { size: 28, color: C.ink2, alpha: sa });
+  rrect(60 + (W - 140) / 2 + 20, 1170, (W - 140) / 2, 250, 22, C.panel, sa);
+  text('石油備蓄', 100 + (W - 140) / 2 + 20, 1230, { size: 30, color: C.ink3, alpha: sa });
+  text('ほぼ枯渇', 100 + (W - 140) / 2 + 20, 1310, { size: 64, weight: 'bold', color: C.jp, alpha: sa });
+  text('1945年、艦隊は動けず', 100 + (W - 140) / 2 + 20, 1370, { size: 28, color: C.ink2, alpha: sa });
+  const ca = a * easeOut((t - 6.0) / .6);
+  caption('輸送路の喪失が「数の差」を「動けない差」に', 1560, ca, C.accent, 40);
+  footnote('出典: USSBS, JANAC / 概数', ca);
+}
+
+function scenePilots(t, a) {
+  timeline(1944, a);
+  header('量の差が質の差へ', '新人搭乗員の飛行時間(実戦配備前・概数)', a);
+  legend(80, 450, a);
+  const px0 = 160, px1 = W - 100, py0 = 540, py1 = 1000, maxV = 800;
+  for (let v = 0; v <= maxV; v += 200) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v + 'h', px0 - 16, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  text('1941', px0, py1 + 44, { size: 30, color: C.ink2, align: 'center', alpha: a });
+  text('1945', px1, py1 + 44, { size: 30, color: C.ink2, align: 'center', alpha: a });
+  const prog = easeInOut((t - .4) / 2.0);
+  const jp = [[px0, lerp(py1, py0, 700 / maxV)], [px1, lerp(py1, py0, 100 / maxV)]];
+  const us = [[px0, lerp(py1, py0, 350 / maxV)], [px1, lerp(py1, py0, 400 / maxV)]];
+  polyline(us, C.us, prog, 6, a);
+  polyline(jp, C.jp, prog, 6, a);
+  dot(jp[0][0], jp[0][1], 10, C.jp, a); text('約700h', jp[0][0] + 20, jp[0][1] - 20, { size: 30, color: C.ink2, alpha: a });
+  dot(us[0][0], us[0][1], 10, C.us, a); text('約300〜400h', us[0][0] + 20, us[0][1] + 48, { size: 30, color: C.ink2, alpha: a });
+  const ea = a * easeOut((t - 2.2) / .5);
+  dot(jp[1][0], jp[1][1], 10, C.jp, ea); text('100h未満', jp[1][0] - 20, jp[1][1] + 50, { size: 30, color: C.ink2, align: 'right', alpha: ea });
+  dot(us[1][0], us[1][1], 10, C.us, ea); text('維持', us[1][0] - 20, us[1][1] - 20, { size: 30, color: C.ink2, align: 'right', alpha: ea });
+  // マリアナ沖海戦
+  const ma = a * easeOut((t - 2.8) / .6);
+  rrect(60, 1110, W - 120, 330, 22, C.panel, ma);
+  text('マリアナ沖海戦 1944年6月', 100, 1175, { size: 40, weight: 'bold', alpha: ma });
+  text('航空機の損失', 100, 1225, { size: 28, color: C.ink3, alpha: ma });
+  const p2 = easeOut((t - 3.2) / 1.0);
+  rrect(100, 1260, 800 * p2, 40, 4, C.jp, ma); text('日本 約' + Math.round(300 * p2) + '機', 100, 1340, { size: 34, color: C.ink2, alpha: ma });
+  rrect(100, 1360, 80 * p2, 40, 4, C.us, ma); text('米国 約' + Math.round(30 * p2) + '機(空戦)', 200, 1392, { size: 34, color: C.ink2, alpha: ma });
+  const ca = a * easeOut((t - 4.4) / .6);
+  caption('燃料不足で訓練できず、熟練者は補充されない', 1560, ca, C.accent, 40);
+  footnote('出典: 各種戦史資料 / 概数', ca);
+}
+
+function sceneSummary(t, a) {
+  text('まとめ', W / 2, 330, { size: 80, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['①', '国力差は開戦時から', 'GDP 約5.6倍・鉄鋼 約11倍・石油 約500倍'],
+    ['②', '1943年が分水嶺', '空母・航空機生産で米国が逆転し差は拡大'],
+    ['③', '量の差が質の差に波及', '燃料・商船・搭乗員の練度が連鎖的に低下'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .4 - i * 1.0) / .6);
+    const y = 480 + i * 300;
+    rrect(60, y, W - 120, 240, 22, C.panel, la);
+    text(it[0], 100, y + 95, { size: 60, weight: 'bold', color: C.accent, alpha: la });
+    text(it[1], 190, y + 95, { size: 50, weight: 'bold', alpha: la });
+    text(it[2], 190, y + 170, { size: 32, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 3.8) / .6);
+  rrect(140, 1420, 800 * ca, 10, 5, C.jp, ca);
+  rrect(140, 1450, 800 * ca, 10, 5, C.us, ca);
+  text('「緒戦の優位」は「国力の差」を覆せなかった', W / 2, 1560, { size: 42, weight: 'bold', color: C.accent, align: 'center', alpha: ca });
+  text('出典: Harrison (1998), Overy (1995), USSBS, JANAC ほか / 数値は概数', W / 2, 1650, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [
+  { s: 0, d: 4.5, f: sceneTitle },
+  { s: 4.5, d: 7.5, f: scenePower },
+  { s: 12, d: 7.5, f: sceneCarriers1941 },
+  { s: 19.5, d: 10.5, f: sceneAircraft },
+  { s: 30, d: 10.5, f: sceneCarrierTrend },
+  { s: 40.5, d: 8.5, f: sceneShipping },
+  { s: 49, d: 6.5, f: scenePilots },
+  { s: 55.5, d: 4.5, f: sceneSummary },
+];
+const XF = 0.35; // クロスフェード秒
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 常時表示: 下部プログレスバー
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.accent, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+// ブラウザで直接開いた時のプレビュー
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
