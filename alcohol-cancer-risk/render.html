@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Alcohol and Cancer Risk</title>
+<style>
+  html,body{margin:0;background:#0e1320;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 毎日の飲酒量とがんリスクの関係  (9:16 ショート動画 / 約77秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0e1320', panel: '#171d2c', panel2: '#1f2638', grid: '#2b3347',
+  ink: '#f3f4f6', ink2: '#b7bcc7', ink3: '#7d8390',
+  amber: '#F5B942', amberSoft: 'rgba(245,185,66,0.22)',
+  risk: '#E8524F', riskSoft: 'rgba(232,82,79,0.22)',
+  safe: '#3FB8A8', safeSoft: 'rgba(63,184,168,0.22)',
+  blue: '#5B8DEF',
+};
+const FPS = 30, DURATION = 76.5;
+
+// ---------- データ ----------
+// 純アルコール20gに相当する酒類(量[ml] × 度数[%] ÷ 100 × 0.8)
+const DRINKS = [
+  { name: 'ビール', abv: 5, ml: 500, label: '500ml(ロング缶1本)', g: 20.0 },
+  { name: '日本酒', abv: 15, ml: 180, label: '1合(180ml)', g: 21.6 },
+  { name: 'ワイン', abv: 12, ml: 200, label: 'グラス2杯(200ml)', g: 19.2 },
+  { name: 'チューハイ', abv: 7, ml: 350, label: '350ml缶1本', g: 19.6 },
+  { name: 'ウイスキー', abv: 43, ml: 60, label: 'ダブル1杯(60ml)', g: 20.6 },
+];
+// 日本人男性の相対リスク(国立がん研究センター 多目的コホート研究)
+const RISK = [
+  { cancer: 'がん全体', ref: '時々飲む人', rows: [['1日2〜3合', 1.4], ['3合以上', 1.6]], src: 'Br J Cancer 2005' },
+  { cancer: '大腸がん', ref: '飲まない人', rows: [['1日1〜2合', 1.4], ['2合以上', 2.1]], src: 'Cancer Causes Control 2003' },
+  { cancer: '食道がん', ref: '飲まない人', rows: [['1日2合以上', 4.6]], src: 'JPHC' },
+];
+const CANCERS = ['口腔(口の中)', '咽頭(のど)', '喉頭', '食道', '肝臓', '大腸', '乳房(女性)'];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function strokeRRect(x, y, w, h, r, color, width = 3, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function header(title, sub, alpha) {
+  text(title, 80, 300, { size: 62, weight: 'bold', alpha });
+  if (sub) text(sub, 80, 368, { size: 34, color: C.ink2, alpha });
+  rrect(80, 395, 120, 6, 3, C.amber, alpha);
+}
+function caption(str, y, alpha, color = C.amber, size = 44) {
+  rrect(60, y - size - 22, W - 120, size + 48, 18, C.panel, alpha);
+  text(str, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha });
+}
+function footnote(str, alpha) { text(str, W / 2, 1640, { size: 27, color: C.ink3, align: 'center', alpha }); }
+
+// ビールグラス(シーン1・4用)。fill: 0..1
+function glass(x, y, w, h, fill, alpha = 1, color = C.amber) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  // 中身
+  const fh = h * fill;
+  rrect(x + 6, y + h - fh, w - 12, fh, 10, color, 1);
+  // 泡
+  if (fill > 0.05) rrect(x + 6, y + h - fh - 14, w - 12, 20, 10, '#fff4d6', 0.95);
+  // 輪郭
+  strokeRRect(x, y - 4, w, h + 8, 14, 'rgba(255,255,255,0.55)', 5, 1);
+  // 取っ手
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.arc(x + w + 4, y + h * 0.5, h * 0.22, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const p = easeOut(t / 1.4);
+  glass(W / 2 - 110, 500, 220, 300, lerp(0.15, 0.85, easeInOut(t / 2.2)), a);
+  text('毎日のお酒、', W / 2, 1010, { size: 112, weight: 'bold', align: 'center', alpha: a * easeOut(t / .8), ls: 4 });
+  text('がんのリスクは', W / 2, 1150, { size: 112, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .8), ls: 4 });
+  text('どこから?', W / 2, 1300, { size: 128, weight: 'bold', color: C.amber, align: 'center', alpha: a * easeOut((t - .6) / .8), ls: 6 });
+  rrect(W / 2 - 400 * p, 1370, 800 * p, 8, 4, C.amber, a);
+  text('飲酒量とがんの関係を、数字で', W / 2, 1470, { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.2) / .8) });
+  text('出典: WHO / 国立がん研究センター / 厚生労働省', W / 2, 1560, { size: 30, color: C.ink3, align: 'center', alpha: a * easeOut((t - 2.6) / .8) });
+}
+
+function sceneGroup1(t, a) {
+  header('お酒は「確実な」発がん物質', 'WHO 国際がん研究機関(IARC)の分類', a);
+  const ca = a * easeOut((t - .3) / .6);
+  rrect(60, 450, W - 120, 420, 22, C.panel, ca);
+  text('グループ1', 100, 540, { size: 72, weight: 'bold', color: C.risk, alpha: ca });
+  text('= ヒトに対する発がん性が「ある」と確定', 100, 600, { size: 34, color: C.ink2, alpha: ca });
+  const chips = [['たばこ', false], ['アスベスト', false], ['放射線', false], ['アルコール', true]];
+  let cx = 100;
+  chips.forEach((c, i) => {
+    const la = a * easeOut((t - .9 - i * .35) / .5);
+    ctx.font = `bold 40px ${FONT}`;
+    const w = ctx.measureText(c[0]).width + 60;
+    if (cx + w > W - 100) { cx = 100; }
+    const y = i < 3 ? 650 : 750;
+    if (i === 3) cx = 100;
+    rrect(cx, y, w, 80, 40, c[1] ? C.risk : C.panel2, la);
+    text(c[0], cx + w / 2, y + 54, { size: 40, weight: 'bold', color: c[1] ? '#fff' : C.ink2, align: 'center', alpha: la });
+    if (c[1]) text('← 同じ分類', cx + w + 20, y + 54, { size: 34, color: C.amber, alpha: la });
+    cx += w + 18;
+  });
+  // 仕組み
+  const ma = a * easeOut((t - 2.6) / .6);
+  rrect(60, 910, W - 120, 200, 22, C.panel, ma);
+  const steps = ['アルコール', 'アセトアルデヒド', 'DNAを傷つける'];
+  steps.forEach((s, i) => {
+    const x = 120 + i * 300;
+    const sa = a * easeOut((t - 2.8 - i * .45) / .5);
+    rrect(x, 950, 260, 70, 14, i === 2 ? C.riskSoft : C.panel2, sa);
+    text(s, x + 130, 998, { size: i === 1 ? 30 : 34, weight: 'bold', color: i === 2 ? C.risk : C.ink, align: 'center', alpha: sa });
+    if (i < 2) text('→', x + 275, 998, { size: 36, color: C.ink3, align: 'center', alpha: sa });
+  });
+  text('体内で分解される途中の物質が、細胞のDNAを傷つける', W / 2, 1075, { size: 30, color: C.ink2, align: 'center', alpha: ma });
+  // 世界の数字
+  const na = a * easeOut((t - 4.6) / .6);
+  const pn = easeOut((t - 4.8) / 1.4);
+  rrect(60, 1150, W - 120, 330, 22, C.panel, na);
+  text('2020年、お酒が原因と推計されるがん(世界)', 100, 1215, { size: 32, color: C.ink2, alpha: na });
+  text('約' + Math.round(74.1 * pn) + '万人', 100, 1340, { size: 110, weight: 'bold', color: C.amber, alpha: na });
+  text('新たにがんと診断された人の', 620, 1300, { size: 30, color: C.ink2, alpha: na });
+  text((4.1 * pn).toFixed(1) + '%', 620, 1400, { size: 84, weight: 'bold', alpha: na });
+  text('出典: Rumgay et al., Lancet Oncology 2021', 100, 1445, { size: 26, color: C.ink3, alpha: na });
+  caption('「たしなむ程度」でも、発がん物質であることは同じ', 1580, a * easeOut((t - 6.6) / .6), C.ink, 38);
+}
+
+function sceneSeven(t, a) {
+  header('飲酒で増える「7つのがん」', '因果関係が確実とされる部位(IARC / WHO)', a);
+  // 簡略化した人体シルエット
+  const bx = 250, by = 470;
+  const sa = a * easeOut(t / .8);
+  ctx.save(); ctx.globalAlpha = sa * 0.9; ctx.fillStyle = C.panel2;
+  ctx.beginPath(); ctx.arc(bx, by + 60, 60, 0, Math.PI * 2); ctx.fill();           // 頭
+  rrect(bx - 95, by + 140, 190, 420, 60, C.panel2, 1);                                // 胴
+  rrect(bx - 95, by + 560, 85, 380, 40, C.panel2, 1); rrect(bx + 10, by + 560, 85, 380, 40, C.panel2, 1); // 脚
+  ctx.restore();
+  // 部位マーカー(体の上の点)と右側のカード
+  const marks = [
+    [bx, by + 75], [bx, by + 120], [bx, by + 150], [bx + 5, by + 230], [bx + 40, by + 330], [bx, by + 430], [bx - 40, by + 300],
+  ];
+  CANCERS.forEach((name, i) => {
+    const la = a * easeOut((t - .6 - i * .55) / .5);
+    const y = 480 + i * 128;
+    rrect(420, y, W - 480, 104, 20, C.panel, la);
+    circle(470, y + 52, 18, C.risk, la);
+    text(String(i + 1), 470, y + 63, { size: 26, weight: 'bold', color: '#fff', align: 'center', alpha: la });
+    text(name, 520, y + 66, { size: 44, weight: 'bold', alpha: la });
+    const m = marks[i];
+    circle(m[0], m[1], 14, C.risk, la);
+    circle(m[0], m[1], 24, C.risk, la * 0.3);
+    line(m[0] + 20, m[1], 420, y + 52, C.risk, 2, la * 0.5);
+  });
+  const ca = a * easeOut((t - 5.2) / .6);
+  caption('件数が多いのは 食道・肝臓・乳房(世界, 2020年)', 1580, ca, C.ink, 38);
+  footnote('IARC Monographs vol.100E / Rumgay et al. 2021', ca);
+}
+
+function sceneUnit(t, a) {
+  header('ものさしは「純アルコール20g」', '量(ml) × 度数(%) ÷ 100 × 0.8 = 純アルコール(g)', a);
+  DRINKS.forEach((d, i) => {
+    const la = a * easeOut((t - .4 - i * .7) / .5);
+    const p = easeOut((t - .6 - i * .7) / .9);
+    const y = 450 + i * 196;
+    rrect(60, y, W - 120, 172, 22, C.panel, la);
+    glass(110, y + 26, 80, 120, p, la, C.amber);
+    text(d.name, 250, y + 70, { size: 46, weight: 'bold', alpha: la });
+    text(`${d.abv}%  ${d.label}`, 250, y + 125, { size: 32, color: C.ink2, alpha: la });
+    text('約' + Math.round(d.g * p) + 'g', W - 100, y + 110, { size: 72, weight: 'bold', color: C.amber, align: 'right', alpha: la });
+  });
+  const ca = a * easeOut((t - 4.6) / .6);
+  caption('「1杯」の感覚はちがっても、中身はほぼ同じ20g', 1580, ca, C.ink, 38);
+  footnote('厚生労働省「健康に配慮した飲酒に関するガイドライン」(2024) の換算式', ca);
+}
+
+function sceneDose(t, a) {
+  header('量が増えるほど、リスクは上がる', '国立がん研究センター 多目的コホート研究(日本人男性)', a);
+  text('※ 日本酒1合 ≒ 純アルコール約22g', 80, 430, { size: 28, color: C.ink3, alpha: a });
+  const maxV = 5.0, bx0 = 300, bx1 = W - 200;
+  let y = 480;
+  let delay = .4;
+  RISK.forEach((g, gi) => {
+    const la = a * easeOut((t - delay) / .5);
+    const rows = [[g.ref, 1.0]].concat(g.rows);
+    const hgt = 70 + rows.length * 78;
+    rrect(60, y, W - 120, hgt, 22, C.panel, la);
+    text(g.cancer, 100, y + 56, { size: 44, weight: 'bold', alpha: la });
+    rows.forEach((r, ri) => {
+      const ra = a * easeOut((t - delay - .2 - ri * .55) / .5);
+      const p = easeOut((t - delay - .3 - ri * .55) / .9);
+      const ry = y + 90 + ri * 78;
+      const isRef = ri === 0;
+      text(r[0], bx0 - 20, ry + 40, { size: 30, color: isRef ? C.ink3 : C.ink2, align: 'right', alpha: ra });
+      const wv = (bx1 - bx0) * (r[1] / maxV) * p;
+      rrect(bx0, ry + 8, wv, 48, 8, isRef ? C.grid : (r[1] >= 2 ? C.risk : C.amber), ra);
+      const val = isRef ? '1.0' : (r[1] * p).toFixed(1) + '倍';
+      text(val, bx0 + wv + 16, ry + 44, { size: isRef ? 30 : 40, weight: isRef ? 'normal' : 'bold', color: isRef ? C.ink3 : (r[1] >= 2 ? C.risk : C.amber), alpha: ra });
+    });
+    y += hgt + 22;
+    delay += 0.5 + rows.length * 0.55 + 0.6;
+  });
+  const ca = a * easeOut((t - 10.6) / .6);
+  caption('男性のがんの約13%は「1日2合以上」の飲酒が原因と推計', 1580, ca, C.risk, 38);
+  footnote('Inoue et al. Br J Cancer 2005 / Otani et al. 2003 ほか。基準群に対する相対リスク', ca);
+}
+
+function sceneLight(t, a) {
+  header('では、少量なら安全?', '「適量」をめぐる最近の研究', a);
+  // +5%
+  const a1 = a * easeOut((t - .3) / .6);
+  rrect(60, 450, W - 120, 330, 22, C.panel, a1);
+  text('1日1杯(純アルコール約23g)を10年続けると', 100, 515, { size: 32, color: C.ink2, alpha: a1 });
+  const p1 = easeOut((t - .6) / 1.2);
+  text('がん全体のリスク', 100, 600, { size: 40, weight: 'bold', alpha: a1 });
+  text('+' + Math.round(5 * p1) + '%', W - 100, 640, { size: 120, weight: 'bold', color: C.amber, align: 'right', alpha: a1 });
+  text('※ 飲酒量ゼロで最もリスクが低く、量にほぼ比例して上昇', 100, 690, { size: 28, color: C.ink2, alpha: a1 });
+  text('日本の33病院・12.6万人の症例対照研究 (Zaitsu et al. Cancer 2020)', 100, 740, { size: 26, color: C.ink3, alpha: a1 });
+  // 小さな線グラフ: 0→10 ドリンク・イヤーで 1.00→1.05
+  const gx0 = 100, gx1 = 560, gy0 = 520, gy1 = 760;
+  const pl = easeInOut((t - .8) / 1.6);
+  // WHO
+  const a2 = a * easeOut((t - 2.6) / .6);
+  rrect(60, 820, W - 120, 300, 22, C.panel, a2);
+  text('WHO (2023)', 100, 885, { size: 34, weight: 'bold', color: C.blue, alpha: a2 });
+  text('「がんに関して、安全な飲酒量は', 100, 960, { size: 42, weight: 'bold', alpha: a2 });
+  text('存在しない」', 100, 1025, { size: 42, weight: 'bold', color: C.amber, alpha: a2 });
+  text('1日20g未満の飲酒でも、世界で年間約10万件のがん (全体の14%)', 100, 1085, { size: 28, color: C.ink2, alpha: a2 });
+  // 赤くなる体質
+  const a3 = a * easeOut((t - 4.8) / .6);
+  rrect(60, 1160, W - 120, 300, 22, C.panel, a3);
+  circle(170, 1310, 70, '#f0a090', a3);
+  circle(145, 1300, 9, '#3a2a2a', a3); circle(195, 1300, 9, '#3a2a2a', a3);
+  circle(150, 1335, 16, 'rgba(232,82,79,0.7)', a3); circle(190, 1335, 16, 'rgba(232,82,79,0.7)', a3);
+  text('お酒で顔が赤くなる体質の人', 280, 1280, { size: 40, weight: 'bold', alpha: a3 });
+  text('アセトアルデヒドを分解しにくく、', 280, 1340, { size: 30, color: C.ink2, alpha: a3 });
+  text('食道がんのリスクが特に高くなる', 280, 1390, { size: 30, color: C.risk, weight: 'bold', alpha: a3 });
+  text('日本人の約4割がこの体質(ALDH2低活性型)', 280, 1438, { size: 26, color: C.ink3, alpha: a3 });
+  caption('いちばんリスクが低いのは「飲まない」こと', 1580, a * easeOut((t - 6.8) / .6), C.safe, 40);
+}
+
+function sceneGuideline(t, a) {
+  header('日本のガイドライン(2024年)', '厚生労働省「健康に配慮した飲酒に関するガイドライン」', a);
+  const a1 = a * easeOut((t - .3) / .6);
+  rrect(60, 450, W - 120, 420, 22, C.panel, a1);
+  text('生活習慣病のリスクを高める飲酒量(1日あたり純アルコール)', 100, 510, { size: 30, color: C.ink2, alpha: a1 });
+  const cans = (x, y, n, color, al) => { for (let i = 0; i < n; i++) rrect(x + i * 60, y, 46, 70, 10, color, al); };
+  const p1 = easeOut((t - .6) / 1.0), p2 = easeOut((t - 1.1) / 1.0);
+  text('男性', 100, 600, { size: 44, weight: 'bold', alpha: a1 });
+  text(Math.round(40 * p1) + 'g 以上', 240, 600, { size: 64, weight: 'bold', color: C.amber, alpha: a1 });
+  text('= ビール500ml × 2本', 560, 600, { size: 30, color: C.ink2, alpha: a1 * p1 });
+  cans(560, 618, 2, C.amber, a1 * p1);
+  text('女性', 100, 770, { size: 44, weight: 'bold', alpha: a1 });
+  text(Math.round(20 * p2) + 'g 以上', 240, 770, { size: 64, weight: 'bold', color: C.amber, alpha: a1 });
+  text('= ビール500ml × 1本', 560, 770, { size: 30, color: C.ink2, alpha: a1 * p2 });
+  cans(560, 788, 1, C.amber, a1 * p2);
+  // がん別
+  const a2 = a * easeOut((t - 2.6) / .6);
+  rrect(60, 900, W - 120, 540, 22, C.panel, a2);
+  text('がんの種類別に、リスクが上がり始める量', 100, 958, { size: 32, color: C.ink2, alpha: a2 });
+  const rows = [
+    ['大腸がん', '男女とも', '1日 20g (週150g) 〜', C.amber],
+    ['乳がん', '女性', '1日 14g (週100g) 〜', C.amber],
+    ['肝がん', '男性 / 女性', '1日 60g / 20g 〜', C.amber],
+    ['食道がん', '男性', '少量でもリスク上昇', C.risk],
+  ];
+  rows.forEach((r, i) => {
+    const ra = a * easeOut((t - 3.0 - i * .6) / .5);
+    const y = 1005 + i * 104;
+    rrect(100, y, W - 200, 90, 16, C.panel2, ra);
+    text(r[0], 130, y + 58, { size: 38, weight: 'bold', alpha: ra });
+    text(r[1], 360, y + 58, { size: 28, color: C.ink2, alpha: ra });
+    text(r[2], W - 130, y + 58, { size: 32, weight: 'bold', color: r[3], align: 'right', alpha: ra });
+  });
+  caption('「飲まない日」をつくり、飲む日も20g以内を目安に', 1580, a * easeOut((t - 6.2) / .6), C.safe, 38);
+  footnote('厚生労働省 2024年2月。数値は目安で、体質・体格により個人差があります', a * easeOut((t - 6.2) / .6));
+}
+
+function sceneSummary(t, a) {
+  text('まとめ', W / 2, 330, { size: 80, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['①', 'お酒は「グループ1」の発がん物質', 'たばこ・アスベストと同じ分類(IARC)'],
+    ['②', '量が増えるほどリスクは上がる', '1日2合以上で がん全体1.4倍・大腸2.1倍・食道4.6倍(男性)'],
+    ['③', '「安全な量」はない。減らすなら', '1日20g以内 + 休肝日。飲まない選択も'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .3 - i * .8) / .6);
+    const y = 450 + i * 290;
+    rrect(60, y, W - 120, 240, 22, C.panel, la);
+    text(it[0], 100, y + 95, { size: 60, weight: 'bold', color: C.amber, alpha: la });
+    text(it[1], 190, y + 95, { size: 44, weight: 'bold', alpha: la });
+    text(it[2], 190, y + 170, { size: 29, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 3.0) / .6);
+  glass(W / 2 - 60, 1340, 120, 160, 0.3, ca, C.safe);
+  text('知って、選ぶ。', W / 2, 1600, { size: 54, weight: 'bold', color: C.safe, align: 'center', alpha: ca });
+  text('出典: WHO/IARC, Rumgay 2021, 国立がん研究センター JPHC研究, Zaitsu 2020, 厚生労働省 2024', W / 2, 1665, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+  text('※ 一般的な情報です。体調や症状が気になる場合は医療機関へ', W / 2, 1705, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [
+  { s: 0, d: 6.5, f: sceneTitle },
+  { s: 6.5, d: 9.5, f: sceneGroup1 },
+  { s: 16, d: 8.5, f: sceneSeven },
+  { s: 24.5, d: 8.5, f: sceneUnit },
+  { s: 33, d: 14.5, f: sceneDose },
+  { s: 47.5, d: 10.5, f: sceneLight },
+  { s: 58, d: 12, f: sceneGuideline },
+  { s: 70, d: 6.5, f: sceneSummary },
+];
+const XF = 0.35; // クロスフェード秒
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.amber, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION; window.SCENES = SCENES;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
