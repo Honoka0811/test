@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>日本三大○○ 10連発</title>
+<style>
+  html,body{margin:0;background:#0f1115;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="japan_outline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 日本三大○○ 10連発  (9:16 ショート動画 / 60秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic","Noto Color Emoji",sans-serif';
+const EMOJI = '"Noto Color Emoji",sans-serif';
+const C = {
+  bg: '#0f1115', panel: '#181c24', panel2: '#222835', grid: '#2a2f3a',
+  ink: '#f6f7f9', ink2: '#b7bcc7', ink3: '#7d8390',
+  accent: '#F5C451', red: '#E8524F', blue: '#3F8DE8', green: '#4CC38A',
+  sea: '#141a24', land: '#2b3444', coast: '#4a5569',
+};
+const FPS = 30, DURATION = 60;
+const T_TITLE = 3.6, T_ITEM = 5.3, T_END = 3.4;   // 3.6 + 10×5.3 + 3.4 = 60
+
+// ---------- データ ----------
+// 緯度経度は各名所の概略位置(地図のピン用)
+const ITEMS = [
+  { cat: '祭り', emoji: '🏮', note: '',
+    places: [
+      { name: '祇園祭', pref: '京都', tag: '7月ひと月続く千年の祭', ll: [35.004, 135.779] },
+      { name: '天神祭', pref: '大阪', tag: '船渡御と奉納花火', ll: [34.696, 135.513] },
+      { name: '神田祭', pref: '東京', tag: '江戸の「天下祭」', ll: [35.692, 139.768] },
+    ] },
+  { cat: '景', title: '日本三景', emoji: '🌊', note: '',
+    places: [
+      { name: '松島', pref: '宮城', tag: '260余りの島々が浮かぶ湾', ll: [38.368, 141.059] },
+      { name: '天橋立', pref: '京都', tag: '股のぞきで天に架かる橋', ll: [35.570, 135.190] },
+      { name: '宮島', pref: '広島', tag: '海に浮かぶ朱の大鳥居', ll: [34.296, 132.320] },
+    ] },
+  { cat: '名園', title: '日本三名園', emoji: '🍁', note: '',
+    places: [
+      { name: '兼六園', pref: '石川・金沢', tag: '雪吊りと徽軫灯籠', ll: [36.562, 136.663] },
+      { name: '偕楽園', pref: '茨城・水戸', tag: '約3,000本の梅', ll: [36.375, 140.453] },
+      { name: '後楽園', pref: '岡山', tag: '芝生の広がる回遊式庭園', ll: [34.667, 133.936] },
+    ] },
+  { cat: '夜景', emoji: '🌃', note: '',
+    places: [
+      { name: '函館', pref: '北海道', tag: '函館山から見るくびれた街', ll: [41.759, 140.705] },
+      { name: '神戸', pref: '兵庫', tag: '摩耶山「1000万ドルの夜景」', ll: [34.729, 135.206] },
+      { name: '長崎', pref: '長崎', tag: '稲佐山から見るすり鉢の光', ll: [32.755, 129.855] },
+    ] },
+  { cat: '名城', title: '日本三名城', emoji: '🏯', note: '※諸説あり(姫路城を入れる説も)',
+    places: [
+      { name: '名古屋城', pref: '愛知', tag: '金のしゃちほこ', ll: [35.185, 136.899] },
+      { name: '大阪城', pref: '大阪', tag: '秀吉が築いた天下の城', ll: [34.687, 135.526] },
+      { name: '熊本城', pref: '熊本', tag: '加藤清正の「武者返し」', ll: [32.806, 130.706] },
+    ] },
+  { cat: '名泉', title: '日本三名泉', emoji: '♨️', note: '',
+    places: [
+      { name: '草津温泉', pref: '群馬', tag: '湯畑と湯もみ', ll: [36.620, 138.596] },
+      { name: '下呂温泉', pref: '岐阜', tag: 'とろりとした美肌の湯', ll: [35.806, 137.244] },
+      { name: '有馬温泉', pref: '兵庫', tag: '赤茶色の金泉と透明な銀泉', ll: [34.797, 135.248] },
+    ] },
+  { cat: '名瀑', title: '日本三名瀑', emoji: '💧', note: '',
+    places: [
+      { name: '華厳の滝', pref: '栃木', tag: '落差97m、一直線に落ちる', ll: [36.737, 139.503] },
+      { name: '那智の滝', pref: '和歌山', tag: '落差133m、一段では日本一', ll: [33.670, 135.890] },
+      { name: '袋田の滝', pref: '茨城', tag: '4段に落ちる「四度の滝」', ll: [36.772, 140.396] },
+    ] },
+  { cat: 'ラーメン', emoji: '🍜', note: '',
+    places: [
+      { name: '札幌ラーメン', pref: '北海道', tag: '味噌', ll: [43.062, 141.354] },
+      { name: '喜多方ラーメン', pref: '福島', tag: '醤油・平打ち縮れ麺', ll: [37.650, 139.875] },
+      { name: '博多ラーメン', pref: '福岡', tag: 'とんこつ・替え玉', ll: [33.590, 130.420] },
+    ] },
+  { cat: '和牛', emoji: '🥩', note: '※諸説あり(米沢牛を入れる説も)',
+    places: [
+      { name: '松阪牛', pref: '三重', tag: 'きめ細かな霜降り', ll: [34.578, 136.527] },
+      { name: '神戸牛', pref: '兵庫', tag: '世界に知られるブランド', ll: [34.690, 135.195] },
+      { name: '近江牛', pref: '滋賀', tag: '約400年の歴史', ll: [35.000, 136.000] },
+    ] },
+  { cat: 'がっかり名所', emoji: '😅', note: '※諸説あり(守礼門を入れる説も)',
+    places: [
+      { name: '札幌時計台', pref: '北海道', tag: 'ビルの谷間にひっそり', ll: [43.063, 141.354] },
+      { name: 'はりまや橋', pref: '高知', tag: '全長約20mの小さな橋', ll: [33.560, 133.540] },
+      { name: 'オランダ坂', pref: '長崎', tag: '…普通の坂道', ll: [32.738, 129.873] },
+    ] },
+];
+ITEMS.forEach(it => { if (!it.title) it.title = '日本三大' + it.cat; });
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeOutBack = t => { t = clamp(t); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, font = FONT } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 'normal') {
+  ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`; const w = ctx.measureText(str).width; ctx.restore(); return w;
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function ring(x, y, r, color, width, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+
+// ---------- 地図 ----------
+// 本州〜北海道・九州を収める範囲(沖縄は対象外)
+const MAP = { lon0: 128.6, lon1: 146.0, lat0: 30.6, lat1: 45.7, top: 1180, height: 450 };
+MAP.k = Math.cos(38 * Math.PI / 180);
+MAP.s = MAP.height / (MAP.lat1 - MAP.lat0);
+MAP.width = (MAP.lon1 - MAP.lon0) * MAP.k * MAP.s;
+MAP.left = (W - MAP.width) / 2;
+function proj(lat, lon) {
+  return [MAP.left + (lon - MAP.lon0) * MAP.k * MAP.s, MAP.top + (MAP.lat1 - lat) * MAP.s];
+}
+let mapPath = null;
+function buildMapPath() {
+  mapPath = new Path2D();
+  for (const r of JAPAN_RINGS) {
+    const [x0, y0] = proj(r[0][1], r[0][0]);
+    mapPath.moveTo(x0, y0);
+    for (let i = 1; i < r.length; i++) { const [x, y] = proj(r[i][1], r[i][0]); mapPath.lineTo(x, y); }
+    mapPath.closePath();
+  }
+}
+function drawMap(alpha) {
+  if (!mapPath) buildMapPath();
+  ctx.save(); ctx.globalAlpha = alpha;
+  // 範囲外(沖縄など)は描かない
+  ctx.beginPath(); ctx.rect(0, MAP.top - 20, W, MAP.height + 40); ctx.clip();
+  ctx.fillStyle = C.land; ctx.fill(mapPath);
+  ctx.strokeStyle = C.coast; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke(mapPath);
+  ctx.restore();
+}
+// 近接するピンが重ならないよう、少しだけ押し広げた座標を返す
+function pinPositions(places, minDist = 46) {
+  const pts = places.map(pl => proj(pl.ll[0], pl.ll[1]));
+  for (let it = 0; it < 4; it++) {
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      let dx = pts[j][0] - pts[i][0], dy = pts[j][1] - pts[i][1];
+      let d = Math.hypot(dx, dy);
+      if (d >= minDist) continue;
+      if (d < 1e-6) { dx = 1; dy = -0.5; d = Math.hypot(dx, dy); }
+      const push = (minDist - d) / 2;
+      pts[i][0] -= dx / d * push; pts[i][1] -= dy / d * push;
+      pts[j][0] += dx / d * push; pts[j][1] += dy / d * push;
+    }
+  }
+  return pts;
+}
+function pin(x, y, n, p, alpha, color = C.red) {
+  if (p <= 0) return;
+  const sc = easeOutBack(p);
+  // 波紋
+  const rp = (p * 1.6) % 1;
+  ring(x, y, 18 + rp * 40, color, 3, alpha * (1 - rp) * 0.6);
+  circle(x, y, 22 * sc, C.bg, alpha);
+  circle(x, y, 18 * sc, color, alpha);
+  text(String(n), x, y + 1, { size: 24 * sc, weight: 'bold', align: 'center', base: 'middle', alpha });
+}
+
+// ---------- 共通パーツ ----------
+function progress(idx, alpha) {
+  // 10 セグメントの進捗バー(上端)
+  const x0 = 60, x1 = W - 60, y = 96, gap = 10;
+  const wseg = (x1 - x0 - gap * 9) / 10;
+  for (let i = 0; i < 10; i++) {
+    rrect(x0 + i * (wseg + gap), y, wseg, 8, 4, i <= idx ? C.accent : C.grid, alpha);
+  }
+}
+function topLabel(idx, alpha) {
+  text('日本三大○○ 10連発', 60, 164, { size: 32, color: C.ink3, alpha, weight: 'bold' });
+  text(`${String(idx + 1).padStart(2, '0')} / 10`, W - 60, 164, { size: 32, color: C.ink3, alpha, align: 'right', weight: 'bold' });
+}
+function sceneFade(t, dur, fi = 0.25, fo = 0.25) {
+  return Math.min(easeOut(t / fi), easeOut((dur - t) / fo));
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  // 背景の地図(薄く)
+  drawMap(a * 0.35 * easeOut(t / 1.0));
+  const p1 = easeOut(t / 0.7);
+  text('日本三大', W / 2, 620, { size: 170, weight: 'bold', align: 'center', alpha: a * p1, ls: 10 });
+  // ○○ がカテゴリ名に次々入れ替わる
+  const idx = Math.floor(t / 0.3) % ITEMS.length;
+  const word = t < 0.8 ? '○○' : ITEMS[idx].cat;
+  const wsize = word.length > 4 ? 120 : 160;
+  rrect(90, 700, W - 180, 230, 28, C.panel, a * easeOut((t - 0.3) / 0.6));
+  text(word, W / 2, 870, { size: wsize, weight: 'bold', align: 'center', color: C.accent, alpha: a * easeOut((t - 0.3) / 0.6) });
+  text('10 連発', W / 2, 1120, { size: 110, weight: 'bold', align: 'center', alpha: a * easeOut((t - 0.9) / 0.6), ls: 6 });
+  text('あなたは全部言えますか?', W / 2, 1290, { size: 56, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.6) / 0.6) });
+  // 絵文字の列
+  const ey = 1480;
+  ITEMS.forEach((it, i) => {
+    const pp = easeOutBack(seg(t, 2.0 + i * 0.08, 0.4));
+    if (pp <= 0) return;
+    text(it.emoji, 120 + i * 93, ey, { size: 64 * pp, align: 'center', base: 'middle', alpha: a, font: EMOJI });
+  });
+}
+
+function sceneItem(idx, t, a) {
+  const it = ITEMS[idx];
+  progress(idx, a);
+  topLabel(idx, a);
+  // 絵文字 + タイトル
+  const ps = easeOutBack(t / 0.5);
+  text(it.emoji, W / 2, 330, { size: 150 * ps, align: 'center', base: 'middle', alpha: a, font: EMOJI });
+  const tsize = it.title.length > 8 ? 84 : 96;
+  const ta = a * easeOut((t - 0.1) / 0.4);
+  text(it.title, W / 2, 500, { size: tsize, weight: 'bold', align: 'center', alpha: ta, ls: 2 });
+  const tw = measure(it.title, tsize, 'bold');
+  rrect(W / 2 - tw / 2, 522, tw * easeOut((t - 0.25) / 0.5), 8, 4, C.accent, ta);
+
+  // 3 枚のカード
+  const cardY = 600, cardH = 172, gap = 22, cx = 80, cw = W - 160;
+  it.places.forEach((pl, i) => {
+    const t0 = 0.5 + i * 0.95;
+    const p = easeOut(seg(t, t0, 0.45));
+    if (p <= 0) return;
+    const y = cardY + i * (cardH + gap);
+    const dx = (1 - p) * 140;
+    const al = a * p;
+    rrect(cx + dx, y, cw, cardH, 24, C.panel, al);
+    // 番号
+    circle(cx + dx + 78, y + cardH / 2, 44, C.accent, al);
+    text(String(i + 1), cx + dx + 78, y + cardH / 2 + 2, { size: 50, weight: 'bold', color: C.bg, align: 'center', base: 'middle', alpha: al });
+    // 名前 + 都道府県
+    const nsize = pl.name.length > 6 ? 56 : 66;
+    text(pl.name, cx + dx + 150, y + 78, { size: nsize, weight: 'bold', alpha: al });
+    const nw = measure(pl.name, nsize, 'bold');
+    text(pl.pref, cx + dx + 150 + nw + 22, y + 78, { size: 34, color: C.ink2, alpha: al });
+    text(pl.tag, cx + dx + 150, y + 136, { size: 32, color: C.ink3, alpha: al });
+  });
+
+  // 地図とピン
+  drawMap(a);
+  const pts = pinPositions(it.places);
+  it.places.forEach((pl, i) => {
+    const t0 = 0.5 + i * 0.95;
+    pin(pts[i][0], pts[i][1], i + 1, seg(t, t0 + 0.1, 0.5), a);
+  });
+  if (it.note) text(it.note, W / 2, 1700, { size: 30, color: C.ink3, align: 'center', alpha: a });
+}
+
+function sceneEnd(t, a) {
+  drawMap(a * 0.25);
+  text('全部言えましたか?', W / 2, 420, { size: 96, weight: 'bold', align: 'center', alpha: a * easeOut(t / 0.5) });
+  text('答えはコメントで', W / 2, 530, { size: 56, color: C.accent, align: 'center', alpha: a * easeOut((t - 0.3) / 0.5) });
+  // おさらい(2列×5)
+  const x0 = 80, y0 = 660, cw = 450, ch = 150, gx = 20, gy = 18;
+  ITEMS.forEach((it, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const p = easeOut(seg(t, 0.5 + i * 0.1, 0.4));
+    if (p <= 0) return;
+    const x = x0 + col * (cw + gx), y = y0 + row * (ch + gy) + (1 - p) * 30;
+    rrect(x, y, cw, ch, 20, C.panel, a * p);
+    text(it.emoji, x + 24, y + ch / 2, { size: 60, base: 'middle', alpha: a * p, font: EMOJI });
+    text(it.title, x + 110, y + 62, { size: it.title.length > 8 ? 34 : 40, weight: 'bold', alpha: a * p });
+    text(it.places.map(pl => pl.name.replace('ラーメン', '')).join('・'), x + 110, y + 112, { size: 26, color: C.ink3, alpha: a * p });
+  });
+  text('ナレーション: ' + (window.CREDIT || 'VOICEVOX:青山龍星') + '  /  BGM: 自作', W / 2, 1610, { size: 28, color: C.ink3, align: 'center', alpha: a * easeOut((t - 1.5) / 0.5) });
+}
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 上下のうっすらしたグラデーション
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(63,141,232,0.06)'); g.addColorStop(0.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(245,196,81,0.05)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  if (t < T_TITLE) {
+    sceneTitle(t, sceneFade(t, T_TITLE, 0.2, 0.3));
+  } else if (t < T_TITLE + T_ITEM * ITEMS.length) {
+    const idx = Math.floor((t - T_TITLE) / T_ITEM);
+    const lt = t - T_TITLE - idx * T_ITEM;
+    sceneItem(idx, lt, sceneFade(lt, T_ITEM, 0.2, 0.2));
+  } else {
+    const lt = t - T_TITLE - T_ITEM * ITEMS.length;
+    sceneEnd(lt, sceneFade(lt, T_END, 0.2, 0.5));
+  }
+}
+window.render = render; window.FPS = FPS; window.DURATION = DURATION;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else {
+  render(0);
+}
+</script>
+</body>
+</html>
