@@ -12,7 +12,7 @@ g() { echo "$M" | python3 -I -c "import json,sys; print(json.load(sys.stdin)['$1
 # 2パス目: 計測値を使って線形正規化(音質を変えずにゲインだけ調整)
 ffmpeg -y -hide_banner -loglevel error -i "$SRC" -c:v copy \
   -af "loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=$(g input_i):measured_TP=$(g input_tp):measured_LRA=$(g input_lra):measured_thresh=$(g input_thresh):offset=$(g target_offset):linear=true,volume=1.2dB" \
-  -ac 2 -ar 48000 -c:a aac -b:a 192k -movflags +faststart "$OUT/nihon_sandai_final.mp4"
+  -ac 2 -ar 48000 -c:a aac -b:a 192k -t 60 -movflags +faststart "$OUT/nihon_sandai_final.mp4"
 
 cp output/subtitles_ja.srt "$OUT/subtitles_ja.srt"
 # サムネイル: タイトルカードの 3.0 秒時点

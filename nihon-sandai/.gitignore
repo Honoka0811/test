@@ -2,3 +2,5 @@ output/mix.wav
 output/frames/
 output/credit.txt
 __pycache__/
+client_secret.json
+token.json

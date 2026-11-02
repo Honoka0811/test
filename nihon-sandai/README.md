@@ -3,7 +3,8 @@
 「日本三大祭り」「日本三景」「日本三名園」…といった **日本三大○○を10個、テンポよく紹介する縦型ショート動画**(1080×1920 / 30fps / 60秒)です。
 各カテゴリで3つの名所がカード形式で順に現れ、下部の日本地図に番号付きのピンが打たれます。男性音声のナレーションと自作BGM付き。
 
-- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグの `metadata.md`)
+- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグ/投稿手順の `metadata.md`・API投稿用の `youtube.json`)
+- YouTube への投稿: 手順は `upload/metadata.md`。`youtube_upload.py` で YouTube Data API から投稿することもできます(動画+サムネイル+字幕)
 - 完成動画(ナレーション付き): `output/nihon_sandai_narrated.mp4`
 - 完成動画(無音・字幕なし): `output/nihon_sandai.mp4`
 - ナレーション音声のみ: `output/narration.wav` / BGMのみ: `output/bgm.wav`(自作・権利フリー)
