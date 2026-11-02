@@ -1,7 +1,7 @@
 # 太平洋戦争 日米戦力差の推移 — ショート動画
 
 1941年12月の開戦から1945年8月の終戦まで、日本と米国の戦力差がどう推移したかを
-数字で追う縦型ショート動画(1080×1920 / 30fps / 60秒)です。字幕に加え、男性音声のナレーション付き版があります。
+数字で追う縦型ショート動画(1080×1920 / 30fps / 60秒)です。字幕に加え、男性音声(VOICEVOX:青山龍星)のナレーション付き版があります。
 
 - 完成動画(男性ナレーション付き): `output/pacific_war_power_gap_narrated.mp4`
 - 完成動画(無音・字幕のみ): `output/pacific_war_power_gap.mp4`
@@ -47,8 +47,22 @@ python3 narrate.py         # ナレーションを合成し output/pacific_war_p
 
 - `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画(ブラウザで開くとプレビュー再生)
 - `capture.js` … Playwright(Chromium)で 1 フレームずつ撮影し、ffmpeg(libx264)にパイプして mp4 化
-- `narrate.py` … シーンごとの原稿を Open JTalk(`pyopenjtalk`、男性話者 nitech_jp_atr503_m001)で合成し、各シーンの長さに収まるよう速度を自動調整して動画に合成
-- 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック), Python 3 + `pyopenjtalk` + `numpy`
+- `narrate.py` … シーンごとの原稿を VOICEVOX(話者: 青山龍星 ノーマル, style 13)で合成し、各シーンの長さに収まるよう話速を自動調整して動画に合成。`voicevox_core` が無い環境では Open JTalk にフォールバック
+- 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック), Python 3 + `numpy` + `pyopenjtalk`(辞書用)
+
+### VOICEVOX のセットアップ(ナレーション用)
+
+VOICEVOX CORE の GitHub リリースから次を取得し、環境変数でパスを渡します。
+
+| 必要なもの | 取得元 | 環境変数 |
+|---|---|---|
+| Python ラッパー `voicevox_core-0.17.1-cp310-abi3-manylinux_2_34_x86_64.whl` | VOICEVOX/voicevox_core releases → `pip install` | — |
+| ONNX Runtime `voicevox_onnxruntime-linux-x64-1.17.3.tgz` | VOICEVOX/onnxruntime-builder releases | `VOICEVOX_ORT`(展開後の `lib/libvoicevox_onnxruntime.so`) |
+| 音声モデル `15.vvm`(青山龍星)、`4.vvm`(玄野武宏) | VOICEVOX/voicevox_vvm releases | `VOICEVOX_VVMS`(置いたディレクトリ) |
+| Open JTalk 辞書 | `pyopenjtalk` 同梱のものを自動使用 | `VOICEVOX_DICT`(任意) |
+
+話者を変える場合は `VOICEVOX_STYLE=11 python3 narrate.py`(11 = 玄野武宏)のようにします。
+VOICEVOX の音声を公開する場合は、利用規約に従い「VOICEVOX:青山龍星」のクレジット表記が必要です(動画の最後のカードに記載済み)。
 
 ナレーションの原稿は `narrate.py` の `SCRIPT` にあり、書き換えて再実行すれば差し替えられます。
 

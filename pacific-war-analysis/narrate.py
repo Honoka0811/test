@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
-"""シーンごとのナレーション(男性音声)を Open JTalk で合成し、動画に合成する。
+"""シーンごとのナレーション(男性音声)を合成し、動画に合成する。
+既定は VOICEVOX(青山龍星)。voicevox_core が無い場合は Open JTalk にフォールバックする。
 使い方: python3 narrate.py [入力mp4] [出力mp4]
-必要: pip install pyopenjtalk numpy / ffmpeg
+環境変数:
+  VOICEVOX_ORT   libvoicevox_onnxruntime.so のパス
+  VOICEVOX_VVMS  *.vvm を置いたディレクトリ
+  VOICEVOX_DICT  Open JTalk 辞書ディレクトリ(省略時は pyopenjtalk 同梱のもの)
+  VOICEVOX_STYLE スタイルID(既定 13 = 青山龍星 ノーマル。11 = 玄野武宏 ノーマル)
 """
-import sys, os, wave, subprocess
+import sys, os, io, wave, glob, subprocess
 import numpy as np
-import pyopenjtalk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, 'output', 'pacific_war_power_gap.mp4')
@@ -28,11 +32,58 @@ SCRIPT = [
     (55.5, 4.5, '緒戦の優位は、国力の差を覆せませんでした。'),
 ]
 
+def _dict_dir():
+    d = os.environ.get('VOICEVOX_DICT')
+    if d: return d
+    import pyopenjtalk
+    return os.path.join(os.path.dirname(pyopenjtalk.__file__), 'open_jtalk_dic_utf_8-1.11')
+
+class VoicevoxEngine:
+    def __init__(self):
+        from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile
+        ort = Onnxruntime.load_once(filename=os.environ.get('VOICEVOX_ORT',
+            '/home/user/vv/ort/voicevox_onnxruntime-linux-x64-1.17.3/lib/libvoicevox_onnxruntime.so'))
+        self.synth = Synthesizer(ort, OpenJtalk(_dict_dir()))
+        for f in sorted(glob.glob(os.path.join(os.environ.get('VOICEVOX_VVMS', '/home/user/vv/vvms'), '*.vvm'))):
+            with VoiceModelFile.open(f) as m:
+                self.synth.load_voice_model(m)
+        self.style = int(os.environ.get('VOICEVOX_STYLE', '13'))
+        name = next((c.name + '/' + st.name) for c in self.synth.metas() for st in c.styles if st.id == self.style)
+        print('engine: VOICEVOX', name)
+    def __call__(self, text, speed):
+        q = self.synth.create_audio_query(text, self.style)
+        q.speed_scale = speed
+        q.pre_phoneme_length = 0.05
+        q.post_phoneme_length = 0.1
+        wav = self.synth.synthesis(q, self.style)
+        with wave.open(io.BytesIO(wav)) as w:
+            sr = w.getframerate()
+            x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+        return x, sr
+
+class OpenJtalkEngine:
+    def __init__(self):
+        import pyopenjtalk
+        self.tts = pyopenjtalk.tts
+        print('engine: Open JTalk (fallback)')
+    def __call__(self, text, speed):
+        x, sr = self.tts(text, speed=speed, half_tone=-1.5)
+        return x.astype(np.float32) / 32768.0, sr
+
+try:
+    engine = VoicevoxEngine()
+except Exception as e:  # noqa
+    print('VOICEVOX unavailable:', e)
+    engine = OpenJtalkEngine()
+
+def resample(x, sr):
+    if sr == SR: return x
+    n = int(len(x) * SR / sr)
+    return np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+
 def synth(text, speed):
-    x, sr = pyopenjtalk.tts(text, speed=speed, half_tone=-1.5)  # やや低めの男性声
-    assert sr == SR
-    x = x.astype(np.float32) / 32768.0
-    # 前後の無音を詰める
+    x, sr = engine(text, speed)
+    x = resample(x, sr)
     idx = np.where(np.abs(x) > 0.004)[0]
     if len(idx):
         x = x[max(0, idx[0] - 1200): idx[-1] + 2400]
@@ -41,7 +92,7 @@ def synth(text, speed):
 track = np.zeros(int(TOTAL * SR), dtype=np.float32)
 for start, dur, text in SCRIPT:
     limit = dur - LEAD - 0.35
-    speed = 1.25  # 基準速度(全シーンでペースを揃える)
+    speed = 1.1  # 基準速度(全シーンでペースを揃える)
     for _ in range(6):
         x = synth(text, speed)
         sec = len(x) / SR
