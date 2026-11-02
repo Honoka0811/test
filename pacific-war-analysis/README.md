@@ -3,6 +3,7 @@
 1941年12月の開戦から1945年8月の終戦まで、日本と米国の戦力差がどう推移したかを
 数字で追う縦型ショート動画(1080×1920 / 30fps / 約72秒)です。字幕に加え、男性音声(VOICEVOX:青山龍星)のナレーション付き版があります。
 
+- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグ/チェックリストの `metadata.md`)
 - 完成動画(男性ナレーション付き): `output/pacific_war_power_gap_narrated.mp4`
 - 完成動画(無音・字幕のみ): `output/pacific_war_power_gap.mp4`
 - ナレーション音声のみ: `output/narration.wav`
@@ -45,6 +46,7 @@ cd pacific-war-analysis
 node capture.js            # output/pacific_war_power_gap.mp4 (無音版) を生成
 python3 narrate.py         # ナレーション合成 + BGM ミックスで output/pacific_war_power_gap_narrated.mp4 を生成
 python3 bgm.py 71.5 bgm.wav # BGM だけを書き出す場合
+./export_upload.sh         # upload/ にアップロード用一式を書き出す(-14 LUFS 正規化・ステレオAAC・SRT・JPG)
 ```
 
 - `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画(ブラウザで開くとプレビュー再生)

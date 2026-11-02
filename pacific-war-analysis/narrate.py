@@ -32,6 +32,19 @@ SCRIPT = [
     (67, 4.5, '緒戦の優位は、国力の差を覆せませんでした。'),
 ]
 
+# 字幕用テキスト(読み上げ用の漢数字ではなく、画面表示向けの表記)
+SUBTITLES = [
+    '1941年12月、日本は米国との戦争に踏み切りました。終戦までの4年間で、日米の戦力差はどう変わったのか。',
+    '開戦時の国力を比べると、GDPは米国が日本の約5.6倍、鉄鋼は約11倍、石油はおよそ540倍でした。',
+    'しかし空母では日本が優位でした。日本の10隻に対し、米国は太平洋にわずか3隻。この差が緒戦の快進撃を支えます。',
+    '航空機の生産数です。1943年、米国は年間8万6千機を生産し、差は決定的になります。4年間の累計は、日本7万機に対し米国31万機でした。',
+    '空母の保有数です。ミッドウェーで主力4隻を失った日本は損失を埋められず、1943年に米国が逆転。1945年には、日本の稼働空母はほぼゼロになります。',
+    '日本の商船は、米潜水艦の攻撃で640万トンから150万トンへ激減。石油の備蓄も枯渇し、艦隊は動けなくなります。',
+    '量の差は質の差へ。新人搭乗員の飛行時間は700時間から100時間未満に落ち、マリアナ沖海戦では約300機を失いました。',
+    '緒戦の優位は、国力の差を覆せませんでした。',
+]
+SRT = os.path.join(HERE, 'output', 'subtitles_ja.srt')
+
 def _dict_dir():
     d = os.environ.get('VOICEVOX_DICT')
     if d: return d
@@ -90,7 +103,8 @@ def synth(text, speed):
     return x
 
 track = np.zeros(int(TOTAL * SR), dtype=np.float32)
-for start, dur, text in SCRIPT:
+cues = []
+for li, (start, dur, text) in enumerate(SCRIPT):
     limit = dur - LEAD - 0.35
     speed = 1.2  # 基準速度(全シーンでペースを揃える)
     for _ in range(6):
@@ -106,6 +120,7 @@ for start, dur, text in SCRIPT:
     s = int((start + LEAD) * SR)
     e = min(s + n, len(track))
     track[s:e] += x[:e - s]
+    cues.append((start + LEAD, start + LEAD + n / SR, SUBTITLES[li]))
 
 peak = np.max(np.abs(track)) or 1
 track = track / peak * 0.85
@@ -113,6 +128,14 @@ with wave.open(WAV, 'wb') as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
     w.writeframes((track * 32767).astype(np.int16).tobytes())
 print('wrote', WAV)
+
+def _ts(t):
+    h = int(t // 3600); m = int(t % 3600 // 60); sec = t % 60
+    return f'{h:02d}:{m:02d}:{int(sec):02d},{int(round((sec - int(sec)) * 1000)):03d}'
+with open(SRT, 'w', encoding='utf-8') as f:
+    for i, (a, b, t) in enumerate(cues, 1):
+        f.write(f'{i}\n{_ts(a)} --> {_ts(min(b + 0.3, TOTAL))}\n{t}\n\n')
+print('wrote', SRT)
 
 # ---------- BGM をダッキングしながらミックス ----------
 import bgm as bgm_mod
