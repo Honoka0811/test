@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""シーンごとのナレーション(男性音声)を合成し、動画に合成する。
+"""シーンごとのナレーション(男性音声)を合成し、BGM(bgm.py)をダッキングしながらミックスして動画に合成する。
 既定は VOICEVOX(青山龍星)。voicevox_core が無い場合は Open JTalk にフォールバックする。
 使い方: python3 narrate.py [入力mp4] [出力mp4]
 環境変数:
@@ -114,6 +114,32 @@ with wave.open(WAV, 'wb') as w:
     w.writeframes((track * 32767).astype(np.int16).tobytes())
 print('wrote', WAV)
 
-subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', SRC, '-i', WAV,
+# ---------- BGM をダッキングしながらミックス ----------
+import bgm as bgm_mod
+music = bgm_mod.generate(TOTAL)
+music = music[:len(track)] if len(music) >= len(track) else np.pad(music, (0, len(track) - len(music)))
+# ナレーションの包絡(50ms RMS → アタック速く・リリース 0.5 秒で平滑化)
+hop = SR // 20
+rms = np.sqrt(np.mean(track[:len(track) // hop * hop].reshape(-1, hop) ** 2, axis=1))
+envl = np.zeros_like(rms)
+for i, v in enumerate(rms):
+    prev = envl[i - 1] if i else 0.0
+    envl[i] = max(v, prev * 0.9)       # リリース ≈ 0.5 秒
+envl = np.repeat(envl, hop); envl = np.pad(envl, (0, len(track) - len(envl)))
+speech = np.clip(envl / 0.12, 0, 1)
+BGM_SILENT, BGM_SPEECH = 0.40, 0.18   # 無音時 / 発話時の BGM ゲイン(線形)
+gain = BGM_SILENT - (BGM_SILENT - BGM_SPEECH) * speech
+# ゲイン変化を 100ms で滑らかに
+k = SR // 10
+gain = np.convolve(gain, np.ones(k) / k, mode='same')
+mixed = track + music * gain
+mixed = mixed / max(1.0, np.max(np.abs(mixed)) / 0.95)
+MIX = os.path.join(HERE, 'output', 'mix.wav')
+with wave.open(MIX, 'wb') as w:
+    w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
+    w.writeframes((mixed * 32767).astype(np.int16).tobytes())
+print('wrote', MIX)
+
+subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', SRC, '-i', MIX,
                 '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', '-movflags', '+faststart', DST], check=True)
 print('wrote', DST)

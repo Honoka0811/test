@@ -6,6 +6,7 @@
 - 完成動画(男性ナレーション付き): `output/pacific_war_power_gap_narrated.mp4`
 - 完成動画(無音・字幕のみ): `output/pacific_war_power_gap.mp4`
 - ナレーション音声のみ: `output/narration.wav`
+- BGMのみ: `output/bgm.wav`(自作・権利フリー)
 - サムネイル: `output/thumbnail.png`
 
 ## 構成(約72秒)
@@ -42,12 +43,14 @@
 ```bash
 cd pacific-war-analysis
 node capture.js            # output/pacific_war_power_gap.mp4 (無音版) を生成
-python3 narrate.py         # ナレーションを合成し output/pacific_war_power_gap_narrated.mp4 を生成
+python3 narrate.py         # ナレーション合成 + BGM ミックスで output/pacific_war_power_gap_narrated.mp4 を生成
+python3 bgm.py 71.5 bgm.wav # BGM だけを書き出す場合
 ```
 
 - `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画(ブラウザで開くとプレビュー再生)
 - `capture.js` … Playwright(Chromium)で 1 フレームずつ撮影し、ffmpeg(libx264)にパイプして mp4 化
-- `narrate.py` … シーンごとの原稿を VOICEVOX(話者: 青山龍星 ノーマル, style 13)で合成し、各シーンの長さに収まるよう話速を自動調整して動画に合成。`voicevox_core` が無い環境では Open JTalk にフォールバック
+- `bgm.py` … ドキュメンタリー風BGM(Dマイナー、72BPM。低音ドローン+倍音パッド+和太鼓風の打音+まばらなアルペジオ+簡易リバーブ)を numpy だけで合成。外部音源を使わないため権利表記は不要
+- `narrate.py` … シーンごとの原稿を VOICEVOX(話者: 青山龍星 ノーマル, style 13)で合成し、各シーンの長さに収まるよう話速を自動調整。BGM はナレーション中に自動で音量を下げて(ダッキング: 無音時 約-28 LUFS、発話時 約-35 LUFS)ミックスし、動画に合成。`voicevox_core` が無い環境では Open JTalk にフォールバック
 - 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック), Python 3 + `numpy` + `pyopenjtalk`(辞書用)
 
 ### VOICEVOX のセットアップ(ナレーション用)
