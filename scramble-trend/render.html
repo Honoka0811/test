@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>JASDF Scramble Trend</title>
+<style>
+  html,body{margin:0;background:#0b1020;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 空自スクランブル(緊急発進)の推移  (9:16 ショート動画 / 約64秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0b1020', panel: '#151b2e', grid: '#273047',
+  ink: '#f3f4f6', ink2: '#b7bcc7', ink3: '#7d8390',
+  accent: '#F5C451', cn: '#F0785A', ru: '#4FA3E8', other: '#8C93A3',
+  radar: '#58D68D', dim: '#3a4360'
+};
+const FPS = 30, DURATION = 68;
+const VOICE_CREDIT = '音声: Open JTalk / BGM: 自作';
+
+// ---------- データ(防衛省 統合幕僚監部「緊急発進実施状況」各年度) ----------
+const YEARS = [2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
+const TOTAL = [386, 425, 567, 810, 943, 873, 1168, 904, 999, 947, 725, 1004, 778, 669, 704, 595];
+// 国・地域別(推定を含む)
+const CN = [96, 156, 306, 415, 464, 571, 851, 500, 638, 675, 458, 722, 575, 479, 467, 366];
+const RU = [264, 247, 248, 359, 473, 288, 301, 390, 343, 268, 258, 266, 150, 174, 234, 214];
+// 2025年度 航空方面隊別
+const REGIONS = [
+  { name: '南西航空方面隊', base: '那覇(沖縄)', n: 348 },
+  { name: '北部航空方面隊', base: '千歳・三沢', n: 165 },
+  { name: '西部航空方面隊', base: '築城・新田原', n: 46 },
+  { name: '中部航空方面隊', base: '百里・小松', n: 36 },
+];
+// 2026年度 上半期(4〜9月) vs 前年同期
+const H1_PREV = 265, H1_NOW = 442;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 'normal') {
+  ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`; const w = ctx.measureText(str).width; ctx.restore(); return w;
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function dot(x, y, r, color, alpha = 1, ring = true) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (ring) { ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function polyline(pts, color, p, width = 5, alpha = 1) {
+  if (pts.length < 2) return;
+  const total = pts.length - 1, prog = p * total;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i <= total; i++) {
+    if (i <= prog) ctx.lineTo(pts[i][0], pts[i][1]);
+    else { const f = prog - (i - 1); ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f)); break; }
+  }
+  ctx.stroke(); ctx.restore();
+}
+function header(title, sub, alpha) {
+  text(title, 80, 300, { size: 62, weight: 'bold', alpha });
+  if (sub) text(sub, 80, 368, { size: 34, color: C.ink2, alpha });
+}
+function caption(str, y, alpha, color = C.accent, size = 44) {
+  rrect(60, y - size - 22, W - 120, size + 48, 18, C.panel, alpha);
+  text(str, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha });
+}
+function footnote(str, alpha) { text(str, W / 2, 1640, { size: 27, color: C.ink3, align: 'center', alpha }); }
+function badge(str, cx, cy, color, alpha, size = 30, fg = '#1a1a1a') {
+  const w = measure(str, size, 'bold') + 44;
+  rrect(cx - w / 2, cy - size / 2 - 14, w, size + 28, 14, color, alpha);
+  text(str, cx, cy + size * .36, { size, weight: 'bold', color: fg, align: 'center', alpha });
+}
+
+// 戦闘機のシルエット(上から見た図、機首が +y 方向=進行方向)
+const JET = [[0, -70], [8, -40], [10, -10], [48, 20], [48, 30], [12, 22], [10, 45], [28, 60], [28, 66], [4, 62], [0, 70], [-4, 62], [-28, 66], [-28, 60], [-10, 45], [-12, 22], [-48, 30], [-48, 20], [-10, -10], [-8, -40]];
+function drawJet(x, y, s, angle, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(angle); ctx.scale(s, s);
+  ctx.fillStyle = color; ctx.beginPath();
+  JET.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+// レーダー(円 + 掃引線)
+function drawRadar(cx, cy, r, t, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.strokeStyle = C.radar; ctx.lineWidth = 2;
+  for (let k = 1; k <= 3; k++) { ctx.globalAlpha = alpha * .5; ctx.beginPath(); ctx.arc(cx, cy, r * k / 3, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.globalAlpha = alpha * .5; ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.stroke();
+  const ang = (t * 1.6) % (Math.PI * 2);
+  const g = ctx.createConicGradient ? ctx.createConicGradient(ang - Math.PI * .9, cx, cy) : null;
+  if (g) {
+    g.addColorStop(0, 'rgba(88,214,141,0)'); g.addColorStop(0.45, 'rgba(88,214,141,0.55)'); g.addColorStop(0.4501, 'rgba(88,214,141,0)'); g.addColorStop(1, 'rgba(88,214,141,0)');
+    ctx.globalAlpha = alpha; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = alpha; ctx.strokeStyle = C.radar; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + r * Math.cos(ang), cy + r * Math.sin(ang)); ctx.stroke();
+  // 輝点(未確認機)
+  const blink = (Math.sin(t * 6) + 1) / 2;
+  ctx.globalAlpha = alpha * (0.4 + 0.6 * blink); ctx.fillStyle = C.accent;
+  ctx.beginPath(); ctx.arc(cx + r * .62, cy - r * .35, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneHook(t, a) {
+  // 上空を横切る戦闘機
+  const jx = lerp(-150, W + 150, easeInOut(t / 3.2));
+  const jy = 470 + Math.sin(t * 2) * 8;
+  for (let k = 1; k <= 6; k++) rrect(jx - 70 - k * 34, jy - 3, 26, 6, 3, C.ink3, a * (0.5 - k * 0.07));
+  drawJet(jx, jy, 1.0, Math.PI / 2, C.ink, a);
+  text('日本の空で、1年間に', W / 2, 720, { size: 56, color: C.ink2, align: 'center', alpha: a * easeOut(t / .6) });
+  // カウンター
+  const p = easeOut((t - .5) / 2.4);
+  const n = Math.round(TOTAL[15] * p);
+  const ns = fmt(n), nw = measure(ns, 240, 'bold');
+  const x0 = W / 2 - (nw + 90) / 2;
+  text(ns, x0, 980, { size: 240, weight: 'bold', color: C.accent, alpha: a });
+  text('回', x0 + nw + 14, 980, { size: 84, weight: 'bold', color: C.accent, alpha: a });
+  text('戦闘機が緊急発進した回数', W / 2, 1100, { size: 56, weight: 'bold', align: 'center', alpha: a * easeOut((t - .4) / .6) });
+  text('2025年度(2025年4月〜2026年3月)・防衛省 統合幕僚監部', W / 2, 1165, { size: 28, color: C.ink3, align: 'center', alpha: a * easeOut((t - .8) / .6) });
+  const pa = a * easeOut((t - 3.4) / .6);
+  rrect(60, 1250, W - 120, 190, 22, C.panel, pa);
+  text('1日あたり', 110, 1365, { size: 44, color: C.ink2, alpha: pa });
+  text('約1.6回', W - 110, 1372, { size: 92, weight: 'bold', color: C.accent, align: 'right', alpha: pa });
+  const qa = a * easeOut((t - 5.2) / .6);
+  text('しかも、ピーク時はこの2倍だった', W / 2, 1560, { size: 46, weight: 'bold', align: 'center', alpha: qa });
+  text('誰に対して? どこで? そして今は?', W / 2, 1630, { size: 36, color: C.ink2, align: 'center', alpha: qa });
+}
+
+function sceneWhat(t, a) {
+  header('スクランブル(緊急発進)とは', '対領空侵犯措置 ― 領空を守る空自の任務', a);
+  const steps = [
+    { n: '1', title: 'レーダーが国籍不明機を探知', desc: ['全国のレーダーサイトと早期警戒機が', '24時間体制で監視'] },
+    { n: '2', title: '戦闘機が5分以内に離陸', desc: ['待機中のパイロットが機体へ走り', 'F-15 / F-35 などが緊急発進'] },
+    { n: '3', title: '相手機に並走し、領空侵犯を防ぐ', desc: ['無線で警告し、進路を変えさせる', '必要なら信号弾で警告も'] },
+  ];
+  steps.forEach((s, i) => {
+    const la = a * easeOut((t - .3 - i * 1.4) / .6);
+    const y = 450 + i * 330;
+    rrect(60, y, W - 120, 290, 22, C.panel, la);
+    // 左側アイコン
+    const ix = 190, iy = y + 145;
+    if (i === 0) drawRadar(ix, iy, 95, t, la);
+    if (i === 1) {
+      const p = easeOut((t - .3 - i * 1.4 - .3) / 1.2);
+      drawJet(ix - 40 + 90 * p, iy + 30 - 60 * p, 0.95, Math.PI / 2 - 0.5, C.ink, la);
+      for (let k = 1; k <= 4; k++) rrect(ix - 100 - k * 18 + 90 * p, iy + 55 - 60 * p + k * 10, 20, 5, 2, C.ink3, la * (0.5 - k * .1));
+    }
+    if (i === 2) {
+      drawJet(ix - 45, iy - 10, 0.75, Math.PI / 2, C.ink, la);
+      drawJet(ix + 50, iy + 40, 0.75, Math.PI / 2, C.cn, la);
+      line(ix - 45, iy - 70, ix - 45, iy + 60, C.grid, 2, la, [6, 6]);
+    }
+    text(s.n, 330, y + 100, { size: 60, weight: 'bold', color: C.accent, alpha: la });
+    text(s.title, 400, y + 100, { size: 42, weight: 'bold', alpha: la });
+    text(s.desc[0], 330, y + 175, { size: 30, color: C.ink2, alpha: la });
+    text(s.desc[1], 330, y + 225, { size: 30, color: C.ink2, alpha: la });
+  });
+  caption('24時間365日、全国の基地で待機している', 1560, a * easeOut((t - 5.0) / .6));
+  footnote('出典: 防衛省・航空自衛隊「対領空侵犯措置」', a * easeOut((t - 5.0) / .6));
+}
+
+function sceneTrend(t, a) {
+  header('年度別の推移 2010 → 2025', '航空自衛隊の緊急発進回数(年度)', a);
+  const px0 = 130, px1 = W - 60, py0 = 600, py1 = 1300, maxV = 1200;
+  for (let v = 0; v <= maxV; v += 300) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(fmt(v), px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const n = YEARS.length, gw = (px1 - px0) / n, bw = gw * 0.68;
+  const cur = clamp(Math.floor((t - .5) / .45), 0, n - 1);
+  YEARS.forEach((yr, i) => {
+    const p = easeOut((t - .5 - i * .45) / .6);
+    const cx = px0 + gw * i + gw / 2;
+    const hl = (i === 6 && t > 4.2) || (i === 15 && t > 8.6) || (i === 0 && t > 10.2);
+    const col = i === 6 ? (t > 4.2 ? C.cn : C.accent) : hl ? C.accent : (i === cur && t < 8.6 ? C.accent : C.dim);
+    const h = (py1 - py0) * TOTAL[i] / maxV * p;
+    rrect(cx - bw / 2, py1 - h, bw, h, 5, col, a);
+    if (i % 2 === 0) text("'" + String(yr).slice(2), cx, py1 + 40, { size: 26, color: hl ? C.accent : C.ink3, align: 'center', weight: hl ? 'bold' : 'normal', alpha: a });
+  });
+  // 進行中の年の数値(右上パネル)
+  if (t > .5 && t < 8.6) {
+    const i = cur;
+    rrect(600, 400, W - 660, 100, 18, C.panel, a);
+    text(`${YEARS[i]}年度`, 630, 442, { size: 28, color: C.ink3, alpha: a });
+    const p = easeOut((t - .5 - i * .45) / .6);
+    text(fmt(TOTAL[i] * p) + ' 回', 630, 488, { size: 40, weight: 'bold', color: C.accent, alpha: a });
+  }
+  // ピーク(2016)
+  const pk = a * easeOut((t - 4.2) / .6);
+  const cx16 = px0 + gw * 6 + gw / 2, y16 = lerp(py1, py0, TOTAL[6] / maxV);
+  badge('ピーク 2016年度 1,168回', cx16 + 90, y16 - 60, C.cn, pk, 30, '#fff');
+  line(cx16, y16 - 28, cx16, y16 - 6, C.cn, 3, pk);
+  text('= 1日3回以上', cx16 + 90, y16 + 10, { size: 34, weight: 'bold', color: C.cn, align: 'center', alpha: a * easeOut((t - 5.0) / .6) });
+  // 2025
+  const la = a * easeOut((t - 8.6) / .6);
+  const cx25 = px0 + gw * 15 + gw / 2, y25 = lerp(py1, py0, TOTAL[15] / maxV);
+  badge('595回', cx25 - 50, y25 - 50, C.accent, la, 30);
+  text('過去5年で最少', cx25 - 70, y25 - 95, { size: 28, color: C.accent, align: 'center', weight: 'bold', alpha: la });
+  // 2010
+  const za = a * easeOut((t - 10.2) / .6);
+  const cx10 = px0 + gw / 2, y10 = lerp(py1, py0, TOTAL[0] / maxV);
+  badge('386回', cx10 + 30, y10 - 50, C.accent, za, 28);
+  const na = a * easeOut((t - 10.6) / .6);
+  rrect(60, 1370, W - 120, 150, 22, C.panel, na);
+  text('ピークから半減。それでも2010年度の約1.5倍', 100, 1430, { size: 36, weight: 'bold', alpha: na });
+  text('防衛省は「依然として高い水準で推移」との見方', 100, 1488, { size: 30, color: C.ink2, alpha: na });
+  caption('この15年で「平時の当たり前」が変わった', 1620, a * easeOut((t - 12.0) / .6), C.accent, 40);
+  text('出典: 防衛省 統合幕僚監部「緊急発進実施状況」各年度', W / 2, 1700, { size: 26, color: C.ink3, align: 'center', alpha: na });
+}
+
+function sceneWho(t, a) {
+  header('相手はどこの国の機体か', '国・地域別の対応回数(推定を含む)', a);
+  rrect(80, 420, 28, 28, 6, C.cn, a); text('中国機', 120, 446, { size: 34, color: C.ink2, alpha: a });
+  rrect(290, 420, 28, 28, 6, C.ru, a); text('ロシア機', 330, 446, { size: 34, color: C.ink2, alpha: a });
+  const px0 = 150, px1 = W - 80, py0 = 520, py1 = 1120, maxV = 900;
+  for (let v = 0; v <= maxV; v += 300) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(fmt(v), px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const xs = YEARS.map((_, i) => lerp(px0, px1, i / (YEARS.length - 1)));
+  YEARS.forEach((yr, i) => { if (i % 3 === 0 || i === 15) text("'" + String(yr).slice(2), xs[i], py1 + 40, { size: 26, color: C.ink3, align: 'center', alpha: a }); });
+  const toPt = arr => arr.map((v, i) => [xs[i], lerp(py1, py0, v / maxV)]);
+  const pc = toPt(CN), pr = toPt(RU);
+  const prog = easeInOut((t - .4) / 4.0);
+  polyline(pr, C.ru, prog, 6, a);
+  polyline(pc, C.cn, prog, 6, a);
+  // 2016 中国ピーク
+  const ka = a * easeOut((t - 2.4) / .5);
+  dot(pc[6][0], pc[6][1], 10, C.cn, ka);
+  badge('2016年度 中国 851回', pc[6][0] + 40, pc[6][1] - 60, C.cn, ka, 28, '#fff');
+  // 2025 端点
+  const ea = a * easeOut((t - 4.2) / .5);
+  dot(pc[15][0], pc[15][1], 10, C.cn, ea); text('366', pc[15][0] + 16, pc[15][1] - 20, { size: 30, weight: 'bold', color: C.cn, align: 'right', alpha: ea });
+  dot(pr[15][0], pr[15][1], 10, C.ru, ea); text('214', pr[15][0] + 16, pr[15][1] + 48, { size: 30, weight: 'bold', color: C.ru, align: 'right', alpha: ea });
+  // 2025 内訳(100% バー)
+  const sa = a * easeOut((t - 4.8) / .6);
+  rrect(60, 1200, W - 120, 300, 22, C.panel, sa);
+  text('2025年度の内訳(595回)', 100, 1258, { size: 32, color: C.ink3, alpha: sa });
+  const bx = 100, bw2 = W - 200, by = 1290, bh = 56;
+  const p2 = easeOut((t - 5.0) / 1.0);
+  const segs = [[366, C.cn, '中国 366回'], [214, C.ru, 'ロシア 214回'], [15, C.other, '']];
+  let x = bx;
+  segs.forEach(([v, col, label]) => { const w = bw2 * v / 595 * p2; rrect(x, by, w, bh, 6, col, sa); x += w; });
+  text('中国 366回 (約61%)', bx, by + 110, { size: 36, weight: 'bold', color: C.cn, alpha: sa * p2 });
+  text('ロシア 214回 (約36%)', bx + 440, by + 110, { size: 36, weight: 'bold', color: C.ru, alpha: sa * p2 });
+  text('その他 15回 (約3%)', bx, by + 165, { size: 28, color: C.ink3, alpha: sa * p2 });
+  caption('約6割が中国機、3割超がロシア機', 1600, a * easeOut((t - 6.6) / .6));
+  text('出典: 防衛省 統合幕僚監部 / 国別は推定を含む', W / 2, 1680, { size: 26, color: C.ink3, align: 'center', alpha: a * easeOut((t - 6.6) / .6) });
+}
+
+function sceneWhere(t, a) {
+  header('どこで起きているか', '航空方面隊別の緊急発進回数(2025年度)', a);
+  const maxV = 348, bx = 100, bw = 680;
+  REGIONS.forEach((r, i) => {
+    const la = a * easeOut((t - .3 - i * .8) / .6);
+    const p = easeOut((t - .5 - i * .8) / 1.0);
+    const y = 470 + i * 240;
+    const hl = i === 0;
+    rrect(60, y, W - 120, 210, 22, C.panel, la);
+    text(r.name, bx, y + 62, { size: 40, weight: 'bold', color: hl ? C.accent : C.ink, alpha: la });
+    text('主な基地: ' + r.base, bx, y + 108, { size: 28, color: C.ink3, alpha: la });
+    rrect(bx, y + 135, bw * r.n / maxV * p, 40, 6, hl ? C.accent : C.dim, la);
+    text(fmt(r.n * p) + '回', W - 100, y + 80, { size: 64, weight: 'bold', color: hl ? C.accent : C.ink2, align: 'right', alpha: la });
+    text(Math.round(r.n / 595 * 100 * p) + '%', W - 100, y + 168, { size: 36, color: hl ? C.accent : C.ink3, align: 'right', alpha: la });
+  });
+  const ca = a * easeOut((t - 4.6) / .6);
+  caption('約6割が沖縄周辺・東シナ海方面に集中', 1560, ca);
+  footnote('那覇基地には全国最多の2個飛行隊(F-15)が配備', ca);
+}
+
+function sceneSurge(t, a) {
+  header('そして2026年度、一転して急増', '上半期(4〜9月)の緊急発進回数', a);
+  const px0 = 200, py0 = 560, py1 = 1180, maxV = 500;
+  const bars = [{ label: '2025年度 上半期', v: H1_PREV, col: C.dim, cx: 360 }, { label: '2026年度 上半期', v: H1_NOW, col: C.accent, cx: 720 }];
+  line(px0 - 60, py1, W - 120, py1, C.grid, 3, a);
+  bars.forEach((b, i) => {
+    const p = easeOut((t - .4 - i * 1.0) / 1.2);
+    const h = (py1 - py0) * b.v / maxV * p;
+    rrect(b.cx - 110, py1 - h, 220, h, 8, b.col, a);
+    text(fmt(b.v * p) + '回', b.cx, py1 - h - 24, { size: 60, weight: 'bold', color: i ? C.accent : C.ink2, align: 'center', alpha: a * p });
+    text(b.label, b.cx, py1 + 48, { size: 30, color: C.ink2, align: 'center', alpha: a });
+  });
+  const ba = a * easeOut((t - 2.6) / .6);
+  // 矢印
+  line(470, 740, 585, 660, C.accent, 6, ba);
+  badge('約1.7倍 (+177回)', 400, 600, C.accent, ba, 34);
+  const pa = a * easeOut((t - 3.6) / .6);
+  rrect(60, 1280, W - 120, 230, 22, C.panel, pa);
+  text('内訳: 中国機 約65% / ロシア機 約34%', 100, 1345, { size: 36, weight: 'bold', alpha: pa });
+  text('ロシア IL-20 ・ 中国 Y-9 などの情報収集機が', 100, 1410, { size: 30, color: C.ink2, alpha: pa });
+  text('日本海・東シナ海を繰り返し飛行(Y-9は9月に5日連続)', 100, 1460, { size: 30, color: C.ink2, alpha: pa });
+  caption('「減少」は一時的だったのか', 1600, a * easeOut((t - 5.6) / .6));
+  text('出典: 防衛省 統合幕僚監部(2026年10月16日公表)', W / 2, 1680, { size: 26, color: C.ink3, align: 'center', alpha: a * easeOut((t - 5.6) / .6) });
+}
+
+function sceneSummary(t, a) {
+  text('まとめ', W / 2, 330, { size: 80, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['①', 'ピークは2016年度の1,168回', '1日3回以上。中国機への対応が851回'],
+    ['②', '2025年度は595回、過去5年で最少', '6割が中国機、6割が沖縄周辺で発生'],
+    ['③', '2026年度は上半期だけで442回', '前年同期の約1.7倍。再び増加の兆し'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .3 - i * .9) / .6);
+    const y = 480 + i * 300;
+    rrect(60, y, W - 120, 240, 22, C.panel, la);
+    text(it[0], 100, y + 95, { size: 60, weight: 'bold', color: C.accent, alpha: la });
+    text(it[1], 190, y + 95, { size: 44, weight: 'bold', alpha: la });
+    text(it[2], 190, y + 170, { size: 32, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 3.2) / .6);
+  const jx = lerp(140, W - 140, easeInOut((t - 3.2) / 2.5));
+  drawJet(jx, 1440, 0.7, Math.PI / 2, C.ink, ca);
+  text('数字が減っても、空の緊張は続いている', W / 2, 1560, { size: 42, weight: 'bold', color: C.accent, align: 'center', alpha: ca });
+  text('出典: 防衛省 統合幕僚監部「緊急発進実施状況」(各年度・2026年10月16日公表分)', W / 2, 1640, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+  text(VOICE_CREDIT, W / 2, 1690, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [
+  { s: 0, d: 8.5, f: sceneHook },
+  { s: 8.5, d: 9, f: sceneWhat },
+  { s: 17.5, d: 16, f: sceneTrend },
+  { s: 33.5, d: 10.5, f: sceneWho },
+  { s: 44, d: 8, f: sceneWhere },
+  { s: 52, d: 9.5, f: sceneSurge },
+  { s: 61.5, d: 6.5, f: sceneSummary },
+];
+const XF = 0.35; // クロスフェード秒
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.accent, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+// サムネイル用の静止画
+function renderThumb() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  drawJet(W / 2, 520, 2.2, Math.PI / 2, C.ink, 0.95);
+  for (let k = 1; k <= 8; k++) rrect(W / 2 - 160 - k * 60, 512, 44, 14, 7, C.ink3, 0.55 - k * 0.06);
+  text('日本の空で', W / 2, 780, { size: 86, weight: 'bold', align: 'center' });
+  text('戦闘機が緊急発進した回数', W / 2, 880, { size: 64, weight: 'bold', color: C.ink2, align: 'center' });
+  text('1年で', W / 2, 960, { size: 46, color: C.ink3, align: 'center' });
+  const ns = '595', nw = measure(ns, 300, 'bold'), x0 = W / 2 - (nw + 110) / 2;
+  text(ns, x0, 1250, { size: 300, weight: 'bold', color: C.accent });
+  text('回', x0 + nw + 16, 1250, { size: 100, weight: 'bold', color: C.accent });
+  badge('ピーク時は 1,168回', W / 2, 1370, C.cn, 1, 46, '#fff');
+  text('相手は? 場所は? そして今は?', W / 2, 1520, { size: 56, weight: 'bold', align: 'center' });
+  text('空自スクランブルの推移 2010→2026', W / 2, 1620, { size: 40, color: C.ink3, align: 'center' });
+}
+window.render = render; window.renderThumb = renderThumb;
+window.FPS = FPS; window.DURATION = DURATION;
+// ブラウザで直接開いた時のプレビュー
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
