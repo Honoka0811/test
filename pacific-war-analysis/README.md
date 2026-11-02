@@ -1,9 +1,11 @@
 # 太平洋戦争 日米戦力差の推移 — ショート動画
 
 1941年12月の開戦から1945年8月の終戦まで、日本と米国の戦力差がどう推移したかを
-数字で追う縦型ショート動画(1080×1920 / 30fps / 60秒 / 無音・字幕ベース)です。
+数字で追う縦型ショート動画(1080×1920 / 30fps / 60秒)です。字幕に加え、男性音声のナレーション付き版があります。
 
-- 完成動画: `output/pacific_war_power_gap.mp4`
+- 完成動画(男性ナレーション付き): `output/pacific_war_power_gap_narrated.mp4`
+- 完成動画(無音・字幕のみ): `output/pacific_war_power_gap.mp4`
+- ナレーション音声のみ: `output/narration.wav`
 - サムネイル: `output/thumbnail.png`
 
 ## 構成(60秒)
@@ -39,11 +41,15 @@
 
 ```bash
 cd pacific-war-analysis
-node capture.js            # output/pacific_war_power_gap.mp4 を生成
+node capture.js            # output/pacific_war_power_gap.mp4 (無音版) を生成
+python3 narrate.py         # ナレーションを合成し output/pacific_war_power_gap_narrated.mp4 を生成
 ```
 
 - `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画(ブラウザで開くとプレビュー再生)
 - `capture.js` … Playwright(Chromium)で 1 フレームずつ撮影し、ffmpeg(libx264)にパイプして mp4 化
-- 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック)
+- `narrate.py` … シーンごとの原稿を Open JTalk(`pyopenjtalk`、男性話者 nitech_jp_atr503_m001)で合成し、各シーンの長さに収まるよう速度を自動調整して動画に合成
+- 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック), Python 3 + `pyopenjtalk` + `numpy`
+
+ナレーションの原稿は `narrate.py` の `SCRIPT` にあり、書き換えて再実行すれば差し替えられます。
 
 色は日本=赤 `#E8524F`、米国=青 `#3F8DE8` の2系列固定。色覚多様性(P型/D型/T型)での分離を検証済みです。
