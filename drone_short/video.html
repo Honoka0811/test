@@ -237,15 +237,15 @@ h2{font-size:86px;line-height:1.2;font-weight:bold}
     <div class="item row" data-delay="2.0"><div class="num">3</div><div>米欧日は<b>立ち上げ期</b>。安価な小型機の量産へ投資を転換中</div></div>
   </div>
   <div class="warn row" data-delay="3.0">数値は政府発表・敵対国の情報機関推計・目標値が混在。独立検証された数字は少ない</div>
-  <p class="src row" data-delay="3.6">出典：Kyiv Post／Militarnyi／Kyiv Independent／SCMP／The Diplomat／U.S. Army／DefenseScoop／Crisis Group／日本経済新聞 ほか（2026年）</p>
+  <p class="src row" data-delay="3.6">出典：Kyiv Post／Militarnyi／Kyiv Independent／SCMP／The Diplomat／U.S. Army／DefenseScoop／Crisis Group／日本経済新聞 ほか（2026年）<br>ナレーション：VOICEVOX:青山龍星</p>
 </section>
 
-<div id="brand">軍用ドローン 生産力 国際比較 2026</div>
+<div id="brand">軍用ドローン 生産力 国際比較 2026 ／ VOICEVOX:青山龍星</div>
 </div>
 
 <script>
-const DURATION = 63;
-const SCENES = [
+let DURATION = 63;
+let SCENES = [
   {id:'s0', start:0,    end:4.5},
   {id:'s1', start:4.5,  end:10.5},
   {id:'s2', start:10.5, end:17.0},
@@ -300,6 +300,8 @@ function render(t){
   }
 }
 window.render = render;
+// ナレーション長に合わせた尺を外から差し込む（render.cjs --timeline）
+window.setTimeline = tl => { DURATION = tl.duration; SCENES = tl.scenes.map(s => ({id:s.id, start:s.start, end:s.end})); render(0); };
 render(0);
 </script>
 </body>

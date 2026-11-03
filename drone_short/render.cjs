@@ -7,17 +7,22 @@ const path = require('path');
 const fs = require('fs');
 
 const FPS = 30;
-const DURATION = 63; // 秒。video.html の DURATION と合わせる
 const W = 1080, H = 1920;
-const OUT = path.join(__dirname, 'drone_short.mp4');
 const PREVIEW_DIR = path.join(__dirname, 'preview');
-const preview = process.argv.includes('--preview');
+const argv = process.argv.slice(2);
+const argValue = name => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : null; };
+const preview = argv.includes('--preview');
+// --timeline timeline.json を渡すと、その尺・シーン割りで描画する（assemble.py が生成）
+const timeline = argValue('--timeline') ? JSON.parse(fs.readFileSync(argValue('--timeline'), 'utf8')) : null;
+const DURATION = timeline ? timeline.duration : 63; // 秒。video.html の既定値と合わせる
+const OUT = argValue('--out') || path.join(__dirname, 'drone_short.mp4');
 
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   await page.goto('file://' + path.join(__dirname, 'video.html'));
   await page.evaluate(() => document.fonts.ready);
+  if (timeline) await page.evaluate(tl => window.setTimeline(tl), timeline);
 
   if (preview) {
     fs.mkdirSync(PREVIEW_DIR, { recursive: true });
