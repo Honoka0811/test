@@ -1,0 +1,8 @@
+output/mix.wav
+output/bgm.wav
+output/midway_silent.mp4
+output/capture.log
+output/frames/
+__pycache__/
+photos/*.jpg
+photos/*.png

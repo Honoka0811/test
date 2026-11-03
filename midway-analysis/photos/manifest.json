@@ -1,0 +1,14 @@
+{
+  "_readme": "写真を使う場合は、各 scene id と同じ名前(例: launch.jpg)で photos/ に置くと、capture.js が自動で図解の代わりに表示します。以下はパブリックドメイン(米海軍撮影・PD-USGov-Military-Navy)の候補です。ファイル名は Wikimedia Commons で検索して確認してください。",
+  "scenes": {
+    "hook":        {"query": "Battle of Midway Hiryu burning 1942", "note": "飛龍炎上の空撮(1942-06-05, 米海軍)。タイトル背景用"},
+    "forces":      {"query": "Akagi aircraft carrier 1941 / USS Yorktown CV-5 1942", "note": "赤城とヨークタウンの艦影"},
+    "code":        {"query": "Station HYPO Rochefort / JN-25 codebook", "note": "暗号解読班(ステーション・ハイポ)"},
+    "concentrate": {"query": "Battle of Midway map 1942", "note": "作戦図(米海軍作成)"},
+    "search":      {"query": "Aichi E13A Jake floatplane cruiser Tone", "note": "利根搭載の零式水偵"},
+    "launch":      {"query": "SBD Dauntless dive bombers VS-8 over burning Mikuma 1942", "note": "SBDドーントレスと炎上する三隈(80-G-17054)"},
+    "cap":         {"query": "A6M2 Zero fighter Akagi 1941 / TBD Devastator Midway VT-6", "note": "零戦またはTBDデバステーター"},
+    "war":         {"query": "USS Essex CV-9 commissioning 1942 / Murderers Row Ulithi 1944", "note": "エセックス級空母"},
+    "summary":     {"query": "Battle of Midway Japanese carrier Hiryu 1942", "note": "飛龍"}
+  }
+}

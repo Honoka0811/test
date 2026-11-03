@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Midway: How Japan Could Have Won</title>
+<style>
+  html,body{margin:0;background:#0b1220;}
+  canvas{display:block;max-width:100%;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// ------------------------------------------------------------
+// ミッドウェー海戦 日本はどうすれば勝てたか (16:9 / 1920x1080)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// シーン尺・字幕は capture.js が output/timing.json から window.TIMING に注入する。
+// 写真は window.PHOTOS (scene id -> Image) にあれば使い、無ければ図解を描く。
+// ------------------------------------------------------------
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0b1220', bg2: '#101a2e', panel: '#16213a', grid: '#2b3650',
+  ink: '#f4f6fa', ink2: '#b9c2d4', ink3: '#7c8799',
+  jp: '#E8524F', us: '#3F8DE8', jpSoft: 'rgba(232,82,79,0.25)', usSoft: 'rgba(63,141,232,0.25)',
+  accent: '#F5C451', fire: '#ff7a1a', sea: '#0e2a4a', seaDeep: '#071a30', land: '#2e3a4e'
+};
+const FPS = 30;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function text(str, x, y, { size = 44, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y); ctx.restore();
+}
+function measure(str, size, weight = 'normal') { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(str).width; }
+function wrap(str, maxW, size, weight = 'normal') {
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (measure(cur + ch, size, weight) > maxW && cur) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  // 行頭の句読点を前の行へ
+  for (let i = 1; i < lines.length; i++) {
+    while (/^[、。」』）]/.test(lines[i])) { lines[i - 1] += lines[i][0]; lines[i] = lines[i].slice(1); }
+  }
+  return lines.filter(l => l.length);
+}
+function rrect(x, y, w, h, r, color, alpha = 1, stroke = null, lw = 2) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function dot(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function ring(x, y, r, color, w = 3, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+function glow(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function polyline(pts, color, p, width = 5, alpha = 1, dash = null) {
+  if (pts.length < 2 || p <= 0) return;
+  const total = pts.length - 1, prog = p * total;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i <= total; i++) {
+    if (i <= prog) ctx.lineTo(pts[i][0], pts[i][1]);
+    else { const f = prog - (i - 1); ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f)); break; }
+  }
+  ctx.stroke(); ctx.restore();
+}
+function arrowhead(x, y, ang, size, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.translate(x, y); ctx.rotate(ang);
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-size, -size * 0.55); ctx.lineTo(-size, size * 0.55); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+// 疑似乱数(決定論的)
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+// ---------- 共通パーツ ----------
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg2); g.addColorStop(1, C.bg);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 薄いグリッド
+  ctx.save(); ctx.globalAlpha = 0.18; ctx.strokeStyle = C.grid; ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 120) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 120) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.restore();
+  // ビネット
+  ctx.save();
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function chapter(label, title, alpha) {
+  if (label) {
+    const w = measure(label, 30, 'bold') + 44;
+    rrect(80, 62, w, 50, 10, C.accent, alpha);
+    text(label, 80 + 22, 98, { size: 30, weight: 'bold', color: '#1a1a1a', alpha });
+    text(title, 80 + w + 26, 102, { size: 48, weight: 'bold', alpha });
+  } else {
+    text(title, 80, 102, { size: 48, weight: 'bold', alpha });
+  }
+  line(80, 128, 80 + 520, 128, C.accent, 3, alpha * 0.8);
+}
+function subtitle(str, alpha) {
+  if (!str || alpha <= 0) return;
+  const size = 42;
+  const lines = wrap(str, W - 360, size, 'bold');
+  const lh = size * 1.35;
+  const h = lines.length * lh + 34;
+  const y0 = H - 70 - h;
+  const wmax = Math.max(...lines.map(l => measure(l, size, 'bold'))) + 80;
+  rrect(W / 2 - wmax / 2, y0, wmax, h, 14, 'rgba(5,10,20,0.78)', alpha);
+  lines.forEach((l, i) => {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.font = `bold ${size}px ${FONT}`; ctx.textAlign = 'center';
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineJoin = 'round';
+    const yy = y0 + 17 + lh * (i + 1) - 10;
+    ctx.strokeText(l, W / 2, yy); ctx.fillStyle = C.ink; ctx.fillText(l, W / 2, yy); ctx.restore();
+  });
+}
+function progress(t) {
+  const p = clamp(t / window.DURATION);
+  ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(0, H - 6, W, 6);
+  ctx.fillStyle = C.accent; ctx.fillRect(0, H - 6, W * p, 6);
+}
+function note(str, x, y, alpha, size = 28, color = C.ink3, align = 'left') { text(str, x, y, { size, color, alpha, align }); }
+const VIS_BOTTOM = 780;
+function banner(str, alpha, color = C.accent, fill = C.panel, size = 34) {
+  if (alpha <= 0) return;
+  const w = measure(str, size, 'bold') + 80;
+  rrect(W / 2 - w / 2, 796, w, 60, 12, fill, alpha, color, 2);
+  text(str, W / 2, 838, { size, weight: 'bold', color, align: 'center', alpha });
+}
+
+// 空母シルエット(上面図)。w: 全長, dir: 1 右向き
+function carrier(x, y, w, color, alpha = 1, burn = 0, seed = 0, t = 0) {
+  const h = w * 0.18;
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x - w / 2, y - h / 2 + 6); ctx.lineTo(x + w / 2 - 16, y - h / 2); ctx.lineTo(x + w / 2, y);
+  ctx.lineTo(x + w / 2 - 16, y + h / 2); ctx.lineTo(x - w / 2, y + h / 2 - 6); ctx.closePath(); ctx.fill();
+  // 飛行甲板の中央線と艦橋
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
+  ctx.beginPath(); ctx.moveTo(x - w / 2 + 14, y); ctx.lineTo(x + w / 2 - 22, y); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(x + w * 0.08, y - h / 2 - 7, w * 0.08, 7);
+  ctx.restore();
+  if (burn > 0) {
+    for (let i = 0; i < 6; i++) {
+      const fx = x + (rnd(seed * 10 + i) - 0.5) * w * 0.8;
+      const fl = 0.7 + 0.3 * Math.sin(t * (9 + i * 2.1) + i * 1.7 + seed);
+      const r = (h * 1.2 + i * 6) * burn * fl;
+      glow(fx, y - 6, r, 'rgba(255,120,30,0.9)', burn);
+      glow(fx + 4, y - r * 0.5, r * 0.6, 'rgba(255,220,80,0.9)', burn * 0.8);
+      // 煙
+      const sy = y - r * 0.6 - ((t * 60 + i * 50) % 220) * burn;
+      glow(fx + Math.sin(t * 2 + i) * 20, sy, r * 1.1, 'rgba(40,40,40,0.55)', burn * 0.7 * clamp(1 - (y - sy) / 300));
+    }
+  }
+}
+// 小型艦(戦艦・巡洋艦)
+function ship(x, y, w, color, alpha = 1) {
+  const h = w * 0.26;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x - w / 2 + 10, y - h / 2); ctx.lineTo(x + w / 2 - 14, y - h / 2);
+  ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w / 2 - 14, y + h / 2); ctx.lineTo(x - w / 2 + 10, y + h / 2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x - w * 0.12, y - h * 0.25, w * 0.24, h * 0.5);
+  ctx.restore();
+}
+// 飛行機(簡易シルエット)
+function plane(x, y, s, ang, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(s, 0); ctx.lineTo(0.15 * s, 0.22 * s); ctx.lineTo(-0.2 * s, 0.9 * s); ctx.lineTo(-0.45 * s, 0.9 * s); ctx.lineTo(-0.35 * s, 0.2 * s);
+  ctx.lineTo(-0.9 * s, 0.4 * s); ctx.lineTo(-1 * s, 0.1 * s); ctx.lineTo(-0.8 * s, 0); ctx.lineTo(-1 * s, -0.1 * s); ctx.lineTo(-0.9 * s, -0.4 * s);
+  ctx.lineTo(-0.35 * s, -0.2 * s); ctx.lineTo(-0.45 * s, -0.9 * s); ctx.lineTo(-0.2 * s, -0.9 * s); ctx.lineTo(0.15 * s, -0.22 * s); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+// 写真フレーム。写真があれば cover 表示(ゆっくりズーム)、無ければ null を返して呼び出し側が図解を描く
+function photoFrame(id, x, y, w, h, u, alpha, caption) {
+  const img = window.PHOTOS && window.PHOTOS[id];
+  rrect(x - 6, y - 6, w + 12, h + 12, 16, 'rgba(255,255,255,0.08)', alpha);
+  if (!img) return false;
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  const z = 1 + 0.06 * clamp(u / 20);
+  const sc = Math.max(w / img.width, h / img.height) * z;
+  const dw = img.width * sc, dh = img.height * sc;
+  ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  const v = ctx.createLinearGradient(0, y, 0, y + h); v.addColorStop(0.6, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = v; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+  if (caption) text(caption, x + w - 14, y + h - 14, { size: 22, color: C.ink2, align: 'right', alpha });
+  return true;
+}
+
+// ---------- シーン ----------
+// 各シーン: draw(u, d, si, sp, t)  u: シーン内秒, d: シーン尺, si: 現在の文index(-1=前), sp: 文内進捗, t: 絶対秒
+const JP_CARRIERS = ['赤城', '加賀', '蒼龍', '飛龍'];
+const US_CARRIERS = ['エンタープライズ', 'ホーネット', 'ヨークタウン'];
+
+const DRAW = {
+  hook(u, d, si, sp, t) {
+    const a = easeOut(u / 0.8);
+    // 4隻の空母。文2以降で順に炎上
+    const burnT = clamp((u - 2.2) / 4);
+    for (let i = 0; i < 4; i++) {
+      const y = 330 + i * 150, x = W / 2 + Math.sin(i) * 20;
+      const b = clamp((burnT * 4 - i) / 0.6);
+      carrier(x, y, 520, C.jp, a, (si >= 1 ? b * 0.7 : b), i + 1, t);
+      text(JP_CARRIERS[i], x - 330, y + 16, { size: 42, weight: 'bold', color: C.ink2, align: 'right', alpha: a * easeOut((u - 0.6 - i * 0.25) / 0.5) });
+    }
+    // タイトル
+    const ta = easeOut((u - 0.2) / 0.9);
+    text('ミッドウェー海戦', W / 2, 150, { size: 64, weight: 'bold', align: 'center', alpha: ta, ls: 6 });
+    text('日本はどうすれば勝てたか', W / 2, 230, { size: 60, weight: 'bold', color: C.accent, align: 'center', alpha: ta });
+    if (si >= 2) {
+      const k = easeOut(sp / 0.5);
+      rrect(W - 540, 300, 440, 420, 20, 'rgba(22,33,58,0.92)', k, C.accent, 3);
+      text('勝つための条件', W - 320, 360, { size: 38, weight: 'bold', color: C.accent, align: 'center', alpha: k });
+      ['① 暗号を更新する', '② 戦力を分散しない', '③ 索敵を厚くする', '④ 今すぐ飛ばす', '⑤ 頭上を空にしない'].forEach((s, i) => {
+        text(s, W - 500, 430 + i * 58, { size: 36, weight: 'bold', alpha: k * easeOut((sp - 0.15 - i * 0.12) / 0.3) });
+      });
+    }
+  },
+
+  forces(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('', '両軍の戦力(1942年6月4日)', a);
+    // 左: 日本 / 右: 米国
+    const used = photoFrame('forces', 0, 0, 0, 0, u, 0); // (写真は使わず図解固定)
+    const lx = 480, rx = 1440;
+    text('日本 第一航空艦隊(南雲機動部隊)', lx, 210, { size: 38, weight: 'bold', color: C.jp, align: 'center', alpha: a });
+    text('米国 第16・第17任務部隊 + ミッドウェー島', rx, 210, { size: 38, weight: 'bold', color: C.us, align: 'center', alpha: a });
+    line(W / 2, 170, W / 2, 790, C.grid, 2, a);
+    const jpA = si >= 0 ? 1 : 0;
+    for (let i = 0; i < 4; i++) {
+      const k = easeOut((u - 1.0 - i * 0.35) / 0.5);
+      const y = 300 + i * 120;
+      carrier(lx, y, 420, C.jp, k, 0, 0, t);
+      text(JP_CARRIERS[i], lx - 250, y + 14, { size: 40, weight: 'bold', align: 'right', alpha: k });
+    }
+    text('空母 4隻 / 艦載機 約250機', lx, 770, { size: 40, weight: 'bold', color: C.ink, align: 'center', alpha: easeOut((u - 2.8) / 0.5) });
+    // 米側は文2から
+    const usS = si >= 1 ? 1 : 0;
+    for (let i = 0; i < 3; i++) {
+      const k = usS * easeOut((sp * 3 - i * 0.6) / 0.5) * (si >= 2 ? 1 : 1);
+      const kk = si >= 2 ? 1 : k;
+      const y = 300 + i * 120;
+      carrier(rx + 60, y, 420, C.us, kk, 0, 0, t);
+      text(US_CARRIERS[i], rx - 200, y + 14, { size: 40, weight: 'bold', align: 'right', alpha: kk });
+      if (i === 2) text('(珊瑚海で損傷・応急修理)', rx - 200, y + 50, { size: 24, color: C.ink3, align: 'right', alpha: kk });
+    }
+    // ミッドウェー島
+    if (si >= 2) {
+      const k = easeOut(sp / 0.5);
+      dot(rx + 60, 690, 34, '#c9b27a', k); ring(rx + 60, 690, 48, C.us, 3, k);
+      text('ミッドウェー島 航空隊 約120機', rx - 200, 704, { size: 36, weight: 'bold', align: 'right', alpha: k });
+      for (let i = 0; i < 5; i++) plane(rx + 150 + i * 46, 690 - (i % 2) * 18, 16, -Math.PI / 2, C.us, k);
+    }
+    text('空母 3隻 / 艦載機 約230機', rx, 770, { size: 40, weight: 'bold', color: C.ink, align: 'center', alpha: si >= 2 ? easeOut((sp - 0.5) / 0.5) : 0 });
+    if (si >= 2 && sp > 0.55) {
+      const k = easeOut((sp - 0.55) / 0.3);
+      banner('数の上では 日本がやや優勢', k, C.accent, C.panel, 36);
+    }
+  },
+
+  code(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('条件 1 / 5', '暗号を更新する', a);
+    // 右: 写真 or 暗号文の図解
+    const fx = 1040, fy = 190, fw = 800, fh = 540;
+    if (!photoFrame('code', fx, fy, fw, fh, u, a, '')) {
+      rrect(fx, fy, fw, fh, 10, '#0a1426', a);
+      ctx.save(); ctx.beginPath(); ctx.rect(fx, fy, fw, fh); ctx.clip();
+      const cols = 6, rows = 11;
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        const code = String(Math.floor(rnd(i + 7) * 90000 + 10000));
+        const dec = si >= 1 && rnd(i + 99) < clamp((u - 4) / 10);
+        const yy = fy + 48 + r * 42 - ((t * 18) % 42);
+        text(dec ? code : code, fx + 40 + c * 128, yy, { size: 30, color: dec ? C.accent : 'rgba(120,160,220,0.55)', alpha: a });
+      }
+      ctx.restore();
+      text('海軍暗号書D(JN-25)のイメージ', fx + fw - 14, fy + fh - 14, { size: 22, color: C.ink3, align: 'right', alpha: a });
+    }
+    // 左: 要点
+    const items = [
+      [1, '米軍は JN-25 を部分解読'],
+      [2, '目標 = ミッドウェー(AF)', '時期 = 6月上旬 まで把握'],
+      [3, '暗号書の更新', '5月末 → 6月に延期'],
+      [4, '更新していれば待ち伏せ不成立'],
+    ];
+    items.forEach(([n, l1, l2], i) => {
+      const k = si >= n ? 1 : 0;
+      if (!k) return;
+      const y = 230 + i * 150;
+      rrect(90, y - 54, 880, l2 ? 126 : 84, 14, 'rgba(22,33,58,0.9)', 1, i === 3 ? C.accent : null, 2);
+      text(l1, 120, y, { size: 40, weight: 'bold', color: i === 3 ? C.accent : C.ink });
+      if (l2) text(l2, 120, y + 52, { size: 34, color: C.ink2 });
+    });
+    // カレンダー(文4)
+    if (si >= 3) {
+      const k = easeOut(sp / 0.5);
+      const cx = 1440, cy = 820;
+      rrect(cx - 300, cy - 40, 220, 80, 12, C.panel, k, C.grid, 2);
+      text('5/末 更新予定', cx - 190, cy + 12, { size: 30, weight: 'bold', align: 'center', alpha: k, color: C.ink2 });
+      line(cx - 60, cy, cx + 40, cy, C.jp, 4, k); arrowhead(cx + 50, cy, 0, 20, C.jp, k);
+      rrect(cx + 70, cy - 40, 230, 80, 12, 'rgba(232,82,79,0.25)', k, C.jp, 2);
+      text('6/1 に延期', cx + 185, cy + 12, { size: 30, weight: 'bold', align: 'center', alpha: k, color: C.jp });
+      text('※ 作戦準備のため更新が遅れ、旧暗号のまま出撃', cx, cy + 90, { size: 24, color: C.ink3, align: 'center', alpha: k });
+    }
+  },
+
+  concentrate(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('条件 2 / 5', '戦力を分散しない', a);
+    // 北太平洋の略地図
+    const mx = (lon) => lerp(140, 1800, (lon - 125) / 85);         // 125E..210(150W)
+    const my = (lat) => lerp(770, 190, (lat - 18) / 42);           // 18N..60N
+    ctx.save(); ctx.globalAlpha = a;
+    // 海
+    rrect(100, 170, W - 200, VIS_BOTTOM - 170, 16, '#0d2440', 1);
+    // 日本列島(略)
+    ctx.strokeStyle = C.land; ctx.lineWidth = 22; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    [[130, 31.5], [131.5, 33.5], [134, 34.5], [137, 35], [140, 36.5], [141.5, 39.5], [141, 41.5], [143, 43], [145, 44.3]].forEach(([lo, la], i) => i ? ctx.lineTo(mx(lo), my(la)) : ctx.moveTo(mx(lo), my(la)));
+    ctx.stroke();
+    // アリューシャン列島(略)
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    [[165, 54.5], [172, 52.8], [177, 51.8], [182, 51.6], [187, 52.3], [193, 53.8], [198, 55.5], [205, 58]].forEach(([lo, la], i) => i ? ctx.lineTo(mx(lo), my(la)) : ctx.moveTo(mx(lo), my(la)));
+    ctx.stroke();
+    // ハワイ諸島(略)
+    [[202.1, 21.3], [203.3, 20.5], [204.5, 19.8], [200.5, 22.0]].forEach(([lo, la]) => dot(mx(lo), my(la), 7, C.land));
+    ctx.restore();
+    const P = { hashira: [132.3, 33.9], midway: [182.6, 28.2], pearl: [202.1, 21.3], dutch: [193.5, 53.9], attu: [173, 52.9], kiska: [177.6, 52] };
+    const pt = k => [mx(P[k][0]), my(P[k][1])];
+    const [hx, hy] = pt('hashira'), [mX, mY] = pt('midway'), [px, py] = pt('pearl'), [dx, dy] = pt('dutch');
+    dot(mX, mY, 10, C.accent, a); text('ミッドウェー', mX, mY - 24, { size: 30, weight: 'bold', align: 'center', alpha: a });
+    dot(px, py, 8, C.us, a); text('真珠湾', px, py + 44, { size: 28, align: 'center', alpha: a, color: C.ink2 });
+    text('日本', mx(136), my(39.5), { size: 28, align: 'center', alpha: a, color: C.ink2 });
+    text('アリューシャン列島', mx(183), my(49.5), { size: 28, align: 'center', alpha: a, color: C.ink2 });
+    dot(dx, dy, 8, C.us, a); text('ダッチハーバー', dx + 16, dy + 10, { size: 26, alpha: a, color: C.ink2 });
+    // 機動部隊 → ミッドウェー(文1)
+    const p1 = si >= 0 ? easeInOut((u - 1.0) / 2.2) : 0;
+    const route1 = [[hx, hy], [mx(150), my(35.5)], [mx(170), my(32)], [mX - 40, mY + 10]];
+    polyline(route1, C.jp, p1, 6);
+    if (p1 > 0.98) { carrier(mX - 120, mY + 70, 150, C.jp, a); text('機動部隊 空母4', mX - 120, mY + 115, { size: 26, weight: 'bold', color: C.jp, align: 'center', alpha: a }); }
+    // アリューシャン部隊(文2)
+    const p2 = si >= 1 ? easeInOut(sp / 0.7) : (si > 1 ? 1 : 0);
+    const route2 = [[mx(141), my(41.5)], [mx(158), my(47)], [mx(176), my(50)], [dx - 30, dy - 10]];
+    polyline(route2, C.jp, p2, 6, 1, [14, 12]);
+    if (p2 > 0.98) { carrier(mx(182), my(49), 110, C.jp, a); text('北方部隊 空母2(龍驤・隼鷹)', mx(182), my(47.2), { size: 26, weight: 'bold', color: C.jp, align: 'center', alpha: a }); }
+    // 主力部隊(文3)
+    const p3 = si >= 2 ? easeInOut(sp / 0.6) : (si > 2 ? 1 : 0);
+    const route3 = [[hx, hy + 30], [mx(148), my(33.5)], [mx(160), my(32.5)]];
+    polyline(route3, C.ink3, p3, 6);
+    if (p3 > 0.98) {
+      ship(mx(162), my(32.5), 90, C.ink2, a); ship(mx(159), my(31), 70, C.ink2, a);
+      text('主力部隊(大和ほか戦艦7)', mx(160), my(36.5), { size: 26, weight: 'bold', color: C.ink2, align: 'center', alpha: a });
+      line(mx(164), my(32.5), mX - 160, mY + 10, C.accent, 3, a, [8, 10]);
+      text('約 600 km 後方', mx(172), my(35.2), { size: 26, color: C.accent, align: 'center', alpha: a });
+    }
+    // 瑞鶴(文4)
+    if (si >= 3) {
+      const k = easeOut(sp / 0.5);
+      carrier(mx(131), my(29), 140, 'rgba(232,82,79,0.45)', k);
+      text('瑞鶴(修理中・内地)', mx(131), my(27.2), { size: 26, color: C.jp, align: 'center', alpha: k });
+    }
+    // 結論(文5)
+    if (si >= 4) {
+      const k = easeOut(sp / 0.5);
+      banner('決戦点に空母4隻だけ → 全部集めれば 防空・索敵が倍', k);
+    }
+  },
+
+  search(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('条件 3 / 5', '索敵を厚くする', a);
+    const cx = 520, cy = 475;
+    // 海面
+    rrect(100, 170, W - 200, VIS_BOTTOM - 170, 16, '#0d2440', a);
+    ctx.save(); ctx.beginPath(); ctx.rect(100, 170, W - 200, VIS_BOTTOM - 170); ctx.clip();
+    carrier(cx, cy, 160, C.jp, a); text('南雲機動部隊', cx, cy + 60, { size: 28, weight: 'bold', color: C.jp, align: 'center', alpha: a });
+    // 扇形7本の索敵線
+    const n = 7, L = 1250;
+    const angles = [];
+    for (let i = 0; i < n; i++) angles.push(lerp(-0.5, 0.5, i / (n - 1)));
+    const delayed = 3; // 利根4号機(東やや南)
+    for (let i = 0; i < n; i++) {
+      const isD = i === delayed;
+      const start = 1.2 + i * 0.18 + (isD ? 3.0 : 0);
+      const p = si >= 1 || u > 4 ? easeInOut((u - start) / 2.0) : 0;
+      const ex = cx + Math.cos(angles[i]) * L * p, ey = cy + Math.sin(angles[i]) * L * p;
+      line(cx, cy, ex, ey, isD ? C.accent : 'rgba(255,255,255,0.45)', isD ? 5 : 3, a, isD ? [16, 12] : null);
+      if (p > 0) plane(ex, ey, 18, angles[i], isD ? C.accent : C.ink2, a);
+    }
+    text('索敵機 7機(各1本の線)', 1250, 230, { size: 34, weight: 'bold', alpha: si >= 1 ? 1 : 0 });
+    if (si >= 2) {
+      const k = easeOut(sp / 0.4);
+      const ang = angles[delayed];
+      const lx = cx + Math.cos(ang) * 560, ly = cy + Math.sin(ang) * 560;
+      rrect(lx - 10, ly + 24, 420, 70, 12, 'rgba(22,33,58,0.92)', k, C.accent, 2);
+      text('利根4号機: 発進30分遅れ', lx + 10, ly + 72, { size: 30, weight: 'bold', color: C.accent, alpha: k });
+    }
+    if (si >= 3) {
+      const k = easeOut(sp / 0.5);
+      const ang = angles[delayed];
+      const ux = cx + Math.cos(ang) * 1020, uy = cy + Math.sin(ang) * 1020 - 40;
+      const pulse = 1 + 0.15 * Math.sin(t * 6);
+      ring(ux, uy, 70 * pulse, C.us, 4, k); ring(ux, uy, 100 * pulse, C.us, 2, k * 0.5);
+      carrier(ux, uy, 120, C.us, k); carrier(ux + 30, uy + 36, 110, C.us, k);
+      text('米空母部隊', ux, uy - 90, { size: 32, weight: 'bold', color: C.us, align: 'center', alpha: k });
+    }
+    if (si >= 4) {
+      const k = easeOut(sp / 0.5);
+      // 二段索敵の追加線(薄く)
+      for (let i = 0; i < n - 1; i++) {
+        const ang = (angles[i] + angles[i + 1]) / 2;
+        line(cx, cy, cx + Math.cos(ang) * L * 0.9, cy + Math.sin(ang) * L * 0.9, 'rgba(245,196,81,0.5)', 2, k, [6, 10]);
+      }
+    }
+    ctx.restore();
+    if (si >= 4) banner('索敵機を倍・二段構え → 発見は1時間以上早まった可能性', easeOut(sp / 0.5));
+  },
+
+  launch(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('条件 4 / 5', '積み替えずに今すぐ飛ばす', a);
+    // 左: 時計と時系列 / 右: 甲板の図解
+    const clock = (hhmm, alpha, color = C.ink) => {
+      rrect(90, 180, 330, 110, 14, 'rgba(22,33,58,0.92)', alpha, color, 2);
+      text(hhmm, 255, 262, { size: 72, weight: 'bold', align: 'center', color, alpha });
+    };
+    const ev = [
+      [1, '07:28', '利根4号機「敵艦隊見ユ」'],
+      [2, '', '第二次攻撃隊: 魚雷 → 陸用爆弾に積み替え中'],
+      [3, '', '空母発見 → 魚雷に戻す(往復で時間を浪費)'],
+      [4, '', '山口多聞「現装備のまま直ちに発進の要あり」'],
+      [5, '10:20', '意見具申は退けられる'],
+      [6, '10:22', '米急降下爆撃隊(SBD)が突入'],
+      [7, '10:25', '赤城・加賀・蒼龍 炎上'],
+    ];
+    let shownClock = '';
+    ev.forEach(([n, tm, label], i) => {
+      if (si < n) return;
+      if (tm) shownClock = tm;
+      const k = si === n ? easeOut(sp / 0.4) : 1;
+      const y = 345 + i * 72;
+      dot(110, y - 12, 8, n >= 5 ? C.jp : C.accent, k);
+      line(110, y + 2, 110, y + 50, C.grid, 2, k * (i < ev.length - 1 && si > n ? 1 : 0));
+      text(label, 140, y, { size: 32, weight: n >= 5 ? 'bold' : 'normal', color: n === 4 ? C.accent : (n >= 6 ? C.jp : C.ink), alpha: k });
+    });
+    if (shownClock) clock(shownClock, 1, shownClock === '07:28' ? C.ink : C.jp);
+    // 右: 甲板図解 / 写真
+    const fx = 1020, fy = 190, fw = 820, fh = 560;
+    if (!photoFrame('launch', fx, fy, fw, fh, u, a, '')) {
+      rrect(fx, fy, fw, fh, 10, '#0d2440', a);
+      // 甲板(上面)
+      const dx = fx + fw / 2, dy = fy + fh / 2 + 10;
+      if (si < 6) {
+        carrier(dx, dy, 700, C.jp, a);
+        // 機列
+        for (let i = 0; i < 9; i++) plane(dx - 260 + i * 60, dy + (i % 2 ? -22 : 22), 14, 0, C.ink, a * 0.9);
+        // 爆弾/魚雷の積み替えアニメ(文2〜3)
+        if (si >= 2 && si <= 3) {
+          const sw = (Math.sin(t * 3) + 1) / 2;
+          const lab = si === 2 ? ['魚雷', '陸用爆弾'] : ['陸用爆弾', '魚雷'];
+          rrect(dx - 300, dy + 95, 600, 70, 12, 'rgba(22,33,58,0.92)', 1, C.accent, 2);
+          text(lab[0], dx - 170, dy + 143, { size: 34, weight: 'bold', align: 'center', color: C.ink2 });
+          line(dx - 60, dy + 130, dx + 40, dy + 130, C.accent, 4); arrowhead(dx + 50, dy + 130, 0, 18, C.accent);
+          text(lab[1], dx + 170, dy + 143, { size: 34, weight: 'bold', align: 'center', color: C.accent });
+          text(si === 2 ? '基地攻撃用に積み替え中' : '空母攻撃用に戻す(甲板は燃料・爆弾で満杯)', dx, dy - 95, { size: 28, color: C.ink2, align: 'center' });
+          // 整備員の往復を示す点
+          for (let i = 0; i < 6; i++) dot(dx - 240 + ((t * 120 + i * 90) % 480), dy + 60, 5, C.accent, 0.8);
+        }
+        if (si === 4) {
+          const k = easeOut(sp / 0.5);
+          rrect(dx - 360, dy - 200, 720, 120, 16, 'rgba(245,196,81,0.12)', k, C.accent, 3);
+          text('「現装備ノママ直チニ発進ノ要アリト認ム」', dx, dy - 150, { size: 32, weight: 'bold', align: 'center', color: C.accent, alpha: k });
+          text('第二航空戦隊司令官 山口多聞 少将(飛龍)', dx, dy - 105, { size: 26, align: 'center', color: C.ink2, alpha: k });
+        }
+        if (si === 5) {
+          // 急降下の予兆(上から線)
+          const k = easeOut(sp / 0.5);
+          for (let i = 0; i < 3; i++) {
+            const sx = fx + 120 + i * 260, ex = dx - 150 + i * 150;
+            line(sx, fy + 10, lerp(sx, ex, k), lerp(fy + 10, dy - 20, k), C.us, 3, k, [6, 8]);
+            plane(lerp(sx, ex, k), lerp(fy + 10, dy - 20, k), 16, Math.atan2(dy - fy, ex - sx), C.us, k);
+          }
+        }
+      } else {
+        // 3隻炎上
+        const flash = si === 6 ? clamp(1 - sp * 3) : 0;
+        const bn = si === 6 ? easeOut(sp / 0.6) : 1;
+        [['赤城', -170], ['加賀', 0], ['蒼龍', 170]].forEach(([nm, oy], i) => {
+          carrier(dx, dy + oy, 520, C.jp, 1, bn, i + 3, t);
+          text(nm, dx - 320, dy + oy + 12, { size: 34, weight: 'bold', align: 'right', color: C.ink });
+        });
+        if (flash) { ctx.save(); ctx.globalAlpha = flash; ctx.fillStyle = '#fff'; ctx.fillRect(fx, fy, fw, fh); ctx.restore(); }
+      }
+    }
+    if (si >= 7) {
+      const k = easeOut(sp / 0.4);
+      banner('運命の5分間 ─ 空母3隻を同時に喪失', k, C.jp, 'rgba(60,20,25,0.95)');
+    }
+  },
+
+  cap(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('条件 5 / 5', '頭上を空にしない', a);
+    // 側面図: 海面 y=780
+    const seaY = 700;
+    ctx.save(); ctx.globalAlpha = a;
+    const sky = ctx.createLinearGradient(0, 170, 0, seaY); sky.addColorStop(0, '#0b1a33'); sky.addColorStop(1, '#17365c');
+    ctx.fillStyle = sky; ctx.fillRect(100, 170, W - 200, seaY - 170);
+    ctx.fillStyle = C.seaDeep; ctx.fillRect(100, seaY, W - 200, VIS_BOTTOM - seaY);
+    ctx.restore();
+    // 高度帯のラベル
+    [['高高度 (4,000m〜)', 235], ['中高度', 420], ['低空 (海面付近)', 630]].forEach(([s, y]) => {
+      line(100, y + 20, W - 100, y + 20, 'rgba(255,255,255,0.15)', 1, a, [6, 10]);
+      text(s, 130, y, { size: 26, color: C.ink3, alpha: a });
+    });
+    // 空母(側面: 単純な台形)
+    const cx = W / 2;
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = C.jp;
+    ctx.beginPath(); ctx.moveTo(cx - 260, seaY - 40); ctx.lineTo(cx + 260, seaY - 40); ctx.lineTo(cx + 230, seaY + 12); ctx.lineTo(cx - 230, seaY + 12); ctx.closePath(); ctx.fill();
+    ctx.fillRect(cx + 60, seaY - 72, 50, 32);
+    ctx.restore();
+    text('空母', cx, seaY + 50, { size: 28, color: C.jp, align: 'center', alpha: a });
+    // 雷撃隊(低空・左から)
+    const tp = si >= 1 ? easeInOut(sp / 0.6) : (si > 1 ? 1 : 0);
+    for (let i = 0; i < 4; i++) {
+      const x = lerp(160, cx - 420, tp) + i * 70, y = seaY - 70 - (i % 2) * 14;
+      plane(x, y, 18, 0, C.us, si >= 1 ? 1 : 0);
+    }
+    if (si >= 1) text('米雷撃隊(TBD) 低空で接近', 430, seaY - 120, { size: 28, weight: 'bold', color: C.us, alpha: easeOut(sp / 0.4) });
+    // 零戦: 高高度 → 低空へ降下
+    const zp = si >= 1 ? easeInOut((sp - 0.25) / 0.6) : (si > 1 ? 1 : 0);
+    const zpp = si >= 2 ? 1 : zp;
+    for (let i = 0; i < 5; i++) {
+      const x0 = cx - 120 + i * 90, y0 = 300 + (i % 2) * 30;
+      const x1 = cx - 380 + i * 60, y1 = seaY - 110 - (i % 2) * 20;
+      const x = lerp(x0, x1, zpp), y = lerp(y0, y1, zpp);
+      plane(x, y, 18, zpp > 0.05 && zpp < 0.95 ? Math.atan2(y1 - y0, x1 - x0) : Math.PI, C.jp, a);
+      if (zpp > 0.05 && zpp < 0.98) line(x0, y0, x, y, 'rgba(232,82,79,0.35)', 2, 1, [4, 8]);
+    }
+    text(zpp < 0.5 ? '直衛零戦(上空警戒)' : '直衛零戦 → 雷撃隊を追って降下', cx - 160, 380, { size: 28, weight: 'bold', color: C.jp, align: 'center', alpha: a });
+    // 高高度がら空き(文3)
+    if (si >= 2) {
+      const k = easeOut(sp / 0.4);
+      rrect(cx - 330, 200, 660, 70, 12, 'rgba(232,82,79,0.18)', k, C.jp, 2);
+      text('高高度 がら空き', cx, 248, { size: 36, weight: 'bold', color: C.jp, align: 'center', alpha: k });
+      // SBD 急降下
+      const dp = easeInOut((sp - 0.3) / 0.6);
+      for (let i = 0; i < 3; i++) {
+        const sx = W - 260 - i * 110, sy = 190 + i * 30;
+        const ex = cx + 120 - i * 100, ey = seaY - 90;
+        const x = lerp(sx, ex, dp), y = lerp(sy, ey, dp);
+        line(sx, sy, x, y, 'rgba(63,141,232,0.5)', 3, k, [8, 8]);
+        plane(x, y, 20, Math.atan2(ey - sy, ex - sx), C.us, k);
+      }
+      text('米急降下爆撃隊(SBD) ほぼ無抵抗で突入', W - 130, 560, { size: 28, weight: 'bold', color: C.us, align: 'right', alpha: k }); if (false) text('', 0, 0, { size: 28, weight: 'bold', color: C.us, align: 'center', alpha: k });
+    }
+    if (si >= 3) {
+      const k = easeOut(sp / 0.5);
+      // 警戒隊を高高度に残すイメージ
+      for (let i = 0; i < 3; i++) plane(cx - 80 + i * 80, 300, 18, Math.PI, C.accent, k);
+      banner('高高度に警戒隊を常に残す → 急降下爆撃を阻止・軽減できた', k);
+    }
+  },
+
+  war(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('', 'それでも、戦争には勝てない', a);
+    // 文1: 問い / 文2: 結論 / 文3-4: 空母保有数グラフ / 文5: 結論
+    if (si <= 1) {
+      text('5つの条件が揃って日本が勝ったら?', W / 2, 420, { size: 64, weight: 'bold', align: 'center', alpha: easeOut(u / 0.8) });
+      if (si >= 1) {
+        const k = easeOut(sp / 0.5);
+        text('戦いには勝てる。 戦争には勝てない。', W / 2, 560, { size: 56, weight: 'bold', color: C.accent, align: 'center', alpha: k });
+      }
+    } else {
+      // 棒グラフ: 正規+軽空母 保有数(各年末, 45年は8月)
+      const labels = ['1942.6', '1942.12', '1943.12', '1944.12', '1945.8'];
+      const jp = [10, 7, 9, 5, 4];
+      const us = [4, 4, 18, 25, 28];
+      const x0 = 260, y0 = 720, bw = 110, gap = 300, hmax = 440;
+      const k = si === 2 ? easeOut(sp / 0.8) : 1;
+      const reveal = si >= 3 ? 5 : 2;
+      line(x0 - 60, y0, W - 180, y0, C.grid, 2, a);
+      labels.forEach((lb, i) => {
+        if (i >= reveal && !(si >= 3)) return;
+        const kk = i < 2 ? k : (si === 3 ? easeOut((sp - (i - 2) * 0.25) / 0.4) : 1);
+        const x = x0 + i * gap;
+        const hj = jp[i] / 28 * hmax * kk, hu = us[i] / 28 * hmax * kk;
+        rrect(x, y0 - hj, bw, hj, 6, C.jp, 1); rrect(x + bw + 10, y0 - hu, bw, hu, 6, C.us, 1);
+        text(String(jp[i]), x + bw / 2, y0 - hj - 12, { size: 30, weight: 'bold', color: C.jp, align: 'center', alpha: kk });
+        text(String(us[i]), x + bw + 10 + bw / 2, y0 - hu - 12, { size: 30, weight: 'bold', color: C.us, align: 'center', alpha: kk });
+        text(lb, x + bw + 5, y0 + 42, { size: 28, color: C.ink2, align: 'center', alpha: kk });
+      });
+      text('空母保有数(正規+軽空母・概数。1942.6の米国は太平洋配備分)', 200, 215, { size: 30, color: C.ink2, alpha: a });
+      rrect(1500, 190, 26, 26, 6, C.jp); text('日本', 1536, 213, { size: 28, color: C.ink2 });
+      rrect(1640, 190, 26, 26, 6, C.us); text('米国', 1676, 213, { size: 28, color: C.ink2 });
+      if (si === 2) {
+        const kk = easeOut((sp - 0.3) / 0.5);
+        rrect(W / 2 - 420, 300, 840, 70, 12, C.panel, kk, C.us, 2);
+        text('1942年6月時点: エセックス級 10隻以上が建造中', W / 2, 348, { size: 34, weight: 'bold', color: C.us, align: 'center', alpha: kk });
+      }
+      if (si >= 3) {
+        const kk = si === 3 ? easeOut((sp - 0.5) / 0.4) : 1;
+        text('1943年以降、差は一方的に開く', W / 2, 330, { size: 40, weight: 'bold', color: C.us, align: 'center', alpha: kk });
+      }
+      if (si >= 4) {
+        const kk = easeOut(sp / 0.5);
+        banner('最大の成果は「反攻を1年遅らせる」 ─ 講和につなげられるかは政治の問題', kk, C.accent, C.panel, 32);
+      }
+    }
+  },
+
+  summary(u, d, si, sp, t) {
+    const a = easeOut(u / 0.6);
+    chapter('', 'まとめ', a);
+    const items = ['① 暗号を更新する', '② 戦力を分散しない', '③ 索敵を厚くする', '④ 積み替えずに今すぐ飛ばす', '⑤ 頭上を空にしない'];
+    items.forEach((s, i) => {
+      const k = easeOut((u - 0.6 - i * 0.45) / 0.5);
+      const y = 250 + i * 100;
+      rrect(160, y - 50, 980, 76, 14, 'rgba(22,33,58,0.92)', k, C.grid, 2);
+      dot(205, y - 12, 16, C.accent, k); text('✓', 205, y - 1, { size: 26, weight: 'bold', color: '#1a1a1a', align: 'center', alpha: k });
+      text(s, 245, y, { size: 40, weight: 'bold', alpha: k });
+    });
+    // 右側: 燃えない空母(勝利イメージ)
+    if (si >= 1) {
+      const k = easeOut(sp / 0.5);
+      for (let i = 0; i < 4; i++) carrier(1540, 300 + i * 110, 380, C.jp, k);
+      text('ミッドウェーの勝利は十分に現実的', 1540, 745, { size: 32, weight: 'bold', color: C.accent, align: 'center', alpha: k });
+    }
+    if (si >= 2) {
+      const k = easeOut(sp / 0.5);
+      rrect(W / 2 - 560, 775, 1120, 90, 16, 'rgba(245,196,81,0.12)', k, C.accent, 3);
+      text('勝てたのは「戦い」。「戦争」ではない。', W / 2, 835, { size: 44, weight: 'bold', color: C.accent, align: 'center', alpha: k });
+    }
+    if (si >= 3) {
+      const k = easeOut(sp / 0.5);
+      text('ナレーション: VOICEVOX:青山龍星　　BGM: 自作(権利フリー)', W - 40, 1052, { size: 24, color: C.ink3, align: 'right', alpha: k });
+    }
+  },
+};
+
+// ---------- フレーム描画 ----------
+function sceneAt(t) {
+  const scs = window.TIMING.scenes;
+  for (let i = scs.length - 1; i >= 0; i--) if (t >= scs[i].start) return scs[i];
+  return scs[0];
+}
+function render(t) {
+  background(t);
+  const sc = sceneAt(t);
+  const u = t - sc.start, d = sc.dur;
+  let si = -1, sp = 0, sub = '', subA = 0;
+  sc.subs.forEach((s, i) => {
+    if (t >= s.start) { si = i; sp = clamp((t - s.start) / Math.max(0.01, s.end - s.start)); }
+  });
+  if (si >= 0) {
+    const s = sc.subs[si];
+    const next = sc.subs[si + 1];
+    const hold = next ? next.start : s.end + 0.9;
+    sub = s.text;
+    subA = Math.min(easeOut((t - s.start) / 0.2), easeOut((hold - t) / 0.2));
+  }
+  // シーン切り替えのフェード
+  const fadeIn = easeOut(u / 0.4);
+  const fadeOut = easeOut((sc.start + d - t) / 0.35);
+  ctx.save();
+  DRAW[sc.id](u, d, si, sp, t);
+  ctx.restore();
+  subtitle(sub, subA);
+  const dim = 1 - Math.min(fadeIn, fadeOut);
+  if (dim > 0) { ctx.fillStyle = `rgba(11,18,32,${dim})`; ctx.fillRect(0, 0, W, H); }
+  progress(t);
+}
+function thumbnail() {
+  background(0);
+  for (let i = 0; i < 4; i++) carrier(W / 2 + 320, 330 + i * 150, 520, C.jp, 1, 0.9, i + 1, 3.3);
+  ctx.fillStyle = 'rgba(5,10,20,0.55)'; ctx.fillRect(0, 0, W, H);
+  text('ミッドウェー海戦', 120, 330, { size: 96, weight: 'bold', ls: 6 });
+  text('日本はどうすれば', 120, 500, { size: 120, weight: 'bold', color: C.accent });
+  text('勝てたか', 120, 660, { size: 120, weight: 'bold', color: C.accent });
+  rrect(120, 740, 760, 90, 16, C.jp);
+  text('勝つための条件 5つ', 500, 805, { size: 56, weight: 'bold', align: 'center' });
+}
+window.FPS = FPS; window.render = render; window.thumbnail = thumbnail;
+window.setTiming = function (tm) { window.TIMING = tm; window.DURATION = tm.duration; };
+
+// ブラウザで直接開いたときのプレビュー(timing.json を同階層から読む)
+if (!window.__capture) {
+  fetch('output/timing.json').then(r => r.json()).then(tm => {
+    window.setTiming(tm);
+    const t0 = performance.now();
+    (function loop() { render(((performance.now() - t0) / 1000) % tm.duration); requestAnimationFrame(loop); })();
+  }).catch(() => { ctx.fillStyle = '#fff'; ctx.font = '40px sans-serif'; ctx.fillText('output/timing.json が見つかりません(python3 narrate.py を先に実行)', 80, 120); });
+}
+</script>
+</body>
+</html>
