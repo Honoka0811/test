@@ -263,14 +263,14 @@ def illust_supple():
         d.ellipse([x, y, x + 46, y + 28], fill=(250, 250, 250), outline=(200, 200, 210), width=2)
     d.text((60, 60), "機能性表示食品", font=font("K", 40), fill=CREAM)
     d.text((60, 130), "サラシア由来成分で\n糖の吸収を抑える", font=font("B", 30), fill=MINT)
-    d.text((60, 520), "2026年1月 パッケージ刷新", font=font("B", 26), fill=GREY)
+    d.text((60, 520), "化粧品と並ぶ、通販の柱", font=font("B", 26), fill=GREY)
     return img
 
 def illust_recent():
     img, d = card_base((30, 24, 44)); img = glow(img, RED, (600, 150), 180, 90); d = ImageDraw.Draw(img)
     # timeline
     d.line([(90, 300), (700, 300)], fill=GREY, width=6)
-    for x, yr, lab, c in [(110, "2007", "アスタリフト\n誕生", CREAM), (250, "2019", "メンズ\n参入", MINT), (390, "2022", "若年層向け\nクレスク", MINT), (530, "2026", "価格改定\n新PR", GOLD), (670, "2027", "20周年", RED2)]:
+    for x, yr, lab, c in [(110, "2007", "アスタリフト\n誕生", CREAM), (250, "2019", "メンズ\n参入", MINT), (390, "2022", "若年層向け\nクレスク", MINT), (530, "2026", "新プロモー\nション", GOLD), (670, "2027", "20周年", RED2)]:
         d.ellipse([x - 16, 284, x + 16, 316], fill=c)
         d.text((x - 38, 220), yr, font=font("K", 30), fill=c)
         for k, ln in enumerate(lab.split("\n")):
