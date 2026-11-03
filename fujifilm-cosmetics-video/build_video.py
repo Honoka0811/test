@@ -46,10 +46,17 @@ Style: Default,Noto Sans CJK JP,52,&H00FFFFFF,&H00FFFFFF,&H00261A12,&H80000000,-
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """)
+    def wrap(text, limit=30):
+        """日本語は空白がなく libass が自動折り返しできないため、長い文は読点付近で 2 行に分ける"""
+        if len(text) <= limit: return text
+        mid = len(text) // 2
+        cands = [k for k, ch in enumerate(text) if ch in "、，" and 8 <= k <= len(text) - 8]
+        cut = (min(cands, key=lambda k: abs(k - mid)) + 1) if cands else mid
+        return text[:cut] + "\\N" + text[cut:]
     for i, tm in enumerate(timings):
         base = starts[i] + PRE
         for c in tm["cues"]:
-            f.write(f"Dialogue: 0,{ts(base + c['start'])},{ts(base + c['end'] + 0.15)},Default,,0,0,0,,{c['text']}\n")
+            f.write(f"Dialogue: 0,{ts(base + c['start'])},{ts(base + c['end'] + 0.15)},Default,,0,0,0,,{wrap(c['text'])}\n")
 
 # ---- ffmpeg ----
 cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-stats"]
