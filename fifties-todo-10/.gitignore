@@ -1,0 +1,8 @@
+output/mix.wav
+output/narration.wav
+output/bgm.wav
+output/frames/
+output/_*
+output/fifties_todo_10.mp4
+__pycache__/
+output/fifties_todo_10_narrated.mp4

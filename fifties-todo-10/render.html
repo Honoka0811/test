@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>50代のうちにやっておくべきこと10選 — レンダラ</title>
+<style>
+  @font-face { font-family: 'MPR'; font-weight: 900; src: url('assets/fonts/MPLUSRounded1c-Black.ttf'); }
+  @font-face { font-family: 'MPR'; font-weight: 700; src: url('assets/fonts/MPLUSRounded1c-Bold.ttf'); }
+  @font-face { font-family: 'MPR'; font-weight: 500; src: url('assets/fonts/MPLUSRounded1c-Medium.ttf'); }
+  html, body { margin: 0; background: #222; }
+  canvas { display: block; margin: 0 auto; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// 1080×1920 / 30fps。window.render(t) が時刻 t 秒のフレームを決定論的に描く。
+const W = 1080, H = 1920;
+window.FPS = 30;
+let INTRO = 4.5, ITEM = 6.0, OUTRO = 6.0;      // 既定のシーン長(timeline.json があれば上書き)
+window.DURATION = INTRO + ITEM * 10 + OUTRO;
+const FONT = 'MPR';
+const INK = '#2D3436', CREAM = '#FFF8EE', SUB_BG = 'rgba(45,52,54,0.92)';
+
+// 10 項目: 色 / タイトル(行配列) / 一言 / ヒーローイラスト / 周辺イラスト / 字幕
+const ITEMS = [
+  { color: '#FF6B6B', title: ['人間ドックで', '体の棚卸し'], tip: '年に1回、しっかりチェック', hero: ['1fa7a'], sub: ['1f3e5', '2764', '1f4cb', '1fa78'] },
+  { color: '#FF9F43', title: ['筋トレで', '「筋肉貯金」'], tip: 'スクワット＋早歩きから', hero: ['1f4aa'], sub: ['1f3cb', '1f6b6', '1f45f', '1f9d8'] },
+  { color: '#54A0FF', title: ['歯の', 'メンテナンス'], tip: '3か月に1回はクリーニング', hero: ['1f9b7'], sub: ['1faa5', '1f60a', '2728', '1f34e'] },
+  { color: '#F9A825', title: ['お金の見直し'], tip: '年金・保険・資産をまとめて把握', hero: ['1f4b0'], sub: ['1f4c8', '1f3e6', '1f4b3', '1f4dd'] },
+  { color: '#E8739A', title: ['親と', '「これから」を話す'], tip: '介護・住まい・お金のこと', hero: ['1f475', '1f474'], sub: ['1f3e0', '1f4de', '1f4ac', '2615'] },
+  { color: '#1DD1A1', title: ['モノを減らす'], tip: '使っていない物は手放す', hero: ['1f4e6'], sub: ['1f9f9', '267b', '1f45a', '1f4da'] },
+  { color: '#8E5AE8', title: ['新しいことを', '学ぶ'], tip: '資格・語学・スマホでもOK', hero: ['1f4d6'], sub: ['1f393', '1f4bb', '270f', '1f30d'] },
+  { color: '#10AC84', title: ['仕事以外の', '居場所をつくる'], tip: '肩書きなしで付き合える人を', hero: ['1f465'], sub: ['1f3a8', '1f3b8', '1f3a3', '1f91d'] },
+  { color: '#EE5253', title: ['家族との時間を', '予定に入れる'], tip: '後回しにせずカレンダーへ', hero: ['1f46a'], sub: ['2708', '1f37d', '1f4f8', '1f3d5'] },
+  { color: '#2E86DE', title: ['60代からの', 'やりたいことリスト'], tip: '小さなことからでOK', hero: ['1f4dd'], sub: ['1f5fa', '1f3af', '1f31f', '1f680'] },
+];
+const INTRO_EMOJI = ['1f4aa', '1f9b7', '1f4b0', '1f4d6', '2708', '1f389', '1f4a1', '1f331', '1f33b', '1f308', '1f4af', '1f680', '1fa7a', '1f46a'];
+// 字幕(ナレーション原稿の表示用)。narrate.py の SUBTITLES と対応
+window.SUBTITLES = [
+  '50代のうちにやっておくべきこと10選。テンポよく紹介します！',
+  '1つ目、人間ドックで体の棚卸し。病気が見つかりやすい年代です。年に1度はしっかり調べましょう。',
+  '2つ目、筋トレで筋肉貯金。筋肉は使わないと減る一方。スクワットと早歩きから始めましょう。',
+  '3つ目、歯のメンテナンス。歯を失うと食事も会話も変わります。3か月に1度はクリーニングを。',
+  '4つ目、お金の見直し。年金、保険、資産をまとめて把握。60歳からの収支をざっくり描きましょう。',
+  '5つ目、親と「これから」を話す。介護や住まい、お金のこと。元気なうちに聞いておくと安心です。',
+  '6つ目、モノを減らす。使っていない物は思い切って手放す。家も頭もすっきりします。',
+  '7つ目、新しいことを学ぶ。資格でも語学でもスマホでも。学ぶ習慣が60代の選択肢を広げます。',
+  '8つ目、仕事以外の居場所をつくる。趣味や地域の活動で、肩書きなしで付き合える人を増やしましょう。',
+  '9つ目、家族との時間を予定に入れる。旅行でも、月に1度のごはんでも。後回しにせずカレンダーへ。',
+  '10個目、60代のやりたいことリストを書く。小さなことで大丈夫。書いた瞬間から人生が動き出します。',
+  'まずは1つだけ、今日から始めてみませんか？参考になったら、保存といいねをお願いします。',
+];
+
+// ---------- 画像とフォントの読み込み ----------
+const IMG = {};
+function loadImg(code) {
+  return new Promise((res) => {
+    const im = new Image();
+    im.onload = () => { IMG[code] = im; res(); };
+    im.onerror = () => { console.warn('missing emoji', code); res(); };
+    im.src = 'assets/emoji/' + code + '.svg';
+  });
+}
+const ALL = new Set(INTRO_EMOJI.concat(['1f44d', '1f514', '2705']));
+ITEMS.forEach(it => { it.hero.forEach(c => ALL.add(c)); it.sub.forEach(c => ALL.add(c)); });
+window.ready = Promise.all([
+  document.fonts.load(`900 40px "${FONT}"`), document.fonts.load(`700 40px "${FONT}"`), document.fonts.load(`500 40px "${FONT}"`),
+  ...[...ALL].map(loadImg),
+]).then(() => document.fonts.ready);
+
+// ---------- ユーティリティ ----------
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, p) => a + (b - a) * p;
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+const easeInOut = p => p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+// 行き過ぎて戻る「ポップ」イージング
+const popIn = p => { p = clamp(p, 0, 1); const c = 1.70158, s = c + 1; return 1 + s * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const fade = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+function rrect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function text(s, x, y, size, weight, color, align = 'center', stroke = null) {
+  ctx.font = `${weight} ${size}px "${FONT}"`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke.w; ctx.strokeStyle = stroke.color; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function wrap(s, maxW, size, weight) {
+  ctx.font = `${weight} ${size}px "${FONT}"`;
+  const lines = []; let cur = '';
+  for (const ch of s) {
+    const test = cur + ch;
+    if (ctx.measureText(test).width > maxW && cur) {
+      // 句読点・閉じ括弧は行頭に来ないよう前の行へ
+      if ('、。」！？'.includes(ch)) { lines.push(cur + ch); cur = ''; continue; }
+      lines.push(cur); cur = ch;
+    } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+// 写真カード風にイラストを描く(白フチ・影・少し傾き)
+function card(code, x, y, size, rot, scale = 1, alpha = 1, bg = '#fff') {
+  const im = IMG[code]; if (!im || scale <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(scale, scale);
+  const pad = size * 0.11, w = size + pad * 2;
+  ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = size * 0.12; ctx.shadowOffsetY = size * 0.05;
+  ctx.fillStyle = bg; rrect(-w / 2, -w / 2, w, w, size * 0.12); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.drawImage(im, -size / 2, -size / 2, size, size);
+  ctx.restore();
+}
+function bgPattern(color, t) {
+  ctx.fillStyle = CREAM; ctx.fillRect(0, 0, W, H);
+  // ふわっと動く大きな色のかたまり
+  ctx.save();
+  const g1 = ctx.createRadialGradient(880 + Math.sin(t * 0.6) * 20, 420 + Math.cos(t * 0.5) * 20, 0, 880, 420, 560);
+  g1.addColorStop(0, hexA(color, 0.28)); g1.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = g1; ctx.fillRect(0, 0, W, H);
+  const g2 = ctx.createRadialGradient(140, 1500 + Math.sin(t * 0.7) * 25, 0, 140, 1500, 520);
+  g2.addColorStop(0, hexA(color, 0.22)); g2.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = g2; ctx.fillRect(0, 0, W, H);
+  // 細かいドット
+  ctx.fillStyle = hexA(color, 0.10);
+  for (let y = 80; y < H; y += 72) for (let x = 60; x < W; x += 72) { ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function subtitle(s, t0, t1, t) {
+  // 下部の字幕ボックス(Shorts の UI に隠れない位置)
+  const a = fade(t, t0, t0 + 0.2) * (1 - fade(t, t1 - 0.2, t1));
+  if (a <= 0) return;
+  const lines = wrap(s, 930, 44, 700);
+  const lh = 60, h = lines.length * lh + 52;
+  const y = 1720 - h;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = SUB_BG; rrect(60, y, W - 120, h, 28); ctx.fill();
+  lines.forEach((ln, i) => text(ln, W / 2, y + 26 + lh * i + lh / 2, 44, 700, '#fff'));
+  ctx.restore();
+}
+function progress(idx, color) {
+  const n = 10, w = 60, gap = 14, x0 = (W - (n * w + (n - 1) * gap)) / 2;
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = i <= idx ? color : 'rgba(45,52,54,0.15)';
+    rrect(x0 + i * (w + gap), 150, w, 12, 6); ctx.fill();
+  }
+  text('50代のうちに やっておくべきこと', W / 2, 110, 34, 700, 'rgba(45,52,54,0.55)');
+}
+
+// ---------- シーン ----------
+function drawIntro(t, d) {
+  bgPattern('#FF9F43', t);
+  // 飛び込んでくるイラスト(写真カード)
+  INTRO_EMOJI.forEach((code, i) => {
+    const seed = i * 1.37;
+    const ang = (i / INTRO_EMOJI.length) * Math.PI * 2 + 0.4;
+    const r = 640 + (i % 3) * 120;
+    const cx = W / 2 + Math.cos(ang) * r * 0.75, cy = 960 + Math.sin(ang) * r;
+    const p = popIn(fade(t, 0.1 + i * 0.07, 0.6 + i * 0.07));
+    const bob = Math.sin(t * 2.2 + seed) * 10;
+    card(code, cx, cy + bob, 180 + (i % 3) * 30, Math.sin(seed) * 0.35, p, 1);
+  });
+  // タイトル
+  const p1 = popIn(fade(t, 0.3, 0.8)), p2 = popIn(fade(t, 0.6, 1.1)), p3 = popIn(fade(t, 0.9, 1.5));
+  ctx.save(); ctx.translate(W / 2, 760); ctx.scale(p1, p1);
+  text('50代のうちに', 0, 0, 108, 900, INK, 'center', { w: 26, color: '#fff' });
+  ctx.restore();
+  ctx.save(); ctx.translate(W / 2, 900); ctx.scale(p2, p2);
+  text('やっておくべきこと', 0, 0, 100, 900, INK, 'center', { w: 26, color: '#fff' });
+  ctx.restore();
+  ctx.save(); ctx.translate(W / 2, 1130); ctx.scale(p3, p3);
+  ctx.rotate(-0.06);
+  ctx.fillStyle = '#FF6B6B'; rrect(-300, -130, 600, 260, 48); ctx.fill();
+  text('10選', 0, 8, 170, 900, '#fff');
+  ctx.restore();
+  const p4 = fade(t, 1.6, 2.0);
+  ctx.save(); ctx.globalAlpha = p4;
+  text('テンポよく、サクッと紹介！', W / 2, 1360, 50, 700, INK, 'center', { w: 14, color: '#fff' });
+  ctx.restore();
+  subtitle(window.SUBTITLES[0], 0.4, d, t);
+}
+
+function drawItem(i, t, d) {
+  const it = ITEMS[i];
+  bgPattern(it.color, t);
+  progress(i, it.color);
+  // 番号バッジ
+  const pb = popIn(fade(t, 0.05, 0.45));
+  ctx.save(); ctx.translate(190, 430); ctx.scale(pb, pb);
+  ctx.shadowColor = hexA(it.color, 0.45); ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+  ctx.fillStyle = it.color; ctx.beginPath(); ctx.arc(0, 0, 118, 0, 7); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  text(String(i + 1).padStart(2, '0'), 0, 6, 104, 900, '#fff');
+  ctx.restore();
+  // タイトル
+  const lines = it.title; const size = lines.some(l => l.length > 7) ? 78 : 92;
+  const lh = size * 1.18, y0 = 430 - (lines.length - 1) * lh / 2;
+  lines.forEach((ln, k) => {
+    const p = fade(t, 0.2 + k * 0.1, 0.5 + k * 0.1);
+    ctx.save(); ctx.globalAlpha = p; ctx.translate((1 - easeOut(p)) * 60, 0);
+    text(ln, 345, y0 + k * lh, size, 900, INK, 'left', { w: 20, color: '#fff' });
+    ctx.restore();
+  });
+  // ヒーローイラスト(大きな写真カード)
+  const cx = W / 2, cy = 930;
+  const ph = popIn(fade(t, 0.15, 0.65));
+  const bob = Math.sin(t * 1.8) * 12, tilt = -0.05 + Math.sin(t * 1.1) * 0.02;
+  if (it.hero.length === 1) card(it.hero[0], cx, cy + bob, 440, tilt, ph);
+  else {
+    card(it.hero[0], cx - 200, cy + bob, 340, -0.10, ph);
+    card(it.hero[1], cx + 200, cy - bob, 340, 0.10, popIn(fade(t, 0.3, 0.8)));
+  }
+  // 周辺イラスト 4 枚(順番にポンポンと出る)
+  const pos = [[150, 660], [930, 680], [150, 1200], [930, 1180]];
+  it.sub.forEach((code, k) => {
+    const p = popIn(fade(t, 0.8 + k * 0.35, 1.2 + k * 0.35));
+    const [x, y] = pos[k];
+    const b = Math.sin(t * 2.0 + k * 1.3) * 8;
+    card(code, x, y + b, 170, (k % 2 ? 1 : -1) * (0.12 + k * 0.03), p);
+  });
+  // 一言
+  const pt = fade(t, 2.2, 2.6);
+  ctx.save(); ctx.globalAlpha = pt;
+  ctx.translate(0, (1 - easeOut(pt)) * 30);
+  ctx.font = `700 54px "${FONT}"`; const tw = ctx.measureText(it.tip).width;
+  ctx.fillStyle = hexA(it.color, 0.95); rrect(W / 2 - tw / 2 - 36, 1330, tw + 72, 92, 46); ctx.fill();
+  text(it.tip, W / 2, 1376, 54, 700, '#fff');
+  ctx.restore();
+  subtitle(window.SUBTITLES[i + 1], 0.35, d, t);
+}
+
+function drawOutro(t, d) {
+  bgPattern('#2E86DE', t);
+  text('まとめ', W / 2, 150, 60, 900, INK, 'center', { w: 16, color: '#fff' });
+  // 10 項目のミニカード(2 列 × 5 行)
+  const colW = 470, rowH = 196, x0 = (W - colW * 2 - 30) / 2, y0 = 240;
+  ITEMS.forEach((it, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const p = popIn(fade(t, 0.1 + i * 0.12, 0.5 + i * 0.12));
+    const x = x0 + col * (colW + 30), y = y0 + row * rowH;
+    ctx.save(); ctx.translate(x + colW / 2, y + rowH / 2); ctx.scale(p, p); ctx.translate(-colW / 2, -rowH / 2);
+    ctx.shadowColor = 'rgba(0,0,0,0.12)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#fff'; rrect(0, 0, colW, rowH - 24, 28); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    const im = IMG[it.hero[0]]; if (im) ctx.drawImage(im, 28, 26, 84, 84);
+    ctx.fillStyle = it.color; ctx.beginPath(); ctx.arc(30, 30, 24, 0, 7); ctx.fill();
+    text(String(i + 1), 30, 32, 28, 900, '#fff');
+    const tl = it.title.join('');
+    const fs = Math.min(38, Math.floor(316 / tl.length));
+    text(tl, 130, 68, fs, 900, INK, 'left');
+    text(it.tip, 28, 138, 26, 500, 'rgba(45,52,54,0.7)', 'left');
+    ctx.restore();
+  });
+  const p = fade(t, 1.6, 2.0);
+  ctx.save(); ctx.globalAlpha = p;
+  card('1f44d', 110, 1360 + Math.sin(t * 2) * 8, 110, -0.15, 1);
+  card('1f514', 970, 1360 + Math.cos(t * 2) * 8, 110, 0.15, 1);
+  text('まずは1つ、今日から。', W / 2, 1330, 64, 900, INK, 'center', { w: 18, color: '#fff' });
+  text('保存して、ひとつずつ！', W / 2, 1420, 44, 700, '#2E86DE');
+  ctx.restore();
+  subtitle(window.SUBTITLES[11], 0.3, d, t);
+  // クレジット
+  ctx.save(); ctx.globalAlpha = fade(t, 0.5, 1.0);
+  text('ナレーション: VOICEVOX:四国めたん ／ BGM: パッヘルベル「カノン」オリジナルアレンジ', W / 2, 1760, 26, 500, 'rgba(45,52,54,0.7)');
+  text('イラスト: Twemoji (CC-BY 4.0) ／ フォント: M PLUS Rounded 1c (OFL)', W / 2, 1800, 26, 500, 'rgba(45,52,54,0.7)');
+  ctx.restore();
+}
+
+// シーンの開始時刻と長さ。window.setTimeline([...12 シーンの秒数], [...字幕]) で差し替え可能(capture.js が timeline.json から呼ぶ)
+let SCENES = [];
+window.setTimeline = function (durs, subs) {
+  if (subs) window.SUBTITLES = subs;
+  SCENES = []; let s = 0;
+  durs.forEach((d, k) => {
+    const f = k === 0 ? (t, d) => drawIntro(t, d) : k === 11 ? (t, d) => drawOutro(t, d) : (t, d) => drawItem(k - 1, t, d);
+    SCENES.push({ s, d, f }); s += d;
+  });
+  window.DURATION = s;
+};
+window.setTimeline([INTRO, ...Array(10).fill(ITEM), OUTRO]);
+const TR = 0.32;  // 切り替え(スライド)の長さ
+
+function drawScene(k, t) {
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+  SCENES[k].f(t, SCENES[k].d); ctx.restore();
+}
+
+window.render = function (t) {
+  t = clamp(t, 0, window.DURATION - 1 / FPS);
+  let k = SCENES.findIndex(sc => t < sc.s + sc.d); if (k < 0) k = SCENES.length - 1;
+  const local = t - SCENES[k].s;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (k > 0 && local < TR) {
+    const p = easeInOut(local / TR);
+    // 前のシーンが左へ、新しいシーンが右から
+    ctx.save(); ctx.translate(-W * p, 0); drawScene(k - 1, SCENES[k - 1].d - TR + local); ctx.restore();
+    ctx.save(); ctx.translate(W * (1 - p), 0); drawScene(k, local); ctx.restore();
+    // 継ぎ目の帯
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(W * (1 - p) - 6, 0, 12, H);
+  } else {
+    drawScene(k, local);
+  }
+};
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  window.ready.then(() => {
+    const t0 = performance.now();
+    (function loop() { window.render(((performance.now() - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>
