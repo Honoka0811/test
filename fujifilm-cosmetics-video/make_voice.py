@@ -11,6 +11,16 @@ SPEAKER = 13  # 青山龍星 ノーマル
 OUT = sys.argv[1]; os.makedirs(OUT, exist_ok=True)
 GAP = 0.25  # 文と文の間の無音（秒）
 
+# 誤読対策：ユーザー辞書に登録する語（表記, 読み, アクセント核）
+USER_DICT = [
+    ("安定性", "アンテイセイ", 0),          # 「やすていせい」と誤読されるため
+    ("リンクルリペア", "リンクルリペア", 5), # 単語が分割されるため
+]
+# 合成時だけ置き換える表記（字幕は元の表記のまま）
+SYNTH_REPLACE = {
+    "D-UVシールド": "ディーユーブイシールド",
+}
+
 def post(path, params, body=None):
     url = BASE + path + "?" + urllib.parse.urlencode(params)
     data = json.dumps(body).encode() if body is not None else b""
@@ -18,7 +28,21 @@ def post(path, params, body=None):
     with urllib.request.urlopen(req, timeout=600) as r:
         return r.read()
 
+def get(path):
+    with urllib.request.urlopen(BASE + path, timeout=60) as r:
+        return json.loads(r.read())
+
+def register_user_dict():
+    existing = {w["surface"] for w in get("/user_dict").values()}
+    for surface, pron, acc in USER_DICT:
+        if surface in existing: continue
+        post("/user_dict_word", {"surface": surface, "pronunciation": pron, "accent_type": acc,
+                                 "word_type": "PROPER_NOUN", "priority": 9})
+        print("user_dict +", surface, pron)
+
 def synth(text):
+    for k, v in SYNTH_REPLACE.items():
+        text = text.replace(k, v)
     q = json.loads(post("/audio_query", {"text": text, "speaker": SPEAKER}))
     q["speedScale"] = 1.12          # テンポよく
     q["intonationScale"] = 1.15     # 抑揚を少し強め
@@ -34,6 +58,7 @@ def read_wav(b):
         assert w.getframerate() == 48000 and w.getnchannels() == 1 and w.getsampwidth() == 2
         return w.readframes(w.getnframes())
 
+register_user_dict()
 timings = []
 for i, sc in enumerate(SCENES):
     sentences = [s + "。" for s in re.split(r"。", sc["narration"]) if s.strip()]
