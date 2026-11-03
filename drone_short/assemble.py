@@ -1,11 +1,14 @@
-"""ナレーション WAV の長さに合わせてシーン尺を決め、動画を再描画し、音声を重ねて最終 MP4 を出力する。
+"""ナレーション WAV の長さに合わせてシーン尺を決め、動画を再描画し、ナレーションと BGM を重ねて最終 MP4 を出力する。
 
 前提: tts.py で audio/<scene>.wav と audio/durations.json ができていること。
-  python assemble.py            # → drone_short_voiced.mp4
+  python assemble.py                # → drone_short_voiced.mp4（映像の再描画込み）
+  python assemble.py --audio-only   # 映像は前回の drone_short_silent.mp4 を再利用し、音声だけ作り直す
+  python assemble.py --no-bgm       # BGM なし
 """
 import json
 import pathlib
 import subprocess
+import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 AUDIO = HERE / "audio"
@@ -28,7 +31,10 @@ def main() -> None:
     print("timeline:", {s["id"]: (s["start"], s["end"]) for s in scenes}, "total", timeline["duration"])
 
     silent = HERE / "drone_short_silent.mp4"
-    subprocess.run(["node", str(HERE / "render.cjs"), "--timeline", str(HERE / "timeline.json"), "--out", str(silent)], check=True)
+    if "--audio-only" in sys.argv and silent.exists():
+        print("reuse:", silent)
+    else:
+        subprocess.run(["node", str(HERE / "render.cjs"), "--timeline", str(HERE / "timeline.json"), "--out", str(silent)], check=True)
 
     # 各 WAV をシーン開始位置に置いて1本の音声にまとめる
     inputs, filters, labels = [], [], []
@@ -43,8 +49,23 @@ def main() -> None:
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *inputs, "-filter_complex", ";".join(filters),
                     "-map", "[mix]", "-t", str(timeline["duration"]), str(narration)], check=True)
 
+    # BGM を生成し、ナレーション中は自動で音量を下げて(ダッキング)混ぜる
+    mixed = narration
+    if "--no-bgm" not in sys.argv:
+        bgm = HERE / "bgm.wav"
+        subprocess.run([sys.executable, str(HERE / "bgm.py"), str(timeline["duration"]), str(bgm)], check=True)
+        mixed = HERE / "mix.wav"
+        graph = (
+            "[0:a]aformat=sample_rates=44100:channel_layouts=stereo,asplit=2[nar][sc];"
+            "[1:a]volume=0.55[bg];"
+            "[bg][sc]sidechaincompress=threshold=0.015:ratio=8:attack=40:release=700:makeup=1[bgd];"
+            "[nar][bgd]amix=inputs=2:normalize=0,alimiter=limit=0.95[mix]"
+        )
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(narration), "-i", str(bgm),
+                        "-filter_complex", graph, "-map", "[mix]", str(mixed)], check=True)
+
     final = HERE / "drone_short_voiced.mp4"
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(narration),
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(mixed),
                     "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(final)], check=True)
     print("done:", final)
 
