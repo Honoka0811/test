@@ -2,3 +2,5 @@ output/mix.wav
 output/preview/
 output/capture.log
 __pycache__/
+upload/client_secret.json
+upload/token.json
