@@ -24,7 +24,7 @@
 まずは1つだけ、今日から。参考になったら保存といいねをお願いします。
 
 ナレーション: VOICEVOX:四国めたん
-BGM: パッヘルベル「カノン」オリジナルアレンジ(自作)
+BGM: バッハ「平均律クラヴィーア曲集 第1番 プレリュード」オリジナルアレンジ(自作)
 イラスト: Twemoji (CC-BY 4.0) https://github.com/twitter/twemoji
 フォント: M PLUS Rounded 1c (SIL Open Font License)
 

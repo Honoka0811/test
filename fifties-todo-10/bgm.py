@@ -1,68 +1,36 @@
 # -*- coding: utf-8 -*-
-"""パッヘルベル「カノン(ニ長調)」のオリジナルアレンジを numpy だけで合成する BGM。
-原曲は著作権切れ(パブリックドメイン)。音源も自作なので権利表記は不要。
-構成: 通奏低音(チェロ風) + 弦パッド + ピアノ/ハープ風の主旋律 + ピチカートの分散和音 + 簡易リバーブ。
+"""バッハ「平均律クラヴィーア曲集 第1巻 第1番 プレリュード ハ長調(BWV 846)」のアレンジを numpy だけで合成する BGM。
+原曲はパブリックドメイン、音源も自作のため権利表記は不要。
+構成: 原曲どおりの分散和音(ハープ/ピアノ風の柔らかい撥弦音) + 各小節の和音を薄く支える弦パッド + 低音 + 軽いリバーブ。
 単体実行: python3 bgm.py [秒数] [出力wav]
 """
 import sys, wave
 import numpy as np
 
 SR = 48000
-BPM = 104
+BPM = 64
 BEAT = 60.0 / BPM           # 四分音符
-CYCLE = 16 * BEAT           # 8 和音 × 2 拍 = 4 小節 ≒ 9.2 秒
+BAR = 4 * BEAT              # 1 小節(16 個の十六分音符)
+SIXT = BEAT / 4
 
-# ニ長調の音名 → MIDI
 N = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 def m(name):
-    """'F#5' のような表記を MIDI ノート番号へ"""
     p = N[name[0]]; i = 1
     if name[1] == '#': p += 1; i = 2
     elif name[1] == 'b': p -= 1; i = 2
     return 12 * (int(name[i:]) + 1) + p
-
 def hz(n): return 440.0 * 2 ** ((n - 69) / 12)
 
-# 通奏低音(各 2 拍)と和音: D A Bm F#m G D G A
-BASS = ['D3', 'A2', 'B2', 'F#2', 'G2', 'D2', 'G2', 'A2']
-CHORDS = [['D4', 'F#4', 'A4'], ['A3', 'C#4', 'E4'], ['B3', 'D4', 'F#4'], ['F#3', 'A3', 'C#4'],
-          ['G3', 'B3', 'D4'], ['D4', 'F#4', 'A4'], ['G3', 'B3', 'D4'], ['A3', 'C#4', 'E4']]
-
-# 旋律のバリエーション。各要素は (音名, 長さ[拍])。1 サイクル = 16 拍
-def half(notes): return [(n, 2.0) for n in notes]
-def quarter(notes): return [(n, 1.0) for n in notes]
-def eighth(notes): return [(n, 0.5) for n in notes]
-def sixteenth(notes): return [(n, 0.25) for n in notes]
-
-VAR_HALF_1 = half('F#5 E5 D5 C#5 B4 A4 B4 C#5'.split())
-VAR_HALF_2 = half('D5 C#5 B4 A4 G4 F#4 G4 E4'.split())
-VAR_QUARTER = quarter('F#5 D5 E5 C#5 D5 B4 C#5 A4 B4 G4 A4 F#4 G4 B4 A4 C#5'.split())
-VAR_EIGHTH_1 = eighth('D5 C#5 D5 D4 C#4 A4 E4 F#4  D4 D5 C#5 B4 C#5 F#5 A5 B5  '
-                      'G5 F#5 E5 G5 F#5 E5 D5 C#5  B4 A4 G4 F#4 E4 G4 F#4 E4'.split())
-VAR_EIGHTH_2 = eighth('D4 E4 F#4 G4 A4 E4 A4 G4  F#4 B4 A4 G4 A4 G4 F#4 E4  '
-                      'D4 B3 B4 C#5 D5 C#5 B4 A4  G4 F#4 E4 B4 A4 B4 A4 G4'.split())
-VAR_SIXTEENTH = ([('F#5', 0.5)] + sixteenth('A5 F#5 G5 A5 F#5 G5'.split())
-                 + sixteenth('A4 B4 C#5 D5 E5 F#5 G5 A5'.split())
-                 + sixteenth('F#5 D5 E5 F#5 F#4 G4 A4 B4'.split())
-                 + sixteenth('A4 G4 A4 F#4 G4 A4 G4 F#4'.split())
-                 + sixteenth('G4 B4 A4 G4 F#4 E4 F#4 E4'.split())
-                 + sixteenth('D4 E4 F#4 G4 A4 B4 A4 F#4'.split())
-                 + sixteenth('G4 B4 A4 B4 C#5 D5 C#5 B4'.split())
-                 + sixteenth('A4 B4 C#5 D5 E5 F#5 G5 A5'.split()))
-VAR_HALF_HIGH = half('F#5 E5 D5 C#5 B4 A4 B4 C#5'.split())
-
-# サイクルごとの構成: (旋律, ピチカート有無, ハープの重ね有無)
-PLAN = [
-    (None,            False, False),   # 0: 低音 + パッド(導入)
-    (VAR_HALF_1,      False, False),   # 1
-    (VAR_HALF_2,      True,  False),   # 2
-    (VAR_QUARTER,     True,  False),   # 3
-    (VAR_EIGHTH_1,    True,  True),    # 4
-    (VAR_EIGHTH_2,    True,  True),    # 5
-    (VAR_SIXTEENTH,   True,  True),    # 6
-    (VAR_HALF_HIGH,   True,  True),    # 7
-    (VAR_EIGHTH_1,    True,  True),    # 8(余り)
+# 各小節の 5 音(原曲の 1〜19 小節 → ハ長調に戻ったところで終止)。
+# 原曲は n1 n2 n3 n4 n5 n3 n4 n5 を 1 小節に 2 回繰り返す
+BARS = [
+    'C4 E4 G4 C5 E5', 'C4 D4 A4 D5 F5', 'B3 D4 G4 D5 F5', 'C4 E4 G4 C5 E5',
+    'C4 E4 A4 E5 A5', 'C4 D4 F#4 A4 D5', 'B3 D4 G4 D5 G5', 'B3 C4 E4 G4 C5',
+    'A3 C4 E4 G4 C5', 'D3 A3 D4 F#4 C5', 'G3 B3 D4 G4 B4', 'G3 Bb3 E4 G4 C#5',
+    'F3 A3 D4 A4 D5', 'F3 Ab3 D4 F4 B4', 'E3 G3 C4 G4 C5', 'E3 F3 A3 C4 F4',
+    'D3 F3 A3 C4 F4', 'G2 D3 G3 B3 F4', 'C3 E3 G3 C4 E4',
 ]
+FINAL = 'C3 E3 G3 C4 E4 G4 C5'   # 終止の和音
 
 def add(buf, start_s, sig):
     s = int(start_s * SR); e = min(s + len(sig), len(buf))
@@ -71,51 +39,37 @@ def add(buf, start_s, sig):
 def env_ar(n, a, r):
     env = np.ones(n, dtype=np.float32)
     na, nr = min(int(a * SR), n), min(int(r * SR), n)
-    if na: env[:na] = np.linspace(0, 1, na)
-    if nr: env[n - nr:] = np.minimum(env[n - nr:], np.linspace(1, 0, nr))
+    if na: env[:na] = 0.5 - 0.5 * np.cos(np.linspace(0, np.pi, na))        # 滑らかな立ち上がり
+    if nr: env[n - nr:] = np.minimum(env[n - nr:], 0.5 + 0.5 * np.cos(np.linspace(0, np.pi, nr)))
     return env
 
-def piano(f, dur, vel=1.0):
-    """ピアノ/ハープ風: 倍音の減衰をずらした加算合成 + ごく短いアタックノイズ"""
-    n = int((dur + 1.2) * SR); t = np.arange(n) / SR
+def pluck(f, dur=1.6, vel=1.0):
+    """ハープ/ピアノ風の撥弦音。少数の倍音を速く減衰させ、基音を残す。アタックは 4ms のコサインで無音から立ち上げる"""
+    n = int(dur * SR); t = np.arange(n) / SR
+    body = np.clip(500 / f, 0.35, 1.0)      # 高音ほど倍音控えめ
+    sig = (np.sin(2 * np.pi * f * t) * np.exp(-t / 0.9)
+           + 0.45 * body * np.sin(2 * np.pi * 2 * f * t) * np.exp(-t / 0.35)
+           + 0.20 * body * np.sin(2 * np.pi * 3 * f * t) * np.exp(-t / 0.18)
+           + 0.08 * body * np.sin(2 * np.pi * 4 * f * t) * np.exp(-t / 0.10))
+    return (sig * env_ar(n, 0.004, 0.3) * vel * 0.45).astype(np.float32)
+
+def pad(f, dur, rng):
+    """弦パッド: 倍音少なめ・ゆっくり立ち上がる"""
+    n = int(dur * SR); t = np.arange(n) / SR
+    vib = 1 + 0.002 * np.sin(2 * np.pi * 5.2 * t + rng.uniform(0, 6.28))
     sig = np.zeros(n, dtype=np.float32)
-    bright = np.clip(600 / f, 0.4, 1.4)                   # 低音ほど倍音豊か
-    for h in range(1, 7):
-        amp = (1 / h ** 1.1) * (bright if h > 1 else 1.0)
-        decay = 0.9 / (1 + 0.45 * (h - 1)) * np.clip(800 / f, 0.5, 1.8)
-        sig += amp * np.sin(2 * np.pi * f * h * t * (1 + 0.0004 * h)) * np.exp(-t / decay)
-    # 音の終わりをなだらかに(次の音とのつながり)
-    sig *= env_ar(n, 0.003, 0.25)
-    atk = np.random.default_rng(int(f)).standard_normal(int(0.004 * SR)).astype(np.float32)
-    atk = np.convolve(atk, np.ones(20) / 20, mode='same') * 0.25   # 高域を落として柔らかい打鍵音に
-    sig[:len(atk)] += atk * np.linspace(1, 0, len(atk))
-    return (sig * vel * 0.5).astype(np.float32)
+    for det in (-0.0025, 0.0025):
+        for h, a in ((1, 1.0), (2, 0.35), (3, 0.15)):
+            sig += a * np.sin(2 * np.pi * f * h * (1 + det) * vib * t + rng.uniform(0, 6.28))
+    return (sig * env_ar(n, 0.6, 0.8) * 0.2).astype(np.float32)
 
-def harp(f, dur, vel=1.0):
-    n = int((dur + 0.8) * SR); t = np.arange(n) / SR
-    sig = np.sin(2 * np.pi * f * t) * np.exp(-t / 0.6) + 0.35 * np.sin(2 * np.pi * 2 * f * t) * np.exp(-t / 0.3) \
-        + 0.12 * np.sin(2 * np.pi * 3 * f * t) * np.exp(-t / 0.2)
-    return (sig * env_ar(n, 0.002, 0.2) * vel * 0.4).astype(np.float32)
+def bass(f, dur):
+    n = int(dur * SR); t = np.arange(n) / SR
+    sig = np.sin(2 * np.pi * f * t) + 0.25 * np.sin(2 * np.pi * 2 * f * t)
+    return (sig * env_ar(n, 0.02, 0.6) * np.exp(-t / 2.5) * 0.5).astype(np.float32)
 
-def pizz(f, vel=1.0):
-    n = int(0.45 * SR); t = np.arange(n) / SR
-    sig = (np.sin(2 * np.pi * f * t) + 0.5 * np.sin(2 * np.pi * 2 * f * t) + 0.2 * np.sin(2 * np.pi * 3 * f * t)) * np.exp(-t / 0.09)
-    return (sig * vel * 0.5).astype(np.float32)
-
-def cello(f, dur, rng):
-    n = int((dur + 0.4) * SR); t = np.arange(n) / SR
-    vib = 1 + 0.003 * np.sin(2 * np.pi * 5.0 * t + rng.uniform(0, 6.28))
-    sig = sum((1 / h ** 1.3) * np.sin(2 * np.pi * f * h * vib * t) for h in range(1, 6))
-    return (sig * env_ar(n, 0.08, 0.4) * 0.5).astype(np.float32)
-
-def strings(f, dur, rng):
-    n = int((dur + 0.6) * SR); t = np.arange(n) / SR
-    vib = 1 + 0.0025 * np.sin(2 * np.pi * 5.5 * t + rng.uniform(0, 6.28))
-    sig = np.zeros(n, dtype=np.float32)
-    for det in (-0.003, 0.0, 0.003):
-        for h in range(1, 8):
-            sig += (1 / h ** 1.5) * np.sin(2 * np.pi * f * h * (1 + det) * vib * t + rng.uniform(0, 6.28))
-    return (sig * env_ar(n, 0.35, 0.6) * 0.33).astype(np.float32)
+def lowpass(x, k):
+    return np.convolve(x, np.ones(k) / k, mode='same').astype(np.float32)
 
 def comb(x, delay, g):
     y = x.copy()
@@ -124,49 +78,42 @@ def comb(x, delay, g):
         y[s:e] += g * y[s - delay:e - delay]
     return y
 
-def reverb(x, mix=0.25):
-    wet = sum(comb(x, d, g) for d, g in ((1361, 0.70), (1693, 0.68), (2053, 0.66), (2399, 0.64))) / 4
-    # ウェット成分の高域を少し落とす
-    wet = np.convolve(wet, np.ones(24) / 24, mode='same')
+def reverb(x, mix=0.16):
+    """ホール風の軽い残響: 長めの遅延・低めのフィードバック、ウェット成分は高域を落とす"""
+    wet = sum(comb(x, d, g) for d, g in ((2213, 0.52), (2719, 0.50), (3307, 0.48), (3907, 0.46))) / 4
+    wet = lowpass(wet, 40)
     return (1 - mix) * x + mix * wet
 
-def generate(total, seed=3):
+def generate(total, seed=5):
     rng = np.random.default_rng(seed)
     n = int(total * SR)
-    bass = np.zeros(n, dtype=np.float32); pad = np.zeros(n, dtype=np.float32)
-    mel = np.zeros(n, dtype=np.float32); plk = np.zeros(n, dtype=np.float32)
-    ncyc = int(np.ceil(total / CYCLE))
-    for c in range(ncyc):
-        t0 = c * CYCLE
-        melody, use_pizz, use_harp = PLAN[min(c, len(PLAN) - 1)]
-        for k in range(8):
-            ts = t0 + k * 2 * BEAT
-            add(bass, ts, cello(hz(m(BASS[k])), 2 * BEAT, rng))
-            for i, note in enumerate(CHORDS[k]):
-                add(pad, ts, strings(hz(m(note)), 2 * BEAT, rng) * (0.8 if i else 1.0))
-            if use_pizz:
-                # 分散和音: 根音-5度-3度-5度 を八分音符で
-                seq = [CHORDS[k][0], CHORDS[k][2], CHORDS[k][1], CHORDS[k][2]]
-                for j, note in enumerate(seq):
-                    add(plk, ts + j * BEAT / 2, pizz(hz(m(note) - 12), 0.9 if j == 0 else 0.6))
-        if melody:
-            t = t0
-            for name, beats in melody:
-                dur = beats * BEAT
-                f = hz(m(name))
-                vel = 1.0 if beats >= 1 else 0.85
-                add(mel, t, piano(f, dur, vel))
-                if use_harp:
-                    add(mel, t, harp(f * 2, dur, 0.35))
-                t += dur
+    arp = np.zeros(n, dtype=np.float32); strings = np.zeros(n, dtype=np.float32); low = np.zeros(n, dtype=np.float32)
+    nb = len(BARS)
+    for b in range(nb):
+        t0 = b * BAR
+        notes = BARS[b].split()
+        n1, n2, n3, n4, n5 = notes
+        seq = [n1, n2, n3, n4, n5, n3, n4, n5] * 2
+        for k, name in enumerate(seq):
+            vel = 1.0 if k % 8 == 0 else (0.85 if k % 4 == 0 else 0.7)
+            add(arp, t0 + k * SIXT, pluck(hz(m(name)), vel=vel))
+        for i, name in enumerate(notes):
+            add(strings, t0, pad(hz(m(name)), BAR + 0.8, rng) * (1.0 if i < 2 else 0.6))
+        add(low, t0, bass(hz(m(n1) - 12), BAR))
+    # 終止の和音(残り時間に向けて、ゆっくりアルペジオ → 保持)
+    t0 = nb * BAR
+    for i, name in enumerate(FINAL.split()):
+        add(arp, t0 + i * SIXT * 1.5, pluck(hz(m(name)), dur=5.0, vel=0.9))
+        add(strings, t0, pad(hz(m(name)), max(1.0, total - t0), rng) * 0.9)
+    add(low, t0, bass(hz(m('C2')), max(1.0, total - t0)))
     def norm(x): return x / (np.max(np.abs(x)) + 1e-9)
-    mix = 0.42 * norm(bass) + 0.40 * norm(pad) + 0.85 * norm(mel) + 0.30 * norm(plk)
-    mix = reverb(mix, 0.22)
-    mix *= env_ar(len(mix), 1.5, 3.0)
+    mix = 0.80 * norm(arp) + 0.28 * norm(strings) + 0.30 * norm(low)
+    mix = reverb(mix, 0.16)
+    mix *= env_ar(len(mix), 1.5, 3.5)
     return (mix / (np.max(np.abs(mix)) + 1e-9) * 0.9).astype(np.float32)
 
 if __name__ == '__main__':
-    total = float(sys.argv[1]) if len(sys.argv) > 1 else 70.5
+    total = float(sys.argv[1]) if len(sys.argv) > 1 else 77.0
     out = sys.argv[2] if len(sys.argv) > 2 else 'bgm.wav'
     x = generate(total)
     with wave.open(out, 'wb') as w:
