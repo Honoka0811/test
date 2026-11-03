@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>40代のうちにやっておくべきこと10選</title>
+<style>
+  html,body{margin:0;background:#111;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="assets/assets.js"></script>
+<script>
+// ------------------------------------------------------------
+// 40代のうちにやっておくべきこと10選 (9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// シーンの尺は output/timing.json(ナレーションの長さから生成)を
+// window.setTiming() で受け取る。未指定ならプレビュー用の既定値。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"Rounded Mplus 1c","Zen Maru Gothic","Noto Sans JP",sans-serif';
+const FPS = 30;
+
+// ---------- シーン定義 ----------
+const ITEMS = {
+  s1:  { num: 1,  title: '毎年の健康診断',        sub: '人間ドックで早めに発見',        bg: ['#0B5E55', '#19B3A0'], emoji: ['stethoscope', 'hospital', 'check-mark-button'] },
+  s2:  { num: 2,  title: '運動を習慣にする',      sub: '週2回の筋トレ or 毎日の散歩',  bg: ['#B23A0E', '#FB8A3C'], emoji: ['flexed-biceps', 'running-shoe', 'woman-walking', 'fire'] },
+  s3:  { num: 3,  title: '歯のメンテナンス',      sub: '3か月に1回の定期検診',         bg: ['#075985', '#38BDF8'], emoji: ['toothbrush', 'sparkles', 'calendar'], hero: 'tooth' },
+  s4:  { num: 4,  title: '睡眠と食事の見直し',    sub: '7時間睡眠・腹八分目',          bg: ['#3B1A7A', '#8B5CF6'], emoji: ['bed', 'zzz', 'green-salad', 'crescent-moon'] },
+  s5:  { num: 5,  title: '老後資金の計画',        sub: '新NISA・iDeCo 月1万円から',    bg: ['#14532D', '#4ADE80'], emoji: ['money-bag', 'chart-increasing-with-yen', 'coin', 'bank'] },
+  s6:  { num: 6,  title: '学び直し',              sub: '資格・語学・AIスキル',          bg: ['#1E3A8A', '#60A5FA'], emoji: ['books', 'graduation-cap', 'laptop', 'light-bulb'] },
+  s7:  { num: 7,  title: '親と話しておく',        sub: '介護・お金・実家のこと',        bg: ['#8A2E0E', '#FDBA74'], emoji: ['old-man', 'old-woman', 'house', 'red-heart'] },
+  s8:  { num: 8,  title: '人間関係の整理',        sub: '心地いい人を大切に',            bg: ['#8A1245', '#F472B6'], emoji: ['people-hugging', 'handshake', 'sparkling-heart', 'two-hearts'] },
+  s9:  { num: 9,  title: 'やりたかったことに挑戦', sub: '旅行・楽器・体力があるうちに', bg: ['#9A4A05', '#FCD34D'], emoji: ['airplane', 'guitar', 'camera', 'mountain'] },
+  s10: { num: 10, title: '持ち物と保険の見直し',  sub: '手放して、身軽な50代へ',        bg: ['#0B5F6E', '#67E8F9'], emoji: ['package', 'broom', 'shield', 'receipt'] },
+};
+const ORDER = ['intro', 's1', 's2', 's3', 's4', 's5', 's6', 's7', 's8', 's9', 's10', 'outro'];
+
+// プレビュー用の既定尺(capture.js からは timing.json が渡される)
+let SCENES = ORDER.map((id, i) => ({ id, start: i === 0 ? 0 : 3.2 + (i - 1) * 6, dur: id === 'intro' ? 3.2 : id === 'outro' ? 6.5 : 6, nstart: 0, nend: 0, subtitle: '' }));
+let DURATION = SCENES[SCENES.length - 1].start + SCENES[SCENES.length - 1].dur;
+window.setTiming = (timing) => {
+  SCENES = timing.scenes.map(s => ({ ...s }));
+  DURATION = timing.total;
+  window.DURATION = DURATION;
+};
+window.FPS = FPS; window.DURATION = DURATION;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const seg = (t, s, d) => clamp((t - s) / d);
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.70158 * 1.3; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const elastic = t => { t = clamp(t); return t === 0 || t === 1 ? t : Math.pow(2, -9 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI) / 3) + 1; };
+// 決定論的な乱数(シード付き)
+function rng(seed) { let s = seed >>> 0 || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+function font(size, weight = 900) { ctx.font = `${weight} ${size}px ${FONT}`; }
+function text(str, x, y, { size = 48, weight = 900, color = '#fff', align = 'left', base = 'alphabetic', alpha = 1, stroke = null, sw = 0, shadow = 0 } = {}) {
+  ctx.save(); ctx.globalAlpha = alpha; font(size, weight);
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = shadow / 3; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y); ctx.restore();
+}
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, shadow = 0) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = shadow / 2.5; }
+  rrectPath(x, y, w, h, r); ctx.fill(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+// 文字列を幅 maxW で折り返す(日本語は1文字ずつ)
+function wrap(str, maxW, size, weight = 700) {
+  font(size, weight);
+  const lines = []; let cur = '';
+  const noHead = '。、，．・」』）〕］｝〉》!?！？ー々〜';   // 行頭に置かない文字(ぶら下げ)
+  for (const ch of str) {
+    if (ch === '\n') { lines.push(cur); cur = ''; continue; }
+    if (ctx.measureText(cur + ch).width > maxW && cur && !noHead.includes(ch)) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// ---------- 画像(SVG → 事前ラスタライズ) ----------
+const IMG = { undraw: {}, emoji: {} };
+function loadImage(src) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; }); }
+function raster(im, w, h) { const c = document.createElement('canvas'); c.width = Math.round(w); c.height = Math.round(h); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); return c; }
+window.ready = (async () => {
+  const A = window.ASSETS;
+  for (const [sid, a] of Object.entries(A.undraw)) {
+    const im = await loadImage(a.src);
+    const maxW = 980, maxH = 620; const s = Math.min(maxW / a.w, maxH / a.h);
+    IMG.undraw[sid] = raster(im, a.w * s, a.h * s);
+  }
+  for (const [name, src] of Object.entries(A.emoji)) {
+    const im = await loadImage(src);
+    IMG.emoji[name] = raster(im, 512, 512);
+  }
+  return true;
+})();
+function drawImg(img, cx, cy, w, { rot = 0, alpha = 1, scale = 1 } = {}) {
+  if (!img || scale <= 0) return;
+  const h = w * img.height / img.width;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(scale, scale);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h); ctx.restore();
+}
+function emoji(name, cx, cy, size, opt) { drawImg(IMG.emoji[name], cx, cy, size, opt); }
+
+// ---------- 背景 ----------
+function background(c0, c1, t, seed) {
+  const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
+  g.addColorStop(0, c0); g.addColorStop(1, c1);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ゆっくり動く大きなボケ玉
+  const r = rng(seed * 7919 + 13);
+  for (let i = 0; i < 6; i++) {
+    const bx = r() * W, by = r() * H, br = 220 + r() * 260, sp = 0.05 + r() * 0.08, ph = r() * 6.28;
+    const x = bx + Math.sin(t * sp * 6.28 + ph) * 60, y = by + Math.cos(t * sp * 5 + ph) * 50;
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, br);
+    rg.addColorStop(0, 'rgba(255,255,255,0.16)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = rg; ctx.fillRect(x - br, y - br, br * 2, br * 2);
+  }
+  // 上へ漂う小さな粒
+  for (let i = 0; i < 26; i++) {
+    const px = r() * W, py0 = r() * H, sp = 40 + r() * 60, pr = 3 + r() * 6, ph = r() * 6.28;
+    const y = ((py0 - t * sp) % H + H) % H, x = px + Math.sin(t * 1.3 + ph) * 18;
+    circle(x, y, pr, '#fff', 0.18 + 0.15 * Math.sin(t * 2 + ph));
+  }
+}
+
+// ---------- 共通パーツ ----------
+function header(num, alpha = 1) {
+  // 上部: 進捗ドット + n/10 + タグ
+  rrect(W / 2 - 300, 104, 600, 70, 35, 'rgba(0,0,0,0.28)', alpha);
+  text('40代のうちにやっておくべきこと', W / 2, 152, { size: 34, weight: 800, color: '#fff', align: 'center', alpha });
+  for (let i = 1; i <= 10; i++) {
+    const x = W / 2 - 9 * 30 + (i - 1) * 60;
+    circle(x, 222, i === num ? 13 : 9, i <= num ? '#FFD84D' : 'rgba(255,255,255,0.45)', alpha);
+  }
+}
+function subtitle(str, y, alpha) {
+  if (alpha <= 0 || !str) return;
+  const lines = wrap(str, W - 220, 44, 800);
+  const lh = 64, h = lines.length * lh + 44, w = W - 120;
+  rrect(60, y - h / 2, w, h, 26, 'rgba(255,255,255,0.96)', alpha, 18);
+  lines.forEach((ln, i) => text(ln, W / 2, y - h / 2 + 22 + lh * (i + 1) - 18, { size: 44, weight: 800, color: '#1F2430', align: 'center', alpha }));
+}
+function badge(x, y, r, num, color, scale, alpha = 1) {
+  if (scale <= 0) return;
+  ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale); ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 10;
+  circle(0, 0, r, '#fff'); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  circle(0, 0, r - 10, '#FFD84D');
+  text(String(num), 0, 0, { size: num >= 10 ? r * 1.15 : r * 1.35, weight: 900, color: '#1F2430', align: 'center', base: 'middle' });
+  ctx.restore();
+}
+
+// ---------- 各シーン ----------
+// 項目シーン(s1〜s10)
+function sceneItem(sc, t, tl) {
+  const it = ITEMS[sc.id];
+  background(it.bg[0], it.bg[1], t, it.num);
+  header(it.num);
+
+  // 番号バッジ(弾む) + タイトル(右からスライド)
+  const bs = backOut(seg(tl, 0.05, 0.45));
+  badge(150, 390, 92, it.num, it.bg[1], bs);
+  const tp = backOut(seg(tl, 0.18, 0.5));
+  const tx = lerp(W + 100, 290, tp);
+  // タイトルは必ず1行に収める(長い場合は文字サイズを縮める)
+  font(86, 900); const tw = ctx.measureText(it.title).width;
+  const tsize = Math.min(86, Math.floor(86 * (W - 330) / tw));
+  text(it.title, tx, 380 + (86 - tsize) * 0.2, { size: tsize, weight: 900, color: '#fff', stroke: 'rgba(0,0,0,0.35)', sw: 14, shadow: 16 });
+  // サブ(ピル)
+  const sp = backOut(seg(tl, 0.75, 0.4));
+  if (sp > 0) {
+    font(40, 800); const sw = ctx.measureText(it.sub).width + 70;
+    ctx.save(); ctx.translate(290 + sw / 2, 520); ctx.scale(sp, sp);
+    rrect(-sw / 2, -34, sw, 68, 34, 'rgba(255,255,255,0.95)', 1, 12);
+    text(it.sub, 0, 14, { size: 40, weight: 800, color: '#1F2430', align: 'center' });
+    ctx.restore();
+  }
+
+  // イラストカード(ポップイン + ゆっくり揺れる)
+  const cp = backOut(seg(tl, 0.3, 0.55));
+  const cw = 940, ch = 600, cx = W / 2, cy = 930;
+  const nod = Math.sin(t * 1.6) * 0.012 + (Math.sin(tl * 9) * 0.03 * Math.max(0, 1 - tl / 1.2));
+  if (cp > 0) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(nod); ctx.scale(cp, cp);
+    rrect(-cw / 2, -ch / 2, cw, ch, 44, '#fff', 1, 40);
+    rrect(-cw / 2, -ch / 2, cw, ch, 44, it.bg[1], 0.08);
+    if (it.hero) {
+      // 大きな絵文字をヒーローに(歯など、unDraw に無い題材)
+      const bounce = 1 + Math.sin(t * 3) * 0.02;
+      emoji(it.hero, 0, 10, 460, { scale: bounce, rot: Math.sin(t * 1.2) * 0.05 });
+    } else {
+      const img = IMG.undraw[sc.id];
+      if (img) { const s = Math.min((cw - 90) / img.width, (ch - 70) / img.height); drawImg(img, 0, 6, img.width * s); }
+    }
+    ctx.restore();
+  }
+
+  // 絵文字がカードの周りに順番にポップ
+  const spots = [[150, 650, 0.0], [930, 640, 0.12], [940, 1220, 0.24], [140, 1230, 0.36]];
+  it.emoji.forEach((name, i) => {
+    const [ex, ey, d] = spots[i % spots.length];
+    const s = backOut(seg(tl, 0.55 + d, 0.42));
+    const fl = Math.sin(t * 2.2 + i * 1.7) * 12;
+    emoji(name, ex, ey + fl, 210, { scale: s, rot: Math.sin(t * 1.5 + i) * 0.1 });
+  });
+
+  // 字幕(ナレーション開始で出る)
+  const sub = (sc.subtitle || '').replace(/^[①-⑩]/, '');
+  const sa = seg(tl, Math.max(0, (sc.nstart - sc.start) - 0.1), 0.25) * (1 - seg(t, sc.nend + 0.35, 0.25));
+  subtitle(sub, 1470 + (1 - easeOut(sa)) * 30, sa);
+}
+
+// タイトル(intro)
+function sceneIntro(sc, t, tl) {
+  background('#1B1446', '#4C2A9A', t, 99);
+  // 紙吹雪
+  const r = rng(4242);
+  for (let i = 0; i < 70; i++) {
+    const x0 = r() * W, sp = 180 + r() * 260, ph = r() * 6.28, col = ['#FFD84D', '#FF6B9A', '#5EEAD4', '#93C5FD', '#FDBA74'][i % 5];
+    const y = ((t * sp + ph * 200) % (H + 200)) - 100, x = x0 + Math.sin(t * 2 + ph) * 40;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * 3 + ph); ctx.fillStyle = col; ctx.globalAlpha = 0.9; ctx.fillRect(-9, -14, 18, 28); ctx.restore();
+  }
+  const p1 = backOut(seg(tl, 0.05, 0.5)), p2 = backOut(seg(tl, 0.3, 0.5)), p3 = elastic(seg(tl, 0.6, 0.9));
+  text('40代のうちに', W / 2, lerp(-100, 470, p1), { size: 104, weight: 900, color: '#fff', align: 'center', stroke: 'rgba(0,0,0,0.35)', sw: 16, shadow: 16 });
+  text('やっておくべきこと', W / 2, lerp(-100, 610, p2), { size: 96, weight: 900, color: '#fff', align: 'center', stroke: 'rgba(0,0,0,0.35)', sw: 16, shadow: 16 });
+  if (p3 > 0) {
+    ctx.save(); ctx.translate(W / 2, 900); ctx.scale(p3, p3); ctx.rotate(-0.06);
+    rrect(-300, -150, 600, 300, 60, '#FFD84D', 1, 36);
+    text('10選', 0, 60, { size: 190, weight: 900, color: '#1F2430', align: 'center' });
+    ctx.restore();
+  }
+  // イラスト + 絵文字
+  const ip = backOut(seg(tl, 0.9, 0.6));
+  const img = IMG.undraw.intro;
+  if (img && ip > 0) {
+    ctx.save(); ctx.translate(W / 2, 1420); ctx.scale(ip, ip);
+    rrect(-440, -250, 880, 500, 44, 'rgba(255,255,255,0.95)', 1, 36);
+    const s = Math.min(800 / img.width, 440 / img.height); drawImg(img, 0, 0, img.width * s);
+    ctx.restore();
+  }
+  emoji('party-popper', 130, 1130 + Math.sin(t * 3) * 10, 230, { scale: backOut(seg(tl, 1.1, 0.5)), rot: -0.3 });
+  emoji('party-popper', 950, 1130 + Math.cos(t * 3) * 10, 230, { scale: backOut(seg(tl, 1.25, 0.5)), rot: 0.3 + Math.PI / 2 * 0 });
+  emoji('sparkles', 900, 420 + Math.sin(t * 4) * 8, 160, { scale: backOut(seg(tl, 1.4, 0.5)) });
+  emoji('hundred-points', 170, 760, 170, { scale: backOut(seg(tl, 1.55, 0.5)), rot: -0.2 });
+}
+
+// まとめ(outro)
+function sceneOutro(sc, t, tl) {
+  background('#0F2A4A', '#1F6FB2', t, 7);
+  text('まとめ', W / 2, 250, { size: 88, weight: 900, color: '#fff', align: 'center', stroke: 'rgba(0,0,0,0.35)', sw: 14, shadow: 16, alpha: easeOut(seg(tl, 0, 0.4)) });
+  emoji('trophy', 860, 230 + Math.sin(t * 3) * 6, 150, { scale: backOut(seg(tl, 0.2, 0.5)) });
+  emoji('sparkles', 220, 230 + Math.cos(t * 3) * 6, 120, { scale: backOut(seg(tl, 0.35, 0.5)) });
+  // 10項目のチェックリストが順にチェック
+  const ids = ORDER.slice(1, 11);
+  const x0 = 110, y0 = 380, lh = 96;
+  ids.forEach((id, i) => {
+    const it = ITEMS[id]; const d = 0.35 + i * 0.17;
+    const a = easeOut(seg(tl, d, 0.25)); if (a <= 0) return;
+    const y = y0 + i * lh;
+    rrect(x0, y - 36, W - 220, 80, 24, 'rgba(255,255,255,0.94)', a, 8);
+    const cs = backOut(seg(tl, d + 0.1, 0.3));
+    emoji('check-box-with-check', x0 + 56, y + 4, 62, { scale: cs });
+    text(`${it.num}. ${it.title}`, x0 + 110, y + 18, { size: 42, weight: 800, color: '#1F2430', alpha: a });
+  });
+  // メッセージ
+  const mp = backOut(seg(tl, 2.6, 0.5));
+  if (mp > 0) {
+    ctx.save(); ctx.translate(W / 2, 1480); ctx.scale(mp, mp); ctx.rotate(-0.02);
+    rrect(-470, -95, 940, 190, 48, '#FFD84D', 1, 30);
+    text('まずは1つ、今日から。', 0, 24, { size: 70, weight: 900, color: '#1F2430', align: 'center' });
+    ctx.restore();
+  }
+  emoji('thumbs-up', 150, 1650 + Math.sin(t * 3) * 8, 180, { scale: backOut(seg(tl, 3.0, 0.5)), rot: -0.15 });
+  emoji('party-popper', 930, 1650 + Math.cos(t * 3) * 8, 180, { scale: backOut(seg(tl, 3.15, 0.5)), rot: 0.2 });
+  // クレジット
+  const ca = easeOut(seg(tl, 3.6, 0.5));
+  text('ナレーション VOICEVOX:四国めたん', W / 2, 1800, { size: 30, weight: 700, color: 'rgba(255,255,255,0.85)', align: 'center', alpha: ca });
+  text('イラスト unDraw / Fluent Emoji(MIT)   BGM パッヘルベル「カノン」自作アレンジ', W / 2, 1846, { size: 26, weight: 700, color: 'rgba(255,255,255,0.7)', align: 'center', alpha: ca });
+}
+
+// ---------- メイン ----------
+function drawScene(sc, t) {
+  const tl = t - sc.start;
+  if (sc.id === 'intro') sceneIntro(sc, t, tl);
+  else if (sc.id === 'outro') sceneOutro(sc, t, tl);
+  else sceneItem(sc, t, tl);
+}
+const WIPE = 0.38;
+window.render = function (t) {
+  t = clamp(t, 0, DURATION - 1 / FPS);
+  let idx = SCENES.findIndex(s => t >= s.start && t < s.start + s.dur);
+  if (idx < 0) idx = SCENES.length - 1;
+  const sc = SCENES[idx];
+  const tl = t - sc.start;
+  ctx.clearRect(0, 0, W, H);
+  if (idx > 0 && tl < WIPE) {
+    // 円形ワイプ: 前のシーンの最終状態の上に、円を広げながら新シーンを描く
+    const prev = SCENES[idx - 1];
+    drawScene(prev, prev.start + prev.dur - 1 / FPS);
+    const p = easeInOut(tl / WIPE);
+    ctx.save(); ctx.beginPath(); ctx.arc(150, 390, p * 2300, 0, Math.PI * 2); ctx.clip();
+    drawScene(sc, t);
+    ctx.restore();
+    // 縁取りのリング
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 18 * (1 - p); ctx.beginPath(); ctx.arc(150, 390, p * 2300, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  } else {
+    drawScene(sc, t);
+  }
+};
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  window.ready.then(() => {
+    const t0 = performance.now();
+    (function loop() { window.render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>
