@@ -8,8 +8,8 @@ import illustrations as I
 OUT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/build"
 os.makedirs(OUT, exist_ok=True)
 FPS = 30
-LEAD, TAIL = 0.45, 0.75      # silence around each narration (sec)
-XFADE = 0.6                  # crossfade between slides (sec)
+LEAD, TAIL = 0.15, 0.35      # silence around each narration (sec)
+XFADE = 0.4                  # crossfade between slides (sec)
 TOTAL_SLIDES = len(SLIDES)
 
 CSS = """
@@ -89,7 +89,7 @@ from vvtts import VoicevoxTTS, VOICES
 # 声の指定: VOICE=metan|zundamon|tsumugi|himari|sora|no7|kiritan|mochiko (VOICEVOX, 要 VV_DIR)
 #          VOICE=happy|neutral (Open JTalk + tohoku-f01)  VOICE=mei (Open JTalk 同梱 Mei)
 VOICE = os.environ.get("VOICE", "metan")
-SPEED, HALF_TONE = 1.0, 0.0
+SPEED, HALF_TONE = float(os.environ.get("SPEED", "1.15")), 0.0
 READINGS = {"作目": "さくもく", "お米": "おこめ"}   # Open JTalk が誤読する語の読み補正
 if VOICE in VOICES:
     VV = VoicevoxTTS()
