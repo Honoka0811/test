@@ -1,7 +1,7 @@
 # 軍用ドローン 生産力 国際比較 2026 ― ショート動画 台本
 
 - 無音版: `drone_short.mp4`（63秒 / 縦型 1080×1920 / 30fps）
-- ナレーション付き版: `drone_short_voiced.mp4`（89秒。VOICEVOX:青山龍星、スタイル「ノーマル」）
+- ナレーション付き版: `drone_short_voiced.mp4`（92秒。VOICEVOX:青山龍星、スタイル「ノーマル」）
 - 編集元: `video.html`（文言・数値はここを書き換えて `node render.cjs` で再出力）
 - ナレーション台本の実体は `narration.json`。再合成は `python tts.py --engine http://127.0.0.1:50021`（VOICEVOXアプリ起動中）→ `python assemble.py`
 
