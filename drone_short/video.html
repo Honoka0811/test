@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>軍用ドローン 生産力 国際比較</title>
+<style>
+:root{
+  --bg:#1a1a19; --card:#242423; --line:#34342f;
+  --ink:#f0efec; --ink2:#c3c2b7; --muted:#8a8982;
+  --blue:#3987e5; --orange:#d95926;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1080px;height:1920px;overflow:hidden;background:var(--bg);color:var(--ink);
+  font-family:"IPAPGothic","IPAGothic","Noto Color Emoji",sans-serif;}
+#stage{position:relative;width:1080px;height:1920px;overflow:hidden}
+#progress{position:absolute;top:0;left:0;height:10px;background:var(--blue);width:0;z-index:10}
+#brand{position:absolute;bottom:70px;left:0;right:0;text-align:center;color:var(--muted);font-size:30px;letter-spacing:.1em}
+.scene{position:absolute;inset:0;padding:160px 84px 220px;display:flex;flex-direction:column;justify-content:center;gap:40px;opacity:0;will-change:opacity,transform}
+.kicker{display:inline-flex;align-items:center;gap:18px;font-size:40px;color:var(--ink2);letter-spacing:.08em}
+.flag{font-size:64px;line-height:1}
+.pill{display:inline-block;padding:8px 26px;border-radius:999px;background:var(--blue);color:#fff;font-size:34px;font-weight:bold}
+.pill.jp{background:var(--orange)}
+h1{font-size:112px;line-height:1.15;font-weight:bold}
+h2{font-size:86px;line-height:1.2;font-weight:bold}
+.sub{font-size:44px;color:var(--ink2);line-height:1.5}
+.row{opacity:0}
+.stat{background:var(--card);border-radius:28px;padding:40px 44px;display:flex;flex-direction:column;gap:14px;border:2px solid var(--line)}
+.stat .label{font-size:38px;color:var(--ink2)}
+.stat .value{font-size:92px;font-weight:bold;line-height:1.05;letter-spacing:-.01em}
+.stat .value small{font-size:46px;color:var(--ink2);font-weight:normal;margin-left:8px}
+.stat .note{font-size:32px;color:var(--muted)}
+.track{height:22px;border-radius:11px;background:#2f2f2d;overflow:hidden;margin-top:8px}
+.track .fill{height:100%;width:0;background:var(--blue);border-radius:11px}
+.track .fill.target{background:repeating-linear-gradient(135deg,var(--blue) 0 10px,transparent 10px 20px);outline:2px solid var(--blue);outline-offset:-2px}
+.vs{display:flex;flex-direction:column;gap:30px}
+.vs .big{font-size:136px;font-weight:bold;line-height:1.1;letter-spacing:-.02em;white-space:nowrap}
+.vs .big.small{font-size:104px;color:var(--ink2)}
+.vs .who{font-size:44px;color:var(--ink2)}
+.vs .mid{font-size:60px;color:var(--muted);text-align:center;letter-spacing:.3em}
+.callout{background:var(--blue);color:#fff;border-radius:28px;padding:36px 44px;font-size:52px;font-weight:bold;line-height:1.35}
+.callout.jp{background:var(--orange)}
+.warn{border-left:10px solid var(--orange);padding:10px 0 10px 36px;font-size:38px;color:var(--ink2);line-height:1.5}
+.chart{display:flex;flex-direction:column;gap:18px}
+.bar{display:grid;grid-template-columns:300px 1fr;align-items:center;gap:22px}
+.bar .name{font-size:40px;color:var(--ink);white-space:nowrap}
+.bar .name .flag{font-size:42px;margin-right:10px}
+.bar .lane{position:relative;height:96px}
+.bar .lane .fill{position:absolute;left:0;top:0;height:52px;width:0;background:var(--blue);border-radius:0 8px 8px 0}
+.bar .lane .fill.target{background:repeating-linear-gradient(135deg,var(--blue) 0 10px,transparent 10px 20px);outline:2px solid var(--blue);outline-offset:-2px}
+.bar .lane .fill.jp{background:var(--orange)}
+.bar .lane .fill.jp.target{background:repeating-linear-gradient(135deg,var(--orange) 0 10px,transparent 10px 20px);outline:2px solid var(--orange)}
+.bar .lane .val{position:absolute;left:0;top:58px;font-size:32px;color:var(--ink2);white-space:nowrap}
+.axis{position:relative;height:50px;margin-left:322px;font-size:30px;color:var(--muted);border-top:2px solid var(--line)}
+.axis span{position:absolute;top:10px;transform:translateX(-50%);white-space:nowrap}
+.axis span:first-child{transform:none}
+.axis span:last-child{transform:translateX(-100%);left:100% !important}
+.legend{display:flex;gap:40px;font-size:32px;color:var(--ink2);margin-left:322px}
+.legend span::before{content:"";display:inline-block;width:38px;height:22px;margin-right:12px;vertical-align:middle;background:var(--blue);border-radius:4px}
+.legend span.t::before{background:repeating-linear-gradient(135deg,var(--blue) 0 6px,transparent 6px 12px);outline:2px solid var(--blue);outline-offset:-2px}
+.list{display:flex;flex-direction:column;gap:34px}
+.list .item{display:grid;grid-template-columns:90px 1fr;gap:20px;align-items:start;font-size:48px;line-height:1.4}
+.list .num{width:72px;height:72px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:40px;margin-top:4px}
+.src{font-size:30px;color:var(--muted);line-height:1.6}
+</style>
+</head>
+<body>
+<div id="stage">
+<div id="progress"></div>
+
+<!-- S0 タイトル -->
+<section class="scene" id="s0">
+  <div class="row" data-delay="0"><span class="pill">2026年版・60秒解説</span></div>
+  <h1 class="row" data-delay="0.2">軍用ドローン<br>生産力を<br>国際比較</h1>
+  <p class="sub row" data-delay="0.6">年に何機つくれるのか。<br>ウクライナ・ロシア・中国・米国・欧州・日本</p>
+</section>
+
+<!-- S1 フック -->
+<section class="scene" id="s1">
+  <div class="vs">
+    <div class="row" data-delay="0">
+      <div class="who">🇺🇦 ウクライナ（2026年・政府発言）</div>
+      <div class="big">年<span data-count="1000" data-delay="0.1" data-dur="1.6">0</span>万機</div>
+    </div>
+    <div class="mid row" data-delay="1.2">VS</div>
+    <div class="row" data-delay="1.6">
+      <div class="who">🇺🇸 米国（産業全体の現状）</div>
+      <div class="big small">年<span data-count="10" data-delay="1.7" data-dur="1.2">0</span>万機</div>
+    </div>
+    <div class="callout row" data-delay="3.2">差は約100倍。<br>なぜこうなった？</div>
+  </div>
+</section>
+
+<!-- S2 ウクライナ -->
+<section class="scene" id="s2">
+  <div class="kicker row" data-delay="0"><span class="flag">🇺🇦</span><span class="pill">ウクライナ</span></div>
+  <h2 class="row" data-delay="0.1">世界最大の<br>ドローン工場に</h2>
+  <div class="stat row" data-delay="0.5">
+    <div class="label">2025年 実績</div>
+    <div class="value">300〜400<small>万機</small></div>
+    <div class="track"><div class="fill" data-bar="40" data-delay="0.6"></div></div>
+  </div>
+  <div class="stat row" data-delay="1.3">
+    <div class="label">2026年 政府目標</div>
+    <div class="value">700<small>万機超</small></div>
+    <div class="track"><div class="fill target" data-bar="70" data-delay="1.4"></div></div>
+  </div>
+  <div class="stat row" data-delay="2.1">
+    <div class="label">設備能力（FPV）</div>
+    <div class="value">800〜1,000<small>万機</small></div>
+    <div class="track"><div class="fill target" data-bar="100" data-delay="2.2"></div></div>
+    <div class="note">大統領は「1,000万機、必要なら倍増」と発言</div>
+  </div>
+</section>
+
+<!-- S3 ロシア -->
+<section class="scene" id="s3">
+  <div class="kicker row" data-delay="0"><span class="flag">🇷🇺</span><span class="pill">ロシア</span></div>
+  <h2 class="row" data-delay="0.1">自爆機は月数千機<br>FPVは年数百万機</h2>
+  <div class="stat row" data-delay="0.5">
+    <div class="label">FPVドローン 2026年計画（ウクライナ軍推計）</div>
+    <div class="value"><span data-count="730" data-delay="0.6" data-dur="1.2">0</span><small>万機</small></div>
+    <div class="note">第三者（CSIS）推計は全機種で約400万機</div>
+  </div>
+  <div class="stat row" data-delay="1.4">
+    <div class="label">Geran-2（シャヘド系）</div>
+    <div class="value">月 <span data-count="2800" data-delay="1.5" data-dur="1.0">0</span><small>機</small></div>
+  </div>
+  <div class="stat row" data-delay="2.2">
+    <div class="label">ジェット型 Geran-4/5</div>
+    <div class="value">月 3,000〜4,000<small>機</small></div>
+    <div class="note">部品は中国製に依存。イラン抜きで量産</div>
+  </div>
+</section>
+
+<!-- S4 中国 -->
+<section class="scene" id="s4">
+  <div class="kicker row" data-delay="0"><span class="flag">🇨🇳</span><span class="pill">中国</span></div>
+  <h2 class="row" data-delay="0.1">軍用の実数は非公表<br>でも潜在力は最大</h2>
+  <div class="stat row" data-delay="0.5">
+    <div class="label">民生ドローン 世界シェア</div>
+    <div class="value">約<span data-count="70" data-delay="0.6" data-dur="1.0">0</span><small>%</small></div>
+    <div class="note">DJIを中心に部品・供給網を独占</div>
+  </div>
+  <div class="stat row" data-delay="1.3">
+    <div class="label">2026年 上半期 ドローン輸出</div>
+    <div class="value"><span data-count="240" data-delay="1.4" data-dur="1.0">0</span><small>万機超</small></div>
+    <div class="note">前年同期比 約+25%</div>
+  </div>
+  <div class="warn row" data-delay="2.2">中国側の研究では、戦時の軍需要に対し<br>国内生産で満たせるのは<b>約6割</b>との指摘も</div>
+</section>
+
+<!-- S5 米国 -->
+<section class="scene" id="s5">
+  <div class="kicker row" data-delay="0"><span class="flag">🇺🇸</span><span class="pill">米国</span></div>
+  <h2 class="row" data-delay="0.1">「高価で少数」から<br>「安価で大量」へ転換中</h2>
+  <div class="stat row" data-delay="0.5">
+    <div class="label">現状の産業生産力</div>
+    <div class="value">年 約<span data-count="10" data-delay="0.6" data-dur="0.8">0</span><small>万機</small></div>
+    <div class="track"><div class="fill" data-bar="10" data-delay="0.6"></div></div>
+  </div>
+  <div class="stat row" data-delay="1.3">
+    <div class="label">Drone Dominance 計画（2027年まで）</div>
+    <div class="value">30〜34<small>万機を調達</small></div>
+    <div class="track"><div class="fill target" data-bar="32" data-delay="1.4"></div></div>
+    <div class="note">1機 約5,000ドル→2,300ドルへ低価格化</div>
+  </div>
+  <div class="stat row" data-delay="2.1">
+    <div class="label">陸軍の新工場 構想</div>
+    <div class="value">年 <span data-count="100" data-delay="2.2" data-dur="1.0">0</span><small>万機</small></div>
+    <div class="track"><div class="fill target" data-bar="100" data-delay="2.2"></div></div>
+    <div class="note">まずは月1万機から。2027年度予算要求は536億ドル</div>
+  </div>
+</section>
+
+<!-- S6 欧州・トルコ・イラン -->
+<section class="scene" id="s6">
+  <div class="kicker row" data-delay="0"><span class="pill">欧州・トルコ・イラン</span></div>
+  <h2 class="row" data-delay="0.1">量より「質」と「輸出」</h2>
+  <div class="stat row" data-delay="0.5">
+    <div class="label">🇩🇪 ドイツ（Helsing / Quantum Systems）</div>
+    <div class="value">年 1〜2<small>万機級の工場</small></div>
+    <div class="note">スタートアップ主導。戦時は数万機へ拡張可と主張</div>
+  </div>
+  <div class="stat row" data-delay="1.3">
+    <div class="label">🇹🇷 トルコ（Baykar）</div>
+    <div class="value">TB2 年250→500<small>機</small></div>
+    <div class="note">2025年 武装ドローン輸出22億ドル、5年連続世界首位</div>
+  </div>
+  <div class="stat row" data-delay="2.1">
+    <div class="label">🇮🇷 イラン（Shahed）</div>
+    <div class="value">月 約<span data-count="100" data-delay="2.2" data-dur="0.8">0</span><small>機</small></div>
+    <div class="note">空爆で能力低下。設計はロシアへ移転済み</div>
+  </div>
+</section>
+
+<!-- S7 日本 -->
+<section class="scene" id="s7">
+  <div class="kicker row" data-delay="0"><span class="flag">🇯🇵</span><span class="pill jp">日本</span></div>
+  <h2 class="row" data-delay="0.1">国産量産は<br>いま始まったところ</h2>
+  <div class="stat row" data-delay="0.5">
+    <div class="label">政府目標（2030年まで）</div>
+    <div class="value">国産 <span data-count="8" data-delay="0.6" data-dur="0.8">0</span><small>万台体制</small></div>
+    <div class="track"><div class="fill target" data-bar="100" data-delay="0.6" style="background:repeating-linear-gradient(135deg,var(--orange) 0 10px,transparent 10px 20px);outline-color:var(--orange)"></div></div>
+  </div>
+  <div class="stat row" data-delay="1.3">
+    <div class="label">現状の契約規模</div>
+    <div class="value"><span data-count="300" data-delay="1.4" data-dur="0.8">0</span><small>機</small></div>
+    <div class="track"><div class="fill" data-bar="1" data-delay="1.4" style="background:var(--orange)"></div></div>
+    <div class="note">教育用モジュール型UAV 300式（約1.2億円）</div>
+  </div>
+  <div class="callout jp row" data-delay="2.2">迎撃ドローンの早期取得と<br>新興企業向け調達制度が2026年に始動</div>
+</section>
+
+<!-- S8 比較チャート -->
+<section class="scene" id="s8">
+  <h2 class="row" data-delay="0">年間生産力をならべると</h2>
+  <p class="sub row" data-delay="0.1">対数目盛。実績・推計・目標が混在しています</p>
+  <div class="chart">
+    <div class="bar row" data-delay="0.4"><div class="name"><span class="flag">🇺🇦</span>ウクライナ</div><div class="lane"><div class="fill target" data-bar="100" data-logv="7000000" data-delay="0.5"></div><div class="val" data-follow>700万〜1,000万（目標・能力）</div></div></div>
+    <div class="bar row" data-delay="0.8"><div class="name"><span class="flag">🇷🇺</span>ロシア</div><div class="lane"><div class="fill" data-logv="4000000" data-delay="0.9"></div><div class="val" data-follow>400万〜730万（推計）</div></div></div>
+    <div class="bar row" data-delay="1.2"><div class="name"><span class="flag">🇨🇳</span>中国</div><div class="lane"><div class="fill target" data-logv="3000000" data-delay="1.3"></div><div class="val" data-follow>数百万規模（非公表）</div></div></div>
+    <div class="bar row" data-delay="1.6"><div class="name"><span class="flag">🇺🇸</span>米国</div><div class="lane"><div class="fill" data-logv="100000" data-delay="1.7"></div><div class="val" data-follow>10万（27年に30万目標）</div></div></div>
+    <div class="bar row" data-delay="2.0"><div class="name"><span class="flag">🇪🇺</span>欧州</div><div class="lane"><div class="fill" data-logv="40000" data-delay="2.1"></div><div class="val" data-follow>数万</div></div></div>
+    <div class="bar row" data-delay="2.4"><div class="name"><span class="flag">🇯🇵</span>日本</div><div class="lane"><div class="fill jp target" data-logv="80000" data-delay="2.5"></div><div class="val" data-follow>8万（2030年目標）</div></div></div>
+    <div class="bar row" data-delay="2.8"><div class="name"></div><div class="lane"><div class="fill jp" data-logv="300" data-delay="2.9"></div><div class="val" data-follow>現状 300機</div></div></div>
+    <div class="axis row" data-delay="3.0"><span style="left:0">100機</span><span style="left:37.7%">1万</span><span style="left:75.5%">100万</span><span style="left:94.3%">1,000万</span></div>
+    <div class="legend row" data-delay="3.1"><span>実績・推計</span><span class="t">目標・能力</span></div>
+  </div>
+</section>
+
+<!-- S9 まとめ -->
+<section class="scene" id="s9">
+  <h2 class="row" data-delay="0">まとめ</h2>
+  <div class="list">
+    <div class="item row" data-delay="0.4"><div class="num">1</div><div>実戦国（ウクライナ・ロシア）は<b>年数百万機</b>。他国の10倍〜100倍</div></div>
+    <div class="item row" data-delay="1.2"><div class="num">2</div><div>中国は民生基盤で<b>潜在力最大</b>。ロシアの部品供給元でもある</div></div>
+    <div class="item row" data-delay="2.0"><div class="num">3</div><div>米欧日は<b>立ち上げ期</b>。安価な小型機の量産へ投資を転換中</div></div>
+  </div>
+  <div class="warn row" data-delay="3.0">数値は政府発表・敵対国の情報機関推計・目標値が混在。独立検証された数字は少ない</div>
+  <p class="src row" data-delay="3.6">出典：Kyiv Post／Militarnyi／Kyiv Independent／SCMP／The Diplomat／U.S. Army／DefenseScoop／Crisis Group／日本経済新聞 ほか（2026年）</p>
+</section>
+
+<div id="brand">軍用ドローン 生産力 国際比較 2026</div>
+</div>
+
+<script>
+const DURATION = 63;
+const SCENES = [
+  {id:'s0', start:0,    end:4.5},
+  {id:'s1', start:4.5,  end:10.5},
+  {id:'s2', start:10.5, end:17.0},
+  {id:'s3', start:17.0, end:23.5},
+  {id:'s4', start:23.5, end:30.0},
+  {id:'s5', start:30.0, end:36.5},
+  {id:'s6', start:36.5, end:43.0},
+  {id:'s7', start:43.0, end:49.0},
+  {id:'s8', start:49.0, end:56.5},
+  {id:'s9', start:56.5, end:63.0},
+];
+const FADE_IN = 0.5, FADE_OUT = 0.4;
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const easeOut = x=>1-Math.pow(1-x,3);
+const fmt = n=>Math.round(n).toLocaleString('ja-JP');
+// log scale for chart: 100 .. 2e7
+const LOG_MIN = 2, LOG_MAX = 7.3;
+const logPct = v => clamp((Math.log10(v)-LOG_MIN)/(LOG_MAX-LOG_MIN),0,1)*100;
+
+function render(t){
+  document.getElementById('progress').style.width = (clamp(t/DURATION,0,1)*1080)+'px';
+  for(const s of SCENES){
+    const el = document.getElementById(s.id);
+    const local = t - s.start, dur = s.end - s.start;
+    if(local < 0 || local >= dur){ el.style.opacity = 0; el.style.visibility='hidden'; continue; }
+    el.style.visibility='visible';
+    const op = Math.min(easeOut(clamp(local/FADE_IN,0,1)), easeOut(clamp((dur-local)/FADE_OUT,0,1)));
+    el.style.opacity = op;
+    el.style.transform = `translateY(${(1-easeOut(clamp(local/FADE_IN,0,1)))*40}px)`;
+    // staggered rows
+    el.querySelectorAll('.row').forEach(r=>{
+      const d = parseFloat(r.dataset.delay||0);
+      const p = easeOut(clamp((local-d)/0.6,0,1));
+      r.style.opacity = p; r.style.transform = `translateY(${(1-p)*30}px)`;
+    });
+    // count-ups
+    el.querySelectorAll('[data-count]').forEach(c=>{
+      const d = parseFloat(c.dataset.delay||0), cd = parseFloat(c.dataset.dur||1);
+      const p = easeOut(clamp((local-d)/cd,0,1));
+      c.textContent = fmt(parseFloat(c.dataset.count)*p);
+    });
+    // bars
+    el.querySelectorAll('[data-bar],[data-logv]').forEach(b=>{
+      const d = parseFloat(b.dataset.delay||0);
+      const p = easeOut(clamp((local-d)/1.0,0,1));
+      const target = b.dataset.logv ? logPct(parseFloat(b.dataset.logv)) : parseFloat(b.dataset.bar);
+      const w = target*p;
+      b.style.width = w+'%';
+      const val = b.parentElement.querySelector('[data-follow]');
+      if(val){ val.style.opacity = p; }
+    });
+  }
+}
+window.render = render;
+render(0);
+</script>
+</body>
+</html>
