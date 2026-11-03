@@ -138,20 +138,38 @@ function sectionScene(sec, t, scene) {
 }
 function titleScene(t, scene) {
   const lt = t - scene.start; background(t, C.accent);
-  const a1 = easeOut(lt / 0.7), a2 = easeOut((lt - 0.4) / 0.7), a3 = easeOut((lt - 1.0) / 0.7);
-  text('AIドローン消耗戦の時代', W / 2, 420, { size: 48, color: C.ink2, align: 'center', alpha: a1, ls: 3 });
-  text('勝敗を決めるのは', W / 2, 620, { size: 88, weight: 'bold', align: 'center', alpha: a2 });
-  text('ドローンの数', W / 2, 760, { size: 100, weight: 'bold', color: C.ink3, align: 'center', alpha: a2 });
-  if (a3 > 0) { line(W / 2 - 300, 730, W / 2 + 300, 730, C.red, 10, a3); }
-  text('ではなく', W / 2, 880, { size: 60, color: C.ink2, align: 'center', alpha: a3 });
-  text('代替の利かない工程', W / 2, 1040, { size: 104, weight: 'bold', color: C.accent, align: 'center', alpha: a3, maxW: 980 });
-  ORDER.forEach((id, i) => {
-    const s = SECTIONS[id], a = easeOut((lt - 1.6 - i * 0.12) / 0.5), y = 1180 + i * 0;
-    const w = 180, x = 60 + i * (w + 15);
-    rrect(x, 1180, w, 70, 35, C.panel, a, hexA(s.color, 0.7));
-    rrect(x + 18, 1203, 22, 22, 11, s.color, a);
-    text(s.title, x + 52, 1225, { size: 26, weight: 'bold', alpha: a, maxW: 115 });
+  const b0 = scene.beats[0] ? scene.beats[0].start : scene.start + 0.5;
+  const b1 = scene.beats[1] ? scene.beats[1].start : b0 + 5;
+  const a0 = easeOut(lt / 0.6);
+  text('AIドローン消耗戦の時代', W / 2, 250, { size: 44, color: C.ink2, align: 'center', alpha: a0, ls: 3 });
+  // 左右対比: 増やせるもの / 増やせないもの
+  const pw = (W - 120 - 24) / 2;
+  const pL = easeOut((t - b0 - 0.2) / 0.6), pR = easeOut((t - b1 - 0.1) / 0.6);
+  // 増やせる
+  rrect(60, 330, pw, 720, 24, C.panel, pL, hexA(C.green, 0.6)); rrect(60, 330, pw, 12, 6, C.green, pL);
+  text('増やせる', 60 + pw / 2, 420, { size: 48, weight: 'bold', color: C.green, align: 'center', alpha: pL });
+  text('組み立て', 60 + pw / 2, 520, { size: 44, color: C.ink2, align: 'center', alpha: pL });
+  text('年400万機', 60 + pw / 2, 650, { size: 84, weight: 'bold', align: 'center', alpha: pL, maxW: pw - 40 });
+  text('ウクライナ(2025年)', 60 + pw / 2, 710, { size: 28, color: C.ink3, align: 'center', alpha: pL });
+  text('工場と人手があれば', 60 + pw / 2, 900, { size: 32, color: C.ink2, align: 'center', alpha: pL, maxW: pw - 40 });
+  text('数は伸びる', 60 + pw / 2, 950, { size: 32, color: C.ink2, align: 'center', alpha: pL });
+  // 増やせない
+  const xr = 60 + pw + 24;
+  rrect(xr, 330, pw, 720, 24, C.panel, pR, hexA(C.red, 0.6)); rrect(xr, 330, pw, 12, 6, C.red, pR);
+  text('増やせない', xr + pw / 2, 420, { size: 48, weight: 'bold', color: C.red, align: 'center', alpha: pR });
+  text('供給元が集中した工程', xr + pw / 2, 520, { size: 36, color: C.ink2, align: 'center', alpha: pR, maxW: pw - 40 });
+  [['EUV露光機', 'ASML 1社'], ['ネオジム磁石', '中国 94%'], ['ガスタービン', '3社・納期3年超']].forEach(([k, v], i) => {
+    const q = easeOut((t - b1 - 0.4 - i * 0.25) / 0.5), y = 600 + i * 120;
+    rrect(xr + 24, y - 44, pw - 48, 92, 14, C.panel2, q);
+    text(k, xr + 44, y - 6, { size: 28, color: C.ink3, alpha: q, maxW: pw - 90 });
+    text(v, xr + 44, y + 32, { size: 34, weight: 'bold', color: C.red, alpha: q, maxW: pw - 90 });
   });
+  text('金を積んでも短期では増えない', xr + pw / 2, 1000, { size: 28, color: C.ink2, align: 'center', alpha: pR, maxW: pw - 40 });
+  // 結論
+  const pC = easeOut((t - b1 - 1.6) / 0.7);
+  rrect(60, 1100, W - 120, 200, 24, C.panel2, pC, hexA(C.accent, 0.7));
+  text('消耗戦では、増やせない工程が先に尽きる', W / 2, 1175, { size: 40, color: C.ink2, align: 'center', alpha: pC, maxW: W - 180 });
+  text('勝敗は「代替の利かない工程」で決まる', W / 2, 1255, { size: 46, weight: 'bold', color: C.accent, align: 'center', alpha: pC, maxW: W - 180 });
   text('VOICEVOX:青山龍星 / 数値は公開情報にもとづく概数', W / 2, H - 50, { size: 24, color: C.ink3, align: 'center' });
 }
 function outroScene(t, scene) {
@@ -186,7 +204,7 @@ window.render = function (t) {
   const fade = Math.min(seg(lt, 0, 0.3), scene.id === 'end' ? 1 : 1 - seg(lt, scene.dur - 0.3, 0.3));
   if (fade < 1) { ctx.save(); ctx.globalAlpha = 1 - fade; ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 };
-window.renderThumbnail = function () { window.render(2.5); };
+window.renderThumbnail = function () { window.render(8.5); };
 if (!navigator.webdriver) { const t0 = performance.now(); (function loop() { window.render(((performance.now() - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); })(); }
 </script>
 </body>
