@@ -242,7 +242,7 @@ def illust_serum():
     bottle(d, 470, 120, 110, 330, (70, 80, 150), cap=(30, 34, 60), label="THE\nSERUM\nPM", fnt=font("K", 18), label_color=(60, 60, 120))
     d.text((170, 470), "朝用", font=font("K", 34), fill=GOLD); d.text((460, 470), "夜用", font=font("K", 34), fill=(150, 170, 255))
     d.text((60, 50), "ナイアシンアミド配合・医薬部外品", font=font("K", 34), fill=CREAM)
-    d.text((60, 530), "しわ改善 ＋ 美白", font=font("B", 30), fill=CREAM)
+    d.text((60, 530), "朝＋夜の2本で、しわ改善", font=font("B", 30), fill=CREAM)
     return img
 
 def illust_duv():
@@ -272,10 +272,11 @@ def illust_recent():
     img, d = card_base((30, 24, 44)); img = glow(img, RED, (600, 150), 180, 90); d = ImageDraw.Draw(img)
     # timeline
     d.line([(90, 300), (700, 300)], fill=GREY, width=6)
-    for x, yr, lab, c in [(120, "2007", "アスタリフト誕生", CREAM), (300, "2022", "若年層／メンズ", MINT), (480, "2026", "価格改定・新PR", GOLD), (660, "2027", "20周年", RED2)]:
+    for x, yr, lab, c in [(110, "2007", "アスタリフト\n誕生", CREAM), (250, "2019", "メンズ\n参入", MINT), (390, "2022", "若年層向け\nクレスク", MINT), (530, "2026", "価格改定\n新PR", GOLD), (670, "2027", "20周年", RED2)]:
         d.ellipse([x - 16, 284, x + 16, 316], fill=c)
-        d.text((x - 40, 220), yr, font=font("K", 30), fill=c)
-        text_fit(d, (x - 70, 340), lab, font("B", 24), CREAM, 170)
+        d.text((x - 38, 220), yr, font=font("K", 30), fill=c)
+        for k, ln in enumerate(lab.split("\n")):
+            tw = d.textlength(ln, font=font("B", 22)); d.text((x - tw / 2, 335 + k * 30), ln, font=font("B", 22), fill=CREAM)
     d.text((60, 60), "ブランドを広げ、20周年へ", font=font("K", 40), fill=CREAM)
     rounded(d, (60, 450, 720, 560), 16, fill=(50, 30, 50))
     d.text((80, 470), "「一生もののサイエンス」", font=font("K", 34), fill=GOLD)
