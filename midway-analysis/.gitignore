@@ -7,3 +7,4 @@ __pycache__/
 photos/*.jpg
 photos/*.png
 output/narration.wav
+output/midway_narrated.mp4

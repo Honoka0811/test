@@ -4,7 +4,7 @@
 横型動画(1920×1080 / 30fps / 約3分31秒)です。ナレーションは男性音声(VOICEVOX:青山龍星)、BGM は自作(権利フリー)です。
 
 - **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグの `metadata.md`)
-- 完成動画: `output/midway_narrated.mp4`
+- 完成動画(正規化前): `output/midway_narrated.mp4`(再生成可能、git 管理外。配布用は `upload/` を使用)
 - ナレーション音声のみ: `output/narration.wav`(`python3 narrate.py` で再生成、git 管理外)
 - シーン尺・字幕タイミング: `output/timing.json`
 
