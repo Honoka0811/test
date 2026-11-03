@@ -3,7 +3,7 @@
 イラストと絵文字を多めに使い、テンポよく10項目を紹介する縦型ショート動画(1080×1920 / 30fps / 約70秒)です。
 ナレーションは VOICEVOX の **四国めたん**、BGM はパッヘルベル「カノン」のポップ・アレンジ(自作)です。
 
-- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグの `metadata.md`)
+- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・`metadata.md` に手順とタイトル/説明文/タグ・`youtube_metadata.json` + `upload_youtube.py` で API アップロードも可)
 - 完成動画: `output/forties_checklist_narrated.mp4`
 - 無音版(映像のみ): `output/forties_checklist.mp4`
 - ナレーションのみ: `output/narration.wav` / BGMのみ: `output/bgm.wav`
