@@ -27,6 +27,18 @@
 
 各シーンはサークルワイプで切り替わり、番号バッジ → タイトル → イラスト(ポップイン)→ キャプションカードの順にテンポよく出ます。
 
+## YouTube への投稿
+
+```bash
+python3 youtube_upload.py --check      # ファイルとメタデータ(upload/metadata.json)の検証のみ
+python3 youtube_upload.py              # 非公開で投稿(初回はブラウザで Google の認可)。字幕・サムネイルも一緒に登録
+python3 youtube_upload.py --privacy public                       # 公開で投稿
+python3 youtube_upload.py --publish-at 2026-11-05T19:00:00+09:00  # 予約公開
+```
+
+事前に Google Cloud Console で YouTube Data API v3 を有効化し、OAuth クライアント ID(デスクトップアプリ)の JSON を
+`upload/client_secret.json` に保存してください(`.gitignore` 済み)。手動で投稿する場合は `upload/metadata.md` の値を YouTube Studio に貼り付けます。
+
 ## 再生成の方法
 
 ```bash
