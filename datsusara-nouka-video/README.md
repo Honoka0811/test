@@ -23,4 +23,9 @@ python3 build.py <作業ディレクトリ> <出力mp4パス>
 - `build.py` … HTML 生成 → Playwright で画像化 → Open JTalk で音声合成 → ffmpeg で合成
 - `render.js` … スライド画像化（Playwright）
 
-ナレーションはオフライン音声合成（Open JTalk + HTS voice「tohoku-f01（happy）」東北大学 伊藤・能勢研究室, CC BY 4.0, `voices/` 同梱）です。環境変数 `VOICE=neutral` / `VOICE=mei` で声を切り替えられます。`voice_samples/` に比較用サンプルがあります。制度の金額・要件は年度により変わるため、動画内でも最新情報の確認を促しています。
+## ナレーション（音声合成）
+既定は **VOICEVOX（四国めたん）** です。クレジット表記「VOICEVOX:四国めたん」が必要なため、動画末尾に記載しています。
+- VOICEVOX を使うには `vv/` に VOICEVOX ONNX Runtime（`ort/lib/libvoicevox_onnxruntime.so*`）と音声モデル（`models/*.vvm`）を置き、`voicevox_core` の wheel を pip で入れます（いずれも GitHub の VOICEVOX リリースから取得。容量が大きいため git には含めていません。`VV_DIR` で別の場所も指定可）。
+- 環境変数 `VOICE` で声を切り替えられます：`metan` / `zundamon` / `tsumugi` / `himari` / `sora` / `no7` / `kiritan` / `mochiko`（VOICEVOX）、`happy` / `neutral`（Open JTalk + 東北大学 tohoku-f01, CC BY 4.0, `voices/` 同梱）、`mei`（Open JTalk 同梱）。
+- `voice_samples/` に各声の比較サンプルがあります（`vv_*.mp3` が VOICEVOX）。
+- 音声モデルの利用規約は VOICEVOX 公式（https://voicevox.hiroshiba.jp/ および各キャラクターの規約）に従ってください。

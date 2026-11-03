@@ -85,18 +85,30 @@ subprocess.run(["node", os.path.join(os.path.dirname(__file__), "render.js"), OU
 # ---------- 3. TTS ----------
 import pyopenjtalk
 from pyopenjtalk.htsengine import HTSEngine
-SR = 48000
-# 声: voices/tohoku-f01-{happy,neutral}.htsvoice（東北大学 tohoku-f01, CC BY 4.0）。"mei" で pyopenjtalk 同梱の Mei に切替
-VOICE = os.environ.get("VOICE", "happy")
+from vvtts import VoicevoxTTS, VOICES
+# 声の指定: VOICE=metan|zundamon|tsumugi|himari|sora|no7|kiritan|mochiko (VOICEVOX, 要 VV_DIR)
+#          VOICE=happy|neutral (Open JTalk + tohoku-f01)  VOICE=mei (Open JTalk 同梱 Mei)
+VOICE = os.environ.get("VOICE", "metan")
 SPEED, HALF_TONE = 1.0, 0.0
-if VOICE != "mei":
-    ENGINE = HTSEngine(os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices", f"tohoku-f01-{VOICE}.htsvoice").encode())
-    ENGINE.set_speed(SPEED)
-    ENGINE.add_half_tone(HALF_TONE)
 READINGS = {"作目": "さくもく", "お米": "おこめ"}   # Open JTalk が誤読する語の読み補正
+if VOICE in VOICES:
+    VV = VoicevoxTTS()
+    STYLE_ID, CREDIT = VOICES[VOICE]
+    SR = VV.sr
+else:
+    SR = 48000
+    CREDIT = "Open JTalk"
+    if VOICE != "mei":
+        ENGINE = HTSEngine(os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices", f"tohoku-f01-{VOICE}.htsvoice").encode())
+        ENGINE.set_speed(SPEED)
+        ENGINE.add_half_tone(HALF_TONE)
+        CREDIT = "HTS voice tohoku-f01（東北大学）"
+print("voice:", VOICE, CREDIT, SR)
 def tts(text):
     for k, v in READINGS.items():
         text = text.replace(k, v)
+    if VOICE in VOICES:
+        return VV.tts(text, STYLE_ID, speed=SPEED)
     if VOICE == "mei":
         x, sr = pyopenjtalk.tts(text, speed=SPEED, half_tone=HALF_TONE)
     else:
