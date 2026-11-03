@@ -84,15 +84,25 @@ subprocess.run(["node", os.path.join(os.path.dirname(__file__), "render.js"), OU
 
 # ---------- 3. TTS ----------
 import pyopenjtalk
+from pyopenjtalk.htsengine import HTSEngine
 SR = 48000
-READINGS = {"作目": "さくもく", "お米": "おこめ"}   # words Open JTalk misreads
+# 声: voices/tohoku-f01-{happy,neutral}.htsvoice（東北大学 tohoku-f01, CC BY 4.0）。"mei" で pyopenjtalk 同梱の Mei に切替
+VOICE = os.environ.get("VOICE", "happy")
+SPEED, HALF_TONE = 1.0, 0.0
+if VOICE != "mei":
+    ENGINE = HTSEngine(os.path.join(os.path.dirname(os.path.abspath(__file__)), "voices", f"tohoku-f01-{VOICE}.htsvoice").encode())
+    ENGINE.set_speed(SPEED)
+    ENGINE.add_half_tone(HALF_TONE)
+READINGS = {"作目": "さくもく", "お米": "おこめ"}   # Open JTalk が誤読する語の読み補正
 def tts(text):
     for k, v in READINGS.items():
         text = text.replace(k, v)
-    x, sr = pyopenjtalk.tts(text, speed=1.0, half_tone=0.0)
+    if VOICE == "mei":
+        x, sr = pyopenjtalk.tts(text, speed=SPEED, half_tone=HALF_TONE)
+    else:
+        x = ENGINE.synthesize(pyopenjtalk.extract_fullcontext(text)); sr = ENGINE.get_sampling_frequency()
     assert sr == SR
-    x = x.astype(np.float32) / 32768.0
-    return x
+    return x.astype(np.float32) / 32768.0
 
 def write_wav(path, x):
     with wave.open(path, "wb") as f:

@@ -23,4 +23,4 @@ python3 build.py <作業ディレクトリ> <出力mp4パス>
 - `build.py` … HTML 生成 → Playwright で画像化 → Open JTalk で音声合成 → ffmpeg で合成
 - `render.js` … スライド画像化（Playwright）
 
-ナレーションはオフライン音声合成（Open JTalk / Mei）です。制度の金額・要件は年度により変わるため、動画内でも最新情報の確認を促しています。
+ナレーションはオフライン音声合成（Open JTalk + HTS voice「tohoku-f01（happy）」東北大学 伊藤・能勢研究室, CC BY 4.0, `voices/` 同梱）です。環境変数 `VOICE=neutral` / `VOICE=mei` で声を切り替えられます。`voice_samples/` に比較用サンプルがあります。制度の金額・要件は年度により変わるため、動画内でも最新情報の確認を促しています。
