@@ -1,0 +1,24 @@
+{
+  "file": "drone_short_youtube.mp4",
+  "thumbnail": "thumbnail_16x9.png",
+  "subtitles": {"ja": "drone_short.ja.srt"},
+  "snippet": {
+    "title": "軍用ドローン、年に何機つくれる？ 生産力を国際比較【2026年版】#Shorts",
+    "description": "軍用ドローンの年間生産力を、ウクライナ・ロシア・中国・米国・欧州・トルコ・イラン・日本で比較しました。\n\n▼この動画のポイント\n・ウクライナは年間700万〜1,000万機（政府目標・設備能力）\n・ロシアはFPV 730万機の計画、シャヘド系も月数千機\n・中国は軍用の実数を非公表。民生ドローン世界シェア約7割\n・米国は年約10万機から、2027年までに30万機超へ\n・日本は2030年までに国産8万台体制が目標\n\n▼注意\n数値は各国政府の発表、敵対国の情報機関による推計、目標値が混在しています。独立に検証された数字は少なく、目安としてご覧ください。\n\n▼主な出典（2026年）\nKyiv Post https://www.kyivpost.com/post/80328\nMilitarnyi https://militarnyi.com/en/news/ukraine-plans-to-produce-over-7-million-drones-in-2026/\nKyiv Post（ロシアFPV計画） https://www.kyivpost.com/amp/post/75714\nMilitarnyi（Geran生産） https://militarnyi.com/en/news/russia-produces-about-2-800-geran-2-drones-per-month/\nSCMP https://www.scmp.com/news/china/science/article/3364661/chinas-drone-production-capacity-can-only-meet-60-war-demand-study\nThe Diplomat https://thediplomat.com/2026/01/chinas-drone-war-in-ukraine/\nU.S. Army https://www.army.mil/article/289322/war_department_asks_industry_to_make_more_than_300k_drones_quickly_cheaply\nDefenseScoop https://defensescoop.com/2025/10/14/army-small-drones-skyfoundry/\nCrisis Group https://www.crisisgroup.org/cmt/europe-central-asia/western-europemediterranean/turkiye/turkiyes-growing-drone-exports\n日本経済新聞 https://www.nikkei.com/article/DGXZQOUA276AB0X20C26A7000000/\n\n▼クレジット\nナレーション：VOICEVOX:青山龍星\nBGM：オリジナル（自作）\n\n#ドローン #軍用ドローン #ウクライナ #ロシア #地政学 #安全保障 #防衛 #Shorts",
+    "tags": ["ドローン", "軍用ドローン", "無人機", "UAV", "FPV", "ウクライナ", "ロシア", "中国", "米国", "日本", "防衛", "安全保障", "地政学", "国際比較", "シャヘド", "VOICEVOX", "青山龍星", "Shorts"],
+    "categoryId": "25",
+    "defaultLanguage": "ja",
+    "defaultAudioLanguage": "ja"
+  },
+  "status": {
+    "privacyStatus": "private",
+    "selfDeclaredMadeForKids": false,
+    "license": "youtube",
+    "embeddable": true
+  },
+  "notes": {
+    "altered_content": "ナレーションが合成音声のため、アップロード時の「改変・合成コンテンツ」の開示は「はい」を推奨",
+    "shorts": "縦型・3分未満なので自動的にショートとして扱われる。タイトルかタグに #Shorts を含めておく",
+    "playlist": "任意。地政学・防衛系の再生リストがあれば追加"
+  }
+}

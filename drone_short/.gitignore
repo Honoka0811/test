@@ -5,3 +5,5 @@ narration.wav
 bgm.wav
 mix.wav
 drone_short_silent.mp4
+client_secret.json
+token*.json
