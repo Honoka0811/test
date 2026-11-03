@@ -316,7 +316,7 @@ def scene_compare():
         for i, v in enumerate(vals):
             colr = {"大": "#d9423a", "高": "#d9423a", "ほぼ不要": "#4c8a3f", "低": "#4c8a3f", "中": "#e0a030", "低（当初）": "#d9423a"}.get(v, "#2b3a2f")
             s += f'<rect x="{x0+i*cw}" y="{y}" width="{cw-8}" height="{rh-10}" rx="10" fill="#ffffff"/>' + label(x0 + i * cw + (cw - 8) / 2, y + rh / 2 + 6, v, 34 if len(v) <= 2 else 24, colr)
-    s += label(380, 640, "※ 一般的な傾向。地域・作目・個人の状況で変わります", 20, "#6a7a6a")
+    s += label(380, 640, "※ 一般的な傾向。地域・作物・個人の状況で変わります", 20, "#6a7a6a")
     return wrap(s)
 
 def scene_checklist():
@@ -324,7 +324,7 @@ def scene_checklist():
     s += sun(640, 100, 44) + cloud(160, 110, 1.0)
     s += '<rect x="90" y="60" width="360" height="470" rx="18" fill="#c9a06c"/><rect x="110" y="100" width="320" height="410" rx="10" fill="#ffffff"/>'
     s += '<rect x="210" y="40" width="120" height="50" rx="12" fill="#6e4426"/>'
-    items = ["いきなり辞めない", "作目を選ぶ", "早めに窓口へ相談", "家族の理解・生活費"]
+    items = ["いきなり辞めない", "何を作るか決める", "早めに窓口へ相談", "家族の理解・生活費"]
     for i, t in enumerate(items):
         y = 150 + i * 90
         s += f'<rect x="135" y="{y-22}" width="44" height="44" rx="8" fill="none" stroke="#3d7a4a" stroke-width="5"/>'
