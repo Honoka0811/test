@@ -211,16 +211,14 @@ def illust_light():
         x0 = 170 + 75 * math.cos(math.radians(a)); y0 = 150 + 75 * math.sin(math.radians(a))
         x1 = 170 + 105 * math.cos(math.radians(a)); y1 = 150 + 105 * math.sin(math.radians(a))
         d.line([(x0, y0), (x1, y1)], fill=(255, 210, 90), width=6)
-    # rays hitting shield
+    # 3 種類の紫外線（太陽 → ラベル → シールド → 肌）
     for i, (c, lab) in enumerate([((200, 120, 255), "UVB"), ((150, 90, 230), "UVA"), ((110, 60, 200), "Deep UV")]):
-        y = 300 + i * 70
-        d.line([(230, 200 + i * 20), (470, y)], fill=c, width=8)
-        d.text((240, 180 + i * 20 - 30 if i == 0 else y - 50), "", font=font("R", 10), fill=c)
-        d.text((500 if i < 2 else 500, y - 18), lab, font=font("B", 26), fill=c)
-    # shield arc
-    d.arc([440, 240, 640, 560], 110, 250, fill=MINT, width=16)
-    # skin
-    rounded(d, (560, 250, 720, 560), 20, fill=(240, 200, 185))
+        y = 290 + i * 70
+        d.line([(230, 200 + i * 20), (420, y)], fill=c, width=8)
+        d.text((440, y - 18), lab, font=font("B", 24), fill=c)
+        d.line([(560, y), (600, y)], fill=c, width=8)
+    d.arc([590, 230, 770, 560], 110, 250, fill=MINT, width=16)   # シールド
+    rounded(d, (690, 240, 750, 550), 18, fill=(240, 200, 185))     # 肌
     d.text((60, 480), "光を制御する知識\n→ 日焼け止め・トーンアップ", font=font("B", 30), fill=CREAM)
     return img
 
@@ -325,10 +323,11 @@ def draw_scene(i, sc):
         d.text((70, ty + 140), sc["sub"], font=font("B", 44), fill=GOLD)
         d.text((70, ty + 260), "3分でわかる", font=font("K", 60), fill=RED2)
     else:
-        text_fit(d, (70, ty), sc["title"], font("K", 66), WHITE, 980)
-        d.rounded_rectangle((70, ty + 110, 70 + 140, ty + 118), radius=4, fill=RED)
-        h = text_fit(d, (70, ty + 145), sc["sub"], font("B", 36), GOLD, 960)
-        by = ty + 160 + h + 20
+        th = text_fit(d, (70, ty), sc["title"], font("K", 66), WHITE, 980)
+        uy = ty + th + 22
+        d.rounded_rectangle((70, uy, 70 + 140, uy + 8), radius=4, fill=RED)
+        h = text_fit(d, (70, uy + 35), sc["sub"], font("B", 36), GOLD, 960)
+        by = uy + 50 + h + 20
         for b in sc["bullets"]:
             d.ellipse([74, by + 18, 94, by + 38], fill=RED2)
             hh = text_fit(d, (115, by), b, font("R", 34), CREAM, 880)
