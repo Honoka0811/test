@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>20代のうちにやっておくべきこと10選</title>
+<style>
+  @font-face { font-family: 'MPR'; font-weight: 900; src: url('fonts/MPLUSRounded1c-Black.ttf'); }
+  @font-face { font-family: 'MPR'; font-weight: 700; src: url('fonts/MPLUSRounded1c-Bold.ttf'); }
+  html,body{margin:0;background:#222;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 20代のうちにやっておくべきこと10選  (9:16 ショート動画 / 66.5秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"MPR","Rounded Mplus 1c","IPAPGothic",sans-serif';
+const FPS = 30;
+const TITLE_DUR = 5.0, ITEM_DUR = 5.6, OUTRO_DUR = 5.5;   // narrate.py と一致させる
+const DURATION = TITLE_DUR + 10 * ITEM_DUR + OUTRO_DUR;   // 66.5
+const WIPE = 0.32;                                        // シーン切替のサークルワイプ秒数
+window.FPS = FPS; window.DURATION = DURATION;
+window.ready = Promise.all([document.fonts.load('900 40px MPR'), document.fonts.load('700 40px MPR')]);
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const easeBack = t => { t = clamp(t); const c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+// ポップイン: start から dur 秒かけて 0 → 1(オーバーシュート付き)
+const pop = (t, start, dur = 0.45) => t < start ? 0 : easeBack((t - start) / dur);
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 48, weight = 900, color = '#fff', align = 'center', base = 'middle', alpha = 1, shadow = 0, stroke = null, sw = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = sw || size * 0.22; ctx.strokeText(str, x, y); }
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowOffsetY = shadow; ctx.shadowBlur = 0; }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 900) { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(str).width; }
+// 文字幅で自動改行(句読点は行頭に来ないよう前の行へ)
+function wrap(str, size, maxW, weight = 700) {
+  if (measure(str, size, weight) <= maxW) return [str];
+  // まず読点・句点で分割し、行幅に収まるようにまとめる(読点は行末に残す)
+  const parts = str.match(/[^、。]+[、。]?/g) || [str];
+  const lines = []; let cur = '';
+  for (const p of parts) {
+    if (cur && measure(cur + p, size, weight) > maxW) { lines.push(cur); cur = ''; }
+    cur += p;
+  }
+  if (cur) lines.push(cur);
+  // それでも長い行は文字単位で折り返す
+  const out = [];
+  for (const ln of lines) {
+    if (measure(ln, size, weight) <= maxW) { out.push(ln); continue; }
+    let c = '';
+    for (const ch of ln) {
+      if (measure(c + ch, size, weight) > maxW && c && !'、。!?」)'.includes(ch)) { out.push(c); c = ''; }
+      c += ch;
+    }
+    if (c) out.push(c);
+  }
+  return out;
+}
+function rr(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); ctx.restore();
+}
+function circ(x, y, r, color, alpha = 1) {
+  if (r <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function ell(x, y, rx, ry, color, alpha = 1, rot = 0) {
+  if (rx <= 0 || ry <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function poly(pts, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath();
+  pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function stroke(pts, color, width, alpha = 1, close = false) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  if (close) ctx.closePath(); ctx.stroke(); ctx.restore();
+}
+function ring(x, y, r, color, width, alpha = 1, a0 = 0, a1 = Math.PI * 2) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y, r, a0, a1); ctx.stroke(); ctx.restore();
+}
+function gradBg(c1, c2) {
+  const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
+  g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+// 影(地面のぼかし楕円)
+function groundShadow(x, y, rx, ry = 18, alpha = 0.18) { ell(x, y, rx, ry, '#000', alpha); }
+
+// ============================================================
+// イラスト(各関数は原点中心・おおよそ 300px 四方の大きさで描く)
+// ============================================================
+const SKIN = ['#FFD5B8', '#F5C1A0', '#E0A581', '#C68B63', '#FFE0C8'];
+function drawStar(r = 40, color = '#FFD54F') {
+  const pts = [];
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5; const rr_ = i % 2 ? r * 0.45 : r; pts.push([Math.cos(a) * rr_, Math.sin(a) * rr_]); }
+  poly(pts, color);
+}
+function drawSparkle(r = 30, color = '#fff', alpha = 1) {
+  poly([[0, -r], [r * 0.22, -r * 0.22], [r, 0], [r * 0.22, r * 0.22], [0, r], [-r * 0.22, r * 0.22], [-r, 0], [-r * 0.22, -r * 0.22]], color, alpha);
+}
+function drawHeart(s = 1, color = '#FF5A6E') {
+  ctx.save(); ctx.scale(s, s); ctx.fillStyle = color; ctx.beginPath();
+  ctx.moveTo(0, 70);
+  ctx.bezierCurveTo(-120, -20, -70, -110, 0, -45);
+  ctx.bezierCurveTo(70, -110, 120, -20, 0, 70);
+  ctx.fill(); ctx.restore();
+}
+function drawCloud(s = 1, color = '#fff', alpha = 1) {
+  ctx.save(); ctx.scale(s, s); ctx.globalAlpha = alpha;
+  circ(-70, 10, 45, color); circ(-20, -20, 62, color); circ(45, -5, 52, color); circ(90, 20, 38, color);
+  rr(-80, 10, 180, 48, 24, color);
+  ctx.restore();
+}
+function drawGlobe() {
+  groundShadow(0, 150, 110);
+  circ(0, 0, 130, '#2F8DE4');
+  // 大陸
+  ctx.save(); ctx.beginPath(); ctx.arc(0, 0, 130, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = '#6CCB73';
+  ctx.beginPath(); ctx.moveTo(-110, -40); ctx.bezierCurveTo(-80, -90, -20, -80, -10, -40); ctx.bezierCurveTo(-5, -5, -40, 20, -50, 50); ctx.bezierCurveTo(-60, 80, -90, 60, -95, 20); ctx.bezierCurveTo(-120, 10, -125, -20, -110, -40); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(20, -110); ctx.bezierCurveTo(80, -120, 130, -70, 120, -20); ctx.bezierCurveTo(100, 20, 70, 10, 60, 40); ctx.bezierCurveTo(50, 70, 20, 60, 25, 20); ctx.bezierCurveTo(10, -10, 0, -60, 20, -110); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(70, 85, 35, 22, 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // 経線・緯線
+  ring(0, 0, 130, 'rgba(255,255,255,0.35)', 6);
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.ellipse(0, 0, 60, 130, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-130, 0); ctx.lineTo(130, 0); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, -60, 115, 18, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, 60, 115, 18, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  ell(-55, -70, 30, 16, '#fff', 0.55, -0.6);
+}
+function drawPlane(color = '#fff', accent = '#FF7043') {
+  // 右向き
+  rr(-130, -22, 240, 44, 22, color);
+  poly([[110, -22], [160, 0], [110, 22]], color);
+  poly([[-130, -22], [-160, -70], [-110, -70], [-70, -22]], accent);                 // 尾翼
+  poly([[-20, -14], [40, -14], [-10, -95], [-45, -95]], accent);                     // 主翼(上)
+  poly([[-20, 14], [40, 14], [-10, 95], [-45, 95]], accent);                         // 主翼(下)
+  for (let i = 0; i < 5; i++) circ(-80 + i * 32, -4, 7, '#64B5F6');
+  circ(95, -4, 10, '#64B5F6');
+}
+function drawSuitcase(color = '#FF8A3D', dark = '#E0631C') {
+  groundShadow(0, 118, 100);
+  rr(-95, -60, 190, 170, 22, color);
+  rr(-95, -8, 190, 26, 0, dark);
+  rr(-45, -105, 90, 60, 18, dark); rr(-30, -92, 60, 32, 10, color);
+  rr(-20, -22, 40, 50, 8, '#FFD180');
+  circ(-55, 60, 18, '#FFF59D'); circ(50, 45, 14, '#80DEEA'); drawSparkle(14, '#fff');
+}
+function drawBookStack(colors = ['#FF6B6B', '#4ECDC4', '#FFD166']) {
+  groundShadow(0, 120, 150, 20);
+  const h = 52;
+  colors.forEach((c, i) => {
+    const y = 100 - h * (i + 1); const dx = (i % 2) * 14 - 7;
+    rr(-150 + dx, y, 300, h, 10, c);
+    rr(-150 + dx + 20, y + 8, 260, 10, 5, 'rgba(255,255,255,0.5)');
+    rr(-150 + dx, y, 22, h, 8, 'rgba(0,0,0,0.12)');
+  });
+  // 開いた本
+  ctx.save(); ctx.translate(0, -70);
+  poly([[-150, 10], [0, -10], [150, 10], [150, -70], [0, -95], [-150, -70]], '#8D6E63');
+  poly([[-140, 0], [0, -20], [0, -85], [-140, -62]], '#FFF8E1');
+  poly([[140, 0], [0, -20], [0, -85], [140, -62]], '#fff');
+  for (let i = 0; i < 4; i++) {
+    const y = -70 + i * 14;
+    stroke([[-120, y + 2], [-25, y - 13]], '#BDBDBD', 4);
+    stroke([[25, y - 13], [120, y + 2]], '#BDBDBD', 4);
+  }
+  ctx.restore();
+}
+function drawPiggy() {
+  groundShadow(0, 120, 120);
+  rr(-80, 50, 32, 60, 12, '#E57398'); rr(50, 50, 32, 60, 12, '#E57398');
+  ell(0, 0, 140, 100, '#F48FB1');
+  circ(95, -20, 70, '#F48FB1');
+  ell(150, -15, 26, 34, '#E57398'); circ(142, -24, 6, '#B4476F'); circ(142, -6, 6, '#B4476F');
+  poly([[70, -80], [95, -130], [115, -75]], '#E57398');
+  circ(100, -40, 9, '#3A2E39');
+  rr(-45, -112, 80, 20, 8, '#B4476F');
+  ring(-150, -10, 22, '#E57398', 12, 1, 0.6, Math.PI * 1.8);
+  circ(-40, 20, 8, '#F8BBD0', 0.9); // ほっぺ
+}
+function drawCoin(r = 48) {
+  circ(0, 0, r, '#F9A825'); circ(0, 0, r * 0.8, '#FFD54F');
+  text('¥', 0, 2, { size: r * 1.1, color: '#F9A825', weight: 900 });
+}
+function drawChartUp() {
+  const hs = [60, 100, 150, 210]; const cs = ['#80DEEA', '#4DD0E1', '#26C6DA', '#00ACC1'];
+  rr(-150, 110, 300, 10, 5, 'rgba(255,255,255,0.7)');
+  hs.forEach((h, i) => rr(-130 + i * 72, 100 - h, 52, h, 10, cs[i]));
+  stroke([[-110, 10], [-35, -30], [40, -60], [120, -140]], '#fff', 12);
+  poly([[120, -140], [70, -140], [120, -90]], '#fff');
+}
+function drawDumbbell() {
+  groundShadow(0, 90, 160);
+  rr(-150, -18, 300, 36, 18, '#B0BEC5');
+  for (const sx of [-1, 1]) {
+    rr(sx * 120 - 28, -70, 56, 140, 14, '#37474F');
+    rr(sx * 60 - 22, -55, 44, 110, 12, '#455A64');
+  }
+}
+function drawRunner(color = '#fff') {
+  const w = 20;
+  circ(30, -120, 34, color);                                     // 頭
+  stroke([[20, -80], [-10, 0]], color, w + 6);                   // 体
+  stroke([[10, -60], [60, -30], [95, -70]], color, w);           // 腕(前)
+  stroke([[10, -60], [-40, -45], [-55, -5]], color, w);          // 腕(後)
+  stroke([[-10, 0], [50, 30], [45, 100]], color, w + 2);         // 脚(前)
+  stroke([[-10, 0], [-60, 50], [-115, 35]], color, w + 2);       // 脚(後)
+}
+function drawRocket(t = 0) {
+  // 炎
+  const fl = 1 + 0.15 * Math.sin(t * 40);
+  ctx.save(); ctx.translate(0, 120);
+  ell(0, 40 * fl, 42, 70 * fl, '#FF7043'); ell(0, 30 * fl, 28, 50 * fl, '#FFB300'); ell(0, 18 * fl, 14, 30 * fl, '#FFF59D');
+  ctx.restore();
+  // 本体
+  ctx.save(); ctx.fillStyle = '#F5F5F5'; ctx.beginPath();
+  ctx.moveTo(0, -170); ctx.bezierCurveTo(90, -80, 80, 80, 60, 120); ctx.lineTo(-60, 120); ctx.bezierCurveTo(-80, 80, -90, -80, 0, -170); ctx.fill(); ctx.restore();
+  ctx.save(); ctx.fillStyle = '#EF5350'; ctx.beginPath();
+  ctx.moveTo(0, -170); ctx.bezierCurveTo(50, -120, 65, -90, 70, -60); ctx.lineTo(-70, -60); ctx.bezierCurveTo(-65, -90, -50, -120, 0, -170); ctx.fill(); ctx.restore();
+  poly([[60, 30], [120, 120], [60, 120]], '#EF5350'); poly([[-60, 30], [-120, 120], [-60, 120]], '#EF5350');
+  rr(-45, 100, 90, 30, 10, '#B0BEC5');
+  circ(0, -10, 38, '#90A4AE'); circ(0, -10, 28, '#4FC3F7'); ell(-10, -20, 8, 5, '#fff', 0.8, -0.6);
+}
+function drawMountain(color = '#5C6BC0', snow = '#fff') {
+  poly([[-200, 120], [0, -160], [200, 120]], color);
+  poly([[-60, -76], [0, -160], [60, -76], [40, -60], [20, -78], [0, -62], [-20, -78], [-40, -60]], snow);
+  poly([[-200, 120], [-90, -30], [20, 120]], 'rgba(0,0,0,0.12)');
+  stroke([[0, -160], [0, -250]], '#5D4037', 8);
+  poly([[0, -250], [80, -225], [0, -200]], '#FF5252');
+}
+function drawLaptop() {
+  groundShadow(0, 110, 200, 16);
+  rr(-170, -140, 340, 230, 22, '#37474F');
+  rr(-152, -122, 304, 194, 12, '#1E2A3A');
+  const rows = [[-130, 120, '#F06292'], [-110, 180, '#4DD0E1'], [-130, 90, '#FFD54F'], [-90, 150, '#AED581'], [-130, 60, '#F06292'], [-110, 200, '#4DD0E1'], [-130, 110, '#FFD54F']];
+  rows.forEach(([x, w, c], i) => rr(x, -104 + i * 24, w, 12, 6, c));
+  poly([[-200, 100], [200, 100], [230, 125], [-230, 125]], '#90A4AE');
+  rr(-70, 98, 140, 10, 5, '#78909C');
+}
+function drawBubble(str, color = '#fff', ink = '#333', w = 220, h = 110, size = 48, flip = false) {
+  rr(-w / 2, -h / 2, w, h, 30, color);
+  const tx = flip ? w / 2 - 50 : -w / 2 + 50;
+  poly([[tx - 20, h / 2 - 4], [tx + 20, h / 2 - 4], [tx + (flip ? 30 : -30), h / 2 + 34]], color);
+  text(str, 0, 2, { size, color: ink, weight: 900 });
+}
+function drawPerson(shirt = '#4FC3F7', skin = SKIN[0], hair = '#4E342E', s = 1) {
+  ctx.save(); ctx.scale(s, s);
+  rr(-90, 20, 180, 150, 60, shirt);
+  rr(-20, -10, 40, 50, 14, skin);
+  circ(0, -50, 56, skin);
+  ctx.save(); ctx.beginPath(); ctx.arc(0, -50, 56, Math.PI, Math.PI * 2); ctx.closePath(); ctx.fillStyle = hair; ctx.fill(); ctx.restore();
+  rr(-56, -62, 112, 26, 10, hair);
+  circ(-20, -40, 6, '#333'); circ(20, -40, 6, '#333');
+  ring(0, -30, 14, '#333', 5, 1, 0.3, Math.PI - 0.3);
+  circ(-34, -24, 9, '#F48FB1', 0.5); circ(34, -24, 9, '#F48FB1', 0.5);
+  ctx.restore();
+}
+function drawHouse() {
+  groundShadow(0, 150, 170, 18);
+  rr(-140, -20, 280, 170, 12, '#FFF3E0');
+  poly([[-170, -10], [0, -150], [170, -10]], '#EF5350');
+  rr(60, -130, 40, 70, 6, '#A1887F');
+  rr(-30, 50, 60, 100, 10, '#8D6E63'); circ(12, 100, 6, '#FFD54F');
+  rr(-115, 10, 65, 60, 8, '#81D4FA'); stroke([[-82, 10], [-82, 70]], '#fff', 6); stroke([[-115, 40], [-50, 40]], '#fff', 6);
+  rr(50, 10, 65, 60, 8, '#81D4FA'); stroke([[82, 10], [82, 70]], '#fff', 6); stroke([[50, 40], [115, 40]], '#fff', 6);
+}
+function drawKey(color = '#FFC107') {
+  ring(-70, 0, 50, color, 26);
+  rr(-20, -13, 170, 26, 13, color);
+  rr(90, 0, 24, 45, 6, color); rr(130, 0, 24, 35, 6, color);
+}
+function drawPlant() {
+  groundShadow(0, 120, 90, 14);
+  poly([[-70, 20], [70, 20], [55, 120], [-55, 120]], '#D7845F');
+  rr(-80, 0, 160, 34, 12, '#E89B78');
+  stroke([[0, 10], [0, -90]], '#43A047', 10);
+  for (const [a, x, y] of [[-0.9, -55, -60], [0.9, 55, -60], [-0.6, -45, -120], [0.6, 45, -120], [0, 0, -150]]) ell(x, y, 42, 22, '#66BB6A', 1, a);
+}
+function drawGift(box = '#FF7043', ribbon = '#FFD54F') {
+  groundShadow(0, 120, 110);
+  rr(-110, -30, 220, 150, 16, box);
+  rr(-125, -70, 250, 56, 14, box);
+  rr(-22, -70, 44, 190, 8, ribbon);
+  ell(-45, -95, 40, 24, ribbon, 1, -0.5); ell(45, -95, 40, 24, ribbon, 1, 0.5); circ(0, -88, 16, ribbon);
+}
+function drawPalette() {
+  groundShadow(0, 130, 130);
+  ctx.save(); ctx.fillStyle = '#F6E0B5'; ctx.beginPath();
+  ctx.ellipse(0, 0, 160, 120, -0.3, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  circ(60, 40, 28, '#fff');
+  [['#FF5252', -90, -40], ['#FFB300', -30, -75], ['#43A047', 40, -70], ['#1E88E5', 100, -25], ['#8E24AA', -95, 30]].forEach(([c, x, y]) => circ(x, y, 24, c));
+  // 筆
+  ctx.save(); ctx.rotate(-0.7); rr(-10, -60, 20, 230, 8, '#8D6E63'); rr(-10, -60, 20, 50, 8, '#B0BEC5'); poly([[-12, -60], [12, -60], [0, -110]], '#FF5252'); ctx.restore();
+}
+function drawCamera() {
+  groundShadow(0, 110, 150, 14);
+  rr(-160, -80, 320, 190, 28, '#37474F');
+  rr(-70, -110, 110, 40, 12, '#37474F');
+  rr(90, -70, 50, 30, 8, '#FFD54F');
+  circ(0, 15, 80, '#263238'); circ(0, 15, 62, '#4FC3F7'); circ(0, 15, 40, '#0277BD'); circ(-18, -5, 12, '#fff', 0.8);
+  rr(-160, -30, 320, 16, 0, '#EF5350');
+}
+function drawNote(color = '#fff') {
+  ell(-40, 90, 42, 28, color, 1, -0.35);
+  stroke([[-5, 78], [-5, -110]], color, 16);
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.beginPath();
+  ctx.moveTo(-5, -110); ctx.bezierCurveTo(40, -100, 80, -70, 70, -10); ctx.stroke(); ctx.restore();
+}
+function drawLightbulb() {
+  circ(0, -50, 85, '#FFEE58');
+  poly([[-45, 10], [45, 10], [35, 60], [-35, 60]], '#FFEE58');
+  rr(-38, 60, 76, 26, 10, '#90A4AE'); rr(-30, 90, 60, 20, 8, '#78909C');
+  stroke([[-20, 0], [0, -40], [20, 0]], '#F9A825', 8);
+  ell(-30, -80, 18, 10, '#fff', 0.8, -0.7);
+}
+function drawGradCap() {
+  poly([[-170, -20], [0, -90], [170, -20], [0, 50]], '#37474F');
+  rr(-70, -10, 140, 50, 10, '#37474F');
+  stroke([[120, 0], [120, 60]], '#FFD54F', 8); circ(120, 70, 14, '#FFD54F');
+}
+function drawTicket(color = '#FFD166') {
+  ctx.save(); ctx.rotate(-0.25);
+  rr(-130, -60, 260, 120, 14, color);
+  circ(-130, 0, 18, '#1E88E5'); circ(130, 0, 18, '#1E88E5');
+  stroke([[-40, -45], [-40, 45]], 'rgba(0,0,0,0.25)', 4);
+  rr(-15, -30, 110, 14, 7, 'rgba(0,0,0,0.25)'); rr(-15, 0, 80, 14, 7, 'rgba(0,0,0,0.25)'); rr(-15, 28, 60, 10, 5, 'rgba(0,0,0,0.25)');
+  ctx.restore();
+}
+function drawTeacup() {
+  groundShadow(0, 90, 90, 12);
+  rr(-90, -20, 180, 100, 30, '#fff'); rr(-90, -20, 180, 18, 8, '#A1887F');
+  ring(110, 20, 32, '#fff', 20, 1, -Math.PI / 2, Math.PI / 2);
+  for (const dx of [-30, 0, 30]) stroke([[dx, -40], [dx + 10, -70], [dx, -100]], 'rgba(255,255,255,0.7)', 8);
+}
+
+// ============================================================
+// シーン定義
+// ============================================================
+const ITEMS = [
+  { title: '海外に行く', cap: '知らない世界を見ると、価値観がぐっと広がります。', c1: '#4FC3F7', c2: '#1565C0', accent: '#1E88E5',
+    draw: (tl, t) => {
+      place(tl, 0.10, 540, 1000, 1.0, 0, drawGlobe, true);
+      place(tl, 0.30, 300, 1250, 0.75, 0, () => drawSuitcase(), true);
+      place(tl, 0.42, 780, 1250, 0.7, 0, drawTicket, true);
+      // 飛行機は横切る
+      const px = lerp(-200, W + 200, seg(tl, 0.25, 4.6));
+      const py = 800 - 10 * Math.sin(tl * 3);
+      ctx.save(); ctx.translate(px, py); ctx.rotate(-0.08); ctx.scale(0.8, 0.8); drawPlane(); ctx.restore();
+      stroke([[px - 110, py + 12], [px - 260, py + 24]], 'rgba(255,255,255,0.6)', 8);
+      place(tl, 0.0, 150, 820, 0.7, 0, () => drawCloud(1, '#fff', 0.8), true);
+      place(tl, 0.0, 920, 1120, 0.6, 0, () => drawCloud(1, '#fff', 0.7), true);
+    } },
+  { title: '本を読む習慣', cap: '月に1冊でも、10年で120冊になります。', c1: '#7986CB', c2: '#283593', accent: '#3949AB',
+    draw: (tl) => {
+      place(tl, 0.10, 540, 1080, 1.05, 0, () => drawBookStack(), false);
+      place(tl, 0.40, 820, 800, 0.8, 0.15, drawLightbulb, true);
+      place(tl, 0.55, 230, 850, 0.6, 0, drawTeacup, true);
+      sparkles(tl, 540, 1000, 7, 320);
+    } },
+  { title: 'お金の勉強', cap: '貯金と投資は、早く始めた人が有利です。', c1: '#FFCA28', c2: '#EF6C00', accent: '#F57C00',
+    draw: (tl) => {
+      place(tl, 0.10, 400, 1130, 1.0, 0, drawPiggy, false);
+      place(tl, 0.35, 800, 980, 0.9, 0, drawChartUp, true);
+      // コインが落ちる
+      for (let i = 0; i < 4; i++) {
+        const s = 0.5 + i * 0.5; const p = seg(tl, s, 0.5);
+        if (tl >= s && p < 1) { ctx.save(); ctx.translate(380 + rnd(i) * 40 - 20, lerp(760, 1000, easeOut(p) * easeOut(p))); ctx.rotate(p * 6); ctx.scale(1 - p * 0.3, 1); drawCoin(44); ctx.restore(); }
+      }
+      place(tl, 0.20, 160, 860, 1.0, 0, () => drawCoin(60), true);
+      place(tl, 0.30, 230, 700, 0.8, 0, () => drawCoin(44), true);
+    } },
+  { title: '体を鍛える', cap: '体力は、30代以降の最大の資産です。', c1: '#FF8A65', c2: '#C62828', accent: '#E53935',
+    draw: (tl) => {
+      place(tl, 0.10, 560, 920, 1.1, 0, () => drawRunner('#fff'), false);
+      place(tl, 0.35, 540, 1250, 1.0, -0.15, drawDumbbell, true);
+      place(tl, 0.50, 230, 760, 0.9, 0, () => { drawHeart(1, '#FF5A6E'); stroke([[-70, 0], [-35, 0], [-20, -35], [0, 30], [15, -10], [30, 0], [70, 0]], '#fff', 8); }, true);
+      sparkles(tl, 560, 950, 6, 360);
+    } },
+  { title: '失敗を恐れず挑戦する', cap: '20代の失敗は、全部ネタになります。', c1: '#283593', c2: '#0D1240', accent: '#5C6BC0',
+    draw: (tl, t) => {
+      // 星空
+      for (let i = 0; i < 40; i++) { const tw = 0.5 + 0.5 * Math.sin(t * 3 + i); circ(rnd(i + 50) * W, 650 + rnd(i + 90) * 800, 3 + rnd(i) * 3, '#fff', 0.3 + 0.6 * tw); }
+      place(tl, 0.20, 540, 1330, 1.15, 0, () => drawMountain('#3949AB'), false);
+      const ry = lerp(1200, 920, easeOut(seg(tl, 0.1, 1.6)));
+      ctx.save(); ctx.translate(560 + 6 * Math.sin(tl * 25), ry); ctx.scale(1.0, 1.0); drawRocket(t); ctx.restore();
+      place(tl, 0.6, 190, 780, 0.9, 0.2, () => drawStar(45, '#FFD54F'), true);
+      place(tl, 0.75, 880, 720, 0.7, -0.2, () => drawStar(45, '#FFD54F'), true);
+    } },
+  { title: 'スキルを身につける', cap: '英語やプログラミングは、一生ものです。', c1: '#4DB6AC', c2: '#00695C', accent: '#00897B',
+    draw: (tl) => {
+      place(tl, 0.10, 540, 1120, 1.05, 0, drawLaptop, false);
+      place(tl, 0.40, 270, 800, 0.9, -0.08, () => drawBubble('Hello!', '#fff', '#00796B', 240, 110, 52), true);
+      place(tl, 0.55, 800, 760, 0.9, 0.08, () => drawBubble('</>', '#FFD54F', '#5D4037', 200, 110, 54, true), true);
+      place(tl, 0.70, 860, 980, 0.7, 0.1, drawGradCap, true);
+    } },
+  { title: '人とのつながりを広げる', cap: 'チャンスは、人が運んできます。', c1: '#FF8A65', c2: '#D84315', accent: '#F4511E',
+    draw: (tl) => {
+      const ppl = [[540, 1000, '#FFD54F', 0, 1.0], [250, 820, '#4FC3F7', 1, 0.75], [830, 820, '#81C784', 2, 0.75], [230, 1230, '#BA68C8', 3, 0.75], [850, 1230, '#F06292', 4, 0.75]];
+      // つながりの線
+      for (let i = 1; i < ppl.length; i++) {
+        const p = seg(tl, 0.35 + i * 0.1, 0.4);
+        stroke([[540, 1020], [lerp(540, ppl[i][0], p), lerp(1020, ppl[i][1] + 20, p)]], 'rgba(255,255,255,0.75)', 10);
+      }
+      ppl.forEach(([x, y, c, i, s]) => place(tl, 0.10 + i * 0.1, x, y, s, 0, () => drawPerson(c, SKIN[i], ['#4E342E', '#212121', '#6D4C41', '#8D6E63', '#3E2723'][i]), true));
+      place(tl, 0.9, 540, 700, 0.65, 0, () => drawHeart(1, '#FF5A6E'), true);
+    } },
+  { title: '一人暮らしをする', cap: '家事とお金の管理で、生活力が爆上がりします。', c1: '#81C784', c2: '#1B5E20', accent: '#2E7D32',
+    draw: (tl) => {
+      place(tl, 0.10, 540, 1080, 1.05, 0, drawHouse, false);
+      place(tl, 0.40, 210, 1250, 0.85, 0, drawPlant, true);
+      place(tl, 0.55, 850, 820, 0.75, -0.6, () => drawKey(), true);
+      place(tl, 0.0, 180, 760, 0.6, 0, () => drawCloud(1, '#fff', 0.6), true);
+      sparkles(tl, 540, 1000, 5, 380);
+    } },
+  { title: '家族との時間', cap: '親と過ごせる時間は、意外と少ないんです。', c1: '#F48FB1', c2: '#AD1457', accent: '#D81B60',
+    draw: (tl) => {
+      place(tl, 0.10, 380, 1120, 1.0, 0, () => drawPerson('#7986CB', SKIN[1], '#9E9E9E'), true);
+      place(tl, 0.22, 700, 1150, 0.85, 0, () => drawPerson('#FFD54F', SKIN[0], '#4E342E'), true);
+      place(tl, 0.45, 540, 820, 1.0, 0, () => drawHeart(1, '#FF5A6E'), true);
+      place(tl, 0.65, 860, 1300, 0.65, 0.1, () => drawGift('#4FC3F7', '#FFF59D'), true);
+      place(tl, 0.8, 230, 780, 0.5, 0, () => drawHeart(1, '#FFF59D'), true);
+      place(tl, 0.9, 900, 700, 0.4, 0, () => drawHeart(1, '#fff'), true);
+    } },
+  { title: '自分の「好き」を見つける', cap: '没頭できる趣味が、人生を豊かにします。', c1: '#BA68C8', c2: '#4A148C', accent: '#8E24AA',
+    draw: (tl) => {
+      place(tl, 0.10, 400, 1100, 1.0, 0, drawPalette, false);
+      place(tl, 0.35, 790, 960, 0.8, 0.1, drawCamera, true);
+      place(tl, 0.55, 820, 1300, 0.85, 0.15, () => drawNote('#fff'), true);
+      place(tl, 0.70, 200, 800, 0.6, -0.2, () => drawNote('#FFD54F'), true);
+      sparkles(tl, 540, 1050, 7, 400);
+    } },
+];
+
+// 配置ヘルパー: ポップイン + ふわふわ浮遊
+function place(tl, delay, x, y, s, rot, fn, float) {
+  const p = pop(tl, delay, 0.5);
+  if (p <= 0) return;
+  const fy = float ? 10 * Math.sin(tl * 2.2 + x * 0.01) : 0;
+  const fr = float ? 0.03 * Math.sin(tl * 1.7 + y * 0.01) : 0;
+  ctx.save(); ctx.translate(x, y + fy); ctx.rotate(rot + fr); ctx.scale(s * p, s * p); fn(); ctx.restore();
+}
+function sparkles(tl, cx, cy, n, spread) {
+  for (let i = 0; i < n; i++) {
+    const ph = (tl * 1.4 + rnd(i + 7) * 3) % 1.6;
+    const a = ph < 0.8 ? Math.sin(ph / 0.8 * Math.PI) : 0;
+    if (a <= 0 || tl < 0.5) continue;
+    const x = cx + (rnd(i) - 0.5) * 2 * spread, y = cy + (rnd(i + 31) - 0.5) * 2 * spread;
+    ctx.save(); ctx.translate(x, y); ctx.scale(a, a); ctx.rotate(ph); drawSparkle(16 + rnd(i + 3) * 16, '#fff', 0.9); ctx.restore();
+  }
+}
+
+// 背景: グラデーション + ゆっくり動く丸
+function background(c1, c2, t) {
+  gradBg(c1, c2);
+  for (let i = 0; i < 6; i++) {
+    const x = (rnd(i + 100) * W) + 60 * Math.sin(t * 0.3 + i);
+    const y = (rnd(i + 200) * H) + 80 * Math.cos(t * 0.25 + i * 1.3);
+    circ(x, y, 120 + rnd(i + 300) * 200, '#fff', 0.07);
+  }
+}
+// 上部: ラベル + 進行ドット
+function header(k, tl) {
+  const a = seg(tl, 0.1, 0.3);
+  rr(540 - 230, 150, 460, 64, 32, 'rgba(255,255,255,0.22)', a);
+  text('20代のうちにやっておくべきこと', 540, 183, { size: 30, weight: 700, alpha: a });
+  for (let i = 0; i < 10; i++) {
+    const x = 540 - 9 * 26 + i * 52;
+    const on = i < k;
+    const sc = i === k - 1 ? 1 + 0.35 * (1 - easeOut(seg(tl, 0.15, 0.5))) : 1;
+    circ(x, 252, (on ? 11 : 8) * sc, '#fff', on ? 0.95 : 0.35);
+  }
+}
+function itemScene(k, tl, t) {
+  const it = ITEMS[k - 1];
+  background(it.c1, it.c2, t);
+  header(k, tl);
+  // 番号バッジ
+  const bp = pop(tl, 0.05, 0.5);
+  if (bp > 0) {
+    ctx.save(); ctx.translate(540, 410); ctx.scale(bp, bp);
+    circ(0, 8, 112, 'rgba(0,0,0,0.18)'); circ(0, 0, 112, '#fff');
+    text(String(k).padStart(2, '0'), 0, 6, { size: 118, color: it.accent });
+    ctx.restore();
+  }
+  // タイトル
+  const tp = seg(tl, 0.18, 0.45);
+  const size = Math.min(96, Math.floor(960 / it.title.length));
+  ctx.save(); ctx.globalAlpha = easeOut(tp);
+  text(it.title, 540 + (1 - easeOut(tp)) * 160, 600, { size, shadow: 8, stroke: 'rgba(0,0,0,0.18)', sw: size * 0.16 });
+  ctx.restore();
+  // イラスト
+  it.draw(tl, t);
+  // キャプションカード
+  const cp = easeOut(seg(tl, 0.55, 0.5));
+  if (cp > 0) {
+    const lines = wrap(it.cap, 48, 820, 700);
+    const h = 70 + lines.length * 66;
+    const y = lerp(1700, 1470, cp);
+    ctx.save(); ctx.globalAlpha = cp;
+    rr(80, y + 10, 920, h, 36, 'rgba(0,0,0,0.18)');
+    rr(80, y, 920, h, 36, '#fff');
+    rr(80, y, 16, h, 8, it.accent);
+    lines.forEach((ln, i) => text(ln, 548, y + 35 + 33 + i * 66, { size: 48, weight: 700, color: '#2B2D42' }));
+    ctx.restore();
+  }
+}
+
+function titleScene(tl, t) {
+  background('#FF6B6B', '#FF9F43', t);
+  // 紙吹雪
+  for (let i = 0; i < 70; i++) {
+    const sp = 180 + rnd(i) * 220; const y = ((rnd(i + 11) * 2400 + tl * sp) % 2300) - 200;
+    const x = rnd(i + 23) * W + 40 * Math.sin(tl * 2 + i);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(tl * (2 + rnd(i + 5) * 4) + i);
+    rr(-14, -8, 28, 16, 4, ['#FFF59D', '#80DEEA', '#fff', '#A5D6A7', '#F8BBD0'][i % 5], 0.9); ctx.restore();
+  }
+  const p1 = pop(tl, 0.15, 0.55), p2 = pop(tl, 0.35, 0.55), p3 = pop(tl, 0.7, 0.6);
+  if (p1 > 0) { ctx.save(); ctx.translate(540, 520); ctx.scale(p1, p1); text('20代のうちに', 0, 0, { size: 120, shadow: 10, stroke: 'rgba(0,0,0,0.2)', sw: 20 }); ctx.restore(); }
+  if (p2 > 0) { ctx.save(); ctx.translate(540, 680); ctx.scale(p2, p2); text('やっておくべきこと', 0, 0, { size: 104, shadow: 10, stroke: 'rgba(0,0,0,0.2)', sw: 18 }); ctx.restore(); }
+  if (p3 > 0) {
+    ctx.save(); ctx.translate(540, 1010); ctx.rotate(-0.06); ctx.scale(p3, p3);
+    rr(-330, -150, 660, 300, 60, 'rgba(0,0,0,0.18)'); rr(-330, -165, 660, 300, 60, '#fff');
+    text('10', -70, -10, { size: 250, color: '#FF6B6B' });
+    text('選', 170, 20, { size: 130, color: '#2B2D42' });
+    ctx.restore();
+  }
+  // 下部にミニイラスト
+  const minis = [[() => drawGlobe(), 0.45], [() => drawBookStack(), 0.42], [drawPiggy, 0.42], [drawRocket, 0.42], [() => drawHeart(1, '#FF5A6E'), 0.8]];
+  minis.forEach(([fn, s], i) => place(tl, 1.1 + i * 0.12, 150 + i * 195, 1380 + (i % 2) * 40, s, (i % 2 ? 0.1 : -0.1), fn, true));
+  const a = seg(tl, 1.8, 0.5);
+  text('さくっと紹介!', 540, 1600, { size: 56, alpha: a, shadow: 6 });
+}
+
+function outroScene(tl, t) {
+  background('#1E2A5A', '#0B1030', t);
+  const p1 = seg(tl, 0.1, 0.5), p2 = seg(tl, 0.5, 0.5);
+  text('20代は、', 540, 330, { size: 84, alpha: easeOut(p1), shadow: 8 });
+  text('人生の土台をつくる10年。', 540, 450, { size: 80, alpha: easeOut(p2), shadow: 8 });
+  // 10 個のミニイラストをグリッドで
+  const minis = [() => drawGlobe(), () => drawBookStack(), drawPiggy, drawDumbbell, () => drawRocket(t), drawLaptop, () => drawPerson('#FFD54F', SKIN[0]), drawHouse, () => drawGift(), drawPalette];
+  minis.forEach((fn, i) => {
+    const col = i % 5, row = Math.floor(i / 5);
+    const x = 140 + col * 200, y = 720 + row * 300;
+    const pp = pop(tl, 0.8 + i * 0.1, 0.45);
+    if (pp > 0) { ctx.save(); ctx.translate(x, y); ctx.scale(pp, pp); rr(-85, -85, 170, 170, 40, 'rgba(255,255,255,0.12)'); ctx.scale(0.42, 0.42); ctx.translate(0, 10); fn(); ctx.restore(); }
+  });
+  const p3 = pop(tl, 2.2, 0.55);
+  if (p3 > 0) {
+    ctx.save(); ctx.translate(540, 1300); ctx.scale(p3, p3);
+    rr(-420, -60, 840, 130, 65, '#FFD54F');
+    text('今日から1つ、始めてみよう!', 0, 6, { size: 56, color: '#2B2D42' });
+    ctx.restore();
+  }
+  const a = seg(tl, 2.8, 0.5);
+  text('音声: VOICEVOX:四国めたん', 540, 1500, { size: 30, weight: 700, alpha: a * 0.9 });
+  text('BGM: パッヘルベル「カノン」(パブリックドメイン)の自作アレンジ', 540, 1548, { size: 26, weight: 700, alpha: a * 0.75 });
+}
+
+// ---------- シーン表 ----------
+const SCENES = [{ start: 0, dur: TITLE_DUR, fn: titleScene }];
+for (let k = 1; k <= 10; k++) SCENES.push({ start: TITLE_DUR + (k - 1) * ITEM_DUR, dur: ITEM_DUR, fn: (tl, t) => itemScene(k, tl, t) });
+SCENES.push({ start: TITLE_DUR + 10 * ITEM_DUR, dur: OUTRO_DUR, fn: outroScene });
+
+function drawScene(i, tl, t) { SCENES[i].fn(Math.max(0, tl), t); }
+
+function render(t) {
+  t = clamp(t, 0, DURATION - 1 / FPS);
+  let k = SCENES.length - 1;
+  for (let i = 0; i < SCENES.length; i++) if (t < SCENES[i].start + SCENES[i].dur) { k = i; break; }
+  const tl = t - SCENES[k].start;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (k > 0 && tl < WIPE) {
+    drawScene(k - 1, SCENES[k - 1].dur, t);            // 前シーンの最終状態
+    const r = easeInOut(tl / WIPE) * 1180;
+    ctx.save(); ctx.beginPath(); ctx.arc(540, 960, r, 0, Math.PI * 2); ctx.clip();
+    drawScene(k, tl, t); ctx.restore();
+    ring(540, 960, r, '#fff', 14, 0.9 * (1 - tl / WIPE));
+  } else drawScene(k, tl, t);
+}
+window.render = render;
+
+// ブラウザで開いたときはプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
