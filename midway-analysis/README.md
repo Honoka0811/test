@@ -5,7 +5,7 @@
 
 - **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグの `metadata.md`)
 - 完成動画: `output/midway_narrated.mp4`
-- ナレーション音声のみ: `output/narration.wav`
+- ナレーション音声のみ: `output/narration.wav`(`python3 narrate.py` で再生成、git 管理外)
 - シーン尺・字幕タイミング: `output/timing.json`
 
 ## 構成(約3分31秒)

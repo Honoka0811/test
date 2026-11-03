@@ -6,3 +6,4 @@ output/frames/
 __pycache__/
 photos/*.jpg
 photos/*.png
+output/narration.wav
