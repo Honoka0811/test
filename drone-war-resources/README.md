@@ -53,3 +53,10 @@ node preview.js 12 75 150  # 指定秒のフレームを output/preview/ に書�
 | Open JTalk 辞書 | `pyopenjtalk` 初回実行時に自動取得 | `VOICEVOX_DICT`(任意) |
 
 VOICEVOX の音声を公開する場合は、利用規約に従い「VOICEVOX:青山龍星」のクレジット表記が必要です(エンドカードと説明文に記載済み)。
+
+## ショート版(`short/`)
+
+同じ内容を59秒の縦型(1080×1920)にまとめたショート動画。構成は 導入 → 5資源×各2枚のカード → まとめ → エンドカード。
+`short/narrate.py` は合計が59秒に収まるまで話速を自動で上げる(最終 1.19 倍)。
+再生成は `cd short && python3 narrate.py && node capture.js && python3 mix.py && ./export_upload.sh`。
+アップロード用一式は `short/upload/`(mp4・SRT・サムネイル・`metadata.md`)。
