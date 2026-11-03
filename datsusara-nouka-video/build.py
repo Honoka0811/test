@@ -135,6 +135,35 @@ for st in steps:
     del st["_a"]
     print(f"  {st['name']} {st['dur']:.2f}s")
 
+# ---------- 3b. Timeline / subtitles / chapters (for YouTube) ----------
+def fmt_srt(t):
+    ms = int(round(t * 1000)); h, ms = divmod(ms, 3600000); m, ms = divmod(ms, 60000); sec, ms = divmod(ms, 1000)
+    return f"{h:02d}:{m:02d}:{sec:02d},{ms:03d}"
+def fmt_ch(t):
+    t = int(t); return f"{t//60}:{t%60:02d}"
+timeline, srt, chapters = [], [], []
+t = 0.0
+for si, slide in enumerate(SLIDES):
+    slide_start = t
+    for st in [x for x in steps if x["slide"] == si]:
+        a, b = t + LEAD, t + st["dur"] - TAIL * 0.6
+        timeline.append(dict(step=st["name"], slide=si, start=round(t, 3), end=round(t + st["dur"], 3), narration=st["narr"]))
+        srt.append(f"{len(srt)+1}\n{fmt_srt(a)} --> {fmt_srt(b)}\n{st['narr']}\n")
+        t += st["dur"]
+    chapters.append((slide_start, slide.get("tag", ""), slide["title"]))
+    t -= XFADE
+yt = os.path.join(os.path.dirname(os.path.abspath(__file__)), "youtube")
+os.makedirs(yt, exist_ok=True)
+json.dump(timeline, open(f"{yt}/timeline.json", "w"), ensure_ascii=False, indent=1)
+open(f"{yt}/subtitles_ja.srt", "w", encoding="utf-8").write("\n".join(srt))
+with open(f"{yt}/chapters.txt", "w", encoding="utf-8") as f:
+    for i, (ts, tag, title) in enumerate(chapters):
+        if i == 0:
+            continue  # title card is merged into the first chapter at 0:00
+        label = f"{tag}：{title}" if tag else title
+        f.write(f"{fmt_ch(ts if i > 1 else 0)} {label}\n")
+print("timeline/srt/chapters written")
+
 # ---------- 4. Per-slide video ----------
 slide_files = []
 for si in range(TOTAL_SLIDES):
