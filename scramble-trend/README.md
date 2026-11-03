@@ -76,17 +76,26 @@ node thumbnail.js          # output/thumbnail.png を生成
 - `capture.js` … Playwright(Chromium)で 1 フレームずつ撮影し、ffmpeg(libx264)にパイプして mp4 化
 - `bgm.py` … `pacific-war-analysis/bgm.py` と同じ自作BGM(テンポを 84BPM に変更)。権利表記は不要
 - `narrate.py` … シーンごとの原稿を合成し、各シーンの長さに収まるよう話速を自動調整。BGM はナレーション中に自動で音量を下げてミックス
-- 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック), Python 3 + `numpy` + `pyopenjtalk`
+- 必要なもの: Node.js, `playwright`(Chromium), `ffmpeg`, 日本語フォント(IPAゴシック), Python 3 + `numpy` + `pyopenjtalk`(辞書用) + `voicevox_core`
 
 ### ナレーションの音声について
 
-現在の `upload/` に入っている動画のナレーションは **Open JTalk(pyopenjtalk)** で合成しています。
-`pacific-war-analysis` と同じく **VOICEVOX(青山龍星)** を使いたい場合は、`pacific-war-analysis/README.md` の
-「VOICEVOX のセットアップ」の手順でコアと音声モデルを導入してから `python3 narrate.py` を再実行してください
-(`narrate.py` は `voicevox_core` があれば自動でそちらを使います)。その際は `render.html` の `VOICE_CREDIT` を
-`音声: VOICEVOX:青山龍星` に書き換え、`upload/metadata.md` のクレジットも合わせて変更し、`node capture.js` から再生成してください。
+`upload/` の動画のナレーションは **VOICEVOX(青山龍星 ノーマル, style 13)** で合成しています。
+VOICEVOX の音声を公開する場合は、利用規約に従い「VOICEVOX:青山龍星」のクレジット表記が必要です
+(動画の最後のカードと `upload/metadata.md` の説明文に記載済み)。
 
-Open JTalk は VOICEVOX より話速が遅いため、原稿は VOICEVOX 向けより短めにしてあります。VOICEVOX に切り替える場合は
-`narrate.py` の `SCRIPT` を少し長くしても尺に収まります。
+セットアップは `pacific-war-analysis/README.md` の「VOICEVOX のセットアップ」と同じで、
+`voicevox_core` の wheel を `pip install` し、ONNX Runtime と `15.vvm` を次の既定パスに置きます
+(別の場所に置く場合は環境変数 `VOICEVOX_ORT` / `VOICEVOX_VVMS` で指定)。
+
+| 必要なもの | 既定パス |
+|---|---|
+| ONNX Runtime | `/home/user/vv/ort/voicevox_onnxruntime-linux-x64-1.17.3/lib/libvoicevox_onnxruntime.so` |
+| 音声モデル `15.vvm`(青山龍星) | `/home/user/vv/vvms/` |
+
+`voicevox_core` が無い環境では `narrate.py` が自動で Open JTalk(pyopenjtalk)にフォールバックします。
+その場合は VOICEVOX より話速が遅いため、`SCRIPT` を1〜2割短くしないと尺に収まらないことがあります
+(各シーンの合成秒数と上限は実行時に表示されます)。また `render.html` の `VOICE_CREDIT` と
+`upload/metadata.md` のクレジットを「Open JTalk」に書き換えてください。
 
 色は 中国=オレンジ `#F0785A`、ロシア=青 `#4FA3E8`、強調=黄 `#F5C451` の固定。
