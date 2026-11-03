@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Drone War Resources</title>
+<style>
+  html,body{margin:0;background:#0b0e14;}
+  canvas{display:block;max-width:100vw;height:auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// ------------------------------------------------------------
+// 次世代戦争の勝敗を決める5つの資源とそのボトルネック (16:9 / 1920x1080)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// シーンの尺は output/timing.json(ナレーションの長さから生成)を setTiming() で受け取る。
+// ------------------------------------------------------------
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0b0e14', panel: '#141923', panel2: '#1b2130', grid: '#232a38',
+  ink: '#f3f4f6', ink2: '#b7bcc7', ink3: '#7d8390', dim: '#4a5160',
+  accent: '#F5C451', red: '#E8524F', blue: '#3F8DE8', purple: '#9B7BFF', green: '#3FC48A',
+};
+window.FPS = 30;
+
+// ---------- セクション定義 ----------
+const SECTIONS = {
+  semi:  { num: '01', title: '半導体',       color: C.blue,   items: [
+    { name: '設計ツール(EDA)',            fig: '3社で 74%',               desc: 'Synopsys・Cadence・Siemens。2025年5月に対中販売を停止、7月に解除', share: { label: '世界EDA市場に占める米国系3社', pct: 74 } },
+    { name: 'EUV露光装置',                fig: 'ASML 1社',                desc: '中国向けは輸出禁止。SMICはDUV多重露光で7nm級まで',           share: { label: 'EUV露光機の供給者', pct: 100, text: '1社のみ' } },
+    { name: '先端ファブ(3nm以下)',        fig: 'TSMC・Samsung・Intel',    desc: '比重はTSMCに集中。台湾一点集中が構造的な弱点' },
+    { name: '先端パッケージ CoWoS + HBM', fig: '上位4社が 90%超を消費',   desc: '先端ロジックのウェハ生産は12%のみ。律速はウェハでなく後工程', share: { label: 'CoWoS/HBM に占める上位4社の消費', pct: 90, text: '90%超' } },
+    { name: '材料(レジスト・ウェハ)',     fig: '日本勢 6〜9割',           desc: 'フォトレジスト。シリコンウェハは信越化学+SUMCOで約半分',      share: { label: 'フォトレジストの日本勢シェア', pct: 75, text: '60〜90%' } },
+    { name: '補足: ドローン側のチップ',   fig: '28nm以上で足りる',        desc: '成熟プロセスは中国が自給可能。先端ファブが効くのは訓練側', muted: true },
+  ]},
+  power: { num: '02', title: '電力',         color: C.accent, items: [
+    { name: '大型ガスタービン',   fig: '受注残 116 / 69 / 32 GW', desc: 'GE Vernova / Siemens Energy / 三菱重工。納期3年以上、納入は2030年代', bars: { unit: 'GW', max: 130, rows: [['GE Vernova', 116], ['Siemens Energy', 69], ['三菱重工', 32]] } },
+    { name: '大型変圧器',         fig: '平均納期 128週',          desc: '約2.5年。範囲は80〜210週。方向性電磁鋼板は米国内1社',             bars: { unit: '週', max: 220, rows: [['最短', 80], ['平均', 128], ['最長', 210]] } },
+    { name: 'ウラン濃縮・HALEU',  fig: 'ロシア 約40〜44%',        desc: 'HALEUは米Centrusが年約900kg。2035年の需要見通しは5万kg',          share: { label: '世界の濃縮能力に占めるロシア', pct: 44, text: '40〜44%' } },
+    { name: '太陽電池・電池材料', fig: '中国 8割超 / 9割 / 97%',  desc: '太陽電池モジュール / 正極材 / 負極材',                              bars: { unit: '%', max: 100, rows: [['太陽電池', 82], ['正極材', 90], ['負極材', 97]], approx: [true, false, false] } },
+    { name: '送電網',             fig: '攻撃対象',                desc: '総発電量より復旧の速さが効く', muted: true },
+  ]},
+  drone: { num: '03', title: 'ドローン生産', color: C.red,    items: [
+    { name: 'ネオジム磁石',     fig: '中国 94%',                desc: '焼結磁石の世界生産(IEA, 2024年)。精錬は91%。2025年4月の規制で翌月の輸出が半減', share: { label: '焼結磁石の中国シェア', pct: 94 } },
+    { name: '電池セル',         fig: '中国の寡占',              desc: 'ウクライナの国産機も電池は輸入' },
+    { name: '熱画像・カメラ',   fig: '安価な熱画像コアは中国勢', desc: '可視光センサーはソニーが強い' },
+    { name: '炭素繊維',         fig: '日本と中国',              desc: '兵器級は輸出管理の対象' },
+    { name: '炸薬',             fig: 'NC・TNT・RDX が不足',     desc: '米陸軍評価でRDXは国内で完全生産不可。EUの大規模TNT工場は1か所' },
+    { name: '光ファイバー',     fig: '1か月で 1,300巻',         desc: '2024年にロシアが先行。妨害に強い有線誘導の新しい消耗品' },
+  ]},
+  space: { num: '04', title: '宇宙インフラ', color: C.purple, items: [
+    { name: '衛星通信の実戦投入', fig: 'Sea Baby・Magura',        desc: 'スターリンクで遠隔操縦し黒海艦隊を攻撃。2026年、ロシアも密輸端末を海上ドローンに搭載' },
+    { name: '端末の重さと電力',   fig: '約1.1kg・25〜40W',        desc: 'Starlink Mini。機体1kgのFPVには載らない。中型機以上の役割' },
+    { name: '打ち上げ能力',       fig: 'SpaceX 80%超',            desc: '2025年の世界の軌道投入質量。打ち上げ回数では約51%',            share: { label: '軌道投入質量のSpaceXシェア', pct: 83, text: '80%超' } },
+    { name: '中国の低軌道網',     fig: '千帆 約240機 / 国網 約190機', desc: '2026年半ば時点。計画は各1万機超。スターリンクの数十分の一' },
+    { name: '誰が止められるか',   fig: '米国の一企業',            desc: '2022年クリミア沖で通信を有効にしなかった前例。米国以外には他国依存の資源' },
+  ]},
+  data:  { num: '05', title: 'データと人材', color: C.green,  items: [
+    { name: '戦場データの収集',   fig: '映像と撃墜記録',  desc: '前線の映像・撃墜記録を国家単位で集約' },
+    { name: '更新の速さ',         fig: '数週間',          desc: 'ラベル付けからモデル更新・配布までの周期' },
+    { name: '制度のボトルネック', fig: '組織と法制度',    desc: '物理資源ではなく、仕組みの有無が差になる' },
+  ]},
+};
+const ORDER = ['semi', 'power', 'drone', 'space', 'data'];
+const SUMMARY = [
+  { who: '米国',     color: C.blue,   pts: ['電力機器(タービン・変圧器)', '部品供給網(磁石・電池)', '炸薬'] },
+  { who: '中国',     color: C.red,    pts: ['EUV・先端ファブ', 'HBM・先端パッケージ', '打ち上げ能力'] },
+  { who: '欧州・日本', color: C.accent, pts: ['打ち上げ能力', 'AI計算基盤', '炸薬'] },
+  { who: '中堅国(ウクライナ型)', color: C.green, pts: ['電池・磁石', '炸薬', '通信衛星を他国に依存'] },
+];
+
+// ---------- タイミング ----------
+let TIMING = null;
+window.setTiming = tm => { TIMING = tm; window.DURATION = tm.total; };
+// プレビュー用の既定タイミング(ナレーション無し: 各シーン一定尺)
+(function defaultTiming() {
+  const ids = ['title', 'premise', 'semi', 'power', 'drone', 'space', 'data', 'summary', 'end'];
+  let t = 0; const scenes = [];
+  for (const id of ids) {
+    const n = id in SECTIONS ? SECTIONS[id].items.length : (id === 'summary' ? 5 : id === 'premise' ? 3 : 1);
+    const dur = id === 'title' || id === 'end' ? 5 : 4 * n;
+    const beats = [];
+    for (let k = 0; k < n; k++) beats.push({ start: t + 0.8 + k * 4, end: t + 0.8 + k * 4 + 3.5, sub: '', reveal: [k] });
+    scenes.push({ id, start: t, dur, beats: id === 'end' ? [] : beats }); t += dur;
+  }
+  window.setTiming({ scenes, total: t });
+})();
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function text(str, x, y, { size = 40, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, maxW = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (maxW) { // 幅を超える場合は縮小
+    const w = ctx.measureText(str).width;
+    if (w > maxW) ctx.font = `${weight} ${Math.floor(size * maxW / w)}px ${FONT}`;
+  }
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function wrap(str, size, maxW) {
+  ctx.save(); ctx.font = `normal ${size}px ${FONT}`;
+  const lines = []; let cur = '';
+  const tokens = str.match(/[0-9A-Za-z,.%〜\-]+|./gu) || [];
+  const noHead = '。、」』）)］】,.!?！？:：;；〜ー';  // 行頭禁則
+  for (const tk of tokens) {
+    if (ctx.measureText(cur + tk).width > maxW && cur && !noHead.includes(tk)) { lines.push(cur); cur = tk; } else cur += tk;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore();
+  return lines;
+}
+function rrect(x, y, w, h, r, color, alpha = 1, stroke = null) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+// ---------- 背景 ----------
+function background(t, color) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 薄いグリッド
+  for (let x = 0; x <= W; x += 120) line(x, 0, x, H, C.grid, 1, 0.35);
+  for (let y = 0; y <= H; y += 120) line(0, y, W, y, C.grid, 1, 0.35);
+  // 右上に色のにじみ
+  const g = ctx.createRadialGradient(W - 200, -100, 50, W - 200, -100, 1100);
+  g.addColorStop(0, hexA(color, 0.16)); g.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 漂う点(ドローンの群れの暗喩)
+  ctx.save();
+  for (let i = 0; i < 70; i++) {
+    const sx = (i * 977) % W, sy = (i * 613) % H, sp = 6 + (i % 7) * 2.5;
+    const x = (sx + t * sp) % (W + 40) - 20, y = sy + Math.sin(t * 0.4 + i) * 12;
+    ctx.globalAlpha = 0.10 + 0.08 * ((i * 37) % 5) / 4;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- 共通パーツ ----------
+function topbar(sec, alpha) {
+  const s = SECTIONS[sec];
+  rrect(80, 44, 96, 56, 12, s.color, alpha);
+  text(s.num, 128, 85, { size: 36, weight: 'bold', color: C.bg, align: 'center', alpha });
+  text(s.title, 200, 88, { size: 50, weight: 'bold', alpha });
+  text('ボトルネック', 200 + measure(s.title, 50, 'bold') + 26, 88, { size: 30, color: C.ink3, alpha });
+  // 右上: セクションの進捗
+  let x = W - 80;
+  for (let i = ORDER.length - 1; i >= 0; i--) {
+    const id = ORDER[i], on = id === sec, done = ORDER.indexOf(id) < ORDER.indexOf(sec);
+    const w = measure(SECTIONS[id].title, 24) + 34; x -= w;
+    rrect(x, 54, w, 38, 19, on ? SECTIONS[id].color : C.panel, alpha, on ? null : hexA(C.ink3, 0.5));
+    text(SECTIONS[id].title, x + w / 2, 81, { size: 24, color: on ? C.bg : (done ? C.ink2 : C.ink3), align: 'center', alpha, weight: on ? 'bold' : 'normal' });
+    x -= 12;
+  }
+}
+function measure(str, size, weight = 'normal') { ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`; const w = ctx.measureText(str).width; ctx.restore(); return w; }
+
+function subtitle(t) {
+  if (!TIMING) return;
+  for (const sc of TIMING.scenes) for (const b of sc.beats) {
+    if (t >= b.start - 0.1 && t <= b.end + 0.35 && b.sub) {
+      const a = Math.min(seg(t, b.start - 0.1, 0.25), 1 - seg(t, b.end + 0.1, 0.25));
+      const lines = wrap(b.sub, 34, 1640);
+      const lh = 46, h = lines.length * lh + 30, y0 = H - 48 - h;
+      rrect(100, y0, W - 200, h, 14, 'rgba(8,10,16,0.82)', a);
+      lines.forEach((ln, i) => text(ln, W / 2, y0 + 22 + lh * (i + 1) - 12, { size: 34, align: 'center', alpha: a }));
+      return;
+    }
+  }
+}
+
+// ---------- シーン: 項目リスト + フォーカス ----------
+function listScene(sec, t, scene) {
+  const S = SECTIONS[sec];
+  const n = S.items.length;
+  const revealAt = S.items.map((_, i) => {
+    for (const b of scene.beats) if (b.reveal.includes(i)) return b.start + 0.15;
+    return scene.start + 0.3;
+  });
+  const LX = 80, LW = 1040, top = 150;
+  const cardH = n >= 6 ? 100 : 118, gap = n >= 6 ? 10 : 12;
+  let focus = -1;
+  S.items.forEach((it, i) => { if (t >= revealAt[i] && (focus < 0 || revealAt[i] >= revealAt[focus])) focus = i; });
+  // 左: カード列
+  S.items.forEach((it, i) => {
+    const p = easeOut((t - revealAt[i]) / 0.5);
+    if (p <= 0) { // 未出現: 枠だけ
+      rrect(LX, top + i * (cardH + gap), LW, cardH, 14, null, 0.6, hexA(C.ink3, 0.3)); return;
+    }
+    const y = top + i * (cardH + gap), x = LX - 30 * (1 - p);
+    const isF = i === focus;
+    rrect(x, y, LW, cardH, 14, isF ? C.panel2 : C.panel, p, isF ? S.color : null);
+    rrect(x, y, 8, cardH, 4, it.muted ? C.ink3 : S.color, p);
+    text(String(i + 1).padStart(2, '0'), x + 36, y + cardH / 2 + 12, { size: 30, color: C.ink3, alpha: p });
+    const ny = cardH >= 116 ? y + 52 : y + 44;
+    text(it.name, x + 96, ny, { size: 34, weight: 'bold', color: it.muted ? C.ink2 : C.ink, alpha: p, maxW: 560 });
+    text(it.fig, x + LW - 28, ny, { size: 30, weight: 'bold', color: it.muted ? C.ink3 : S.color, align: 'right', alpha: p, maxW: 400 });
+    text(it.desc, x + 96, ny + (cardH >= 116 ? 42 : 38), { size: 24, color: C.ink2, alpha: p, maxW: LW - 130 });
+  });
+  // 右: フォーカスパネル
+  const RX = 1160, RW = W - 80 - RX, RY = top, RH = (cardH + gap) * n - gap;
+  rrect(RX, RY, RW, RH, 18, C.panel, 1, hexA(S.color, 0.5));
+  if (focus >= 0) {
+    const it = S.items[focus];
+    const p = easeOut((t - revealAt[focus]) / 0.5);
+    text(it.name, RX + 40, RY + 76, { size: 32, color: C.ink2, alpha: p, maxW: RW - 80 });
+    const figSize = it.fig.length > 16 ? 54 : it.fig.length > 10 ? 66 : 84;
+    text(it.fig, RX + 40, RY + 170, { size: figSize, weight: 'bold', color: it.muted ? C.ink2 : S.color, alpha: p, maxW: RW - 80 });
+    let y = RY + 236;
+    for (const ln of wrap(it.desc, 28, RW - 80)) { text(ln, RX + 40, y, { size: 28, color: C.ink2, alpha: p }); y += 40; }
+    const gy = Math.max(y + 40, RY + RH - 230);
+    if (it.share) {
+      const w = (RW - 80) * clamp(it.share.pct / 100) * easeOut((t - revealAt[focus]) / 1.2);
+      text(it.share.label, RX + 40, gy, { size: 24, color: C.ink3, alpha: p, maxW: RW - 80 });
+      rrect(RX + 40, gy + 22, RW - 80, 34, 8, C.grid, p);
+      rrect(RX + 40, gy + 22, w, 34, 8, S.color, p);
+      text('0', RX + 40, gy + 80, { size: 20, color: C.ink3, alpha: p });
+      text('100%', RX + 40 + (RW - 80), gy + 80, { size: 20, color: C.ink3, align: 'right', alpha: p });
+      text(it.share.text || (it.share.pct + '%'), RX + 40, gy + 134, { size: 44, weight: 'bold', color: S.color, alpha: p });
+    } else if (!it.bars) {
+      text(String(focus + 1).padStart(2, '0'), RX + RW - 40, RY + RH - 44, { size: 120, weight: 'bold', color: hexA(S.color, 0.18), align: 'right', alpha: p });
+      text('/ ' + String(n).padStart(2, '0'), RX + RW - 40, RY + RH - 160, { size: 30, color: C.ink3, align: 'right', alpha: p });
+      line(RX + 40, RY + RH - 60, RX + RW - 260, RY + RH - 60, hexA(S.color, 0.4), 2, p);
+      text('代替の利かない工程', RX + 40, RY + RH - 80, { size: 24, color: C.ink3, alpha: p });
+    } else if (it.bars) {
+      const rows = it.bars.rows, bw = RW - 80 - 300;
+      rows.forEach(([lab, v], k) => {
+        const yy = gy - 30 + k * 60;
+        const q = easeOut((t - revealAt[focus] - 0.25 * k) / 0.9);
+        text(lab, RX + 40, yy + 30, { size: 24, color: C.ink2, alpha: p, maxW: 170 });
+        rrect(RX + 230, yy + 6, bw, 30, 6, C.grid, p);
+        rrect(RX + 230, yy + 6, bw * (v / it.bars.max) * q, 30, 6, S.color, p);
+        const approx = it.bars.approx && it.bars.approx[k] ? '約' : '';
+        text(approx + v + ' ' + it.bars.unit, RX + 230 + bw + 14, yy + 30, { size: 26, weight: 'bold', color: S.color, alpha: p });
+      });
+    }
+  } else {
+    text('…', RX + RW / 2, RY + RH / 2, { size: 60, color: C.ink3, align: 'center' });
+  }
+}
+
+// ---------- シーン: タイトル ----------
+function titleScene(t, scene) {
+  const lt = t - scene.start;
+  background(t, C.accent);
+  const a1 = easeOut(lt / 0.8), a2 = easeOut((lt - 0.5) / 0.8), a3 = easeOut((lt - 1.1) / 0.8);
+  text('次世代の戦争は、誰が勝つのか', W / 2, 330, { size: 44, color: C.ink2, align: 'center', alpha: a1, ls: 4 });
+  text('勝敗を決める 5つの資源と', W / 2, 470, { size: 92, weight: 'bold', align: 'center', alpha: a2 });
+  text('そのボトルネック', W / 2, 600, { size: 112, weight: 'bold', color: C.accent, align: 'center', alpha: a2 });
+  const labels = ORDER.map(id => SECTIONS[id]);
+  const tw = 1500, x0 = (W - tw) / 2;
+  labels.forEach((s, i) => {
+    const a = easeOut((lt - 1.3 - i * 0.15) / 0.6);
+    const x = x0 + (i + 0.5) * tw / 5;
+    rrect(x - 130, 700, 260, 72, 36, C.panel, a, hexA(s.color, 0.7));
+    rrect(x - 110, 724, 24, 24, 12, s.color, a);
+    text(s.title, x + 12, 748, { size: 32, weight: 'bold', align: 'center', alpha: a });
+  });
+  text('AIドローン消耗戦の時代の「代替の利かない工程」を6分で整理する', W / 2, 880, { size: 32, color: C.ink3, align: 'center', alpha: a3 });
+}
+
+// ---------- シーン: 前提 ----------
+function premiseScene(t, scene) {
+  background(t, C.accent);
+  text('前提: すでに始まっている消耗戦', 80, 90, { size: 50, weight: 'bold' });
+  const tiles = [
+    { k: 'ウクライナのドローン生産(2025年)', v: '約400万機', u: '/ 年', s: 'Bloomberg報道。2024年は約220万機', col: C.blue },
+    { k: 'ロシアのシャヘド型生産(2025年中頃)', v: '約2,700機', u: '/ 月', s: 'ウクライナ情報機関の推定。後に1日400機超との発言も', col: C.red },
+  ];
+  const reveal = i => { for (const b of scene.beats) if (b.reveal.includes(i)) return b.start + 0.15; return scene.start + 0.3; };
+  tiles.forEach((tl, i) => {
+    const p = easeOut((t - reveal(i)) / 0.6), x = 80 + i * 900, y = 170;
+    rrect(x, y, 860, 330, 18, C.panel, p, hexA(tl.col, 0.6));
+    rrect(x, y, 10, 330, 5, tl.col, p);
+    text(tl.k, x + 50, y + 70, { size: 30, color: C.ink2, alpha: p });
+    text(tl.v, x + 50, y + 190, { size: 108, weight: 'bold', color: tl.col, alpha: p });
+    text(tl.u, x + 50 + measure(tl.v, 108, 'bold') + 20, y + 190, { size: 40, color: C.ink2, alpha: p });
+    text(tl.s, x + 50, y + 270, { size: 26, color: C.ink3, alpha: p, maxW: 780 });
+  });
+  // 5つの資源
+  const p5 = easeOut((t - reveal(2)) / 0.6);
+  rrect(80, 540, 1760, 300, 18, C.panel, p5);
+  text('勝敗を左右する 5つの資源', 130, 610, { size: 36, weight: 'bold', alpha: p5 });
+  ORDER.forEach((id, i) => {
+    const s = SECTIONS[id], q = easeOut((t - reveal(2) - 0.12 * i) / 0.5);
+    const x = 130 + i * 340, y = 650;
+    rrect(x, y, 310, 150, 14, C.panel2, q, hexA(s.color, 0.6));
+    rrect(x + 24, y + 26, 54, 54, 12, s.color, q);
+    text(s.num, x + 51, y + 64, { size: 30, weight: 'bold', color: C.bg, align: 'center', alpha: q });
+    text(s.title, x + 24, y + 128, { size: 34, weight: 'bold', alpha: q });
+  });
+  text('→ それぞれについて「代替の利かない工程」を確認していく', 130, 900, { size: 30, color: C.ink2, alpha: p5 });
+}
+
+// ---------- シーン: まとめ ----------
+function summaryScene(t, scene) {
+  background(t, C.accent);
+  text('まとめ: 各陣営の急所', 80, 90, { size: 50, weight: 'bold' });
+  const reveal = i => { for (const b of scene.beats) if (b.reveal.includes(i)) return b.start + 0.15 + (i < 4 ? i * 0.9 : 0); return scene.start + 0.3; };
+  SUMMARY.forEach((s, i) => {
+    const p = easeOut((t - reveal(i)) / 0.6), x = 80 + i * 445, y = 150;
+    rrect(x, y, 415, 520, 18, C.panel, p, hexA(s.color, 0.6));
+    rrect(x, y, 415, 10, 5, s.color, p);
+    text(s.who, x + 34, y + 84, { size: 38, weight: 'bold', alpha: p, maxW: 350 });
+    text('急所', x + 34, y + 130, { size: 24, color: C.ink3, alpha: p });
+    s.pts.forEach((pt, k) => {
+      const q = easeOut((t - reveal(i) - 0.2 * k) / 0.5), yy = y + 200 + k * 100;
+      rrect(x + 34, yy - 40, 347, 76, 12, C.panel2, q);
+      rrect(x + 48, yy - 12, 14, 14, 7, s.color, q);
+      text(pt, x + 78, yy + 10, { size: 27, alpha: q, maxW: 290 });
+    });
+  });
+  const p5 = easeOut((t - reveal(4)) / 0.7);
+  rrect(80, 720, 1760, 170, 18, C.panel2, p5, hexA(C.ink3, 0.5));
+  text('核抑止 = この競争の「天井」', 130, 790, { size: 40, weight: 'bold', color: C.accent, alpha: p5 });
+  text('大国同士では消耗戦が本格化する前に抑制がかかる。資源の競争はその天井の下で続く。', 130, 850, { size: 30, color: C.ink2, alpha: p5 });
+}
+
+// ---------- シーン: エンドカード ----------
+function endScene(t, scene) {
+  const lt = t - scene.start;
+  background(t, C.accent);
+  const a = easeOut(lt / 0.8);
+  text('勝敗を決める 5つの資源と、そのボトルネック', W / 2, 300, { size: 60, weight: 'bold', align: 'center', alpha: a });
+  const lines = [
+    ['ナレーション', 'VOICEVOX:青山龍星'],
+    ['BGM', '自作(プログラム合成・権利フリー)'],
+    ['数値', '公開情報にもとづく概数。出典は概要欄に記載'],
+    ['制作', 'Canvas 2D + Playwright + ffmpeg'],
+  ];
+  lines.forEach(([k, v], i) => {
+    const q = easeOut((lt - 0.4 - i * 0.2) / 0.6), y = 440 + i * 84;
+    text(k, W / 2 - 40, y, { size: 30, color: C.ink3, align: 'right', alpha: q });
+    text(v, W / 2 + 40, y, { size: 34, alpha: q });
+  });
+  const q = easeOut((lt - 1.6) / 0.8);
+  text('ご視聴ありがとうございました', W / 2, 860, { size: 36, color: C.ink2, align: 'center', alpha: q });
+}
+
+// ---------- メイン ----------
+function sceneAt(t) {
+  const sc = TIMING.scenes;
+  for (let i = sc.length - 1; i >= 0; i--) if (t >= sc[i].start) return sc[i];
+  return sc[0];
+}
+window.render = function (t) {
+  const scene = sceneAt(t);
+  const lt = t - scene.start;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (scene.id in SECTIONS) {
+    background(t, SECTIONS[scene.id].color);
+    topbar(scene.id, 1);
+    listScene(scene.id, t, scene);
+  } else if (scene.id === 'title') titleScene(t, scene);
+  else if (scene.id === 'premise') premiseScene(t, scene);
+  else if (scene.id === 'summary') summaryScene(t, scene);
+  else endScene(t, scene);
+  subtitle(t);
+  // シーン切替のディップ(入り 0.35 秒 / 抜け 0.35 秒)
+  const fade = Math.min(seg(lt, 0, 0.35), scene.id === 'end' ? 1 : 1 - seg(lt, scene.dur - 0.35, 0.35));
+  if (fade < 1) { ctx.save(); ctx.globalAlpha = 1 - fade; ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+};
+
+// サムネイル(1920x1080 → 後で 1280x720 に縮小)
+window.renderThumbnail = function () {
+  background(12, C.accent);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+  text('AIドローン消耗戦の時代', 100, 200, { size: 64, color: C.ink2, weight: 'bold' });
+  text('勝敗を決める', 100, 400, { size: 150, weight: 'bold' });
+  text('5つの資源', 100, 580, { size: 170, weight: 'bold', color: C.accent });
+  text('と、そのボトルネック', 100, 720, { size: 96, weight: 'bold' });
+  ORDER.forEach((id, i) => {
+    const s = SECTIONS[id], x = 100 + i * 345;
+    rrect(x, 820, 320, 110, 20, C.panel, 1, s.color);
+    rrect(x + 24, 856, 36, 36, 10, s.color);
+    text(s.title, x + 80, 894, { size: 40, weight: 'bold' });
+  });
+};
+
+// ブラウザで開いたときはプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { window.render(((performance.now() - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
