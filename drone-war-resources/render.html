@@ -305,17 +305,17 @@ function premiseScene(t, scene) {
   });
   // 5つの資源
   const p5 = easeOut((t - reveal(2)) / 0.6);
-  rrect(80, 540, 1760, 300, 18, C.panel, p5);
-  text('勝敗を左右する 5つの資源', 130, 610, { size: 36, weight: 'bold', alpha: p5 });
+  rrect(80, 540, 1760, 260, 18, C.panel, p5);
+  text('勝敗を左右する 5つの資源', 130, 600, { size: 36, weight: 'bold', alpha: p5 });
   ORDER.forEach((id, i) => {
     const s = SECTIONS[id], q = easeOut((t - reveal(2) - 0.12 * i) / 0.5);
-    const x = 130 + i * 340, y = 650;
-    rrect(x, y, 310, 150, 14, C.panel2, q, hexA(s.color, 0.6));
-    rrect(x + 24, y + 26, 54, 54, 12, s.color, q);
-    text(s.num, x + 51, y + 64, { size: 30, weight: 'bold', color: C.bg, align: 'center', alpha: q });
-    text(s.title, x + 24, y + 128, { size: 34, weight: 'bold', alpha: q });
+    const x = 130 + i * 340, y = 630;
+    rrect(x, y, 310, 140, 14, C.panel2, q, hexA(s.color, 0.6));
+    rrect(x + 24, y + 22, 54, 54, 12, s.color, q);
+    text(s.num, x + 51, y + 60, { size: 30, weight: 'bold', color: C.bg, align: 'center', alpha: q });
+    text(s.title, x + 24, y + 120, { size: 34, weight: 'bold', alpha: q });
   });
-  text('組み立ては増やせる。増やせないのは供給元が1社・1国に集中した工程 → 消耗戦ではそこが先に尽きる', 130, 900, { size: 30, color: C.ink2, alpha: p5, maxW: 1660 });
+  text('組み立ては増やせる。増やせないのは供給元が1社・1国に集中した工程 → 消耗戦ではそこが先に尽きる', 130, 840, { size: 30, color: C.accent, alpha: p5, maxW: 1660 });
 }
 
 // ---------- シーン: まとめ ----------
