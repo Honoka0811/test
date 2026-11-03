@@ -6,3 +6,5 @@ output/_*
 output/fifties_todo_10.mp4
 __pycache__/
 output/fifties_todo_10_narrated.mp4
+upload/client_secret.json
+upload/token.json

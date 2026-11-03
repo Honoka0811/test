@@ -4,6 +4,7 @@
 ナレーションは VOICEVOX の **四国めたん**、BGM はバッハ「平均律クラヴィーア曲集 第1番 プレリュード(BWV 846)」の自作アレンジです。
 
 - **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグ/チェックリストの `metadata.md`)
+- **YouTube への投稿**: `upload/upload_youtube.py`(YouTube Data API で動画・字幕・サムネイルをまとめて投稿。手順と手動投稿の方法は `upload/metadata.md`)
 - 完成動画: `upload/fifties_todo_10_final.mp4`
 - 中間生成物(`output/`): `subtitles_ja.srt`、`timeline.json`、`thumbnail.png`(正規化前の mp4 や wav は再生成できるため未コミット)
 
