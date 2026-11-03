@@ -3,7 +3,7 @@
 航空自衛隊の緊急発進(スクランブル)回数が、2010年度から2026年度上半期までどう推移したかを
 数字で追い、ピークから減少した理由の分析を加えた縦型ショート動画(1080×1920 / 30fps / 85秒)です。字幕とナレーション付き。
 
-- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・タイトル/説明文/タグ/チェックリストの `metadata.md`)
+- **アップロード用一式: `upload/`**(最終mp4・字幕SRT・サムネイルJPG・コピペ用の `youtube_title.txt` / `youtube_description.txt` / `youtube_tags.txt`・YouTube Studio での手順とチェックリストを書いた `metadata.md`)
 - 完成動画(ナレーション付き): `output/scramble_trend_narrated.mp4`
 - 完成動画(無音・字幕なし): `output/scramble_trend.mp4`
 - ナレーション音声のみ: `output/narration.wav`
@@ -72,7 +72,7 @@ node thumbnail.js          # output/thumbnail.png を生成
 ./export_upload.sh         # upload/ にアップロード用一式を書き出す(-14 LUFS 正規化・ステレオAAC・SRT・JPG)
 ```
 
-- `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画(ブラウザで開くとプレビュー再生)。`renderThumb()` がサムネイル用の静止画
+- `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画(ブラウザで開くとプレビュー再生)。`renderThumb()` がサムネイル用の静止画。`render()` は描画全体を 0.9 倍に縮めて左寄せし、ショート動画の UI(下部のタイトル欄・右側のアイコン列)に字幕や出典が隠れないセーフエリアに収めている(`SAFE_SCALE` / `SAFE_DX` / `SAFE_DY`)
 - `capture.js` … Playwright(Chromium)で 1 フレームずつ撮影し、ffmpeg(libx264)にパイプして mp4 化
 - `bgm.py` … `pacific-war-analysis/bgm.py` と同じ自作BGM(テンポを 84BPM に変更)。権利表記は不要
 - `narrate.py` … シーンごとの原稿を合成し、各シーンの長さに収まるよう話速を自動調整。BGM はナレーション中に自動で音量を下げてミックス
