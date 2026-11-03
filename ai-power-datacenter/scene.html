@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<style>
+@font-face{font-family:NJP;font-weight:400;src:url(fonts/NotoSansJP-400.ttf)}
+@font-face{font-family:NJP;font-weight:700;src:url(fonts/NotoSansJP-700.ttf)}
+@font-face{font-family:NJP;font-weight:900;src:url(fonts/NotoSansJP-900.ttf)}
+:root{--bg:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--mute:#8a897f;--s1:#3987e5;--s1dim:#2a5fa0;--warn:#d95926;--grid:#2e2e2c}
+html,body{margin:0;width:1080px;height:1920px;background:var(--bg);color:var(--ink);font-family:NJP,'Noto Sans JP','IPAPGothic','IPAGothic',sans-serif;overflow:hidden}
+.scene{position:absolute;inset:0;padding:120px 80px;box-sizing:border-box;opacity:0;display:flex;flex-direction:column;justify-content:center}
+.kicker{font-size:40px;font-weight:700;color:var(--s1);letter-spacing:.08em;margin-bottom:28px}
+h1{font-size:112px;font-weight:900;line-height:1.15;margin:0}
+h2{font-size:84px;font-weight:900;line-height:1.2;margin:0 0 40px}
+.sub{font-size:52px;font-weight:700;color:var(--ink2);line-height:1.4;margin-top:40px}
+.eq{display:flex;flex-direction:column;gap:28px;margin-top:60px}
+.eq .row{display:flex;align-items:baseline;gap:30px;font-weight:900}
+.eq .big{font-size:120px;color:var(--s1)}
+.eq .u{font-size:56px;color:var(--ink2)}
+.eq .op{font-size:72px;color:var(--mute);text-align:center}
+.chart{margin-top:50px}
+.bar{display:grid;grid-template-columns:200px 1fr;align-items:center;gap:30px;height:118px;margin-bottom:26px}
+.bar .lab{font-size:50px;font-weight:700;text-align:right}
+.bar .trk{position:relative;height:84px}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--s1);border-radius:0 6px 6px 0;width:0}
+.bar.dim .fill{background:var(--s1dim)}
+.bar .val{position:absolute;left:0;top:50%;transform:translateY(-50%);margin-left:24px;font-size:50px;font-weight:900;white-space:nowrap;color:var(--ink)}
+.base{position:absolute;left:230px;top:0;bottom:0;width:3px;background:var(--grid)}
+.note{font-size:40px;color:var(--mute);margin-top:30px}
+.pt{font-size:62px;font-weight:700;line-height:1.35;margin:26px 0;padding-left:40px;border-left:10px solid var(--s1);opacity:0;transform:translateY(30px)}
+.pt b{color:var(--warn);font-weight:900}
+.rank{font-size:84px;font-weight:900;line-height:1.3;margin:30px 0}
+.rank .s{color:var(--mute);font-size:64px;margin:0 16px}
+.src{position:absolute;left:80px;right:80px;bottom:280px;font-size:30px;color:var(--mute);line-height:1.5}
+.prog{position:absolute;left:0;top:0;height:10px;background:var(--s1);width:0}
+</style></head><body>
+
+<div class="scene" id="s0">
+  <div class="kicker">AI × 電力 × 防衛</div>
+  <h1>AIの戦争は、<br>電力の戦争。</h1>
+  <div class="sub">データセンターを<br>一番多く建てられる国はどこ？</div>
+</div>
+
+<div class="scene" id="s1">
+  <div class="kicker">ものさし</div>
+  <h2>データセンターは<br>24時間フル稼働</h2>
+  <div class="eq">
+    <div class="row"><span class="big">1 GW</span><span class="u">のデータセンター</span></div>
+    <div class="op">＝</div>
+    <div class="row"><span class="big">8.8 TWh</span><span class="u">／年</span></div>
+    <div class="op">＝</div>
+    <div class="row"><span class="big">原発1基</span><span class="u">がフル稼働</span></div>
+  </div>
+</div>
+
+<div class="scene" id="s2">
+  <div class="kicker">2025年、発電量はどれだけ増えたか</div>
+  <h2>1年で増えた電力<span style="color:var(--ink2);font-size:56px">（TWh）</span></h2>
+  <div class="chart" id="c2">
+    <div class="bar" data-v="503"><div class="lab">中国</div><div class="trk"><div class="fill"></div><div class="val">+503</div></div></div>
+    <div class="bar" data-v="131"><div class="lab">米国</div><div class="trk"><div class="fill"></div><div class="val">+131</div></div></div>
+    <div class="bar" data-v="49"><div class="lab">インド</div><div class="trk"><div class="fill"></div><div class="val">+49</div></div></div>
+    <div class="bar dim" data-v="4"><div class="lab">EU</div><div class="trk"><div class="fill"></div><div class="val">ほぼ 0</div></div></div>
+    <div class="bar dim" data-v="4"><div class="lab">日本</div><div class="trk"><div class="fill"></div><div class="val">ほぼ 0</div></div></div>
+  </div>
+  <div class="note">中国の増加分の94%は風力・太陽光だけで賄われた</div>
+</div>
+
+<div class="scene" id="s3">
+  <div class="kicker">電力だけで見た、年間の建設可能量</div>
+  <h2>毎年建てられる<br>データセンター<span style="color:var(--ink2);font-size:56px">（GW）</span></h2>
+  <div class="chart" id="c3">
+    <div class="bar" data-v="55"><div class="lab">中国</div><div class="trk"><div class="fill"></div><div class="val">50〜60</div></div></div>
+    <div class="bar" data-v="12.5"><div class="lab">米国</div><div class="trk"><div class="fill"></div><div class="val">10〜15</div></div></div>
+    <div class="bar" data-v="4"><div class="lab">インド</div><div class="trk"><div class="fill"></div><div class="val">3〜5</div></div></div>
+    <div class="bar" data-v="4"><div class="lab">EU</div><div class="trk"><div class="fill"></div><div class="val">3〜5</div></div></div>
+    <div class="bar dim" data-v="1.5"><div class="lab">日本</div><div class="trk"><div class="fill"></div><div class="val">1〜2</div></div></div>
+  </div>
+  <div class="note">中国は既設火力の利用率が5割前後。余った電力をそのままAIに回せる</div>
+</div>
+
+<div class="scene" id="s4">
+  <div class="kicker">米国の壁</div>
+  <h2>電源より<br>「送電網」が足りない</h2>
+  <div class="pt">13の地域送電網のうち<br><b>8つ</b>が予備率臨界以下</div>
+  <div class="pt">2025年の需要増の<b>半分</b>が<br>データセンター</div>
+  <div class="pt">上限は発電所ではなく<br><b>接続待ちの列</b></div>
+</div>
+
+<div class="scene" id="s5">
+  <div class="kicker">日本</div>
+  <h2>新規電源は<br>ほぼゼロ</h2>
+  <div class="pt">燃料もウランも<b>全量輸入</b><br>平時の発電量は有事の数字ではない</div>
+  <div class="pt">原発<b>1基</b>の再稼働<br>＝ データセンター約<b>1 GW</b></div>
+  <div class="pt">再稼働の基数が、そのまま<br><b>建てられる数</b></div>
+</div>
+
+<div class="scene" id="s6" style="padding-bottom:400px">
+  <div class="kicker">結論（電力だけで見ると）</div>
+  <div class="rank">中国<span class="s">＞＞</span>米国</div>
+  <div class="rank"><span class="s">＞</span>インド<span class="s">≒</span>EU</div>
+  <div class="rank"><span class="s">＞</span>日本</div>
+  <div class="pt" style="margin-top:40px">中国は米国の<b>4〜5倍</b></div>
+  <div class="pt">日本は米国の<b>1/10以下</b></div>
+  <div class="pt">米国が追いつくには<br>電源増設を<b>3〜4倍</b>に</div>
+  <div class="src">出典：Ember「Global Electricity Review 2026」／Goldman Sachs 2025年11月／Energy Institute。<br>連続負荷換算：1GW×8,760h≒8.8TWh。建設可能量は電力制約のみの概算。<br>ナレーション：VOICEVOX:青山龍星</div>
+</div>
+
+<div class="prog" id="prog"></div>
+
+<script>
+let DUR=46, SC=[[0,4],[4,10],[10,18],[18,27],[27,34],[34,40],[40,46]];
+window.setTimeline=function(sc){SC=sc;DUR=sc[sc.length-1][1];};
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const ease=x=>1-Math.pow(1-clamp(x,0,1),3);
+function fade(t,s,e){const fi=.5,fo=.4;return Math.min(ease((t-s)/fi),ease((e-t)/fo));}
+function bars(id,t0,t,max){
+  const trkW=1080-160-200-30-230;
+  document.querySelectorAll('#'+id+' .bar').forEach((b,i)=>{
+    const v=+b.dataset.v, p=ease((t-t0-.6-i*.9)/.9);
+    const w=Math.max(0, trkW*(v/max)*p);
+    b.querySelector('.fill').style.width=w+'px';
+    const val=b.querySelector('.val'); val.style.left=w+'px'; val.style.opacity=p;
+  });
+}
+function pts(id,t0,t,gap){
+  document.querySelectorAll('#'+id+' .pt').forEach((p,i)=>{
+    const k=ease((t-t0-.6-i*gap)/.6);
+    p.style.opacity=k; p.style.transform=`translateY(${30*(1-k)}px)`;
+  });
+}
+window.setT=function(t){
+  SC.forEach(([s,e],i)=>{document.getElementById('s'+i).style.opacity=(t>=s&&t<e)?fade(t,s,e):0;});
+  bars('c2',SC[2][0],t,503); bars('c3',SC[3][0],t,55);
+  pts('s4',SC[4][0],t,2.4); pts('s5',SC[5][0],t,2.4); pts('s6',SC[6][0],t,1.6);
+  document.getElementById('prog').style.width=(1080*t/DUR)+'px';
+};
+setT(0);
+// ブラウザで直接開いたときはプレビュー再生(timeline.json があればそれを使う)
+if(location.protocol!=='file:'||!navigator.webdriver){
+  fetch('timeline.json').then(r=>r.json()).then(j=>setTimeline(j.sc)).catch(()=>{}).then(()=>{
+    const t0=performance.now();(function loop(){const t=(performance.now()-t0)/1000;setT(t%DUR);requestAnimationFrame(loop);})();
+  });
+}
+</script></body></html>

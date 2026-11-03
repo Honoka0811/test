@@ -1,0 +1,6 @@
+frames/
+fonts/*.ttf
+__pycache__/
+output/mix.wav
+output/narration_*.wav
+voicevox/
