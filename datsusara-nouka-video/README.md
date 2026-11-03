@@ -23,6 +23,9 @@ python3 build.py <作業ディレクトリ> <出力mp4パス>
 - `build.py` … HTML 生成 → Playwright で画像化 → Open JTalk で音声合成 → ffmpeg で合成
 - `render.js` … スライド画像化（Playwright）
 
+## BGM
+バッハ「平均律クラヴィーア曲集 第1巻 第1番 プレリュード ハ長調 BWV 846」（パブリックドメイン）を `bgm_bach.py` で MIDI 化し、FluidSynth + FluidR3_GM 音源（ピアノ）で演奏したものをループしています（`apt install fluidsynth fluid-soundfont-gm`、`pip install mido`）。環境変数 `BGM=<wav>` で別の曲に差し替え、`BGM_GAIN` で音量を調整できます。
+
 ## ナレーション（音声合成）
 既定は **VOICEVOX（四国めたん）** です。クレジット表記「VOICEVOX:四国めたん」が必要なため、動画末尾に記載しています。
 - VOICEVOX を使うには `vv/` に VOICEVOX ONNX Runtime（`ort/lib/libvoicevox_onnxruntime.so*`）と音声モデル（`models/*.vvm`）を置き、`voicevox_core` の wheel を pip で入れます（いずれも GitHub の VOICEVOX リリースから取得。容量が大きいため git には含めていません。`VV_DIR` で別の場所も指定可）。

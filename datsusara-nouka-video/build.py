@@ -169,37 +169,29 @@ for i in range(1, n):
     fc.append(f"{ain}[{i}:a]acrossfade=d={XFADE}:c1=tri:c2=tri[a{i}]")
 total_len = sum(d for _, d in slide_files) - XFADE * (n - 1)
 
-# ---------- 6. Soft background music ----------
+# ---------- 6. Background music ----------
+# 既定: バッハ「プレリュード ハ長調 BWV 846」(パブリックドメイン) を bgm_bach.py で生成しループ。
+# BGM=<wavファイル> で差し替え可。BGM_GAIN でピーク音量 (既定 0.11)。
+def load_wav_mono(path):
+    raw = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", path, "-f", "f32le", "-ac", "1", "-ar", str(SR), "-"], check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32).copy()
+
 def bgm(length):
-    t = np.arange(int(length * SR)) / SR
-    out = np.zeros_like(t, dtype=np.float32)
-    chords = [[261.63, 329.63, 392.00, 523.25], [196.00, 246.94, 293.66, 392.00],
-              [220.00, 261.63, 329.63, 440.00], [174.61, 220.00, 261.63, 349.23]]
-    bar = 4.0
-    nb = int(np.ceil(length / bar))
-    for b in range(nb):
-        ch = chords[b % 4]
-        s0, s1 = int(b * bar * SR), min(int((b + 1) * bar * SR), len(t))
-        if s0 >= len(t): break
-        tt = t[s0:s1] - b * bar
-        env = np.minimum(tt / 0.8, 1.0) * np.minimum((bar - tt) / 0.8, 1.0)
-        env = np.clip(env, 0, 1)
-        seg = np.zeros_like(tt)
-        for f in ch:
-            seg += np.sin(2 * np.pi * f / 2 * tt) * 0.5 + np.sin(2 * np.pi * f * tt) * 0.35 + np.sin(2 * np.pi * f * 2 * tt) * 0.08
-        # gentle arpeggio
-        for k in range(8):
-            a0 = k * bar / 8
-            m = (tt >= a0)
-            tk = tt[m] - a0
-            f = ch[k % 4] * 2
-            seg[m] += np.sin(2 * np.pi * f * tk) * np.exp(-tk * 3.5) * 0.25
-        out[s0:s1] += (seg * env).astype(np.float32)
-    out /= np.abs(out).max()
+    src = os.environ.get("BGM")
+    if not src:
+        src = f"{OUT}/bgm_src.wav"
+        subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "bgm_bach.py"), src, str(SR), "66"], check=True)
+    piece = load_wav_mono(src)
+    gap = np.zeros(int(2.0 * SR), np.float32)
+    out = np.concatenate([piece, gap])
+    while len(out) < int(length * SR):
+        out = np.concatenate([out, piece, gap])
+    out = out[:int(length * SR)]
+    out /= max(float(np.abs(out).max()), 1e-6)
     fade = int(min(5.0, length / 4) * SR)
     out[-fade:] *= np.linspace(1, 0, fade)
-    out[:int(2 * SR)] *= np.linspace(0, 1, int(2 * SR))
-    return out * 0.07
+    out[:int(1.5 * SR)] *= np.linspace(0, 1, int(1.5 * SR))
+    return out * float(os.environ.get("BGM_GAIN", "0.11"))
 write_wav(f"{OUT}/bgm.wav", bgm(total_len + 1))
 
 final = f"{OUT}/final_nobgm.mp4"
