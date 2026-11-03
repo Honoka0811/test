@@ -25,7 +25,7 @@ const C = {
   accent: '#F5C451', cn: '#F0785A', ru: '#4FA3E8', other: '#8C93A3',
   radar: '#58D68D', dim: '#3a4360'
 };
-const FPS = 30, DURATION = 68;
+const FPS = 30, DURATION = 85;
 const VOICE_CREDIT = '音声: Open JTalk / BGM: 自作';
 
 // ---------- データ(防衛省 統合幕僚監部「緊急発進実施状況」各年度) ----------
@@ -311,6 +311,61 @@ function sceneWhere(t, a) {
   footnote('那覇基地には全国最多の2個飛行隊(F-15)が配備', ca);
 }
 
+// 簡易ゲージ(対応能力の限界を表す)
+function drawGauge(cx, cy, r, p, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.lineWidth = 14; ctx.lineCap = 'round';
+  ctx.strokeStyle = C.grid; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, 2 * Math.PI); ctx.stroke();
+  const g = ctx.createLinearGradient(cx - r, 0, cx + r, 0); g.addColorStop(0, C.ru); g.addColorStop(.6, C.accent); g.addColorStop(1, C.cn);
+  ctx.strokeStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI, Math.PI + Math.PI * p); ctx.stroke();
+  const ang = Math.PI + Math.PI * p;
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + (r - 22) * Math.cos(ang), cy + (r - 22) * Math.sin(ang)); ctx.stroke();
+  ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function sceneWhy(t, a) {
+  header('なぜピークから減ったのか', '防衛省は「さまざまな要因」と明言せず。考えられる3つの見方', a);
+  const cards = [
+    { n: '1', title: '中国機の飛び方が「定型化」', l1: '2016年は戦闘機の東シナ海飛来が急増(中国機 851回)。', l2: '以後は爆撃機・情報収集機が決まったルートを飛ぶ形に。', l3: '一方、公表される「特異な飛行」はむしろ増加' },
+    { n: '2', title: 'ロシア側の事情', l1: 'ウクライナ侵攻の2022年度、ロシア機への対応は', l2: '150回と2013年度以降で最少(前年度 266回)。', l3: '戦力が西に向いた時期と重なる' },
+    { n: '3', title: '空自側の限界と「効率化」', l1: '専門家は「脅威が減ったのではなく対応能力が限界」と指摘。', l2: '無人機への発進は8回→23回(23→24年度)に増え、', l3: '燃料・疲労を考え「全てに戦闘機で応じない」運用も模索' },
+  ];
+  cards.forEach((c, i) => {
+    const la = a * easeOut((t - .4 - i * 3.0) / .6);
+    const y = 430 + i * 345;
+    rrect(60, y, W - 120, 310, 22, C.panel, la);
+    const ix = 175, iy = y + 155;
+    if (i === 0) {
+      // 決まったルートを飛ぶ(平行する破線 + 機体)
+      for (let k = -1; k <= 1; k++) line(ix - 95, iy + k * 42, ix + 95, iy + k * 42, C.grid, 4, la, [14, 12]);
+      const p = (t - .4) % 3 / 3;
+      drawJet(ix - 95 + 190 * p, iy, 0.55, Math.PI / 2, C.cn, la);
+    }
+    if (i === 1) {
+      // 2021→2022 のロシア機対応(ミニ棒グラフ)
+      const p = easeOut((t - 3.6) / 1.0);
+      rrect(ix - 80, iy + 70 - 150 * p, 60, 150 * p, 6, C.ru, la);
+      rrect(ix + 20, iy + 70 - 85 * p, 60, 85 * p, 6, C.ru, la * .55);
+      text("'21", ix - 50, iy + 105, { size: 24, color: C.ink3, align: 'center', alpha: la });
+      text("'22", ix + 50, iy + 105, { size: 24, color: C.ink3, align: 'center', alpha: la });
+      text('266', ix - 50, iy + 70 - 150 * p - 12, { size: 24, color: C.ink2, align: 'center', alpha: la * p });
+      text('150', ix + 50, iy + 70 - 85 * p - 12, { size: 24, color: C.ink2, align: 'center', alpha: la * p });
+    }
+    if (i === 2) {
+      drawGauge(ix, iy + 40, 90, 0.5 + 0.45 * easeOut((t - 6.6) / 1.4), la);
+      text('限界', ix, iy + 85, { size: 26, color: C.ink3, align: 'center', alpha: la });
+    }
+    text(c.n, 320, y + 80, { size: 56, weight: 'bold', color: C.accent, alpha: la });
+    text(c.title, 385, y + 80, { size: 40, weight: 'bold', alpha: la });
+    text(c.l1, 320, y + 150, { size: 27, color: C.ink2, alpha: la });
+    text(c.l2, 320, y + 198, { size: 27, color: C.ink2, alpha: la });
+    text(c.l3, 320, y + 246, { size: 27, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 10.4) / .6);
+  caption('回数の減少 ≠ 脅威の低下', 1545, ca, C.accent, 46);
+  text('2025年度も中国ヘリの領空侵犯、艦載機のレーダー照射、中ロ爆撃機の共同飛行が発生', W / 2, 1610, { size: 26, color: C.ink2, align: 'center', alpha: ca });
+  text('出典: 統幕公表資料、日本経済新聞、JBpress、Newsweek日本版、乗りものニュース ほか', W / 2, 1680, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+}
+
 function sceneSurge(t, a) {
   header('そして2026年度、一転して急増', '上半期(4〜9月)の緊急発進回数', a);
   const px0 = 200, py0 = 560, py1 = 1180, maxV = 500;
@@ -340,7 +395,7 @@ function sceneSummary(t, a) {
   text('まとめ', W / 2, 330, { size: 80, weight: 'bold', align: 'center', alpha: a });
   const items = [
     ['①', 'ピークは2016年度の1,168回', '1日3回以上。中国機への対応が851回'],
-    ['②', '2025年度は595回、過去5年で最少', '6割が中国機、6割が沖縄周辺で発生'],
+    ['②', '2025年度は595回、過去5年で最少', '減少の背景は「飛び方の定型化」と空自側の限界'],
     ['③', '2026年度は上半期だけで442回', '前年同期の約1.7倍。再び増加の兆し'],
   ];
   items.forEach((it, i) => {
@@ -366,8 +421,9 @@ const SCENES = [
   { s: 17.5, d: 16, f: sceneTrend },
   { s: 33.5, d: 10.5, f: sceneWho },
   { s: 44, d: 8, f: sceneWhere },
-  { s: 52, d: 9.5, f: sceneSurge },
-  { s: 61.5, d: 6.5, f: sceneSummary },
+  { s: 52, d: 17, f: sceneWhy },
+  { s: 69, d: 9.5, f: sceneSurge },
+  { s: 78.5, d: 6.5, f: sceneSummary },
 ];
 const XF = 0.35; // クロスフェード秒
 
