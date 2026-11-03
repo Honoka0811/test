@@ -160,39 +160,142 @@ function banner(str, alpha, color = C.accent, fill = C.panel, size = 34) {
   text(str, W / 2, 838, { size, weight: 'bold', color, align: 'center', alpha });
 }
 
-// 空母シルエット(上面図)。w: 全長, dir: 1 右向き
-function carrier(x, y, w, color, alpha = 1, burn = 0, seed = 0, t = 0) {
-  const h = w * 0.18;
+// 航跡(艦尾から後方へ伸びる泡と、V字の波)
+function wake(x, y, w, h, alpha, t, seed) {
   ctx.save(); ctx.globalAlpha = alpha;
-  ctx.fillStyle = color;
+  const len = w * 0.9;
+  const g = ctx.createLinearGradient(x, 0, x - len, 0);
+  g.addColorStop(0, 'rgba(255,255,255,0.35)'); g.addColorStop(0.5, 'rgba(255,255,255,0.10)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(x, y - h * 0.35); ctx.lineTo(x - len, y - h * 0.9); ctx.lineTo(x - len, y + h * 0.9); ctx.lineTo(x, y + h * 0.35); ctx.closePath(); ctx.fill();
+  // 泡の点
+  for (let i = 0; i < 14; i++) {
+    const f = ((t * 0.12 + rnd(seed * 31 + i)) % 1);
+    const px = x - f * len, py = y + (rnd(seed * 17 + i) - 0.5) * h * (0.5 + f);
+    ctx.fillStyle = `rgba(255,255,255,${0.45 * (1 - f)})`;
+    ctx.beginPath(); ctx.arc(px, py, 1.5 + f * 2, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+// 炎(加算合成の炎 + 上昇する煙)。size: 炎の基準サイズ, k: 強度 0..1
+function fire(x, y, size, k, seed, t) {
+  if (k <= 0) return;
+  // 焼け跡
+  ctx.save(); ctx.globalAlpha = 0.55 * k;
+  const sc = ctx.createRadialGradient(x, y, 0, x, y, size * 1.3);
+  sc.addColorStop(0, 'rgba(10,8,8,0.9)'); sc.addColorStop(1, 'rgba(10,8,8,0)');
+  ctx.fillStyle = sc; ctx.beginPath(); ctx.arc(x, y, size * 1.3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // 炎
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const base = ctx.createRadialGradient(x, y, 0, x, y, size * 1.6);
+  base.addColorStop(0, `rgba(255,140,40,${0.55 * k})`); base.addColorStop(0.5, `rgba(255,60,10,${0.25 * k})`); base.addColorStop(1, 'rgba(255,40,0,0)');
+  ctx.fillStyle = base; ctx.beginPath(); ctx.arc(x, y, size * 1.6, 0, Math.PI * 2); ctx.fill();
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const ph = rnd(seed * 7 + i) * 6.28, fq = 7 + rnd(seed * 3 + i) * 6;
+    const fl = 0.75 + 0.25 * Math.sin(t * fq + ph) + 0.12 * Math.sin(t * fq * 2.3 + ph * 2);
+    const ox = (rnd(seed * 11 + i) - 0.5) * size * 1.1 + Math.sin(t * 3 + ph) * size * 0.08;
+    const hgt = size * (1.1 + rnd(seed * 5 + i) * 1.0) * fl * k;
+    const wid = size * (0.2 + rnd(seed * 13 + i) * 0.18);
+    ctx.save(); ctx.translate(x + ox, y); ctx.scale(1, hgt / wid);
+    const g = ctx.createRadialGradient(0, -wid * 0.3, 0, 0, 0, wid);
+    g.addColorStop(0, `rgba(255,225,140,${0.7 * k})`); g.addColorStop(0.3, `rgba(255,150,30,${0.7 * k})`); g.addColorStop(0.7, `rgba(220,40,10,${0.35 * k})`); g.addColorStop(1, 'rgba(200,20,0,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -wid * 0.2, wid, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 火の粉
+  for (let i = 0; i < 10; i++) {
+    const f = (t * (0.6 + rnd(seed * 23 + i) * 0.6) + rnd(seed * 29 + i)) % 1;
+    const px = x + (rnd(seed * 37 + i) - 0.5) * size * 1.4 + Math.sin(t * 4 + i) * size * 0.15 * f;
+    const py = y - f * size * 2.6;
+    ctx.fillStyle = `rgba(255,${170 + 60 * (1 - f)},60,${(1 - f) * 0.9 * k})`;
+    ctx.beginPath(); ctx.arc(px, py, 1.2 + (1 - f) * 1.3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  // 煙(風で左上へ流れる)
+  ctx.save();
+  for (let i = 0; i < 12; i++) {
+    const f = (t * (0.16 + rnd(seed * 41 + i) * 0.1) + rnd(seed * 43 + i)) % 1;
+    const px = x + (rnd(seed * 47 + i) - 0.5) * size * 0.8 - f * size * 2.2 + Math.sin(t * 1.5 + i) * size * 0.2 * f;
+    const py = y - size * 0.6 - f * size * 3.2;
+    const r = size * (0.45 + f * 1.6);
+    const a = (1 - f) * f * 4 * 0.28 * k;
+    const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `rgba(120,118,122,${a})`); g.addColorStop(1, 'rgba(120,118,122,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+// 空母(上面図、艦首は右)。w: 全長, color: 所属色(船体側面と識別帯に使用), burn: 炎上 0..1
+function shade(hex, f) { const n = parseInt(hex.slice(1), 16); const r = (n >> 16) * f, g = ((n >> 8) & 255) * f, b = (n & 255) * f; return `rgb(${r | 0},${g | 0},${b | 0})`; }
+function carrier(x, y, w, color, alpha = 1, burn = 0, seed = 0, t = 0) {
+  const h = w * 0.17;
+  const hull = color.startsWith('#') ? shade(color, 0.55) : color;
+  const hullL = x - w / 2, hullR = x + w / 2;
+  if (alpha <= 0) return;
+  wake(hullL + w * 0.02, y, w, h, alpha * 0.9, t, seed + 1);
+  ctx.save(); ctx.globalAlpha = alpha;
+  // 船体(甲板の下に見える舷側)
+  ctx.fillStyle = hull;
   ctx.beginPath();
-  ctx.moveTo(x - w / 2, y - h / 2 + 6); ctx.lineTo(x + w / 2 - 16, y - h / 2); ctx.lineTo(x + w / 2, y);
-  ctx.lineTo(x + w / 2 - 16, y + h / 2); ctx.lineTo(x - w / 2, y + h / 2 - 6); ctx.closePath(); ctx.fill();
-  // 飛行甲板の中央線と艦橋
-  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2; ctx.setLineDash([10, 10]);
-  ctx.beginPath(); ctx.moveTo(x - w / 2 + 14, y); ctx.lineTo(x + w / 2 - 22, y); ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fillRect(x + w * 0.08, y - h / 2 - 7, w * 0.08, 7);
+  ctx.moveTo(hullL + h * 0.25, y - h * 0.46); ctx.lineTo(hullR - w * 0.1, y - h * 0.42); ctx.quadraticCurveTo(hullR + 4, y - h * 0.1, hullR + 4, y);
+  ctx.quadraticCurveTo(hullR + 4, y + h * 0.1, hullR - w * 0.1, y + h * 0.42); ctx.lineTo(hullL + h * 0.25, y + h * 0.46);
+  ctx.quadraticCurveTo(hullL - 2, y + h * 0.3, hullL - 2, y); ctx.quadraticCurveTo(hullL - 2, y - h * 0.3, hullL + h * 0.25, y - h * 0.46); ctx.closePath(); ctx.fill();
+  // 飛行甲板
+  const dL = hullL + h * 0.15, dR = hullR - w * 0.035, dT = y - h * 0.5, dB = y + h * 0.5;
+  const deck = ctx.createLinearGradient(0, dT, 0, dB);
+  deck.addColorStop(0, '#7d8696'); deck.addColorStop(0.5, '#69727f'); deck.addColorStop(1, '#565e6a');
+  ctx.fillStyle = deck;
+  ctx.beginPath();
+  ctx.moveTo(dL, dT + h * 0.08); ctx.lineTo(dR - w * 0.06, dT); ctx.quadraticCurveTo(dR, dT + h * 0.15, dR, y);
+  ctx.quadraticCurveTo(dR, dB - h * 0.15, dR - w * 0.06, dB); ctx.lineTo(dL, dB - h * 0.08); ctx.closePath(); ctx.fill();
+  // 甲板の縁と中心線
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = Math.max(1, w * 0.004);
+  ctx.beginPath(); ctx.moveTo(dL + w * 0.02, dT + h * 0.16); ctx.lineTo(dR - w * 0.08, dT + h * 0.1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(dL + w * 0.02, dB - h * 0.16); ctx.lineTo(dR - w * 0.08, dB - h * 0.1); ctx.stroke();
+  ctx.setLineDash([w * 0.03, w * 0.02]);
+  ctx.beginPath(); ctx.moveTo(dL + w * 0.06, y); ctx.lineTo(dR - w * 0.1, y); ctx.stroke(); ctx.setLineDash([]);
+  // エレベーター
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  [0.22, 0.52, 0.78].forEach(f => ctx.fillRect(dL + w * f - w * 0.035, y - h * 0.22, w * 0.07, h * 0.44));
+  // 日の丸 / 米側は白帯
+  if (color === C.jp) {
+    ctx.fillStyle = '#e03a35'; ctx.beginPath(); ctx.arc(dR - w * 0.17, y, h * 0.27, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1; ctx.stroke();
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillRect(dR - w * 0.2, y - h * 0.34, w * 0.012, h * 0.68);
+  }
+  // 艦橋(右舷側に張り出し)
+  const ix = x + w * 0.1, iw = w * 0.075, ih = h * 0.22;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(ix + 2, dB - ih * 0.2 + 2, iw, ih);
+  ctx.fillStyle = '#9aa3b2'; ctx.fillRect(ix, dB - ih * 0.2, iw, ih);
+  ctx.fillStyle = '#c7cdd8'; ctx.fillRect(ix + iw * 0.3, dB - ih * 0.2 + ih * 0.15, iw * 0.4, ih * 0.5);
+  // 舷側の識別帯(所属色)
+  ctx.fillStyle = color; ctx.globalAlpha = alpha * 0.9;
+  ctx.fillRect(dL + w * 0.015, dT + h * 0.02, w * 0.02, h * 0.96);
   ctx.restore();
   if (burn > 0) {
-    for (let i = 0; i < 6; i++) {
-      const fx = x + (rnd(seed * 10 + i) - 0.5) * w * 0.8;
-      const fl = 0.7 + 0.3 * Math.sin(t * (9 + i * 2.1) + i * 1.7 + seed);
-      const r = (h * 1.2 + i * 6) * burn * fl;
-      glow(fx, y - 6, r, 'rgba(255,120,30,0.9)', burn);
-      glow(fx + 4, y - r * 0.5, r * 0.6, 'rgba(255,220,80,0.9)', burn * 0.8);
-      // 煙
-      const sy = y - r * 0.6 - ((t * 60 + i * 50) % 220) * burn;
-      glow(fx + Math.sin(t * 2 + i) * 20, sy, r * 1.1, 'rgba(40,40,40,0.55)', burn * 0.7 * clamp(1 - (y - sy) / 300));
+    const n = 3;
+    for (let i = 0; i < n; i++) {
+      const fx = x + (rnd(seed * 10 + i) - 0.5) * w * 0.7;
+      fire(fx, y, h * 0.55, clamp(burn * 1.4 - i * 0.2), seed * 5 + i, t);
     }
   }
 }
-// 小型艦(戦艦・巡洋艦)
+// 戦艦・巡洋艦(上面図、艦首は右)
 function ship(x, y, w, color, alpha = 1) {
-  const h = w * 0.26;
-  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
-  ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x - w / 2 + 10, y - h / 2); ctx.lineTo(x + w / 2 - 14, y - h / 2);
-  ctx.lineTo(x + w / 2, y); ctx.lineTo(x + w / 2 - 14, y + h / 2); ctx.lineTo(x - w / 2 + 10, y + h / 2); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x - w * 0.12, y - h * 0.25, w * 0.24, h * 0.5);
+  const h = w * 0.2;
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.fillStyle = color.startsWith('#') ? shade(color, 0.7) : color;
+  ctx.beginPath(); ctx.moveTo(x - w / 2, y - h * 0.3); ctx.lineTo(x + w * 0.3, y - h / 2); ctx.quadraticCurveTo(x + w / 2 + 2, y, x + w * 0.3, y + h / 2);
+  ctx.lineTo(x - w / 2, y + h * 0.3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7d8696';
+  ctx.beginPath(); ctx.moveTo(x - w / 2 + 3, y - h * 0.22); ctx.lineTo(x + w * 0.3, y - h * 0.38); ctx.quadraticCurveTo(x + w / 2 - 2, y, x + w * 0.3, y + h * 0.38);
+  ctx.lineTo(x - w / 2 + 3, y + h * 0.22); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#c7cdd8'; ctx.fillRect(x - w * 0.1, y - h * 0.25, w * 0.2, h * 0.5);
+  ctx.fillStyle = '#4b535f';
+  [-0.33, -0.2, 0.2, 0.33].forEach(f => { ctx.beginPath(); ctx.arc(x + w * f, y, h * 0.16, 0, Math.PI * 2); ctx.fill(); });
   ctx.restore();
 }
 // 飛行機(簡易シルエット)
@@ -230,15 +333,15 @@ const US_CARRIERS = ['エンタープライズ', 'ホーネット', 'ヨーク�
 const DRAW = {
   hook(u, d, si, sp, t) {
     const a = easeOut(u / 0.8);
-    // 4隻の空母。文2以降で順に炎上
+    // 4隻の空母がゆっくり前進。文1の途中から順に炎上
     const burnT = clamp((u - 2.2) / 4);
     for (let i = 0; i < 4; i++) {
-      const y = 330 + i * 150, x = W / 2 + Math.sin(i) * 20;
+      const y = 330 + i * 150, x = W / 2 + 40 + Math.sin(i * 1.3) * 30 + u * 6 - (i % 2) * 30;
       const b = clamp((burnT * 4 - i) / 0.6);
-      carrier(x, y, 520, C.jp, a, (si >= 1 ? b * 0.7 : b), i + 1, t);
-      text(JP_CARRIERS[i], x - 330, y + 16, { size: 42, weight: 'bold', color: C.ink2, align: 'right', alpha: a * easeOut((u - 0.6 - i * 0.25) / 0.5) });
+      carrier(x, y, 520, C.jp, a, b, i + 1, t);
+      if (b > 0 && b < 0.5) glow(x, y, 220 * (0.4 + b), 'rgba(255,230,160,0.9)', (0.5 - b) * 1.6);
+      text(JP_CARRIERS[i], 300, y + 16, { size: 42, weight: 'bold', color: C.ink2, align: 'right', alpha: a * easeOut((u - 0.6 - i * 0.25) / 0.5) });
     }
-    // タイトル
     const ta = easeOut((u - 0.2) / 0.9);
     text('ミッドウェー海戦', W / 2, 150, { size: 64, weight: 'bold', align: 'center', alpha: ta, ls: 6 });
     text('日本はどうすれば勝てたか', W / 2, 230, { size: 60, weight: 'bold', color: C.accent, align: 'center', alpha: ta });
@@ -523,7 +626,7 @@ const DRAW = {
         const flash = si === 6 ? clamp(1 - sp * 3) : 0;
         const bn = si === 6 ? easeOut(sp / 0.6) : 1;
         [['赤城', -170], ['加賀', 0], ['蒼龍', 170]].forEach(([nm, oy], i) => {
-          carrier(dx, dy + oy, 520, C.jp, 1, bn, i + 3, t);
+          carrier(dx + 20 + Math.sin(i) * 15, dy + oy, 520, C.jp, 1, bn, i + 3, t);
           text(nm, dx - 320, dy + oy + 12, { size: 34, weight: 'bold', align: 'right', color: C.ink });
         });
         if (flash) { ctx.save(); ctx.globalAlpha = flash; ctx.fillStyle = '#fff'; ctx.fillRect(fx, fy, fw, fh); ctx.restore(); }
@@ -710,7 +813,7 @@ function render(t) {
 }
 function thumbnail() {
   background(0);
-  for (let i = 0; i < 4; i++) carrier(W / 2 + 320, 330 + i * 150, 520, C.jp, 1, 0.9, i + 1, 3.3);
+  for (let i = 0; i < 4; i++) carrier(W / 2 + 320 + Math.sin(i * 1.3) * 30, 330 + i * 150, 520, C.jp, 1, 0.9, i + 1, 3.3);
   ctx.fillStyle = 'rgba(5,10,20,0.55)'; ctx.fillRect(0, 0, W, H);
   text('ミッドウェー海戦', 120, 330, { size: 96, weight: 'bold', ls: 6 });
   text('日本はどうすれば', 120, 500, { size: 120, weight: 'bold', color: C.accent });
