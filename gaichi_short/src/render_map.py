@@ -4,7 +4,7 @@ from multiprocessing import Pool
 import numpy as np
 import aggdraw
 from PIL import Image, ImageDraw, ImageFilter
-from render import (W, H, FPS, F_DELA, F_BLACK, F_BOLD, SCENES, TOTAL, S, REG, RANKS, SUBS, EXTRAS,
+from render import (W, H, FPS, F_DELA, F_BLACK, F_BOLD, SCENES, TOTAL, S, REG, RANKS, SUBS, EXTRAS, SRC_TOTAL,
                     text_img, paste_c, paste_l, ease_out, ease_back, clamp, credit, subtitle, confetti)
 from geo import merc_y
 from timeline import HERE
@@ -15,12 +15,12 @@ LAYER_REG = {"chosen": "朝鮮", "taiwan": "台湾", "kanto": "関東州", "kara
 REG_LAYER = {v: k for k, v in LAYER_REG.items()}
 REG_LAYER["北方領土"] = "hoppo"
 
-CITY = {10: (120.30, 22.63), 9: (120.21, 22.99), 8: (126.62, 37.46), 7: (128.60, 35.87), 6: (129.78, 41.80),
+CITY = {10: (120.21, 22.99), 9: (120.30, 22.63), 8: (126.62, 37.46), 7: (128.60, 35.87), 6: (129.78, 41.80),
         5: (129.04, 35.10), 4: (125.75, 39.03), 3: (121.56, 25.04), 2: (121.60, 38.91), 1: (126.98, 37.57)}
 EXTRA_PINS = {
     "kara": [("豊原", 142.73, 46.96)],
     "nanyo": [("コロール", 134.48, 7.34), ("ガラパン", 145.72, 15.21)],
-    "hoppo": [("古釜布", 145.86, 44.02, "L"), ("紗那", 147.88, 45.24), ("斜古丹", 146.83, 43.87)],
+    "hoppo": [("泊", 145.53, 43.74, "L"), ("紗那", 147.88, 45.24), ("斜古丹", 146.83, 43.87)],
 }
 OVER = (137.5, 33.0, 13.5, 680)
 
@@ -199,13 +199,16 @@ def legend(c, a=1):
         im = text_img(lb, F_BOLD, 30, (230, 230, 240), 3, (0, 0, 0))
         paste_l(c, im, x + 38, y, a); x += 38 + im.width + 30
 
+def fmt_share(lb, sh):
+    return f"{lb} 1%未満" if sh < 1 else f"{lb} {round(sh)}%"
+
 def info_card(c, r, lt):
-    city, ruby, reg, now, pop, shares, ll, extra = RANKS[r]
+    city, ruby, reg, now, pop, shares, ll, extra, ol, bsrc = RANKS[r]
     acc = REG[reg] if r != 1 else (255, 200, 40)
     p = ease_out(lt / 0.35)
     d = ImageDraw.Draw(c)
-    y0 = 1075 + (1 - p) * 120
-    d.rounded_rectangle([40, y0, W - 40, y0 + 370], 34, fill=(12, 16, 36, int(225 * p)), outline=acc + (int(255 * p),), width=4)
+    y0 = 1050 + (1 - p) * 120
+    d.rounded_rectangle([40, y0, W - 40, y0 + 412], 34, fill=(12, 16, 36, int(225 * p)), outline=acc + (int(255 * p),), width=4)
     sc = 2.0 - 1.0 * ease_back(lt / 0.28)
     paste_c(c, text_img(str(r), F_DELA, 150, acc, 8, (10, 10, 25), glow=acc), 150, y0 + 125, sc, clamp(lt / 0.1))
     paste_c(c, text_img("位", F_DELA, 60, (255, 255, 255), 5, (10, 10, 25)), 150 + (45 if r < 10 else 95), y0 + 175, sc, clamp(lt / 0.1))
@@ -229,12 +232,11 @@ def info_card(c, r, lt):
         paste_c(c, im3, xr - im3.width / 2, y0 + 165)
         paste_c(c, im2, xr - im3.width - im2.width / 2 + 40, y0 + 145, pop_s)
         paste_c(c, im1, xr - im3.width - im2.width + 70 - im1.width / 2, y0 + 165)
-    # bar
     pb = (lt - 0.9) / 0.7
-    x0, bw, by, bh = 80, W - 160, y0 + 272, 30
+    x0, bw, by, bh = 80, W - 160, y0 + 268, 30
     d.rounded_rectangle([x0 - 4, by - 4, x0 + bw + 4, by + bh + 4], 10, fill=(0, 0, 0, int(160 * p)))
     cols = [acc + (255,), (110, 125, 160, 255), (196, 150, 70, 255)]
-    labels = ["内地人", ll, "外国人"]
+    labels = ["内地人", ll, ol]
     x = x0; tot = bw * ease_out(pb)
     for sh, col in zip(shares, cols):
         w = bw * sh / 100; w2 = max(0, min(w, x0 + tot - x))
@@ -242,10 +244,13 @@ def info_card(c, r, lt):
         x += w
     a = clamp((pb - 0.5) / 0.5); lx = x0
     for sh, col, lb in zip(shares, cols, labels):
-        if sh < 1 and lb != "外国人": continue
-        d.rounded_rectangle([lx, by + 46, lx + 24, by + 70], 5, fill=col[:3] + (int(255 * a),))
-        im = text_img(f"{lb} {sh}%" if sh >= 1 else f"{lb} 1%未満", F_BOLD, 30, (235, 235, 245), 3, (0, 0, 0))
-        paste_l(c, im, lx + 32, by + 58, a); lx += im.width + 62
+        d.rounded_rectangle([lx, by + 44, lx + 24, by + 68], 5, fill=col[:3] + (int(255 * a),))
+        im = text_img(fmt_share(lb, sh), F_BOLD, 30, (235, 235, 245), 3, (0, 0, 0))
+        paste_l(c, im, lx + 32, by + 56, a); lx += im.width + 56
+    # sources
+    sa = clamp((lt - 0.6) / 0.4) * p
+    paste_l(c, text_img("出典 " + SRC_TOTAL.replace("人口：", "総人口："), F_BOLD, 22, (200, 208, 228)), 70, y0 + 357, sa)
+    paste_l(c, text_img("　　 " + bsrc + "の現住人口", F_BOLD, 22, (200, 208, 228)), 70, y0 + 386, sa)
 
 def callout(c, txt, x, y, lt):
     pe = ease_back((lt - 1.6) / 0.35)
@@ -377,7 +382,7 @@ def frame(fi):
         outro_panel(c, lt)
     if key == "r1": confetti(c, lt)
     vlt = t - sc["vstart"]
-    if vlt > -0.1: subtitle(c, key, max(0, vlt))
+    if vlt > -0.1 and not (key == "outro" and lt > 3.7): subtitle(c, key, max(0, vlt))
     credit(c)
     flash = shake = 0
     if is_rank or key == "title":
@@ -394,28 +399,49 @@ def frame(fi):
     return out.tobytes()
 
 def extra_panel(c, key, lt):
-    reg, title, ruby, sub, stat, notes = EXTRAS[key]
+    reg, title, ruby, sub, stat, notes, src, weak = EXTRAS[key]
     acc = REG[reg]
     paste_c(c, text_img("おまけ", F_DELA, 60, (255, 210, 90), 5, (10, 10, 25)), W / 2, 200)
     paste_c(c, text_img(title, F_DELA, 84 if len(title) <= 4 else 64, (255, 255, 255), 6, (10, 10, 25), glow=acc), W / 2, 285, ease_back(lt / 0.35))
     p = ease_out(lt / 0.35)
     d = ImageDraw.Draw(c)
-    y0 = 1075 + (1 - p) * 120
-    d.rounded_rectangle([40, y0, W - 40, y0 + 370], 34, fill=(12, 16, 36, int(225 * p)), outline=acc + (int(255 * p),), width=4)
+    y0 = 1050 + (1 - p) * 120
+    d.rounded_rectangle([40, y0, W - 40, y0 + 412], 34, fill=(12, 16, 36, int(225 * p)), outline=acc + (int(255 * p),), width=4)
     tag = text_img(reg, F_BLACK, 36, (20, 20, 30))
     d.rounded_rectangle([80, y0 + 30, 80 + tag.width + 36, y0 + 84], 27, fill=acc + (255,))
     paste_c(c, tag, 80 + (tag.width + 36) / 2, y0 + 57)
     paste_l(c, text_img(sub, F_BOLD, 34, (205, 215, 240), 3, (0, 0, 0)), 80 + tag.width + 60, y0 + 57)
     if lt > 0.4:
-        paste_l(c, text_img(stat, F_DELA, 90, (255, 225, 110), 7, (10, 10, 25), glow=(255, 160, 0)), 70, y0 + 150, ease_out((lt - 0.4) / 0.3))
+        paste_l(c, text_img(stat, F_DELA, 80, (255, 225, 110), 7, (10, 10, 25), glow=(255, 160, 0)), 70, y0 + 145, ease_out((lt - 0.4) / 0.3))
     for i, n in enumerate(notes):
         pn = ease_out((lt - 0.9 - i * 0.25) / 0.3)
         if pn > 0:
-            paste_l(c, text_img("● " + n, F_BOLD, 38, (235, 235, 245), 3, (0, 0, 0)), 80 - (1 - pn) * 60, y0 + 238 + i * 50, pn)
+            paste_l(c, text_img("● " + n, F_BOLD, 34, (235, 235, 245), 3, (0, 0, 0)), 80 - (1 - pn) * 60, y0 + 222 + i * 44, pn)
+    sa = clamp((lt - 0.6) / 0.4) * p
+    paste_l(c, text_img(src, F_BOLD, 22, (200, 208, 228)), 70, y0 + 357, sa)
+    if weak:
+        wim = text_img(weak, F_BOLD, 22, (255, 200, 90))
+        paste_l(c, wim, 70, y0 + 386, sa)
+
+SOURCES = [
+    "● 総人口：内閣統計局『列国国勢要覧』昭和18年版",
+    "　附録第二表「帝国大都市の人口」（1940年10月1日国勢調査）",
+    "● 内訳：朝鮮総督府『朝鮮総督府統計年報』昭和15年 第10表",
+    "● 内訳：台湾総督官房『台湾常住戸口統計』昭和15年末 第2表",
+    "● 内訳：関東局『関東局統計書』第35（昭和15年）第7表",
+    "　※内訳はいずれも1940年末の現住人口（国勢調査とは別集計）",
+    "● 樺太：樺太庁統計書（二次資料経由）、1935・1940年国勢調査",
+    "● 南洋：南洋庁『南洋庁統計年鑑』昭和14年",
+    "　※コロール・ガラパンの町の人口は資料により差がある",
+    "● 北方領土：北方領土問題対策協会",
+    "　「北方領土の位置・面積・人口」（1945年8月15日時点）",
+    "",
+    "統計書は国立国会図書館デジタルコレクションで閲覧",
+]
 
 def outro_panel(c, lt):
     paste_c(c, text_img("TOP3", F_DELA, 90, (255, 210, 90), 6, (10, 10, 25)), W / 2, 230, ease_back(lt / 0.3))
-    rows = [("1", "京城", "約93万人", (255, 210, 90)), ("2", "大連", "約55万人", (220, 225, 235)), ("3", "台北", "約35万人", (230, 160, 100))]
+    rows = [("1", "京城", "約94万人", (255, 210, 90)), ("2", "大連", "約66万人", (220, 225, 235)), ("3", "台北", "約33万人", (230, 160, 100))]
     d = ImageDraw.Draw(c)
     for i, (r, n, p_, col) in enumerate(rows):
         pr = ease_back((lt - 0.2 - i * 0.15) / 0.35)
@@ -431,6 +457,13 @@ def outro_panel(c, lt):
         paste_c(c, text_img("予想は当たった？", F_DELA, 76, (255, 255, 255), 7, (10, 10, 25), glow=(255, 77, 109)), W / 2, 345, s)
     if lt > 2.0:
         paste_c(c, text_img("ナレーション　VOICEVOX:青山龍星", F_BOLD, 34, (235, 235, 245), 4, (0, 0, 0)), W / 2, 1385, 1, ease_out((lt - 2) / 0.4))
+    if lt > 3.7:
+        a = ease_out((lt - 3.7) / 0.4)
+        c.alpha_composite(Image.new("RGBA", (W, H), (6, 8, 20, int(252 * a))))
+        paste_c(c, text_img("主な出典", F_DELA, 72, (255, 210, 90), 5, (10, 10, 25)), W / 2, 330, 1, a)
+        for i, ln in enumerate(SOURCES):
+            im = text_img(ln, F_BOLD, 30 if not ln.startswith("　") else 26, (235, 235, 245) if not ln.startswith("　") else (180, 190, 215))
+            paste_l(c, im, 70, 440 + i * 52, a)
 
 def main():
     n = int(TOTAL * FPS)
@@ -440,7 +473,7 @@ def main():
             Image.frombytes("RGB", (W, H), frame(int(float(s) * FPS))).save(os.path.join(HERE, f"map_{s}.png"))
         return
     ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS),
-                           "-i", "-", "-i", os.path.join(HERE, "mix.wav"), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+                           "-i", "-", "-i", os.path.join(HERE, "mix_soft.wav"), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart",
                            os.path.join(HERE, "out_map.mp4")], stdin=subprocess.PIPE)
     with Pool(4) as pool:

@@ -6,7 +6,7 @@ VOICE = os.path.join(HERE, "voice")
 PAD = {
     "hook": (0.35, 0.35), "title": (0.15, 0.55),
     "tease": (0.2, 1.1), "r1": (0.15, 1.3),
-    "extra": (0.25, 0.3), "outro": (0.2, 2.6),
+    "extra": (0.25, 0.3), "outro": (0.2, 9.0),
 }
 DEFAULT_PAD = (0.15, 0.45)
 
