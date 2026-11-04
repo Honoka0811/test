@@ -32,11 +32,11 @@ for i, v in enumerate(rms):
     env[i] = max(v, (env[i - 1] if i else 0) * 0.9)
 env = np.pad(np.repeat(env, hop), (0, n - len(env) * hop))
 speech = np.clip(env / 0.10, 0, 1)
-BGM_SILENT, BGM_SPEECH = 0.55, 0.26
+BGM_SILENT, BGM_SPEECH = 0.5, 0.24
 gain = BGM_SILENT - (BGM_SILENT - BGM_SPEECH) * speech
 k = SR // 10
 gain = np.convolve(gain, np.ones(k) / k, mode='same')
-mixed = nar * 1.0 + bgm * gain + sfx * 0.45
+mixed = nar * 1.0 + bgm * gain + sfx * 0.22
 mixed = mixed / max(1.0, np.max(np.abs(mixed)) / 0.95)
 MIX = os.path.join(OUT, 'mix.wav')
 with wave.open(MIX, 'wb') as w:
@@ -49,7 +49,7 @@ meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', MIX, '-af', 'loudnorm=I=-
                       capture_output=True, text=True).stderr
 j = json.loads(meas[meas.rindex('{'): meas.rindex('}') + 1])
 af = (f"loudnorm=I=-14:TP=-1.5:LRA=11:measured_I={j['input_i']}:measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}"
-      f":measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true,volume=1.8dB")
+      f":measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true,volume=1.2dB")
 subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', VIDEO, '-i', MIX, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
                 '-af', af, '-ac', '2', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', FINAL], check=True)
 print('wrote', FINAL)

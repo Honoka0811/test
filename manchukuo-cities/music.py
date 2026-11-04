@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """BGM と効果音をプログラムで合成する(外部音源なし・権利フリー)。
-BGM: Aマイナー / 112BPM のシネマティック・ポップ(Am–F–C–G)。シーンに合わせて編成が変わる。
-  冒頭: ライザー → インパクト → パッド+アルペジオ / 概要: ビート控えめ / ランキング: フルビート(順位が上がるほど厚く)
-  1位: ドラムロールで溜めてドロップ / 番外編: ハーフタイム / 鉄道: 汽車のリズム / あじあ号: フル / 結び: パッドのみ
-効果音: ウーッシュ、インパクト、ドラムロール、スタンプ、汽笛。タイミングは render.html と同じ値を使う。
+BGM: Cメジャー / 104BPM の明るく軽快なポップ(C–G–Am–F)。マリンバのメロディ + グロッケン + 柔らかいドラム + 丸いベース。
+  冒頭: やさしいライザー → メロディ開始 / 概要: 軽めのビート / ランキング: フル(順位が上がるほど楽器が増える)
+  1位: いったん静かにして溜め → 発表で全員集合 / 番外編: 弾むハーフタイム / 鉄道: 汽車風のシェイカー / あじあ号: フル / 結び: しっとり
+効果音: 耳に優しい音だけで構成(高域を削ったポン・シャラン・柔らかいウーッシュ)。タイミングは render.html と同じ値を使う。
 単体実行: python3 music.py  → output/bgm.wav, output/sfx.wav
 """
 import os, json, wave
@@ -11,21 +11,29 @@ import numpy as np
 from scipy.signal import butter, sosfilt
 
 SR = 48000
-BPM = 112
+BPM = 104
 BEAT = 60 / BPM
 BAR = BEAT * 4
 HERE = os.path.dirname(os.path.abspath(__file__))
 R1_REVEAL = 1.5     # render.html と同じ
 BONUS_STAMP = 4.3
 
-PROG = [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]]   # Am F C G
-ROOTS = [45, 41, 48, 43]
+PROG = [[60, 64, 67], [55, 59, 62], [57, 60, 64], [53, 57, 60]]   # C G Am F
+ROOTS = [48, 43, 45, 41]
+# 4小節のメロディ(16分音符の位置, MIDIノート, 長さ[拍])。覚えやすい上行→下行の形
+MELODY = [
+    [(0, 76, 1), (4, 79, 1), (8, 76, .5), (10, 74, .5), (12, 72, 1)],
+    [(0, 74, 1), (4, 71, 1), (8, 74, 1.5), (14, 79, .5)],
+    [(0, 76, 1), (4, 72, 1), (8, 81, 1), (12, 79, 1)],
+    [(0, 77, 1), (4, 76, .5), (6, 74, .5), (8, 72, 2)],
+]
 
 def midi(n): return 440.0 * 2 ** ((n - 69) / 12)
 def tvec(dur): return np.arange(int(dur * SR)) / SR
 def lp(x, f, order=2): return sosfilt(butter(order, f, 'low', fs=SR, output='sos'), x)
 def hp(x, f, order=2): return sosfilt(butter(order, f, 'high', fs=SR, output='sos'), x)
 def bp(x, lo, hi, order=2): return sosfilt(butter(order, [lo, hi], 'band', fs=SR, output='sos'), x)
+def lerp(a, b, p): return a + (b - a) * p
 
 def add(buf, t0, sig, g=1.0):
     s = int(t0 * SR)
@@ -38,192 +46,193 @@ def load_timing():
         src = f.read()
     return json.loads(src[src.index('{'): src.rindex('}') + 1])
 
-# ---------- 音源 ----------
-RNG = np.random.default_rng(11)
+RNG = np.random.default_rng(5)
 def noise(dur): return RNG.standard_normal(int(dur * SR))
 
-def kick(dur=0.35, f0=150, f1=45):
-    t = tvec(dur); f = f1 + (f0 - f1) * np.exp(-t / 0.045)
-    return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.16)
+# ---------- 楽器(どれも高域を抑えた丸い音) ----------
+def marimba(f, dur=0.6):
+    t = tvec(dur)
+    x = np.sin(2 * np.pi * f * t) * np.exp(-t / 0.28) + 0.25 * np.sin(2 * np.pi * f * 3.93 * t) * np.exp(-t / 0.05)
+    return x * np.minimum(1, t / 0.002)
 
-def clap():
-    t = tvec(0.25); n = bp(noise(0.25), 900, 5000)
-    env = np.exp(-t / 0.07) * (1 + 0.6 * (np.sin(2 * np.pi * 90 * t) > 0) * (t < 0.03))
-    return 0.6 * n * env + 0.25 * np.sin(2 * np.pi * 190 * t) * np.exp(-t / 0.05)
+def glock(f, dur=1.0):
+    t = tvec(dur)
+    x = np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * f * 2.76 * t) * np.exp(-t / 0.15)
+    return lp(x * np.exp(-t / 0.4) * np.minimum(1, t / 0.003), 7000)
 
-def hat(dur=0.05, open_=False):
-    t = tvec(0.3 if open_ else dur); n = hp(noise(len(t) / SR), 7000)
-    return n * np.exp(-t / (0.12 if open_ else 0.018))
-
-def snare():
-    t = tvec(0.18); return 0.7 * bp(noise(0.18), 1500, 7000) * np.exp(-t / 0.06) + 0.3 * np.sin(2 * np.pi * 200 * t) * np.exp(-t / 0.04)
-
-def saw(f, dur, nh=12):
-    t = tvec(dur); x = np.zeros_like(t)
-    for h in range(1, nh + 1): x += np.sin(2 * np.pi * f * h * t) / h
-    return x
-
-def bass_note(f, dur):
-    t = tvec(dur); x = lp(saw(f, dur, 8), 600)
-    env = np.minimum(1, t / 0.005) * np.exp(-t / (dur * 0.9))
-    return x * env
-
-def pad_chord(chord, dur):
+def epiano(chord, dur):
     t = tvec(dur); x = np.zeros_like(t)
     for m in chord:
-        for det in (-0.006, 0.0, 0.006):
-            x += saw(midi(m) * (1 + det), dur, 6) * 0.33
-    x = lp(x, 1800)
-    a = min(0.6, dur / 3); env = np.minimum(1, t / a) * np.minimum(1, (dur - t) / 0.4)
-    return x * env
+        f = midi(m)
+        x += (np.sin(2 * np.pi * f * t) + 0.15 * np.sin(2 * np.pi * 2 * f * t)) * np.exp(-t / 0.9)
+    return x * np.minimum(1, t / 0.004) * np.minimum(1, (dur - t) / 0.08) / len(chord)
 
-def pluck(f, dur=0.35):
-    t = tvec(dur); x = np.sin(2 * np.pi * f * t) + 0.5 * np.sin(2 * np.pi * 2 * f * t) + 0.2 * np.sin(2 * np.pi * 3 * f * t)
-    return x * np.exp(-t / 0.12)
+def pad(chord, dur):
+    t = tvec(dur); x = np.zeros_like(t)
+    for m in chord:
+        for det in (-0.003, 0.003):
+            f = midi(m) * (1 + det)
+            x += np.sin(2 * np.pi * f * t) + 0.3 * np.sin(2 * np.pi * 2 * f * t)
+    env = np.minimum(1, t / 0.5) * np.minimum(1, (dur - t) / 0.5)
+    return lp(x, 1500) * env / (len(chord) * 2)
 
-def stab(chord, dur=0.9):
-    t = tvec(dur); x = sum(saw(midi(m + 12), dur, 10) for m in chord) + sum(saw(midi(m), dur, 10) for m in chord)
-    return lp(x, 3500) * np.exp(-t / 0.35)
+def bass(f, dur):
+    t = tvec(dur)
+    x = np.sin(2 * np.pi * f * t) + 0.25 * np.sin(2 * np.pi * 2 * f * t)
+    return x * np.minimum(1, t / 0.008) * np.minimum(1, (dur - t) / 0.03) * np.exp(-t / 0.6)
 
-# ---------- 効果音 ----------
-def whoosh(dur=0.55, rise=True):
-    t = tvec(dur); n = noise(dur); out = np.zeros_like(n); seg = 512
-    for i in range(0, len(n), seg):
-        p = i / len(n); fc = (300 + 5000 * p) if rise else (5300 - 5000 * p)
-        out[i:i + seg] = bp(n[max(0, i - 2048): i + seg], fc * 0.6, min(fc * 1.6, 20000))[-len(n[i:i + seg]):]
-    env = np.sin(np.pi * np.clip(t / dur, 0, 1)) ** 2
-    return out * env
+def kick():
+    t = tvec(0.3); f = 50 + 70 * np.exp(-t / 0.03)
+    return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.12)
 
-def riser(dur):
-    t = tvec(dur); n = noise(dur); out = np.zeros_like(n); seg = 1024
-    for i in range(0, len(n), seg):
-        p = i / len(n); fc = 200 * (40 ** p)
-        out[i:i + seg] = bp(n[max(0, i - 4096): i + seg], fc * 0.7, min(fc * 1.4, 20000))[-len(n[i:i + seg]):]
-    tone = np.sin(2 * np.pi * np.cumsum(110 * (4 ** (t / dur))) / SR) * 0.3
-    return (out + tone) * (t / dur) ** 2
+def snap():
+    """指パッチン風の柔らかいスネア代わり"""
+    t = tvec(0.15)
+    return lp(bp(noise(0.15), 800, 3500), 4000) * np.exp(-t / 0.035) * 0.8 + 0.3 * np.sin(2 * np.pi * 330 * t) * np.exp(-t / 0.02)
 
-def impact(big=False):
-    dur = 2.2 if big else 1.2; t = tvec(dur)
-    boom = kick(dur, 120, 32) * (1.4 if big else 1.0)
-    crack = lp(noise(dur), 6000) * np.exp(-t / (0.09 if big else 0.05))
-    tail = lp(noise(dur), 400) * np.exp(-t / (0.8 if big else 0.4)) * 0.5
-    return boom + 0.5 * crack + tail
+def shaker(g=1.0):
+    t = tvec(0.08); return lp(hp(noise(0.08), 3000), 8000) * np.exp(-t / 0.02) * np.sin(np.pi * np.clip(t / 0.08, 0, 1)) ** 0.5 * g
 
-def drumroll(dur):
-    out = np.zeros(int(dur * SR) + SR // 2); t = 0.0
-    while t < dur:
-        p = t / dur; add(out, t, snare(), 0.25 + 0.75 * p ** 1.5)
-        t += lerp(0.11, 0.035, p)
+def tom(f=110):
+    t = tvec(0.35); fr = f * (1 + 0.3 * np.exp(-t / 0.03))
+    return np.sin(2 * np.pi * np.cumsum(fr) / SR) * np.exp(-t / 0.14)
+
+# ---------- 効果音(やさしい音) ----------
+def pon(f=520, big=False):
+    """順位発表の「ポン」: 丸いサイン + 低いドン"""
+    dur = 1.0 if big else 0.6; t = tvec(dur)
+    tone = np.sin(2 * np.pi * f * t) * np.exp(-t / 0.18) + 0.4 * np.sin(2 * np.pi * f * 1.5 * t) * np.exp(-t / 0.12)
+    thud = np.sin(2 * np.pi * np.cumsum(55 + 50 * np.exp(-t / 0.04)) / SR) * np.exp(-t / (0.25 if big else 0.15))
+    return (0.6 * tone + 0.8 * thud) * np.minimum(1, t / 0.004)
+
+def sparkle(base=72, n=5, gap=0.06):
+    """シャラン: グロッケンの上行アルペジオ"""
+    notes = [0, 4, 7, 12, 16, 19, 24][:n]
+    out = np.zeros(int((gap * n + 1.2) * SR))
+    for i, d in enumerate(notes):
+        add(out, i * gap, glock(midi(base + d), 1.1), 0.5)
     return out
 
-def lerp(a, b, p): return a + (b - a) * p
+def soft_whoosh(dur=0.5):
+    t = tvec(dur); n = noise(dur); out = np.zeros_like(n); seg = 512
+    for i in range(0, len(n), seg):
+        p = i / len(n); fc = 250 + 1500 * np.sin(np.pi * p)
+        out[i:i + seg] = bp(n[max(0, i - 2048): i + seg], fc * 0.7, fc * 1.4)[-len(n[i:i + seg]):]
+    return out * np.sin(np.pi * np.clip(t / dur, 0, 1)) ** 2
 
-def whistle(dur=1.1):
-    t = tvec(dur); env = np.minimum(1, t / 0.06) * np.minimum(1, (dur - t) / 0.25)
-    x = sum(np.sin(2 * np.pi * f * t * (1 + 0.004 * np.sin(2 * np.pi * 5 * t))) for f in (midi(81), midi(84), midi(88)))
-    return (x + 0.3 * bp(noise(dur), 1500, 4000)) * env * 0.4
+def soft_riser(dur):
+    """やさしいライザー: マリンバの上行アルペジオが加速"""
+    out = np.zeros(int((dur + 0.6) * SR)); t = 0.0; i = 0
+    notes = [60, 64, 67, 72, 76, 79, 84]
+    while t < dur:
+        p = t / dur
+        add(out, t, marimba(midi(notes[i % 7] + 12 * (i // 7 % 2))), 0.25 + 0.5 * p)
+        t += lerp(0.16, 0.05, p); i += 1
+    return out
 
-def tick():
-    t = tvec(0.04); return np.sin(2 * np.pi * 2400 * t) * np.exp(-t / 0.008)
+def tom_roll(dur):
+    out = np.zeros(int((dur + 0.5) * SR)); t = 0.0
+    while t < dur:
+        p = t / dur; add(out, t, tom(lerp(95, 140, p)), 0.25 + 0.6 * p)
+        t += lerp(0.12, 0.05, p)
+    return out
+
+def whistle(dur=0.9):
+    t = tvec(dur); env = np.minimum(1, t / 0.12) * np.minimum(1, (dur - t) / 0.3)
+    x = sum(np.sin(2 * np.pi * f * t * (1 + 0.003 * np.sin(2 * np.pi * 5 * t))) for f in (midi(76), midi(79)))
+    return lp(x, 2000) * env * 0.5
 
 # ---------- 構成 ----------
 def generate(timing):
     S = {s['id']: s for s in timing['scenes']}
     total = timing['total']
     n = int(total * SR) + SR
-    drums, bass, pads, arps, stabs, sfx = (np.zeros(n) for _ in range(6))
-    kenv = np.zeros(n)  # サイドチェイン用
+    drums, low, keys, mel, pads, sfx = (np.zeros(n) for _ in range(6))
+    kenv = np.zeros(n)
 
     def scene_at(t):
         for s in timing['scenes']:
             if s['s'] <= t < s['s'] + s['d']: return s['id'], t - s['s']
         return 'end', t - S['end']['s']
 
-    hook_impact = 1.65
-    nbars = int(np.ceil(total / BAR)) + 1
+    start = 1.65  # タイトル「満洲国」が出る瞬間から曲が始まる
+    nbars = int(np.ceil((total - start) / BAR)) + 1
     for b in range(nbars):
-        bar_t = b * BAR
+        bar_t = start + b * BAR
         ci = b % 4; chord = PROG[ci]; root = ROOTS[ci]
-        sid0, _ = scene_at(bar_t)
-        # パッド(冒頭のインパクト前と 1位の溜めは無し)
-        if bar_t + BAR > hook_impact:
-            sig = pad_chord(chord, BAR + 0.3)
-            g = 0.5 if sid0 in ('end', 'bonus', 'hook', 'overview') else 0.35
-            add(pads, max(bar_t, hook_impact), sig[int(max(0, hook_impact - bar_t) * SR):], g)
-        for step in range(16):   # 16分音符
+        sid0, lt0 = scene_at(bar_t)
+        pg = {'end': 0.7, 'hook': 0.6, 'overview': 0.5, 'bonus': 0.35}.get(sid0, 0.4)
+        add(pads, bar_t, pad(chord, BAR + 0.4), pg)
+        for step in range(16):
             t = bar_t + step * BEAT / 4
             if t >= total: break
             sid, lt = scene_at(t)
-            if t < hook_impact: continue
-            if sid == 'r1' and lt < R1_REVEAL: continue        # 1位の溜め: 無音にしてドラムロールを聞かせる
-            if sid == 'end' and lt > 0: full = False
-            rank_lvl = {'r5': 0, 'r4': 1, 'r3': 2, 'r2': 3, 'r1': 4}.get(sid)
-            beat_kick = step % 4 == 0
+            if sid == 'r1' and lt < R1_REVEAL: continue         # 1位の溜め: 静かに
+            lvl = {'r5': 0, 'r4': 1, 'r3': 2, 'r2': 3, 'r1': 4, 'asia': 4, 'rail': 3}.get(sid)
+            k = lambda g=1.0: (add(drums, t, kick(), g), add(kenv, t, np.exp(-tvec(0.25) / 0.1)))
             if sid == 'hook':
-                if step == 0: add(drums, t, kick(), 0.8); add(kenv, t, np.exp(-tvec(0.3) / 0.12))
-                if step % 2 == 0: add(arps, t, pluck(midi(chord[(step // 2) % 3] + 12)), 0.5)
+                if step == 0: k(0.7)
+                if step % 4 == 0: add(keys, t, epiano(chord, BEAT * 0.95), 0.5)
+                if step % 2 == 0: add(mel, t, marimba(midi(chord[(step // 2) % 3] + 12)), 0.35)
             elif sid == 'overview':
-                if beat_kick: add(drums, t, kick(), 0.8); add(kenv, t, np.exp(-tvec(0.3) / 0.12))
-                if step % 4 == 2: add(drums, t, hat(), 0.25)
-                if step % 2 == 0: add(bass, t, bass_note(midi(root - 12), BEAT / 2 * 0.9), 0.7)
-                if step % 2 == 0: add(arps, t, pluck(midi(chord[(step // 2) % 3] + 12)), 0.45)
-            elif rank_lvl is not None or sid in ('asia', 'rail'):
-                lvl = rank_lvl if rank_lvl is not None else 3
-                if beat_kick: add(drums, t, kick(), 1.0); add(kenv, t, np.exp(-tvec(0.3) / 0.12))
-                if step in (4, 12): add(drums, t, clap(), 0.55 + 0.08 * lvl)
+                if step in (0, 8): k(0.8)
+                if step in (4, 12): add(drums, t, snap(), 0.35)
+                if step % 2 == 0: add(drums, t, shaker(), 0.18)
+                if step in (0, 6, 8, 14): add(low, t, bass(midi(root - 12), BEAT * 0.7), 0.8)
+                if step % 4 == 2: add(keys, t, epiano(chord, BEAT * 0.5), 0.45)
+                for (pos, note, ln) in MELODY[ci]:
+                    if pos == step: add(mel, t, marimba(midi(note - 12), 0.5), 0.3)   # 1オクターブ下で控えめに予告
+            elif lvl is not None:
+                if step in (0, 8) or (step == 10 and lvl >= 2): k(0.9)
+                if step in (4, 12): add(drums, t, snap(), 0.45)
                 if sid == 'rail':
-                    # 汽車のリズム: 16分のハットにアクセント
-                    add(drums, t, hat(), 0.45 if step % 4 in (0, 3) else 0.18)
-                else:
-                    add(drums, t, hat(), (0.3 if step % 2 == 0 else 0.15) * (0.6 + 0.12 * lvl))
-                    if lvl >= 2 and step % 8 == 6: add(drums, t, hat(open_=True), 0.15)
-                add(bass, t, bass_note(midi(root - 12 + (12 if step % 4 == 2 else 0)), BEAT / 4 * 0.95), 0.6)
-                pat = [0, 1, 2, 1, 2, 0, 1, 2]
-                add(arps, t, pluck(midi(chord[pat[step % 8]] + 12 + (12 if (lvl >= 3 and step % 8 == 7) else 0))), 0.38 + 0.04 * lvl)
-                if sid == 'r1' and step == 0: add(stabs, t, stab(chord, 1.2), 0.25)
+                    add(drums, t, shaker(), 0.32 if step % 4 in (0, 3) else 0.12)   # 汽車のリズム
+                elif step % 2 == 0:
+                    add(drums, t, shaker(), 0.2 + 0.03 * lvl)
+                if step in (0, 3, 6, 8, 11, 14): add(low, t, bass(midi(root - 12 + (12 if step in (6, 14) else 0)), BEAT * 0.6), 0.8)
+                if step % 4 == 2: add(keys, t, epiano(chord, BEAT * 0.5), 0.45)
+                for (pos, note, ln) in MELODY[ci]:
+                    if pos == step:
+                        add(mel, t, marimba(midi(note), 0.4 + 0.3 * ln), 0.55)
+                        if lvl >= 2: add(mel, t, glock(midi(note + 12)), 0.12 + 0.03 * lvl)   # 上位ほどキラキラ
             elif sid == 'bonus':
-                if step == 0: add(drums, t, kick(), 0.9); add(kenv, t, np.exp(-tvec(0.3) / 0.12))
-                if step == 8: add(drums, t, clap(), 0.5)
-                if step % 4 == 0: add(drums, t, hat(), 0.2)
-                if step % 4 == 0: add(bass, t, bass_note(midi(root - 12), BEAT * 0.9), 0.6)
-                if step % 3 == 0: add(arps, t, pluck(midi(chord[(step // 3) % 3] + 24)), 0.3)
+                if step == 0: k(0.8)
+                if step == 8: add(drums, t, snap(), 0.4)
+                if step % 4 == 0: add(drums, t, shaker(), 0.15)
+                if step in (0, 8): add(low, t, bass(midi(root - 12), BEAT * 1.5), 0.7)
+                if step % 3 == 0: add(mel, t, marimba(midi(chord[(step // 3) % 3] + 12)), 0.35)
             elif sid == 'end':
-                if step % 4 == 0 and lt < 4.2: add(arps, t, pluck(midi(chord[(step // 4) % 3] + 12), 0.8), 0.35)
-                if step == 0 and lt > 4.2: add(arps, t, pluck(midi(chord[0] + 12), 1.2), 0.3)
+                if lt < 4.2:
+                    if step == 0: k(0.5)
+                    if step % 4 == 0: add(keys, t, epiano(chord, BEAT * 0.95), 0.45)
+                if step % 4 == 0: add(mel, t, marimba(midi(chord[(step // 4) % 3] + 12), 0.9), 0.25)
 
-    # サイドチェイン(キックに合わせてパッド・ベースを沈める)
-    duck = 1 - 0.55 * np.clip(kenv, 0, 1)
-    music = 0.55 * drums + 0.55 * bass * duck + 0.30 * pads * duck + 0.30 * arps + stabs
-    # 1位の溜めの間は全体を絞り、ドロップで戻す
-    r1 = S['r1']['s']
+    duck = 1 - 0.35 * np.clip(kenv, 0, 1)      # 軽いポンピング
+    music = 0.6 * drums + 0.5 * low * duck + 0.35 * keys * duck + 0.55 * mel + 0.5 * pads * duck
     tt = np.arange(n) / SR
-    gate = np.ones(n)
-    m = (tt >= r1) & (tt < r1 + R1_REVEAL)
-    gate[m] = 0.15
-    music *= lp(gate, 30, 1)
-    # 冒頭フェードイン・終わりのフェードアウト
-    music *= np.clip(tt / 0.3, 0, 1) * np.clip((total - tt) / 3.0, 0, 1)
+    r1 = S['r1']['s']
+    gate = np.where((tt >= r1) & (tt < r1 + R1_REVEAL), 0.35, 1.0)
+    music *= lp(gate, 20, 1)
+    music *= np.clip(tt / 0.2, 0, 1) * np.clip((total - tt) / 3.0, 0, 1)
+    music = lp(music, 9000)
 
-    # ---------- 効果音 ----------
-    add(sfx, 0.05, riser(1.6), 0.5)
-    add(sfx, 0.35, impact(), 0.45); add(sfx, 0.8, impact(), 0.5); add(sfx, hook_impact, impact(True), 0.9)
+    # ---------- 効果音(控えめ) ----------
+    add(sfx, 0.05, soft_riser(1.55), 0.6)
+    add(sfx, 0.35, pon(392), 0.35); add(sfx, 0.8, pon(440), 0.35)
+    add(sfx, 1.65, pon(523, big=True), 0.6); add(sfx, 1.65, sparkle(72, 6), 0.5)
     for sid in ('overview', 'r5', 'r4', 'r3', 'r2', 'r1', 'bonus', 'rail', 'asia', 'end'):
-        add(sfx, S[sid]['s'] - 0.35, whoosh(0.5), 0.35)
-    for sid in ('r5', 'r4', 'r3', 'r2'):
-        add(sfx, S[sid]['s'] + 0.35, impact(), 0.75)
-    add(sfx, r1 + 0.05, drumroll(R1_REVEAL - 0.1), 0.55)
-    add(sfx, r1 + R1_REVEAL, impact(True), 1.0)
-    add(sfx, S['bonus']['s'] + 0.35, impact(), 0.6)
-    add(sfx, S['bonus']['s'] + BONUS_STAMP, impact(), 0.8)
-    add(sfx, S['end']['s'] + 4.2, impact(True), 0.6)
-    for k, g in ((2.3, 0.25), (5.2, 0.25), (9.0, 0.25)):
-        add(sfx, S['rail']['s'] + k, whoosh(0.7), g)
-    add(sfx, S['asia']['s'] + 0.8, whistle(), 0.5)
-    # 人口カウントアップのチック音
-    for sid, rv in (('r5', 0.35), ('r4', 0.35), ('r3', 0.35), ('r2', 0.35), ('r1', R1_REVEAL), ('bonus', 0.35)):
-        t0 = S[sid]['s'] + rv + 0.25 + 0.3
-        for i in range(10):
-            add(sfx, t0 + 1.1 * (1 - (1 - i / 10) ** 0.5), tick(), 0.12)
+        add(sfx, S[sid]['s'] - 0.3, soft_whoosh(0.45), 0.18)
+    for i, sid in enumerate(('r5', 'r4', 'r3', 'r2')):
+        add(sfx, S[sid]['s'] + 0.35, pon(midi(67 + i * 2)), 0.55)        # 順位が上がるほど音程も上がる
+    add(sfx, r1 + 0.05, tom_roll(R1_REVEAL - 0.1), 0.35)
+    add(sfx, r1 + R1_REVEAL, pon(523, big=True), 0.6); add(sfx, r1 + R1_REVEAL, sparkle(72, 7), 0.6)
+    add(sfx, S['bonus']['s'] + 0.35, pon(midi(76)), 0.45)
+    add(sfx, S['bonus']['s'] + BONUS_STAMP, pon(330, big=True), 0.5)
+    add(sfx, S['end']['s'] + 4.2, pon(262, big=True), 0.45)
+    for k_ in (2.3, 5.2, 9.0):
+        add(sfx, S['rail']['s'] + k_, sparkle(67 + int(k_), 3, 0.08), 0.25)
+    add(sfx, S['asia']['s'] + 0.8, whistle(), 0.35)
+    sfx = lp(sfx, 8000)
 
     norm = lambda x: x / (np.max(np.abs(x)) + 1e-9)
     return norm(music[:int(total * SR)]) * 0.9, norm(sfx[:int(total * SR)]) * 0.9
