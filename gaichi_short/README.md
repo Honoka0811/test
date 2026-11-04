@@ -9,3 +9,8 @@
 1. VOICEVOX ENGINE を `127.0.0.1:50021` で起動
 2. `python3 src/tts.py <voice_dir>` → `python3 src/audio.py` → `python3 src/render.py`
    （フォント：Noto Sans JP / Dela Gothic One を `../fonts/package/` に配置）
+
+## 地図版（`gaichi_population_top10_map.mp4`）
+- 1940年当時の外地（朝鮮・台湾・関東州・樺太・南洋群島）を色分けした地図上を、カメラが各都市へ飛びながら紹介
+- 地図データ：Natural Earth（world-atlas 経由, パブリックドメイン）。関東州・樺太の範囲は概略
+- 生成：`python3 src/geo.py` → `python3 src/render_map.py`
