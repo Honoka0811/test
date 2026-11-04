@@ -1,0 +1,7 @@
+output/mix.wav
+output/narration.wav
+output/midway_short_silent.mp4
+output/midway_short_narrated.mp4
+output/capture.log
+output/frames/
+__pycache__/
