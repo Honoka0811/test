@@ -80,38 +80,38 @@ for b in range(nb):
 L=s8-brk0
 n=int((L-.25)*SR); x=np.arange(n)/SR; riser=hp(rng.standard_normal(n),800)*(x/(L-.25))**2*.35
 sweep=np.sin(2*np.pi*np.cumsum(200+1500*(x/(L))**2)/SR)*(x/L)**2*.12
-add(fx,riser+sweep,brk0)
+add(fx,(riser+sweep)*.5,brk0)
 tt=brk0; step=.18
 while tt<s8-.3:
-    add(fx,clap(),tt,.15+.35*(tt-brk0)/L); tt+=step; step=max(.045,step*.82)
+    add(fx,clap(),tt,.08+.17*(tt-brk0)/L); tt+=step; step=max(.045,step*.82)
 # impact at s8
 n=int(2.5*SR); x=np.arange(n)/SR
 boom=np.tanh(3*np.sin(2*np.pi*np.cumsum(35+80*np.exp(-x/.08))/SR))*np.exp(-x/.7)
 crash=hp(rng.standard_normal(n),3000)*np.exp(-x/.8)*.25
-add(fx,boom*.9+crash,s8)
+add(fx,boom*.6+crash*.4,s8)
 # sfx: whoosh at each scene start, chings
 def whoosh():
     n=int(.4*SR); x=np.arange(n)/SR; w=rng.standard_normal(n)
     out=np.zeros(n)
     for i in range(0,n,512):
         f=600+5000*np.sin(np.pi*i/n); seg=w[i:i+512]
-    out=bp(w,800,6000)*np.sin(np.pi*x/.4)**2; return out*.3
+    out=bp(w,800,6000)*np.sin(np.pi*x/.4)**2; return out*.12
 def ching():
     n=int(.6*SR); x=np.arange(n)/SR
     return sum(a*np.sin(2*np.pi*f*x)*np.exp(-x/d) for f,a,d in[(2093,.5,.25),(3136,.35,.18),(5274,.25,.1),(4186,.2,.15)])*.35
 for d in tl:
     if d['k'] not in('s1','s8'): add(fx,whoosh(),d['start']-.2)
-for k,cnt in(('s2',6),('s5',8)):
-    for i in range(cnt): add(fx,ching(),S[k]['start']+.3+i*S[k]['dur']*.8/cnt,.5)
-for i in range(14): add(fx,ching(),s8+.05+i*.12,.35)
-add(fx,ching(),S['s4']['start']+S['s4']['dur']*.55,.9)
+for k,cnt in(('s2',3),('s5',3)):
+    for i in range(cnt): add(fx,ching(),S[k]['start']+.3+i*S[k]['dur']*.8/cnt,.25)
+for i in range(4): add(fx,ching(),s8+.1+i*.25,.2)
+add(fx,ching(),S['s4']['start']+S['s4']['dur']*.55,.35)
 # mix with ducking
 venv=np.convolve(np.abs(voice),np.ones(2205)/2205,'same'); venv=np.convolve((venv>0.01).astype(float),np.ones(8820)/8820,'same')
 music=drums*.8+bass*.75+mel+padb*.35
 music*=1-.45*np.clip(venv,0,1)
 fade=np.ones(N); fn=int(2.0*SR); fade[-fn:]=np.linspace(1,0,fn); music*=fade
 intro=np.minimum(np.arange(N)/(0.05*SR),1); music*=intro
-mix=music*.45+voice*1.0+fx*.55
+mix=music*.45+voice*1.0+fx*.4
 mix/=np.max(np.abs(mix))*1.05
 st=np.stack([mix,mix],1)
 with wave.open(f"{W}/mix.wav","wb") as w:
