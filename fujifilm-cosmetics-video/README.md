@@ -7,6 +7,8 @@
 - BGM：`make_bgm.py` で numpy 合成したオリジナル曲（権利関係なし）
 - 図版：`render_slides.py` で Pillow 描画したオリジナルイラスト（実写写真は未使用）
 - 字幕：ナレーション文ごとに自動で焼き込み（ASS）
+- 演出：箇条書きはナレーションに合わせて1つずつ表示、セクション区切りカード、画面下の進捗バー、ポップ音／スウッシュ音
+- 付属：`thumbnail.png`（サムネイル）、`chapters.txt`（チャプター）、`youtube_description.md`（概要欄）
 - 台本：`script.md`
 
 ## 再生成の手順

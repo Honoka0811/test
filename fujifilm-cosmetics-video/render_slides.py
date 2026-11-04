@@ -294,6 +294,15 @@ def illust_issue():
     d.text((80, 512), "科学的な裏付けを前面に出す", font=font("R", 26), fill=GREY)
     return img
 
+def illust_hook():
+    img, d = card_base((40, 20, 30)); img = glow(img, RED, (420, 330), 260, 150); d = ImageDraw.Draw(img)
+    film_strip(d, 50, 60, 420, 120, fill_frames=[(120, 140, 190), (160, 120, 170), (210, 110, 120), (230, 150, 110)])
+    d.text((500, 80), "？", font=font("K", 90), fill=GOLD)
+    bottle(d, 300, 220, 200, 270, (190, 30, 60), cap=(250, 245, 240), shape="jar", label="JELLY\nAQUARYSTA", fnt=font("K", 20), label_color=RED)
+    d.ellipse([90, 380, 270, 520], fill=(230, 60, 90)); d.ellipse([120, 400, 180, 440], fill=(255, 150, 170))
+    d.text((530, 300), "写真の技術\nから生まれた\n赤いジェリー", font=font("B", 28), fill=CREAM)
+    return img
+
 def illust_outro():
     img, d = card_base((28, 20, 36)); img = glow(img, RED, (390, 300), 260, 110); d = ImageDraw.Draw(img)
     items = [("コラーゲン", GOLD), ("抗酸化", RED2), ("ナノ技術", MINT), ("光の制御", (255, 215, 100))]
@@ -305,47 +314,81 @@ def illust_outro():
     d.text((60, 480), "チャンネル登録・高評価をお願いします", font=font("B", 28), fill=GREY)
     return img
 
-ILLUST = {f.__name__.replace("illust_", ""): f for f in [illust_intro, illust_film_crash, illust_org, illust_collagen, illust_antiox,
+ILLUST = {f.__name__.replace("illust_", ""): f for f in [illust_intro, illust_hook, illust_film_crash, illust_org, illust_collagen, illust_antiox,
           illust_nano, illust_light, illust_jelly, illust_serum, illust_duv, illust_supple, illust_recent, illust_issue, illust_outro]}
 
-def draw_scene(i, sc):
+def draw_part(sc, number, total):
+    """セクション区切りカード：赤いグラデーションに大きな文字"""
+    img = gradient_bg((150, 20, 40), (60, 14, 30), diag=False)
+    d = ImageDraw.Draw(img)
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0)); od = ImageDraw.Draw(ov)
+    od.ellipse([W * 0.55, -200, W + 300, H * 0.9], fill=(255, 255, 255, 14))
+    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB"); d = ImageDraw.Draw(img)
+    d.text((120, 300), sc["title"], font=font("K", 90), fill=(255, 190, 200))
+    d.rounded_rectangle((120, 430, 120 + 220, 438), radius=4, fill=WHITE)
+    text_fit(d, (120, 480), sc["sub"], font("K", 84), WHITE, 1600)
+    d.text((120, 720), f"{number} / {total}", font=font("B", 34), fill=(255, 190, 200))
+    return img
+
+def draw_scene(i, sc, n_bullets):
+    """通常スライド。n_bullets = 表示する箇条書きの数（ナレーションに合わせて段階表示）"""
     img = gradient_bg(NAVY, NAVY2)
     d = ImageDraw.Draw(img)
-    # left accent bar + chapter number
     d.rectangle([0, 0, 18, H], fill=RED)
     d.text((70, 60), f"{i:02d} / {len(SCENES) - 1:02d}", font=font("B", 30), fill=GREY)
     d.text((W - 420, 60), "富士フイルムの化粧品事業", font=font("B", 28), fill=GREY)
-    # title
     ty = 150
-    if sc["illust"] == "intro":
+    if sc["id"] == "intro":
         ty += 30
         d.text((70, ty), sc["title"], font=font("K", 86), fill=WHITE)
         d.text((70, ty + 140), sc["sub"], font=font("B", 44), fill=GOLD)
-        d.text((70, ty + 260), "3分でわかる", font=font("K", 60), fill=RED2)
+        d.text((70, ty + 260), "3分半でわかる", font=font("K", 60), fill=RED2)
+        d.text((70, ty + 360), "代表製品 3つ ＋ 技術 4つ", font=font("B", 36), fill=CREAM)
     else:
-        th = text_fit(d, (70, ty), sc["title"], font("K", 66), WHITE, 980)
+        tf = font("K", 66) if d.textlength(sc["title"], font=font("K", 66)) <= 960 else font("K", 56)  # 長い見出しは少し小さく1行に
+        th = text_fit(d, (70, ty), sc["title"], tf, WHITE, 980)
         uy = ty + th + 22
         d.rounded_rectangle((70, uy, 70 + 140, uy + 8), radius=4, fill=RED)
         h = text_fit(d, (70, uy + 35), sc["sub"], font("B", 36), GOLD, 960)
         by = uy + 50 + h + 20
-        for b in sc["bullets"]:
-            d.ellipse([74, by + 18, 94, by + 38], fill=RED2)
-            hh = text_fit(d, (115, by), b, font("R", 34), CREAM, 880)
+        for k, b in enumerate(sc["bullets"][:n_bullets]):
+            latest = (k == n_bullets - 1)
+            d.ellipse([74, by + 18, 94, by + 38], fill=GOLD if latest else RED2)
+            hh = text_fit(d, (115, by), b, font("B" if latest else "R", 34), WHITE if latest else CREAM, 880)
             by += hh + 22
-    # illustration card (right)
     card = ILLUST[sc["illust"]]()
     sx, sy = 1100, 150
     shadow = Image.new("RGBA", (CW + 60, CH + 60), (0, 0, 0, 0)); sd = ImageDraw.Draw(shadow)
     rounded(sd, (30, 30, CW + 30, CH + 30), 34, fill=(0, 0, 0, 150)); shadow = shadow.filter(ImageFilter.GaussianBlur(22))
     img.paste(shadow, (sx - 30, sy - 30 + 18), shadow)
     img.paste(card, (sx, sy), card)
-    # caption band (subtitles are burned later by ffmpeg; leave bottom area darker)
     ov = Image.new("RGBA", (W, H), (0, 0, 0, 0)); od = ImageDraw.Draw(ov)
     od.rectangle([0, H - 200, W, H], fill=(0, 0, 0, 90))
     img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
     return img
 
+def draw_thumbnail():
+    """YouTube サムネイル（1280x720）"""
+    img = gradient_bg(NAVY, (70, 16, 36)).resize((1280, 720), Image.LANCZOS)
+    d = ImageDraw.Draw(img)
+    card = ILLUST["hook"]().resize((520, 400), Image.LANCZOS)
+    img.paste(card, (720, 160), card); d = ImageDraw.Draw(img)
+    d.text((50, 60), "写真フィルムの会社が", font=font("K", 64), fill=CREAM)
+    d.text((50, 150), "なぜ化粧品？", font=font("K", 110), fill=GOLD)
+    d.rounded_rectangle((50, 320, 640, 400), radius=16, fill=RED)
+    d.text((70, 330), "富士フイルム アスタリフトの秘密", font=font("K", 40), fill=WHITE)
+    d.text((50, 450), "代表製品3つ ＋ 技術4つを", font=font("B", 40), fill=CREAM)
+    d.text((50, 510), "3分半で解説", font=font("K", 80), fill=RED2)
+    return img
+
+import math as _m
+parts = [sc for sc in SCENES if sc["kind"] == "part"]
 for i, sc in enumerate(SCENES):
-    im = draw_scene(i, sc)
-    im.save(os.path.join(OUT_DIR, f"{i:02d}_{sc['id']}.png"))
-    print("slide", i, sc["id"])
+    if sc["kind"] == "part":
+        im = draw_part(sc, parts.index(sc) + 1, len(parts))
+        im.save(os.path.join(OUT_DIR, f"{i:02d}_{sc['id']}_s0.png")); print("part", i, sc["id"]); continue
+    nb = len(sc["bullets"])
+    for k in range(nb + 1):
+        draw_scene(i, sc, k).save(os.path.join(OUT_DIR, f"{i:02d}_{sc['id']}_s{k}.png"))
+    print("slide", i, sc["id"], "stages", nb + 1)
+draw_thumbnail().save(os.path.join(OUT_DIR, "thumbnail.png")); print("thumbnail")
