@@ -52,7 +52,7 @@ def particles(fr,t,boost=0):
         y=(P['ph'][i]-t*P['sp'][i]*(1+boost))%HT; x=P['x'][i]+20*math.sin(t*.8+P['tw'][i])
         a=int(120+100*math.sin(t*3+P['tw'][i])); s=P['s'][i]
         d.ellipse((x-s,y-s,x+s,y+s),fill=(255,210,90,max(0,a)))
-CAP={"s1":"毎月たった5,000円\n30年 金を積み立てたら\n今いくら？","s2":"1996年から毎月5,000円\n払ったお金は合計180万円","s3":"当時の金は\n1gたったの1,400円","s4":"それが今や約22,000円！\n15倍以上に爆上がり！","s5":"積み上がった金は\n約675グラム","s6":"その半分以上は\n金が安かった最初の10年で\n買えていた","s7":"気になる評価額は…","s8":"なんと約1,480万円！\n元本の約8倍！","s9":"安い時にたくさん買える\nこれが積立の力","s10":"あなたなら何を積み立てる？\nコメントで教えて！"}
+CAP={"s1":"毎月たった5,000円\n30年 ゴールドを積み立てたら\n今いくら？","s2":"1996年から毎月5,000円\n払ったお金は合計180万円","s3":"当時のゴールドは\n1gたったの1,400円","s4":"それが今や約22,000円！\n15倍以上に爆上がり！","s5":"積み上がったゴールドは\n約675グラム","s6":"その半分以上は\nゴールドが安かった最初の10年で\n買えていた","s7":"気になる評価額は…","s8":"なんと約1,480万円！\n元本の約8倍！","s9":"安い時にたくさん買える\nこれが積立の力","s10":"あなたなら何を積み立てる？\nコメントで教えて！"}
 def caption(fr,t):
     for d in TL['lines']:
         if d['start']-.05<=t<d['start']+d['dur']+.15:
@@ -64,7 +64,7 @@ def caption(fr,t):
             fr.alpha_composite(ov)
             for i,l in enumerate(ls): txt(fr,l,62,WD/2,y0+i*84,stroke=7,alpha=p,scale=.9+.1*p)
 def header(fr,t):
-    txt(fr,"金を30年 積み立てたら…",84,WD/2,175,grad=True,stroke=10,sc=(40,20,0))
+    txt(fr,"ゴールドを30年積み立てたら…",72,WD/2,175,grad=True,stroke=10,sc=(40,20,0))
     ov=Image.new("RGBA",(WD,HT),(0,0,0,0)); od=ImageDraw.Draw(ov)
     od.rounded_rectangle((250,250,830,330),40,fill=(255,206,64,235)); fr.alpha_composite(ov)
     txt(fr,"毎月5,000円 × 360回",44,WD/2,288,fill=DARK,stroke=0)
@@ -113,7 +113,7 @@ def scene(fr,t):
         card=Image.new("RGBA",(720,560),(0,0,0,0)); cd=ImageDraw.Draw(card)
         cd.rounded_rectangle((0,0,719,559),40,fill=(255,250,235,255),outline=GOLD2,width=10)
         im=timg("1996年",70,fill=DARK,stroke=0); card.alpha_composite(im,(360-im.width//2,40))
-        im=timg("金 1g",90,fill=(150,100,0),stroke=0); card.alpha_composite(im,(360-im.width//2,150))
+        im=timg("ゴールド 1g",80,fill=(150,100,0),stroke=0); card.alpha_composite(im,(360-im.width//2,150))
         im=timg("1,400円",150,fill=(200,30,30),stroke=0); card.alpha_composite(im,(360-im.width//2,290))
         put(fr,card,WD/2,850,p,1,-3+3*p)
         stamp(fr,"安っ！",820,560,lt,1.3)
