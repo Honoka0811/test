@@ -3,6 +3,11 @@
 コスパ = 年収上乗せ額 ÷ 必要勉強時間
   年収上乗せ額 = 資格保有者の平均年収 − 日本の平均給与(460万円)
   → 「勉強1時間あたり、年収が何円上がるか(毎年)」を表す。
+
+対象は「年収直結」= ○ の資格(業務独占資格・必置資格)のみ。
+資格がないとその仕事ができない/置かないといけないため、資格そのものが
+年収の源泉になる。独占業務のない資格は、もともと年収の高い業界の人が
+取っているだけの可能性が高いので除外し、除外リストとして別に出力する。
 使い方: python3 rank.py   (ranking.csv と ranking.md を出力)
 """
 import csv
@@ -22,7 +27,9 @@ def stars(hours):
 
 def main():
     with open(HERE / "data.csv", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
+        all_rows = list(csv.DictReader(f))
+    rows = [r for r in all_rows if r["年収直結"] == "○"]
+    excluded = [r for r in all_rows if r["年収直結"] != "○"]
 
     for r in rows:
         income = int(r["平均年収_万円"])
@@ -36,7 +43,7 @@ def main():
     rows.sort(key=lambda r: r["コスパ_円per時間"], reverse=True)
 
     fields = ["順位", "資格", "分野", "平均年収_万円", "年収上乗せ_万円",
-              "勉強時間_h", "難易度", "合格率", "コスパ_円per時間", "回収10年_円per時間"]
+              "勉強時間_h", "難易度", "合格率", "根拠", "コスパ_円per時間", "回収10年_円per時間"]
     with open(HERE / "ranking.csv", "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
@@ -44,15 +51,19 @@ def main():
             w.writerow({**r, "順位": i})
 
     lines = [
-        "| 順位 | 資格 | 平均年収 | 年収上乗せ | 勉強時間 | 難易度 | 合格率 | **コスパ**<br>(円/勉強1h・年) | 10年累計<br>(円/勉強1h) |",
-        "|---:|---|---:|---:|---:|---|---|---:|---:|",
+        "| 順位 | 資格 | 年収直結の根拠 | 平均年収 | 年収上乗せ | 勉強時間 | 難易度 | 合格率 | **コスパ**<br>(円/勉強1h・年) | 10年累計<br>(円/勉強1h) |",
+        "|---:|---|---|---:|---:|---:|---|---|---:|---:|",
     ]
     for i, r in enumerate(rows, 1):
         lines.append(
-            f"| {i} | {r['資格']} | {int(r['平均年収_万円']):,}万円 | "
+            f"| {i} | {r['資格']} | {r['根拠']} | {int(r['平均年収_万円']):,}万円 | "
             f"{r['年収上乗せ_万円']:+,}万円 | {int(r['勉強時間_h']):,}h | {r['難易度']} | "
             f"{r['合格率']} | **{r['コスパ_円per時間']:,}** | {r['回収10年_円per時間']:,} |"
         )
+    lines += ["", "### 除外した資格(年収と直結しない)", "",
+              "| 資格 | 平均年収 | 除外理由 |", "|---|---:|---|"]
+    for r in excluded:
+        lines.append(f"| {r['資格']} | {int(r['平均年収_万円']):,}万円 | {r['根拠']} |")
     (HERE / "ranking.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
 
