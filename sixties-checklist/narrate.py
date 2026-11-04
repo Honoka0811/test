@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""シーンごとのナレーション(VOICEVOX: 四国めたん)を合成し、BGM(bgm.py)をダッキングしながらミックスして動画に合成する。
+"""シーンごとのナレーション(VOICEVOX: 四国めたん)を合成し、BGM(bgm.mjs で生成した output/bgm.wav)をダッキングしながらミックスして動画に合成する。
 使い方: python3 narrate.py [入力mp4] [出力mp4]
 環境変数:
   VOICEVOX_ORT   libvoicevox_onnxruntime.so のパス
@@ -134,8 +134,18 @@ with open(SRT, 'w', encoding='utf-8') as f:
 print('wrote', SRT)
 
 # ---------- BGM をダッキングしながらミックス(ステレオ) ----------
-import bgm as bgm_mod
-music = bgm_mod.generate(TOTAL)                      # (2, n)
+def load_bgm(path):
+    with wave.open(path) as w:
+        sr, ch = w.getframerate(), w.getnchannels()
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+    x = x.reshape(-1, ch).T
+    if ch == 1: x = np.vstack([x, x])
+    if sr != SR: x = np.vstack([resample(c, sr) for c in x])
+    return x
+BGM = os.path.join(HERE, 'output', 'bgm.wav')
+if not os.path.exists(BGM):
+    subprocess.run(['node', os.path.join(HERE, 'bgm.mjs'), str(TOTAL), BGM], check=True)
+music = load_bgm(BGM)                                # (2, n)  bgm.mjs(「春」ポップアレンジ)の出力
 music = music[:, :len(track)] if music.shape[1] >= len(track) else np.pad(music, ((0, 0), (0, len(track) - music.shape[1])))
 hop = SR // 20
 rms = np.sqrt(np.mean(track[:len(track) // hop * hop].reshape(-1, hop) ** 2, axis=1))

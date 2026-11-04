@@ -1,0 +1,13 @@
+{
+  "name": "sixties-checklist-video",
+  "private": true,
+  "description": "60代のうちにやっておくべきこと10選 ショート動画の生成スクリプト",
+  "scripts": {
+    "bgm": "node bgm.mjs",
+    "capture": "node capture.js"
+  },
+  "dependencies": {
+    "generaluser": "1.47.1",
+    "spessasynth_core": "4.4.5"
+  }
+}

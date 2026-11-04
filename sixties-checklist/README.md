@@ -1,7 +1,7 @@
 # 60代のうちにやっておくべきこと10選 — ショート動画
 
 明るいイラスト多めでテンポよく進む縦型ショート動画(1080×1920 / 30fps / 66.6秒)です。
-ナレーションは VOICEVOX の **四国めたん**、BGM はパッヘルベル「カノン」(パブリックドメイン)を自作アレンジしたポップ・クラシック風の音源です。
+ナレーションは VOICEVOX の **四国めたん**、BGM はヴィヴァルディ「四季」より「春」(パブリックドメイン)の冒頭テーマを、ビート入りの明るいポップ・クラシック風に自作アレンジしたものです(GeneralUser GS SoundFont で演奏)。
 
 - **アップロード用一式: `upload/`**(最終mp4 -14 LUFS 正規化済み・字幕SRT・サムネイルJPG)
 - 完成動画: `output/sixties_checklist.mp4`
@@ -35,7 +35,7 @@
 | シーンイラスト | [unDraw](https://undraw.co)(npm `undraw-svg` 経由) | MIT。アクセント色を項目ごとに差し替えて使用 |
 | 絵文字イラスト | Microsoft Fluent Emoji(npm `@iconify-json/fluent-emoji` 経由) | MIT |
 | フォント | Zen Maru Gothic(npm `@fontsource/zen-maru-gothic` 経由) | SIL OFL 1.1 |
-| BGM | パッヘルベル「カノン」ニ長調を `bgm.py` で自作アレンジ(numpy 合成) | 楽曲はパブリックドメイン、音源は自作のため権利表記不要 |
+| BGM | ヴィヴァルディ「春」冒頭テーマを `bgm.mjs` で自作アレンジし、[GeneralUser GS](https://schristiancollins.com/generaluser.php) SoundFont(npm `generaluser`)+ [SpessaSynth](https://github.com/spessasus/spessasynth_core) で演奏 | 楽曲はパブリックドメイン。GeneralUser GS は商用含め自由に利用可(ライセンス同梱) |
 
 > この環境では写真素材サイト(Unsplash / Pexels / Wikimedia など)に接続できなかったため、写真の代わりにフラットイラスト+立体絵文字で構成しています。
 > 写真に差し替える場合は `render.html` の `ITEMS[].illust` を画像に置き換えてください(`drawImageFit` でそのまま描画できます)。
@@ -47,16 +47,17 @@ cd sixties-checklist
 python3 build_assets.py     # assets/illust, assets/emoji の SVG を assets/svgs.js に埋め込む(素材を変えたときだけ)
 node capture.js             # output/sixties_checklist_silent.mp4(無音版)を生成
 python3 narrate.py          # ナレーション合成 + BGM ミックス → output/sixties_checklist.mp4
-python3 bgm.py 66.6 bgm.wav # BGM だけを書き出す場合(ステレオ)
+npm install                 # BGM 用(SoundFont と JS シンセ)
+node bgm.mjs 66.6 output/bgm.wav  # BGM を書き出す(narrate.py が無ければ自動実行)
 ./export_upload.sh          # upload/ にアップロード用一式を書き出す(-14 LUFS 正規化・AAC・SRT・JPG)
 node frames.js out 1.0 9.0  # 指定秒のフレームを PNG で確認
 ```
 
 - `render.html` … Canvas 2D で `render(t)` が時刻 t 秒のフレームを決定論的に描画。ブラウザで開くとプレビュー再生
 - `capture.js` … Playwright(Chromium)で 1 フレームずつ撮影し、ffmpeg(libx264)にパイプして mp4 化
-- `bgm.py` … カノンの通奏低音 + 和音の上で、旋律のバリエーション(四分 → 八分 → 十六分)を 2 声のカノン(追いかけ)として重ねる。108BPM、ピアノ風 2 声 + ハープ風アルペジオ + 弦パッド + ピチカート + 簡易リバーブ
+- `bgm.mjs` … 「春」の冒頭テーマ(3 小節 + エコー)を軸に、イントロ → A(テーマ)→ B(16 分音符の走句)→ A → ブリッジ → A → 終止 の 34 小節・119BPM で構成。ストリングス(旋律)、ピアノ、ベース、弦パッド、ピチカート、グロッケン、ドラム(キック・スネア・ハイハット・シェイカー)を MIDI で打ち込み、GeneralUser GS SoundFont を SpessaSynth でオフライン演奏して WAV 化。`output/bgm.mid` も同時に出力
 - `narrate.py` … 原稿を VOICEVOX(四国めたん, style 2)で合成し、各シーンに収まるよう話速を自動調整(基準 1.2 倍)。BGM はナレーション中に自動で音量を下げて(ダッキング)ミックス。SRT も同時に生成
-- 必要なもの: Node.js + `playwright`(Chromium)、`ffmpeg`、Python 3 + `numpy` + `pyopenjtalk`(辞書用)+ `voicevox_core`
+- 必要なもの: Node.js + `playwright`(Chromium)+ `npm install`(spessasynth_core, generaluser)、`ffmpeg`、Python 3 + `numpy` + `pyopenjtalk`(辞書用)+ `voicevox_core`
 
 ### VOICEVOX のセットアップ
 
