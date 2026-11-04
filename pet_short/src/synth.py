@@ -25,6 +25,11 @@ def tts(text, sid, path):
     q = urllib.request.urlopen(urllib.request.Request(
         f"{API}/audio_query?" + urllib.parse.urlencode({"text": text, "speaker": sid}), method="POST")).read()
     q = json.loads(q)
+    from kana import KANA
+    if text not in KANA: raise SystemExit("no kana for: " + text)
+    ap = urllib.request.urlopen(urllib.request.Request(
+        f"{API}/accent_phrases?" + urllib.parse.urlencode({"text": KANA[text], "speaker": sid, "is_kana": "true"}), method="POST")).read()
+    q["accent_phrases"] = json.loads(ap)
     q.update(speedScale=1.18, intonationScale=1.25, pitchScale=0.02, volumeScale=1.3,
              prePhonemeLength=0.03, postPhonemeLength=0.05, outputSamplingRate=44100)
     wav = urllib.request.urlopen(urllib.request.Request(
