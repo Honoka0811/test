@@ -20,11 +20,23 @@ lines = [
  ("hoppo",13, "そして北方領土。ここは外地ではなく北海道の一部。四島でおよそ1万7千人が、漁業を中心に暮らしていました。"),
  ("outro",81, "あなたの予想は当たりましたか？コメントで教えてください！"),
 ]
+KANA = {
+ "hook": "センゼン'、ニホ'ンガ/オサメ'タ/ガ'イチ、イチバン'/ジンコオガ'/オオ'カッタ/ト'シワ、ド'コダト/オモイマ'_スカ？",
+ "r9": "ダ'イ/キュウイ'、タイナン'、ヤ'クジュウ/ロクマン'ニン",
+ "r6": "ダ'イ/ロクイ'、_キタノ'/ミナトマチ'、セイシン'、ヤ'ク/ニ'ジュウ/マン'ニン",
+ "r5": "ダ'イ/ゴイ'、フザン'、ヤ'ク/ニ'ジュウ/ゴマン'ニン、ジュウミンノ'/ニ'ワリガ/ナイチ'ジンデ_シタ",
+ "kara": "カラ_フトノ'/チュウシン'、トヨハラワ'/ヤ'ク/ヨンマン'ニン、ジュウミンノ'/ホト'ンドガ/ナイチ'ジンデ_シタ",
+}
 meta=[]
 for key, spk, text in lines:
     q = urllib.request.urlopen(urllib.request.Request(
         f"http://127.0.0.1:50021/audio_query?speaker={spk}&text="+urllib.parse.quote(text), method="POST")).read()
-    qj = json.loads(q); qj["speedScale"]=1.28; qj["intonationScale"]=1.25; qj["prePhonemeLength"]=0.05; qj["postPhonemeLength"]=0.1
+    qj = json.loads(q)
+    if key in KANA:
+        ap = urllib.request.urlopen(urllib.request.Request(
+            f"http://127.0.0.1:50021/accent_phrases?speaker={spk}&is_kana=true&text="+urllib.parse.quote(KANA[key]), method="POST")).read()
+        qj["accent_phrases"] = json.loads(ap)
+    qj["speedScale"]=1.28; qj["intonationScale"]=1.25; qj["prePhonemeLength"]=0.05; qj["postPhonemeLength"]=0.1
     if spk==81: qj["speedScale"]=1.2
     wav = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:50021/synthesis?speaker={spk}",
         data=json.dumps(qj).encode(), headers={"Content-Type":"application/json"})).read()
