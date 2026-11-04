@@ -1,0 +1,165 @@
+{
+ "speaker_normal": 13,
+ "speaker_hot": 81,
+ "speed": 1.18,
+ "scenes": [
+  {
+   "id": "hook",
+   "type": "hook",
+   "style": "hot",
+   "text": "この10年で、物価はここまで上がった！",
+   "tail": 0.35
+  },
+  {
+   "id": "intro",
+   "type": "intro",
+   "style": "normal",
+   "text": "2016年と今の値段、比べてみましょう。",
+   "tail": 0.25,
+   "sub": "2016年と今の値段\n比べてみましょう"
+  },
+  {
+   "id": "umaibo",
+   "type": "item",
+   "style": "normal",
+   "text": "うまい棒は、10円から15円。5割アップ。",
+   "item": {
+    "emoji": "🍬",
+    "name": "うまい棒",
+    "unit": "1本",
+    "old": 10,
+    "new": 15,
+    "newLabel": "15",
+    "pct": 50
+   },
+   "tail": 0.25,
+   "sub": "うまい棒は\n10円から15円。5割アップ"
+  },
+  {
+   "id": "hagaki",
+   "type": "item",
+   "style": "normal",
+   "text": "はがきは、52円から85円。6割以上の値上げです。",
+   "item": {
+    "emoji": "📮",
+    "name": "はがき",
+    "unit": "1枚",
+    "old": 52,
+    "new": 85,
+    "newLabel": "85",
+    "pct": 63
+   },
+   "tail": 0.25,
+   "sub": "はがきは52円から85円\n6割以上の値上げです"
+  },
+  {
+   "id": "burger",
+   "type": "item",
+   "style": "normal",
+   "text": "ハンバーガーは、100円から170円。もう100円じゃ買えません。",
+   "item": {
+    "emoji": "🍔",
+    "name": "ハンバーガー",
+    "unit": "大手チェーン",
+    "old": 100,
+    "new": 170,
+    "newLabel": "170",
+    "pct": 70
+   },
+   "tail": 0.25,
+   "sub": "ハンバーガーは100円から170円\nもう100円じゃ買えません"
+  },
+  {
+   "id": "gyudon",
+   "type": "item",
+   "style": "normal",
+   "text": "牛丼のなみもりは、380円から、およそ500円。",
+   "item": {
+    "emoji": "🍚",
+    "name": "牛丼 並盛",
+    "unit": "大手チェーン",
+    "old": 380,
+    "new": 500,
+    "newLabel": "約500",
+    "pct": 31
+   },
+   "tail": 0.25,
+   "sub": "牛丼の並盛は\n380円から、およそ500円"
+  },
+  {
+   "id": "egg",
+   "type": "item",
+   "style": "normal",
+   "text": "たまご1パックは、200円から、およそ280円。",
+   "item": {
+    "emoji": "🥚",
+    "name": "卵",
+    "unit": "10個入り",
+    "old": 200,
+    "new": 280,
+    "newLabel": "約280",
+    "pct": 40
+   },
+   "tail": 0.25,
+   "sub": "卵1パックは\n200円から、およそ280円"
+  },
+  {
+   "id": "gas",
+   "type": "item",
+   "style": "normal",
+   "text": "ガソリンは1リットル120円台から、170円台に。",
+   "item": {
+    "emoji": "⛽",
+    "name": "ガソリン",
+    "unit": "レギュラー1L",
+    "old": 120,
+    "new": 170,
+    "newLabel": "170台",
+    "oldLabel": "120台",
+    "pct": 40
+   },
+   "tail": 0.25,
+   "sub": "ガソリンは1リットル\n120円台から170円台に"
+  },
+  {
+   "id": "rice",
+   "type": "rice",
+   "style": "hot",
+   "text": "そして、お米5キロは、2000円から、なんと4000円！約2倍です！",
+   "item": {
+    "emoji": "🌾",
+    "name": "お米",
+    "unit": "5kg",
+    "old": 2000,
+    "new": 4000,
+    "newLabel": "約4000",
+    "pct": 100
+   },
+   "tail": 0.4,
+   "sub": "そして、お米5キロは2000円から\nなんと4000円！約2倍です！"
+  },
+  {
+   "id": "chart",
+   "type": "chart",
+   "style": "normal",
+   "text": "一覧にすると、こう。物価指数は15%なのに、身の回りのものは、もっと上がっています。",
+   "tail": 1.6,
+   "sub": "物価指数は15%なのに\n身の回りのものは、もっと上昇"
+  },
+  {
+   "id": "why",
+   "type": "why",
+   "style": "normal",
+   "text": "原因は、円安、エネルギー高、そして人件費の上昇です。",
+   "tail": 0.3,
+   "sub": "原因は、円安、エネルギー高\nそして人件費の上昇です"
+  },
+  {
+   "id": "cta",
+   "type": "cta",
+   "style": "hot",
+   "text": "あなたが一番驚いたのはどれ？コメントで教えて！",
+   "tail": 1.4
+  }
+ ]
+}

@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>物価10年ショート</title>
+<style>
+@font-face{font-family:JP;src:url(fonts/jp900.ttf);font-weight:900}
+@font-face{font-family:JP;src:url(fonts/jp500.ttf);font-weight:500}
+@font-face{font-family:EMO;src:url(fonts/emoji.ttf)}
+:root{--y:#FFD400;--r:#FF3B30;--bg:#0b0d17;--w:#fff;--g:#8a8fa8}
+*{box-sizing:border-box}
+html,body{margin:0;width:1080px;height:1920px;overflow:hidden;background:var(--bg);font-family:JP,EMO,sans-serif;color:#fff}
+.a{position:absolute}
+.emo{font-family:EMO;line-height:1}
+#bg{inset:0;background:radial-gradient(1200px 1200px at 50% 35%,#24124a 0%,#0b0d17 65%)}
+#bgred{inset:0;background:radial-gradient(1000px 1300px at 50% 40%,#b3000c 0%,#2a0005 70%);opacity:0}
+#grid{inset:-200px;background-image:linear-gradient(rgba(255,255,255,.05) 2px,transparent 2px),linear-gradient(90deg,rgba(255,255,255,.05) 2px,transparent 2px);background-size:90px 90px}
+.yen{font-weight:900;color:rgba(255,212,0,.10);font-size:110px}
+#world{inset:0}
+.stroke{-webkit-text-stroke:14px #000;paint-order:stroke fill}
+/* header */
+#hdr{left:0;right:0;top:150px;text-align:center}
+#hdr .pill{display:inline-block;background:var(--y);color:#000;font-weight:900;font-size:50px;padding:10px 40px;border-radius:999px}
+#hdr .ttl{font-weight:900;font-size:74px;margin-top:18px;letter-spacing:2px}
+#hdr .ttl b{color:var(--y)}
+#credit{right:40px;top:60px;font-size:30px;font-weight:500;color:rgba(255,255,255,.75)}
+#note{left:40px;top:66px;font-size:26px;font-weight:500;color:rgba(255,255,255,.5)}
+#dots{left:0;right:0;top:400px;text-align:center}
+#dots i{display:inline-block;width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.2);margin:0 9px}
+#dots i.on{background:var(--y)} #dots i.cur{background:var(--r);transform:scale(1.35)}
+/* subtitle */
+#sub{left:30px;right:30px;top:1385px;text-align:center;font-weight:900;font-size:62px;line-height:1.32;white-space:pre-line}
+#sub span{-webkit-text-stroke:16px #000;paint-order:stroke fill}
+/* hook */
+.hk{left:0;right:0;text-align:center;font-weight:900}
+/* intro */
+.vs{width:440px;height:420px;border-radius:40px;top:620px;text-align:center;padding-top:70px;font-weight:900}
+/* item card */
+.card{left:70px;width:940px;top:470px;height:860px;border-radius:56px;background:linear-gradient(160deg,#ffffff 0%,#e9ecf5 100%);color:#111;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.card .emo{position:absolute;left:0;right:0;top:40px;text-align:center;font-size:250px}
+.card .nm{position:absolute;left:0;right:0;top:320px;text-align:center;font-size:96px;font-weight:900}
+.card .un{position:absolute;left:0;right:0;top:445px;text-align:center;font-size:40px;font-weight:500;color:#666}
+.card .old{position:absolute;left:60px;top:560px;width:330px;display:flex;flex-direction:column;align-items:center}
+.card .old .lb,.card .nw .lb{display:table;margin:0 auto;font-size:38px;font-weight:900;color:#fff;background:#5b6178;border-radius:14px;display:inline-block;padding:2px 20px}
+.card .nw .lb{background:var(--r)}
+.card .old .pr{font-size:100px;font-weight:900;color:#5b6178;margin-top:6px;white-space:nowrap;display:inline-block}
+.card .old .x{position:absolute;left:20px;right:20px;top:120px;height:10px;background:var(--r);transform-origin:left center}
+.card .ar{position:absolute;left:400px;top:620px;font-size:110px;color:var(--r);font-weight:900}
+.card .nw{position:absolute;left:520px;top:560px;width:390px;display:flex;flex-direction:column;align-items:center}
+.card .nw .pr{font-size:124px;font-weight:900;color:var(--r);margin-top:-6px;white-space:nowrap;display:inline-block}
+.yenS{font-size:.45em}
+.stp{width:330px;height:330px;border-radius:50%;border:16px solid var(--r);color:var(--r);background:rgba(255,255,255,.92);text-align:center;font-weight:900;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 10px 40px rgba(0,0,0,.4)}
+.stp .p{font-size:100px;line-height:1}
+.stp .s{font-size:44px;line-height:1.1}
+/* rice */
+#x2{font-weight:900;color:var(--y);transform-origin:left center}
+/* chart */
+#chart{left:60px;right:60px;top:300px}
+.row{position:relative;height:94px;margin-bottom:10px}
+.row .lab{position:absolute;left:0;top:14px;width:330px;font-size:46px;font-weight:900;white-space:nowrap}
+.row .bar{position:absolute;left:340px;top:14px;height:64px;border-radius:12px;background:linear-gradient(90deg,#ff8a00,var(--r))}
+.row .val{position:absolute;top:18px;font-size:52px;font-weight:900;color:var(--y)}
+.row.cpi .bar{background:#8a8fa8}
+.row.cpi .val{color:#d6d8e4}
+.row.cpi .lab{font-size:40px;top:20px;color:#d6d8e4}
+#callout{font-weight:900;font-size:42px;background:var(--y);color:#000;padding:12px 30px;border-radius:20px}
+/* why */
+.why{left:90px;width:900px;height:270px;border-radius:40px;background:#fff;color:#111;display:flex;align-items:center;padding:0 40px;gap:36px}
+.why .emo{font-size:150px}
+.why .t1{font-size:80px;font-weight:900}
+.why .t2{font-size:40px;font-weight:500;color:#555}
+/* cta */
+#ctaQ{left:0;right:0;top:470px;text-align:center;font-weight:900;font-size:110px;line-height:1.2}
+#ctaGrid{left:100px;right:100px;top:790px;display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+#ctaGrid div{background:rgba(255,255,255,.1);border-radius:30px;height:190px;display:flex;align-items:center;justify-content:center;font-size:120px}
+#ctaBtn{left:190px;width:700px;top:1220px;height:130px;border-radius:999px;background:var(--r);text-align:center;font-weight:900;font-size:62px;line-height:130px}
+#flash{inset:0;background:#fff;opacity:0}
+</style>
+</head>
+<body>
+<div class="a" id="bg"></div>
+<div class="a" id="bgred"></div>
+<div class="a" id="grid"></div>
+<div class="a" id="yens"></div>
+<div class="a" id="world"></div>
+<div class="a" id="flash"></div>
+<script>
+const TL = window.__TL, CU = window.__CUES;
+const W = document.getElementById('world');
+const $ = (h) => { const d = document.createElement('div'); d.innerHTML = h.trim(); return d.firstChild; };
+const add = (h, parent = W) => { const e = $(h); parent.appendChild(e); return e; };
+const cl = (x) => Math.max(0, Math.min(1, x));
+const pr = (t, a, d) => cl((t - a) / d);
+const eOut = (x) => 1 - Math.pow(1 - x, 3);
+const eBack = (x) => { const c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const eIn = (x) => x * x * x;
+const sc = (id) => TL.scenes.find((s) => s.id === id);
+const items = TL.scenes.filter((s) => s.type === 'item' || s.type === 'rice');
+const fmt = (n) => Math.round(n).toLocaleString('ja-JP');
+
+// 背景の ¥ マーク
+const yens = [];
+for (let i = 0; i < 14; i++) {
+  const e = add(`<div class="a yen">¥</div>`, document.getElementById('yens'));
+  yens.push({ e, x: (i * 157) % 1080, sp: 40 + (i * 37) % 70, ph: i * 263, r: (i % 5) * 9 - 18, s: 0.6 + (i % 4) * 0.25 });
+}
+
+// 共通 UI
+const credit = add(`<div class="a" id="credit">VOICEVOX:青山龍星</div>`);
+const note = add(`<div class="a" id="note">※価格は全国の目安（概算）</div>`);
+const hdr = add(`<div class="a" id="hdr"><div class="pill">2016年 → 今</div><div class="ttl stroke">10年で<b>いくら</b>上がった？</div></div>`);
+const dots = add(`<div class="a" id="dots">${items.map(() => '<i></i>').join('')}</div>`);
+const sub = add(`<div class="a" id="sub"><span></span></div>`);
+
+// フック
+const hkArrow = add(`<svg class="a" style="left:0;top:380px" width="1080" height="1100" viewBox="0 0 1080 1100"><polyline id="hkLine" fill="none" stroke="#FF3B30" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" points="60,1000 260,930 420,960 600,700 760,620 1010,120"/><polygon id="hkHead" points="1010,120 900,150 990,230" fill="#FF3B30"/></svg>`);
+const hk1 = add(`<div class="a hk stroke" style="top:520px;font-size:120px">この<span style="color:var(--y)">10年</span>で</div>`);
+const hk2 = add(`<div class="a hk stroke" style="top:700px;font-size:260px;color:var(--y)">物価</div>`);
+const hk3 = add(`<div class="a hk stroke" style="top:1030px;font-size:120px;color:var(--r)">ここまで<br>上がった!!</div>`);
+const hkLine = hkArrow.querySelector('#hkLine'); const hkLen = hkLine.getTotalLength();
+hkLine.style.strokeDasharray = hkLen;
+const hkHead = hkArrow.querySelector('#hkHead');
+
+// イントロ
+const vsL = add(`<div class="a vs" style="left:60px;background:#3a4dbb"><div style="font-size:60px">2016年</div><div class="emo" style="font-size:150px;margin-top:20px">🙂</div></div>`);
+const vsR = add(`<div class="a vs" style="left:580px;background:var(--r)"><div style="font-size:60px">今</div><div class="emo" style="font-size:150px;margin-top:20px">😱</div></div>`);
+const vsT = add(`<div class="a stroke" style="left:0;right:0;top:720px;text-align:center;font-weight:900;font-size:150px;color:var(--y)">VS</div>`);
+
+// 商品カード
+const cards = items.map((s) => {
+  const it = s.item;
+  const e = add(`<div class="a card">
+    <div class="emo">${it.emoji}</div>
+    <div class="nm">${it.name}</div>
+    <div class="un">${it.unit}</div>
+    <div class="old"><div class="lb">2016年</div><div class="pr">${it.oldLabel || fmt(it.old)}<span class="yenS">円</span></div><div class="x"></div></div>
+    <div class="ar">▶</div>
+    <div class="nw"><div class="lb">今</div><div class="pr"><span class="n"></span><span class="yenS">円</span></div></div>
+  </div>`);
+  const stp = add(`<div class="a stp"><div class="s">${it.pct >= 100 ? '約' : ''}</div><div class="p">${it.pct >= 100 ? '2倍' : '+' + it.pct + '%'}</div><div class="s">値上げ</div></div>`);
+  return { s, it, e, stp, n: e.querySelector('.nw .n'), x: e.querySelector('.old .x'), emo: e.querySelector('.emo'), nwp: e.querySelector('.nw .pr'), oldp: e.querySelector('.old .pr') };
+});
+const x2 = add(`<div class="a stroke" id="x2" style="left:90px;top:500px;font-size:170px">×2<span class="emo">🔥</span></div>`);
+const riceNote = add(`<div class="a" style="left:70px;width:940px;top:1250px;text-align:center;font-size:38px;font-weight:900;color:#b3000c">2025年5月には過去最高 4,285円</div>`);
+
+// グラフ
+const rows = [...items.map((s) => ({ name: s.item.name.replace(' 並盛', ''), emoji: s.item.emoji, pct: s.item.pct }))]
+  .sort((a, b) => b.pct - a.pct);
+rows.push({ name: '物価指数(平均)', emoji: '📊', pct: 15, cpi: true });
+const chart = add(`<div class="a" id="chart">
+  <div class="stroke" style="text-align:center;font-weight:900;font-size:70px;margin-bottom:26px">値上がり率 <span style="color:var(--y)">ランキング</span></div>
+  ${rows.map((r) => `<div class="row ${r.cpi ? 'cpi' : ''}"><div class="lab"><span class="emo">${r.emoji}</span> ${r.name}</div><div class="bar"></div><div class="val"></div></div>`).join('')}
+</div>`);
+const rowEls = [...chart.querySelectorAll('.row')].map((e, i) => ({ e, bar: e.querySelector('.bar'), val: e.querySelector('.val'), r: rows[i] }));
+const callout = add(`<div class="a" id="callout">↑ 平均はたった15%</div>`);
+
+// 原因
+const whys = [
+  ['💴', '円安', '1ドル108円 → 150円台'],
+  ['🛢️', 'エネルギー高', '原油・ガス・電気が高騰'],
+  ['👷', '人件費アップ', '最低賃金は10年で約36%上昇'],
+].map(([em, a, b], i) => add(`<div class="a why" style="top:${520 + i * 300}px"><div class="emo">${em}</div><div><div class="t1">${a}</div><div class="t2">${b}</div></div></div>`));
+const whyT = add(`<div class="a stroke" style="left:0;right:0;top:400px;text-align:center;font-weight:900;font-size:84px">なぜ<span style="color:var(--y)">上がった？</span></div>`);
+
+// CTA
+const ctaQ = add(`<div class="a stroke" id="ctaQ">一番<span style="color:var(--y)">驚いた</span>のは<br>どれ？</div>`);
+const ctaGrid = add(`<div class="a" id="ctaGrid">${items.map((s) => `<div class="emo">${s.item.emoji}</div>`).join('')}<div class="emo">🤔</div></div>`);
+const ctaBtn = add(`<div class="a" id="ctaBtn"><span class="emo">👇</span> コメントで教えて！</div>`);
+
+const flash = document.getElementById('flash');
+const bgred = document.getElementById('bgred');
+const grid = document.getElementById('grid');
+
+function vis(el, on) { el.style.display = on ? '' : 'none'; }
+function shakeAt(t) {
+  let x = 0, y = 0, z = 0;
+  const kicks = [[0.6, 18], ...CU.hook.slice(1).map((v) => [v, 22]), ...Object.entries(CU.stamp).map(([k, v]) => [v, k === 'rice' ? 46 : 20]), [CU.glow, 10]];
+  for (const [t0, a] of kicks) {
+    const d = t - t0;
+    if (d < 0 || d > 0.5) continue;
+    const k = a * Math.exp(-d * 9);
+    x += k * Math.sin(d * 95); y += k * Math.cos(d * 77); z += k * 0.004 * Math.exp(-d * 6);
+  }
+  return [x, y, z];
+}
+function flashAt(t) {
+  let f = 0;
+  for (const [t0, a] of [[0.6, 0.9], [CU.hook[2], 0.4], [CU.reveal.rice, 1.0]]) { const d = t - t0; if (d >= 0) f = Math.max(f, a * Math.exp(-d * 8)); }
+  return f;
+}
+
+// 画面に出している字幕テキスト（シーン単位）
+function subtitle(t) {
+  const s = TL.scenes.find((s) => t >= s.start - 0.05 && t < s.start + s.voiceDur + 0.3);
+  if (!s || s.type === 'hook' || s.type === 'cta') return null;
+  return s;
+}
+
+window.render = function (t) {
+  // 背景
+  grid.style.transform = `translateY(${(t * 60) % 90}px)`;
+  for (const y of yens) {
+    const yy = 1920 - ((t * y.sp + y.ph) % 2200);
+    y.e.style.transform = `translate(${y.x}px,${yy}px) rotate(${y.r + t * 10}deg) scale(${y.s})`;
+  }
+  const r = sc('rice');
+  const red = pr(t, CU.reveal.rice - 0.05, 0.2) * (1 - pr(t, r.end - 0.3, 0.4));
+  bgred.style.opacity = red * 0.9;
+  const [sx, sy, sz] = shakeAt(t);
+  W.style.transform = `translate(${sx}px,${sy}px) scale(${1 + sz})`;
+  flash.style.opacity = flashAt(t);
+
+  // ヘッダー：イントロ以降〜グラフ前まで
+  const hdrOn = t >= sc('intro').start && t < sc('chart').start - 0.1;
+  vis(hdr, hdrOn);
+  if (hdrOn) hdr.style.transform = `translateY(${(1 - eOut(pr(t, sc('intro').start, 0.35))) * -260}px)`;
+  vis(note, t >= sc('umaibo').start && t < sc('cta').start);
+
+  // 進捗ドット
+  const curIdx = items.findIndex((s) => t >= s.start - 0.05 && t < s.end - 0.05);
+  vis(dots, curIdx >= 0);
+  [...dots.children].forEach((d, i) => { d.className = i < curIdx ? 'on' : i === curIdx ? 'cur' : ''; });
+
+  // 字幕
+  const ss = subtitle(t);
+  vis(sub, !!ss);
+  if (ss) {
+    const span = sub.firstChild;
+    const st = ss.sub || ss.text; if (span.textContent !== st) span.textContent = st;
+    const p = eBack(pr(t, ss.start - 0.05, 0.22));
+    sub.style.transform = `scale(${0.6 + 0.4 * p})`; sub.style.opacity = cl(p * 2);
+    sub.style.color = ss.style === 'hot' ? 'var(--y)' : '#fff';
+  }
+
+  // フック
+  const h = sc('hook');
+  const hookOn = t < h.end + 0.1;
+  [hk1, hk2, hk3, hkArrow].forEach((e) => vis(e, hookOn));
+  if (hookOn) {
+    const out = eIn(pr(t, h.end - 0.25, 0.3));
+    CU.hook.forEach((tt, i) => {
+      const e = [hk1, hk2, hk3][i];
+      const p = pr(t, tt - 0.04, 0.22);
+      const s = i === 0 ? 0.5 + 0.5 * eBack(p) : 2.6 - 1.6 * eOut(p);
+      e.style.opacity = cl(p * 3) * (1 - out);
+      e.style.transform = `scale(${s}) rotate(${i === 2 ? -4 : 0}deg) translateX(${out * (i % 2 ? 1200 : -1200)}px)`;
+    });
+    const lp = eOut(pr(t, 0.5, 1.8));
+    hkLine.style.strokeDashoffset = hkLen * (1 - lp);
+    hkHead.style.opacity = lp > 0.97 ? 1 : 0;
+    hkArrow.style.opacity = 0.55 * (1 - out);
+  }
+
+  // イントロ
+  const it = sc('intro');
+  const inOn = t >= it.start - 0.1 && t < it.end;
+  [vsL, vsR, vsT].forEach((e) => vis(e, inOn));
+  if (inOn) {
+    const out = eIn(pr(t, it.end - 0.25, 0.25));
+    const pL = eBack(pr(t, CU.intro[0], 0.35)), pR = eBack(pr(t, CU.intro[1], 0.35));
+    vsL.style.transform = `translateX(${(1 - pL) * -700 - out * 900}px) rotate(${-6 * pL}deg)`;
+    vsR.style.transform = `translateX(${(1 - pR) * 700 + out * 900}px) rotate(${6 * pR}deg)`;
+    const pv = pr(t, CU.intro[1] + 0.25, 0.25);
+    vsT.style.opacity = cl(pv * 3) * (1 - out);
+    vsT.style.transform = `scale(${3 - 2 * eOut(pv)}) rotate(${Math.sin(t * 20) * 3}deg)`;
+  }
+
+  // 商品カード
+  cards.forEach((c, i) => {
+    const s = c.s;
+    const on = t >= s.start - 0.1 && t < s.end + 0.05;
+    vis(c.e, on); vis(c.stp, on);
+    if (!on) return;
+    const pin = eOut(pr(t, s.start - 0.1, 0.32));
+    const out = eIn(pr(t, s.end - 0.22, 0.25));
+    const isRice = s.type === 'rice';
+    c.e.style.transform = `translateX(${(1 - pin) * 1200 - out * 1300}px) rotate(${(1 - pin) * 8}deg)`;
+    c.emo.style.transform = `scale(${0.3 + 0.7 * eBack(pr(t, s.start, 0.45))}) translateY(${Math.sin(t * 6) * 8}px)`;
+    const rv = CU.reveal[s.id];
+    const cnt = eOut(pr(t, rv - 0.05, isRice ? 0.25 : 0.4));
+    const v = t < rv - 0.05 ? null : c.it.old + (c.it.new - c.it.old) * cnt;
+    c.n.textContent = v === null ? '？' : cnt >= 1 ? c.it.newLabel.replace(/\d+/, (m) => fmt(+m)) : fmt(v);
+    const fit = Math.min(1, 370 / (c.nwp.offsetWidth || 1)), fitO = Math.min(1, 330 / (c.oldp.offsetWidth || 1));
+    c.oldp.style.transform = `scale(${fitO})`;
+    c.nwp.style.transform = `scale(${fit * (v === null ? 1 : 1 + 0.25 * Math.exp(-(t - rv) * 6) * (t > rv ? 1 : 0))})`;
+    c.x.style.transform = `scaleX(${eOut(pr(t, rv, 0.25))})`;
+    const st = CU.stamp[s.id];
+    const ps = pr(t, st, 0.18);
+    c.stp.style.opacity = t < st ? 0 : 1 - out;
+    const sx0 = isRice ? 690 : 715, sy0 = isRice ? 450 : 430;
+    c.stp.style.transform = `translate(${sx0}px,${sy0}px) scale(${(isRice ? 1.05 : 0.8) * (2.6 - 1.6 * eOut(ps))}) rotate(${-14 + 4 * (1 - ps)}deg) translateX(${-out * 1300}px)`;
+  });
+  // お米スペシャル
+  const rOn = t >= CU.reveal.rice && t < r.end;
+  vis(x2, rOn); vis(riceNote, rOn);
+  if (rOn) {
+    const p = pr(t, CU.reveal.rice + 0.1, 0.25);
+    const out = eIn(pr(t, r.end - 0.22, 0.25));
+    x2.style.opacity = cl(p * 3) * (1 - out);
+    x2.style.transform = `scale(${(3 - 2 * eOut(p)) * (1 + 0.04 * Math.sin(t * 18))}) rotate(-8deg)`;
+    riceNote.style.opacity = pr(t, CU.reveal.rice + 0.6, 0.3) * (1 - out);
+  }
+
+  // グラフ
+  const ch = sc('chart');
+  const cOn = t >= ch.start - 0.1 && t < ch.end;
+  vis(chart, cOn); vis(callout, cOn);
+  if (cOn) {
+    const pin = eOut(pr(t, ch.start - 0.1, 0.3)), out = eIn(pr(t, ch.end - 0.25, 0.25));
+    chart.style.opacity = pin; chart.style.transform = `translateY(${(1 - pin) * 200}px) translateX(${-out * 1200}px)`;
+    rowEls.forEach((re, i) => {
+      const t0 = re.r.cpi ? CU.cpi - 0.1 : ch.start + 0.25 + 0.13 * i;
+      const p = eOut(pr(t, t0, 0.55));
+      const wpx = 430 * re.r.pct / 100 * p + 6;
+      re.bar.style.width = wpx + 'px';
+      re.val.style.left = (340 + wpx + 16) + 'px';
+      re.val.textContent = p > 0 ? (re.r.pct >= 100 ? '+' + Math.round(re.r.pct * p) + '%' : '+' + Math.round(re.r.pct * p) + '%') : '';
+      re.e.style.opacity = t < t0 - 0.05 ? 0 : 1;
+      if (!re.r.cpi) {
+        const g = pr(t, CU.glow + 0.05 * i, 0.2) * (0.6 + 0.4 * Math.sin(t * 12));
+        re.bar.style.boxShadow = `0 0 ${40 * g}px rgba(255,59,48,${g})`;
+      } else {
+        const hl = pr(t, CU.cpi, 0.2) * (1 - pr(t, CU.glow, 0.3));
+        re.e.style.outline = hl > 0.05 ? `6px solid rgba(255,212,0,${hl})` : 'none';
+        re.e.style.outlineOffset = '6px'; re.e.style.borderRadius = '16px';
+      }
+    });
+    const pc = eBack(pr(t, CU.cpi + 0.3, 0.3));
+    callout.style.opacity = cl(pc * 2) * (1 - out);
+    callout.style.transform = `translate(360px,${300 + 122 + 104 * 8 - 4}px) scale(${pc}) rotate(-3deg)`;
+  }
+
+  // 原因
+  const wy = sc('why');
+  const wOn = t >= wy.start - 0.1 && t < wy.end;
+  whys.forEach((e) => vis(e, wOn)); vis(whyT, wOn);
+  if (wOn) {
+    const out = eIn(pr(t, wy.end - 0.25, 0.25));
+    whyT.style.opacity = eOut(pr(t, wy.start - 0.1, 0.3)) * (1 - out);
+    whyT.style.transform = `scale(${0.6 + 0.4 * eBack(pr(t, wy.start - 0.1, 0.35))})`;
+    whys.forEach((e, i) => {
+      const p = eBack(pr(t, CU.why[i] - 0.08, 0.35));
+      e.style.opacity = t < CU.why[i] - 0.08 ? 0 : 1;
+      e.style.transform = `translateX(${(1 - p) * (i % 2 ? 1100 : -1100) - out * 1200}px) rotate(${(1 - p) * 10}deg)`;
+    });
+  }
+
+  // CTA
+  const cOn2 = t >= CU.cta - 0.1;
+  [ctaQ, ctaGrid, ctaBtn].forEach((e) => vis(e, cOn2));
+  if (cOn2) {
+    const p = eBack(pr(t, CU.cta - 0.1, 0.4));
+    ctaQ.style.transform = `scale(${0.4 + 0.6 * p})`; ctaQ.style.opacity = cl(p * 2);
+    [...ctaGrid.children].forEach((d, i) => {
+      const q = eBack(pr(t, CU.cta + 0.15 + i * 0.07, 0.3));
+      const pulse = 1 + 0.06 * Math.sin(t * 8 + i);
+      d.style.transform = `scale(${q * pulse})`;
+    });
+    const pb = eBack(pr(t, CU.comment - 0.05, 0.35));
+    ctaBtn.style.opacity = t < CU.comment - 0.05 ? 0 : 1;
+    ctaBtn.style.transform = `scale(${pb * (1 + 0.05 * Math.sin(t * 10))})`;
+  }
+};
+window.ready = document.fonts.ready.then(() => document.fonts.load('900 60px JP')).then(() => document.fonts.load('60px EMO', '🍔🔥')).then(() => true);
+</script>
+</body>
+</html>
