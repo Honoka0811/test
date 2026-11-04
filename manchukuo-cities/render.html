@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Manchukuo Cities</title>
+<style>
+  html,body{margin:0;background:#0a1018;}
+  canvas{display:block;}
+</style>
+<script src="geo.js"></script>
+<script src="timing.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 満洲国の主要都市 人口ランキング + 鉄道網 (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーンの尺・字幕は tts.py が書き出す timing.js、地図は geo.py が書き出す geo.js を使う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0a1018', sea: '#0c1a28', sea2: '#0a1520', land: '#1a222c', landEdge: '#2b3644',
+  ink: '#f4f5f7', ink2: '#c3c8d1', ink3: '#87909e', panel: 'rgba(12,17,25,0.86)', panelEdge: 'rgba(255,255,255,0.10)',
+  mk: '#E05A4F', mkFill: 'rgba(224,90,79,0.16)', gold: '#F2C14E', river: '#2c5b84',
+  mantetsu: '#F2C14E', toshin: '#5EC8F2', link: '#7CDB8A', other: '#8e98a6', kwantung: '#5EC8F2'
+};
+const FPS = 30;
+const T = window.TIMING;
+const DURATION = T.total;
+const S = Object.fromEntries(T.scenes.map(s => [s.id, s]));
+
+// ---------- データ(1940年 臨時人口調査ほか・概数。大連のみ1941年) ----------
+const CITIES = {
+  mukden:   { name: '奉天',   now: '現・瀋陽',   lon: 123.43, lat: 41.80 },
+  hsinking: { name: '新京',   now: '現・長春',   lon: 125.32, lat: 43.88 },
+  harbin:   { name: '哈爾浜', now: 'ハルビン',   lon: 126.63, lat: 45.75 },
+  dalian:   { name: '大連',   now: '関東州',     lon: 121.61, lat: 38.91 },
+  ryojun:   { name: '旅順',   now: '',           lon: 121.25, lat: 38.81 },
+  fushun:   { name: '撫順',   now: '現・撫順',   lon: 123.95, lat: 41.88 },
+  anshan:   { name: '鞍山',   now: '',           lon: 122.99, lat: 41.11 },
+  andong:   { name: '安東',   now: '現・丹東',   lon: 124.38, lat: 40.13 },
+  jilin:    { name: '吉林',   now: '',           lon: 126.55, lat: 43.84 },
+  qiqihar:  { name: 'チチハル', now: '',         lon: 123.95, lat: 47.34 },
+  mudanjiang:{ name: '牡丹江', now: '',          lon: 129.63, lat: 44.55 },
+  jiamusi:  { name: '佳木斯', now: '',           lon: 130.32, lat: 46.80 },
+  chengde:  { name: '承徳',   now: '',           lon: 117.94, lat: 40.97 },
+  yingkou:  { name: '営口',   now: '',           lon: 122.23, lat: 40.67 },
+  jinzhou:  { name: '錦州',   now: '',           lon: 121.13, lat: 41.10 },
+  manzhouli:{ name: '満洲里', now: '',           lon: 117.43, lat: 49.59 },
+  heihe:    { name: '黒河',   now: '',           lon: 127.50, lat: 50.24 },
+  tumen:    { name: '図們',   now: '',           lon: 129.84, lat: 42.97 },
+  hailar:   { name: 'ハイラル', now: '',         lon: 119.76, lat: 49.21 },
+};
+const RANK = [  // 5位 → 1位
+  { id: 'r5', city: 'fushun',   rank: 5, pop: 27,  jp: null, tag: '東洋一の炭鉱', chips: ['露天掘り炭鉱', '満鉄の石炭供給源'] },
+  { id: 'r4', city: 'andong',   rank: 4, pop: 31,  jp: 4.3,  tag: '朝鮮との国境の玄関口', chips: ['鴨緑江鉄橋', '日本⇔朝鮮⇔満洲'] },
+  { id: 'r3', city: 'hsinking', rank: 3, pop: 49,  jp: 12.9, tag: '満洲国の首都', chips: ['首都', '国都建設計画'] },
+  { id: 'r2', city: 'harbin',   rank: 2, pop: 56,  jp: 5.2,  tag: '「東洋のモスクワ」', chips: ['東清鉄道の拠点', '国際都市'] },
+  { id: 'r1', city: 'mukden',   rank: 1, pop: 100, jp: 17.1, tag: '満洲最大の商工業都市', chips: ['満洲事変の発火点', '鉄西工業地区'] },
+];
+const BONUS = { id: 'bonus', city: 'dalian', pop: 68, jp: 19.0, tag: '満鉄本社のある国際港', chips: ['満鉄本社', '日本の租借地'] };
+
+// ---------- 鉄道(主要駅を結ぶ近似ルート) ----------
+const P = (lon, lat) => [lon, lat];
+const ST = Object.fromEntries(Object.entries(CITIES).map(([k, c]) => [k, P(c.lon, c.lat)]));
+Object.assign(ST, {
+  jinzhouKin: P(121.70, 39.10), wafangdian: P(122.00, 39.63), dashiqiao: P(122.50, 40.63), liaoyang: P(123.17, 41.27),
+  tieling: P(123.84, 42.29), kaiyuan: P(124.04, 42.55), siping: P(124.35, 43.17), gongzhuling: P(124.82, 43.50),
+  dehui: P(125.70, 44.53), benxi: P(123.77, 41.30), fengcheng: P(124.07, 40.45), sinuiju: P(124.42, 40.08),
+  pyongyang: P(125.75, 39.02), xinmin: P(122.83, 42.00), goubangzi: P(122.50, 41.40), xingcheng: P(120.70, 40.60),
+  shanhaiguan: P(119.75, 40.00), beijing: P(116.40, 39.90), anda: P(125.33, 46.40), angangxi: P(123.80, 47.15),
+  zhalantun: P(122.73, 48.00), boketu: P(121.92, 48.77), chita: P(116.2, 50.4), acheng: P(126.97, 45.54),
+  yimianpo: P(128.05, 45.07), suifenhe: P(131.15, 44.40), vladivostok: P(131.90, 43.12), jiaohe: P(127.34, 43.72),
+  dunhua: P(128.23, 43.37), rajin: P(130.30, 42.24), linkou: P(130.27, 45.28), zhengjiatun: P(123.50, 43.50),
+  taonan: P(122.80, 45.33), suihua: P(126.98, 46.65), beian: P(126.50, 48.25), chaoyang: P(120.45, 41.57),
+});
+// group: 1=満鉄本線 2=東清鉄道(北満鉄道) 3=朝鮮・日本海への連絡線 4=その他の国線
+const ROUTES = [
+  { g: 1, st: ['dalian', 'jinzhouKin', 'wafangdian', 'dashiqiao', 'anshan', 'liaoyang', 'mukden', 'tieling', 'kaiyuan', 'siping', 'gongzhuling', 'hsinking'] },
+  { g: 1, st: ['jinzhouKin', 'ryojun'] },
+  { g: 1, st: ['dashiqiao', 'yingkou'] },
+  { g: 1, st: ['mukden', 'fushun'] },
+  { g: 2, st: ['harbin', 'anda', 'angangxi', 'zhalantun', 'boketu', 'hailar', 'manzhouli'], tail: 'chita' },
+  { g: 2, st: ['harbin', 'acheng', 'yimianpo', 'mudanjiang', 'suifenhe'], tail: 'vladivostok' },
+  { g: 2, st: ['hsinking', 'dehui', 'harbin'] },
+  { g: 3, st: ['mukden', 'benxi', 'fengcheng', 'andong', 'sinuiju'], tail: 'pyongyang' },
+  { g: 3, st: ['hsinking', 'jilin', 'jiaohe', 'dunhua', 'tumen'], tail: 'rajin' },
+  { g: 4, st: ['mukden', 'xinmin', 'goubangzi', 'jinzhou', 'xingcheng', 'shanhaiguan'], tail: 'beijing' },
+  { g: 4, st: ['siping', 'zhengjiatun', 'taonan', 'angangxi', 'qiqihar'] },
+  { g: 4, st: ['harbin', 'suihua', 'beian', 'heihe'] },
+  { g: 4, st: ['tumen', 'mudanjiang', 'linkou', 'jiamusi'] },
+  { g: 4, st: ['jinzhou', 'chaoyang', 'chengde'] },
+];
+const GROUP_COLOR = { 1: C.mantetsu, 2: C.toshin, 3: C.link, 4: C.other };
+// 特急「あじあ」のルート(大連 → 新京)
+const ASIA_ROUTE = ROUTES[0].st.map(s => ST[s]);
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const fade = (lt, s, d = .5) => easeOut((lt - s) / d);
+function hash(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, o = {}) {
+  const { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, stroke = 0, strokeColor = 'rgba(0,0,0,0.85)', ls = 0, shadow = 0, shadowColor = null } = o;
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = shadowColor || color; ctx.shadowBlur = shadow; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = strokeColor; ctx.lineWidth = stroke; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 'normal') { ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`; const w = ctx.measureText(str).width; ctx.restore(); return w; }
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function rrect(x, y, w, h, r, fill, alpha = 1, stroke = null) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); rrectPath(x, y, w, h, r);
+  ctx.fillStyle = fill; ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  ctx.restore();
+}
+
+// ---------- カメラ ----------
+const COSL = Math.cos(44 * Math.PI / 180);
+const FULL = { lon: 125.6, lat: 46.0, k: 58 };
+const cam = { lon: 0, lat: 0, k: 1, cy: 700, sx: 0, sy: 0 };
+function proj(lon, lat) { return [W / 2 + (lon - cam.lon) * cam.k * COSL + cam.sx, cam.cy - (lat - cam.lat) * cam.k + cam.sy]; }
+function cityView(id, k = 175) { const c = CITIES[id]; return { lon: c.lon, lat: c.lat - 0.25, k }; }
+
+// キーフレーム { t, lon, lat, k } を組み立てる(flight: 途中で少し引く)
+const KEYS = [];
+function key(t, v, flight = false) { KEYS.push({ t, ...v, flight }); }
+key(0, { lon: 129.0, lat: 41.5, k: 19 });
+key(S.hook.d, FULL);
+key(S.overview.s + S.overview.d, { ...FULL, k: 61 });
+for (const r of RANK) {
+  const sc = S[r.id];
+  key(sc.s + 1.1, cityView(r.city), true);
+  key(sc.s + sc.d, cityView(r.city, 175 * 1.08));
+}
+key(S.bonus.s + 1.1, { lon: 121.75, lat: 39.15, k: 215 }, true);
+key(S.bonus.s + S.bonus.d, { lon: 121.75, lat: 39.15, k: 230 });
+key(S.rail.s + 1.2, { lon: 125.4, lat: 45.3, k: 57 }, true);
+key(S.rail.s + S.rail.d, { lon: 125.4, lat: 45.3, k: 59 });
+key(S.end.s + 2.0, { ...FULL, k: 54 }, true);
+key(S.end.s + S.end.d, { ...FULL, k: 50 });
+
+// あじあ号: 走行の進み具合(0..1)とカメラ追従
+const ASIA_T0 = 1.0, ASIA_T1 = () => S.asia.d - 1.2;
+function asiaProgress(lt) { return easeInOut((lt - ASIA_T0) / (ASIA_T1() - ASIA_T0)); }
+const routeLen = pts => { let L = [0]; for (let i = 1; i < pts.length; i++) L.push(L[i - 1] + Math.hypot((pts[i][0] - pts[i - 1][0]) * COSL, pts[i][1] - pts[i - 1][1])); return L; };
+const ASIA_LEN = routeLen(ASIA_ROUTE);
+function along(pts, L, p) {
+  const d = p * L[L.length - 1];
+  for (let i = 1; i < pts.length; i++) if (L[i] >= d) { const f = (d - L[i - 1]) / ((L[i] - L[i - 1]) || 1); return [lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f), Math.atan2(-(pts[i][1] - pts[i - 1][1]), (pts[i][0] - pts[i - 1][0]) * COSL)]; }
+  const n = pts.length - 1; return [pts[n][0], pts[n][1], 0];
+}
+
+function camAt(t) {
+  // あじあ号のシーンは列車を追う
+  if (t >= S.asia.s && t < S.asia.s + S.asia.d) {
+    const lt = t - S.asia.s;
+    const [lon, lat] = along(ASIA_ROUTE, ASIA_LEN, asiaProgress(lt));
+    const target = { lon: lon + 0.6, lat: lat - 0.9, k: 112 };
+    const from = KEYS.filter(k => k.t <= S.asia.s).pop();
+    const e = easeInOut(lt / 1.2);
+    if (lt < 1.2) return { lon: lerp(from.lon, target.lon, e), lat: lerp(from.lat, target.lat, e), k: lerp(from.k, target.k, e) * (1 - 0.35 * Math.sin(Math.PI * e)) };
+    return target;
+  }
+  if (t >= S.end.s && t < S.end.s + 2.0) {
+    // 列車追従の最後の位置から全体へ
+    const lt = t - S.end.s, e = easeInOut(lt / 2.0);
+    const [lon, lat] = along(ASIA_ROUTE, ASIA_LEN, 1);
+    const a = { lon: lon + 0.6, lat: lat - 0.9, k: 112 }, b = { ...FULL, k: 54 };
+    return { lon: lerp(a.lon, b.lon, e), lat: lerp(a.lat, b.lat, e), k: lerp(a.k, b.k, e) };
+  }
+  let i = KEYS.findIndex(k => k.t > t);
+  if (i === -1) return KEYS[KEYS.length - 1];
+  if (i === 0) return KEYS[0];
+  const a = KEYS[i - 1], b = KEYS[i];
+  // flight キーは「直前のシーン開始」から動き出す
+  let t0 = a.t;
+  if (b.flight) t0 = Math.max(a.t, b.t - 1.1 - (b === KEYS.find(k => k.t === S.rail.s + 1.2) ? 0.1 : 0));
+  const e = easeInOut((t - t0) / (b.t - t0));
+  const dist = Math.hypot((b.lon - a.lon) * COSL, b.lat - a.lat);
+  const dip = b.flight ? Math.min(0.55, dist / 6) : 0;
+  return { lon: lerp(a.lon, b.lon, e), lat: lerp(a.lat, b.lat, e), k: Math.exp(lerp(Math.log(a.k), Math.log(b.k), e)) * (1 - dip * Math.sin(Math.PI * e)) };
+}
+
+// 画面の揺れ(順位発表などの瞬間)
+const SHAKES = [];
+function shakeAt(t) {
+  let x = 0, y = 0;
+  for (const [t0, amp] of SHAKES) {
+    const lt = t - t0;
+    if (lt < 0 || lt > 0.45) continue;
+    const a = amp * Math.pow(1 - lt / 0.45, 2);
+    x += a * Math.sin(lt * 95); y += a * Math.cos(lt * 77);
+  }
+  return [x, y];
+}
+// フラッシュ
+const FLASHES = [];
+function flashAt(t) { let a = 0; for (const [t0, s] of FLASHES) { const lt = t - t0; if (lt >= 0 && lt < 0.5) a = Math.max(a, s * (1 - lt / 0.5)); } return a; }
+
+// 効果音と同じタイミング(mix.py でも同じ値を使う)
+const R1_REVEAL = 1.5;      // 1位の発表は「第1位は…」の溜めの後
+const BONUS_STAMP = 4.3;    // 「満洲国ではない!?」のスタンプ
+SHAKES.push([0.35, 10], [0.8, 10], [1.65, 22]); FLASHES.push([1.65, 0.55]);
+for (const r of RANK) {
+  const t0 = S[r.id].s + (r.rank === 1 ? R1_REVEAL : 0.35);
+  SHAKES.push([t0, r.rank === 1 ? 30 : 16]); FLASHES.push([t0, r.rank === 1 ? 0.7 : 0.3]);
+}
+SHAKES.push([S.bonus.s + 0.35, 12], [S.bonus.s + BONUS_STAMP, 20]); FLASHES.push([S.bonus.s + BONUS_STAMP, 0.25]);
+SHAKES.push([S.end.s + 4.2, 14]);
+
+// ---------- 地図 ----------
+function pathPts(pts) {
+  ctx.beginPath();
+  pts.forEach((p, i) => { const [x, y] = proj(p[0], p[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+}
+function polylinePartial(pts, p) {
+  // 投影後の長さで p(0..1) まで描く
+  const q = pts.map(v => proj(v[0], v[1]));
+  let L = 0; const seg = [];
+  for (let i = 1; i < q.length; i++) { const d = Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]); seg.push(d); L += d; }
+  let rem = L * clamp(p);
+  ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]);
+  for (let i = 1; i < q.length && rem > 0; i++) {
+    const d = seg[i - 1];
+    if (rem >= d) ctx.lineTo(q[i][0], q[i][1]);
+    else { const f = rem / d; ctx.lineTo(lerp(q[i - 1][0], q[i][0], f), lerp(q[i - 1][1], q[i][1], f)); }
+    rem -= d;
+  }
+  return q;
+}
+
+function drawBaseMap(o) {
+  // 海
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.sea); g.addColorStop(1, C.sea2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 経緯線
+  ctx.save(); ctx.strokeStyle = 'rgba(120,160,200,0.07)'; ctx.lineWidth = 1.5;
+  for (let lon = 100; lon <= 150; lon += 5) { pathPts([[lon, 28], [lon, 58]]); ctx.stroke(); }
+  for (let lat = 30; lat <= 56; lat += 5) { pathPts([[100, lat], [150, lat]]); ctx.stroke(); }
+  ctx.restore();
+  // 陸地
+  ctx.save();
+  for (const l of GEO.land) {
+    pathPts(l.pts); ctx.closePath();
+    ctx.fillStyle = l.iso === 'JPN' ? '#222a35' : C.land; ctx.fill();
+    ctx.strokeStyle = C.landEdge; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  ctx.restore();
+  // 湖・河川
+  ctx.save(); ctx.fillStyle = C.sea;
+  for (const l of GEO.lakes) { pathPts(l); ctx.closePath(); ctx.fill(); }
+  ctx.strokeStyle = C.river; ctx.lineWidth = 2.2; ctx.globalAlpha = 0.8; ctx.lineJoin = 'round';
+  for (const r of GEO.rivers) { if (/Huang/.test(r.name)) continue; pathPts(r.pts); ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawManchukuo(o) {
+  const a = o.mk ?? 1;
+  if (a <= 0) return;
+  const pts = GEO.manchukuo;
+  // 塗り
+  ctx.save(); ctx.globalAlpha = a * (o.mkFillA ?? 1);
+  pathPts(pts); ctx.closePath();
+  ctx.fillStyle = o.mkColor || C.mkFill; ctx.fill();
+  ctx.restore();
+  // 関東州(租借地)
+  const ka = (o.kwantung ?? 0) * a;
+  if (ka > 0) {
+    ctx.save(); pathPts(pts); ctx.closePath(); ctx.clip();
+    const [x1, y1] = proj(121.30, 39.47), [x2, y2] = proj(122.30, 39.66);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(x2 + 400, y2 + 2000); ctx.lineTo(x1 - 400, y1 + 2000); ctx.closePath();
+    ctx.globalAlpha = ka; ctx.fillStyle = C.bg; ctx.fill();
+    ctx.fillStyle = 'rgba(94,200,242,0.28)'; ctx.fill();
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(94,200,242,0.55)'; ctx.lineWidth = 3;
+    for (let k = -2000; k < 2000; k += 18) { ctx.beginPath(); ctx.moveTo(x1 + k, y1 - 50); ctx.lineTo(x1 + k + 300, y1 + 250); ctx.stroke(); }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = ka; ctx.strokeStyle = C.kwantung; ctx.lineWidth = 3; ctx.setLineDash([12, 8]);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+  }
+  // 国境線(グロー付き、進捗 border で描画)
+  const bp = o.border ?? 1;
+  ctx.save(); ctx.globalAlpha = a; ctx.lineJoin = 'round';
+  ctx.shadowColor = o.borderColor || C.mk; ctx.shadowBlur = 18;
+  ctx.strokeStyle = o.borderColor || C.mk; ctx.lineWidth = 4;
+  if (o.borderDash) ctx.setLineDash(o.borderDash);
+  polylinePartial(pts.concat([pts[0]]), bp); ctx.stroke();
+  ctx.restore();
+}
+
+function drawRoutes(o) {
+  // o.rail: {g: progress}   o.railA: 全体の不透明度  o.railDim: 他を薄く
+  const prog = o.rail || {};
+  for (const pass of [0, 1]) {
+    for (const r of ROUTES) {
+      const p = prog[r.g] ?? 0;
+      if (p <= 0) continue;
+      const pts = r.st.map(s => ST[s]);
+      ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.globalAlpha = (o.railA ?? 1) * (o.railFocus && o.railFocus !== r.g ? 0.35 : 1);
+      if (pass === 0) { ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.lineWidth = o.railW ? o.railW + 5 : 10; }
+      else { ctx.strokeStyle = GROUP_COLOR[r.g]; ctx.lineWidth = o.railW || 5; if (r.g === 4) ctx.setLineDash([14, 8]); }
+      polylinePartial(pts, p); ctx.stroke();
+      // 国外への延長(点線)
+      if (r.tail && p >= 1 && pass === 1) {
+        ctx.setLineDash([6, 10]); ctx.globalAlpha *= 0.7; ctx.lineWidth = 3;
+        pathPts([ST[r.st[r.st.length - 1]], ST[r.tail]]); ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function drawTrains(o, lt) {
+  // 走る列車(光の粒)
+  if (!o.trains) return;
+  ROUTES.forEach((r, ri) => {
+    if (r.g === 4 || (o.rail?.[r.g] ?? 0) < 1) return;
+    const pts = r.st.map(s => ST[s]); const L = routeLen(pts);
+    for (let j = 0; j < 2; j++) {
+      const ph = ((lt * 0.12 * (1.6 / Math.max(L[L.length - 1], 1)) * 6) + j * 0.5 + ri * 0.17) % 1;
+      const [lon, lat] = along(pts, L, ph);
+      const [x, y] = proj(lon, lat);
+      ctx.save(); ctx.globalAlpha = o.trains;
+      ctx.shadowColor = GROUP_COLOR[r.g]; ctx.shadowBlur = 20; ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
+  });
+}
+
+function drawCities(o, lt) {
+  // o.cities: {id: alpha}  o.focus: id  o.labels: true
+  const list = o.cities || {};
+  for (const [id, a0] of Object.entries(list)) {
+    const a = clamp(a0); if (a <= 0) continue;
+    const c = CITIES[id]; const [x, y] = proj(c.lon, c.lat);
+    const focus = o.focus === id;
+    const big = ['mukden', 'hsinking', 'harbin', 'dalian'].includes(id);
+    const r = (focus ? 13 : big ? 9 : 7) * backOut(a);
+    if (focus) {
+      for (let k = 0; k < 3; k++) {
+        const ph = ((lt * 0.8) + k / 3) % 1;
+        ctx.save(); ctx.globalAlpha = (1 - ph) * 0.8; ctx.strokeStyle = C.gold; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(x, y, 14 + ph * 90, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
+    }
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = '#0a0f16'; ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = focus ? C.gold : (id === 'dalian' || id === 'ryojun' ? C.kwantung : '#ffffff');
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (o.labels !== false) {
+      const size = focus ? 0 : big ? 34 : 28;
+      if (size) {
+        const right = !['manzhouli', 'chengde', 'jinzhou', 'ryojun', 'hailar', 'yingkou', 'dalian'].includes(id);
+        text(c.name, x + (right ? 16 : -16), y + 11, { size, weight: big ? 'bold' : 'normal', align: right ? 'left' : 'right', alpha: a * (o.labelA ?? 1), stroke: 7, color: big ? C.ink : C.ink2 });
+      }
+    }
+  }
+}
+
+function drawRegionLabels(a) {
+  if (a <= 0) return;
+  const L = [['ソ連', 135.6, 50.2, 40], ['モンゴル', 114.6, 46.4, 36], ['朝鮮(日本統治)', 127.6, 40.2, 30], ['中華民国', 116.2, 38.4, 32],
+             ['日本海', 133.6, 40.6, 34], ['渤海', 120.2, 39.0, 30], ['黄海', 123.0, 37.4, 30], ['日本', 138.5, 36.6, 34]];
+  for (const [s, lon, lat, size] of L) {
+    const [x, y] = proj(lon, lat);
+    text(s, x, y, { size, align: 'center', color: '#5d6b7c', alpha: a, ls: 4 });
+  }
+}
+
+function drawMap(o, lt) {
+  drawBaseMap(o);
+  drawManchukuo(o);
+  drawRegionLabels(o.regions ?? 1);
+  drawRoutes(o);
+  drawTrains(o, lt);
+  drawCities(o, lt);
+}
+
+// ---------- UI 部品 ----------
+function vignette(a = 1) {
+  const g = ctx.createRadialGradient(W / 2, H * 0.42, H * 0.25, W / 2, H * 0.5, H * 0.75);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${0.75 * a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 上下の帯(文字を読みやすく)
+  const g2 = ctx.createLinearGradient(0, 0, 0, 380); g2.addColorStop(0, 'rgba(5,8,12,0.85)'); g2.addColorStop(1, 'rgba(5,8,12,0)');
+  ctx.fillStyle = g2; ctx.fillRect(0, 0, W, 380);
+  const g3 = ctx.createLinearGradient(0, 1000, 0, H); g3.addColorStop(0, 'rgba(5,8,12,0)'); g3.addColorStop(0.35, 'rgba(5,8,12,0.75)'); g3.addColorStop(1, 'rgba(5,8,12,0.95)');
+  ctx.fillStyle = g3; ctx.fillRect(0, 1000, W, H - 1000);
+}
+function topTag(str, a, color = C.gold) {
+  if (a <= 0) return;
+  const w = measure(str, 36, 'bold') + 56;
+  rrect(50, 120, w, 66, 33, 'rgba(10,14,20,0.8)', a, color);
+  text(str, 50 + 28, 166, { size: 36, weight: 'bold', color, alpha: a });
+}
+function chip(str, x, y, a, color = C.ink2) {
+  const w = measure(str, 32, 'bold') + 44;
+  rrect(x, y, w, 56, 28, 'rgba(22,28,38,0.95)', a, 'rgba(255,255,255,0.22)');
+  text(str, x + 22, y + 39, { size: 32, weight: 'bold', color, alpha: a });
+  return w;
+}
+function fmtMan(v) { return (v >= 10 ? Math.round(v) : v.toFixed(1)) + '万'; }
+
+// 順位バッジ(スケールで叩きつける)
+function rankBadge(rank, lt, t0, opt = {}) {
+  const p = (lt - t0) / 0.38;
+  if (p < 0) return;
+  const s = p < 1 ? lerp(2.6, 1, backOut(p)) : 1;
+  const a = clamp(p * 2);
+  const cx = opt.x ?? 270, cy = opt.y ?? 330;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s); ctx.rotate(-0.05);
+  const gold = rank === 1;
+  const fill = opt.fill || (gold ? C.gold : '#ffffff');
+  text(opt.label || `第${rank}位`, 0, 0, { size: 150, weight: 'bold', align: 'center', base: 'middle', color: fill, alpha: a, stroke: 14, strokeColor: 'rgba(0,0,0,0.9)', shadow: gold ? 40 : 0, shadowColor: C.gold });
+  ctx.restore();
+}
+
+// 光の放射(1位の発表)
+function rays(x, y, a, rot) {
+  if (a <= 0) return;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha = a;
+  for (let i = 0; i < 16; i++) {
+    ctx.rotate(Math.PI * 2 / 16);
+    const g = ctx.createLinearGradient(0, 0, 900, 0);
+    g.addColorStop(0, 'rgba(242,193,78,0.55)'); g.addColorStop(1, 'rgba(242,193,78,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(900, -60); ctx.lineTo(900, 60); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ランキング表(右上): 発表済みの順位だけ表示
+function leaderboard(t, a) {
+  if (a <= 0) return;
+  const x = 700, y = 250, w = 330, rowH = 62;
+  rrect(x, y, w, rowH * 5 + 70, 22, 'rgba(10,14,20,0.94)', a, 'rgba(255,255,255,0.12)');
+  text('人口ランキング', x + 24, y + 46, { size: 28, weight: 'bold', color: C.ink3, alpha: a });
+  for (let rank = 1; rank <= 5; rank++) {
+    const r = RANK.find(q => q.rank === rank);
+    const rt = S[r.id].s + (rank === 1 ? R1_REVEAL : 0.35) + 0.6;
+    const yy = y + 70 + (rank - 1) * rowH + 42;
+    const shown = easeOut((t - rt) / 0.4);
+    const col = rank === 1 ? C.gold : C.ink;
+    text(String(rank), x + 30, yy, { size: 34, weight: 'bold', color: rank === 1 ? C.gold : C.ink3, alpha: a });
+    if (shown <= 0) { text('???', x + 80, yy, { size: 32, color: '#4a5260', alpha: a }); continue; }
+    text(CITIES[r.city].name, x + 80 + (1 - shown) * 30, yy, { size: 34, weight: 'bold', color: col, alpha: a * shown });
+    text(`${fmtMan(r.pop)}人`, x + w - 22, yy, { size: 30, color: C.ink2, align: 'right', alpha: a * shown });
+  }
+}
+
+// 都市カード(下部): 名前・人口カウントアップ・日本人比率
+function cityCard(r, lt, t0, opt = {}) {
+  const p = easeOut((lt - t0) / 0.5);
+  if (p <= 0) return;
+  const c = CITIES[r.city];
+  const y = 1090 + (1 - p) * 120, x = 50, w = W - 100, h = 330;
+  ctx.save(); ctx.globalAlpha = p;
+  rrect(x, y, w, h, 28, C.panel, 1, opt.edge || C.panelEdge);
+  // 都市名 + 現在名
+  text(c.name, x + 40, y + 108, { size: 96, weight: 'bold', color: opt.nameColor || C.ink });
+  const nw = measure(c.name, 96, 'bold');
+  text(c.now, x + 60 + nw, y + 104, { size: 34, color: C.ink3 });
+  text(r.tag, x + 42, y + 162, { size: 36, weight: 'bold', color: opt.tagColor || C.gold });
+  // 人口(カウントアップ)
+  const cp = easeOut((lt - t0 - 0.3) / 1.1);
+  text('人口', x + w - 40, y + 52, { size: 28, color: C.ink3, align: 'right' });
+  text(`約${Math.round(r.pop * cp)}万人`, x + w - 40, y + 140, { size: 84, weight: 'bold', align: 'right', color: C.ink });
+  // 日本人比率バー / チップ
+  const by = y + 205;
+  if (r.jp != null) {
+    const bp = easeOut((lt - t0 - 1.2) / 0.9);
+    const bw = w - 80, share = r.jp / r.pop;
+    rrect(x + 40, by, bw, 34, 8, 'rgba(255,255,255,0.10)');
+    rrect(x + 40, by, Math.max(10, bw * share * bp), 34, 8, C.gold);
+    text(`日本人 約${fmtMan(r.jp)}人`, x + 40, by + 80, { size: 34, weight: 'bold', color: C.gold, alpha: bp });
+    text(`${Math.round(share * 100 * bp)}%`, x + 40 + Math.max(bw * share * bp, 10) + 14, by + 28, { size: 30, weight: 'bold', color: C.gold, alpha: bp });
+    text(opt.note || '1940年・概数', x + w - 40, by + 80, { size: 26, color: C.ink3, align: 'right', alpha: bp });
+  } else {
+    let cx = x + 40;
+    r.chips.forEach((s, i) => { const ca = easeOut((lt - t0 - 1.0 - i * 0.3) / 0.4); cx += chip(s, cx, by + 6, ca) + 16; });
+    text(opt.note || '1940年・概数', x + w - 40, by + 80, { size: 26, color: C.ink3, align: 'right' });
+  }
+  ctx.restore();
+}
+
+// 字幕
+function subtitles(t) {
+  const cue = T.cues.find(c => t >= c.s - 0.05 && t < c.e + 0.25);
+  if (!cue) return;
+  const a = Math.min(easeOut((t - cue.s + 0.05) / 0.15), 1);
+  const size = 46, maxW = 940;
+  let lines = [cue.t];
+  if (measure(cue.t, size, 'bold') > maxW) {
+    const mid = Math.ceil(cue.t.length / 2);
+    let cut = mid; for (let d = 0; d < 6; d++) { if ('、」!?'.includes(cue.t[mid + d - 1])) { cut = mid + d; break; } if ('、」!?'.includes(cue.t[mid - d - 1])) { cut = mid - d; break; } }
+    lines = [cue.t.slice(0, cut), cue.t.slice(cut)];
+  }
+  const y0 = 1520 - (lines.length - 1) * 30;
+  lines.forEach((l, i) => text(l, W / 2, y0 + i * 62, { size, weight: 'bold', align: 'center', alpha: a, stroke: 10, strokeColor: 'rgba(0,0,0,0.92)' }));
+}
+
+// ---------- シーン ----------
+const ALL_CITIES = Object.keys(CITIES);
+function cityAlphas(lt, start, step = 0.08, only = null) {
+  const o = {}; (only || ALL_CITIES).forEach((id, i) => o[id] = easeOut((lt - start - i * step) / 0.35)); return o;
+}
+const RAIL_ALL = { 1: 1, 2: 1, 3: 1, 4: 1 };
+
+function sceneHook(t, lt) {
+  const a = 1;
+  const pulse = 0.5 + 0.5 * Math.sin(lt * 5);
+  drawMap({ mk: easeOut(lt / 1.2), border: easeOut((lt - 0.2) / 2.2), mkColor: `rgba(224,90,79,${0.18 + 0.14 * pulse})`, regions: 1 - fade(lt, 3.5, 1.5) * 0.5, cities: cityAlphas(lt, 3.0, 0.05, ['hsinking', 'mukden', 'harbin', 'dalian']), labelA: fade(lt, 4.2) }, lt);
+  vignette(1);
+  const dim = 1 - fade(lt, 4.6, 0.8) * 0.65;
+  // タイトル
+  const s1 = (lt - 0.3) / 0.3, s2 = (lt - 0.75) / 0.3, s3 = (lt - 1.6) / 0.4;
+  if (s1 > 0) text('わずか13年で', W / 2, 520, { size: 92, weight: 'bold', align: 'center', alpha: clamp(s1) * dim, stroke: 12 });
+  if (s2 > 0) { ctx.save(); ctx.translate(W / 2, 650); const sc = lerp(1.8, 1, backOut(s2)); ctx.scale(sc, sc); text('消えた国', 0, 0, { size: 120, weight: 'bold', align: 'center', color: C.mk, alpha: clamp(s2) * dim, stroke: 14, shadow: 30 }); ctx.restore(); }
+  if (s3 > 0) {
+    ctx.save(); ctx.translate(W / 2, 905); const sc = lerp(2.4, 1, backOut(s3)); ctx.scale(sc, sc);
+    text('満洲国', 0, 0, { size: 230, weight: 'bold', align: 'center', color: C.gold, alpha: clamp(s3) * dim, stroke: 18, shadow: 50, ls: 10 });
+    ctx.restore();
+  }
+  const ra = fade(lt, 2.6, 0.4) * dim;
+  if (ra > 0) {
+    const w = 760, x = (W - w) / 2, y = 985 + (1 - ra) * 40;
+    rrect(x, y, w, 110, 20, C.mk, ra);
+    text('主要都市 人口ランキング TOP5', W / 2, y + 74, { size: 50, weight: 'bold', align: 'center', alpha: ra });
+  }
+  text('1932 ─ 1945', W / 2, 1185, { size: 54, align: 'center', color: C.ink2, alpha: fade(lt, 3.2) * dim, ls: 6, stroke: 8 });
+}
+
+function sceneOverview(t, lt, d) {
+  drawMap({ mk: 1, border: 1, kwantung: fade(lt, 7.5, 0.8), cities: cityAlphas(lt, 4.0, 0.07), rail: { 4: easeInOut((lt - 7.6) / 2.0) * 0, 1: easeInOut((lt - 7.6) / 2.2), 2: easeInOut((lt - 8.0) / 2.2), 3: easeInOut((lt - 8.4) / 2.2) }, railA: 0.75, railW: 4 }, lt);
+  vignette(0.8);
+  topTag('満洲国とは?', fade(lt, 0.2));
+  // 年表的な情報チップ
+  const items = [
+    ['建国', '1932年3月', 0.6], ['面積', '日本の約3倍', 2.6], ['人口', '約4,300万人', 4.2],
+  ];
+  items.forEach(([k, v, s], i) => {
+    const a = fade(lt, s, 0.4), x = 50 + i * 335, y = 1150 + (1 - a) * 60;
+    rrect(x, y, 310, 190, 24, C.panel, a, C.panelEdge);
+    text(k, x + 155, y + 58, { size: 32, color: C.ink3, align: 'center', alpha: a });
+    text(v, x + 155, y + 135, { size: v.length > 7 ? 46 : 52, weight: 'bold', align: 'center', color: i === 0 ? C.gold : C.ink, alpha: a });
+  });
+  // 首都表示
+  const ca = fade(lt, 1.4);
+  if (ca > 0) { const [x, y] = proj(CITIES.hsinking.lon, CITIES.hsinking.lat); text('★首都', x + 18, y - 26, { size: 30, weight: 'bold', color: C.gold, alpha: ca, stroke: 7 }); }
+  // 関東州ラベル
+  const ka = fade(lt, 7.8);
+  if (ka > 0) { const [x, y] = proj(121.0, 38.55); text('関東州(日本の租借地)', x - 10, y + 40, { size: 28, weight: 'bold', color: C.kwantung, alpha: ka, stroke: 7, align: 'center' }); }
+  text('人口は1940年の臨時人口調査(概数)', W - 50, 1395, { size: 24, color: C.ink3, align: 'right', alpha: fade(lt, 4.4) });
+}
+
+function sceneRank(r) {
+  return (t, lt, d) => {
+    const reveal = r.rank === 1 ? R1_REVEAL : 0.35;
+    const isTop = r.rank === 1;
+    const prog = {}; for (const g of [1, 2, 3, 4]) prog[g] = 1;
+    drawMap({ mk: 1, border: 1, kwantung: 1, rail: prog, railA: 0.5, railW: 4, cities: Object.fromEntries(ALL_CITIES.map(id => [id, 1])), focus: lt > reveal ? r.city : null, labelA: 0.8 }, lt);
+    if (isTop) rays(...proj(CITIES[r.city].lon, CITIES[r.city].lat), fade(lt, reveal, 0.3) * (1 - fade(lt, reveal + 1.6, 1.2)) * 0.9, lt * 0.25);
+    vignette(1);
+    // 1位: 発表前の溜め
+    if (isTop && lt < reveal + 0.1) {
+      const da = clamp(lt / 0.3) * (1 - clamp((lt - reveal) / 0.1));
+      ctx.fillStyle = `rgba(0,0,0,${0.55 * da})`; ctx.fillRect(0, 0, W, H);
+      const s = 1 + 0.04 * Math.sin(lt * 18);
+      ctx.save(); ctx.translate(W / 2, 760); ctx.scale(s, s);
+      text('第1位は…', 0, 0, { size: 140, weight: 'bold', align: 'center', base: 'middle', color: C.gold, alpha: da, stroke: 14, shadow: 30 });
+      ctx.restore();
+      return leaderboard(t, da * 0.6);
+    }
+    topTag('人口ランキング', 1, isTop ? C.gold : C.ink2);
+    leaderboard(t, 1);
+    rankBadge(r.rank, lt, reveal);
+    // 地図上のラベル
+    const la = fade(lt, reveal + 0.2, 0.4);
+    if (la > 0) {
+      const [x, y] = proj(CITIES[r.city].lon, CITIES[r.city].lat);
+      text(CITIES[r.city].name, x, y - 40, { size: 64, weight: 'bold', align: 'center', color: isTop ? C.gold : C.ink, alpha: la, stroke: 12 });
+    }
+    cityCard(r, lt, reveal + 0.25, { edge: isTop ? C.gold : C.panelEdge, nameColor: isTop ? C.gold : C.ink });
+    // チップ(日本人データがある場合はカードの外に)
+    if (r.jp != null) {
+      let cx = 50;
+      r.chips.forEach((s, i) => { const ca = fade(lt, reveal + 1.8 + i * 0.3, 0.4); cx += chip(s, cx, 1010, ca, C.ink) + 14; });
+    }
+  };
+}
+
+function sceneBonus(t, lt, d) {
+  drawMap({ mk: 1, border: 1, kwantung: 1, rail: RAIL_ALL, railA: 0.5, railW: 4, cities: Object.fromEntries(ALL_CITIES.map(id => [id, 1])), focus: lt > 0.35 ? 'dalian' : null, labelA: 0.8 }, lt);
+  vignette(1);
+  topTag('番外編', 1, C.kwantung);
+  leaderboard(t, 1 - fade(lt, 0, 0.3));
+  rankBadge(0, lt, 0.35, { label: '番外編', fill: C.kwantung });
+  const la = fade(lt, 0.6, 0.4);
+  if (la > 0) { const [x, y] = proj(CITIES.dalian.lon, CITIES.dalian.lat); text('大連', x + 70, y + 20, { size: 64, weight: 'bold', align: 'center', alpha: la, stroke: 12 }); }
+  if (lt > 0.6) { const [x, y] = proj(121.95, 39.95); text('満洲国', x, y, { size: 40, weight: 'bold', color: C.mk, align: 'center', alpha: fade(lt, BONUS_STAMP - 0.2), stroke: 8 }); const [x2, y2] = proj(121.3, 39.2); text('関東州', x2 - 60, y2, { size: 40, weight: 'bold', color: C.kwantung, align: 'center', alpha: fade(lt, BONUS_STAMP - 0.2), stroke: 8 }); }
+  cityCard(BONUS, lt, 0.6, { note: '1941年・概数', edge: C.kwantung, tagColor: C.kwantung });
+  // スタンプ
+  const sp = (lt - BONUS_STAMP) / 0.3;
+  if (sp > 0) {
+    ctx.save(); ctx.translate(560, 830); ctx.rotate(-0.16); const s = lerp(2.2, 1, backOut(sp)); ctx.scale(s, s); ctx.globalAlpha = clamp(sp * 2);
+    ctx.strokeStyle = C.mk; ctx.lineWidth = 10; rrectPath(-400, -85, 800, 170, 20); ctx.fillStyle = 'rgba(20,6,6,0.75)'; ctx.fill(); ctx.stroke();
+    text('満洲国ではない!?', 0, 26, { size: 92, weight: 'bold', align: 'center', color: C.mk });
+    ctx.restore();
+  }
+}
+
+function sceneRail(t, lt, d) {
+  // ナレーションの区切りに合わせて路線グループを描く
+  const g1 = 2.3, g2 = 5.2, g3 = 9.0, g4 = 11.2;
+  const prog = { 1: easeInOut((lt - g1) / 1.8), 2: easeInOut((lt - g2) / 2.4), 3: easeInOut((lt - g3) / 1.8), 4: easeInOut((lt - g4) / 1.6) };
+  const focus = lt < g2 ? 1 : lt < g3 ? 2 : lt < g4 ? 3 : null;
+  drawMap({ mk: 1, border: 1, kwantung: 1, rail: prog, railFocus: lt > g1 ? focus : null, railW: 6, trains: fade(lt, g4 + 0.4), cities: Object.fromEntries(ALL_CITIES.map(id => [id, 1])), labelA: 1 }, lt);
+  vignette(0.9);
+  topTag('鉄道網', 1, C.mantetsu);
+  // 凡例
+  const items = [
+    [C.mantetsu, '満鉄本線', '大連─新京(1906年〜 南満洲鉄道)', g1],
+    [C.toshin, '東清鉄道(北満鉄道)', 'ロシアが建設→1935年に満洲国が買収', g2],
+    [C.link, '朝鮮・日本海への連絡線', '安奉線・京図線', g3],
+  ];
+  const pa = fade(lt, 0.4);
+  rrect(50, 1080, W - 100, 330, 28, C.panel, pa, C.panelEdge);
+  items.forEach(([col, name, sub, s], i) => {
+    const a = fade(lt, s, 0.4) * (focus && focus !== i + 1 ? 0.45 : 1), y = 1150 + i * 92;
+    rrect(90, y - 22, 60, 12, 6, col, a);
+    text(name, 175, y - 2, { size: 40, weight: 'bold', color: col, alpha: a });
+    text(sub, 178, y + 38, { size: 28, color: C.ink2, alpha: a });
+  });
+  // 東清鉄道の「T字」を強調
+  const ta = fade(lt, g2 + 1.6, 0.4) * (1 - fade(lt, g3, 0.5));
+  if (ta > 0) { const [x, y] = proj(ST.harbin[0], ST.harbin[1]); text('T字型', x + 30, y - 60, { size: 60, weight: 'bold', color: C.toshin, alpha: ta, stroke: 10 }); }
+  text('※路線は主要駅を結んだ概略', W - 70, 1395, { size: 24, color: C.ink3, align: 'right', alpha: pa });
+}
+
+function drawLoco(x, y, ang, s) {
+  // 流線形の機関車(簡略シルエット) + 客車
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.scale(s, s);
+  // スピード線
+  for (let i = 0; i < 7; i++) { ctx.globalAlpha = 0.45; ctx.strokeStyle = '#bfe8ff'; ctx.lineWidth = 3; const yy = -26 + i * 9; const len = 120 + 60 * hash(i + Math.floor(x / 9)); ctx.beginPath(); ctx.moveTo(-260 - len, yy); ctx.lineTo(-240, yy); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#2a3b55'; rrectPath(-240, -28, 120, 50, 8); ctx.fill(); // 客車
+  ctx.fillStyle = '#2a3b55'; rrectPath(-115, -28, 120, 50, 8); ctx.fill();
+  ctx.fillStyle = '#3d6f8f';
+  ctx.beginPath(); ctx.moveTo(10, 22); ctx.lineTo(10, -24); ctx.quadraticCurveTo(70, -30, 110, 0); ctx.quadraticCurveTo(116, 10, 105, 22); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = C.gold; ctx.fillRect(-240, -2, 340, 5);
+  ctx.fillStyle = 'rgba(255,240,190,0.9)'; for (let i = 0; i < 6; i++) ctx.fillRect(-228 + i * 20 + (i >= 3 ? 65 : 0), -18, 12, 10);
+  ctx.restore();
+}
+
+function sceneAsia(t, lt, d) {
+  const p = asiaProgress(lt);
+  drawMap({ mk: 1, border: 1, kwantung: 1, rail: RAIL_ALL, railA: 0.35, railW: 5, cities: Object.fromEntries(ALL_CITIES.map(id => [id, 1])), labelA: 1 }, lt);
+  // 走った区間を光らせる
+  ctx.save(); ctx.strokeStyle = C.gold; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.shadowColor = C.gold; ctx.shadowBlur = 25;
+  polylinePartial(ASIA_ROUTE, p); ctx.stroke(); ctx.restore();
+  const [lon, lat, ang] = along(ASIA_ROUTE, ASIA_LEN, Math.max(p, 0.001));
+  const [x, y] = proj(lon, lat);
+  drawLoco(x, y, ang, 0.9);
+  vignette(0.9);
+  topTag('特急「あじあ」 1934年〜', 1, C.gold);
+  // カード: 距離・時間・速度
+  const ca = fade(lt, 0.4);
+  rrect(50, 1090, W - 100, 320, 28, C.panel, ca, C.panelEdge);
+  text('大連 → 新京', 90, 1160, { size: 40, weight: 'bold', color: C.ink2, alpha: ca });
+  const km = Math.round(701 * p), mins = Math.round(510 * p);
+  text(`${km}km`, 90, 1290, { size: 110, weight: 'bold', color: C.ink, alpha: ca });
+  text(`${Math.floor(mins / 60)}時間${String(mins % 60).padStart(2, '0')}分`, W - 90, 1290, { size: 90, weight: 'bold', color: C.gold, align: 'right', alpha: ca });
+  text('表定速度 約82km/h(当時の日本の最速級を上回る)', 90, 1370, { size: 28, color: C.ink3, alpha: fade(lt, ASIA_T1() - 0.4) });
+  // 到着表示
+  const aa = fade(lt, ASIA_T1() + 0.05, 0.3);
+  if (aa > 0) { const [hx, hy] = proj(CITIES.hsinking.lon, CITIES.hsinking.lat); text('新京 到着!', hx, hy - 60, { size: 60, weight: 'bold', color: C.gold, align: 'center', alpha: aa, stroke: 10 }); }
+}
+
+function sceneEnd(t, lt, d) {
+  const col = fade(lt, 3.2, 1.2);   // 「崩壊」で色が抜ける
+  drawMap({ mk: 1, border: 1, kwantung: 1 - col, rail: RAIL_ALL, railA: 0.45 * (1 - col * 0.6), railW: 4, cities: Object.fromEntries(ALL_CITIES.map(id => [id, 1 - col * 0.5])), labelA: 1 - col * 0.6,
+    mkColor: `rgba(${Math.round(lerp(224, 120, col))},${Math.round(lerp(90, 120, col))},${Math.round(lerp(79, 120, col))},0.16)`, borderColor: col > 0.5 ? '#7a808a' : C.mk, borderDash: col > 0.5 ? [10, 12] : null }, lt);
+  vignette(1);
+  ctx.fillStyle = `rgba(0,0,0,${0.35 * col})`; ctx.fillRect(0, 0, W, H);
+  const ya = fade(lt, 0.4);
+  text('1932.3', 260, 520, { size: 100, weight: 'bold', align: 'center', alpha: ya, stroke: 12, color: C.gold });
+  text('→', W / 2, 515, { size: 80, align: 'center', alpha: ya, color: C.ink2, stroke: 8 });
+  text('1945.8', 820, 520, { size: 100, weight: 'bold', align: 'center', alpha: fade(lt, 1.0), stroke: 12, color: C.mk });
+  // 崩壊スタンプ
+  const sp = (lt - 4.2) / 0.3;
+  if (sp > 0) {
+    ctx.save(); ctx.translate(W / 2, 720); const s = lerp(2.0, 1, backOut(sp)); ctx.scale(s, s); ctx.globalAlpha = clamp(sp * 2);
+    text('わずか 13年5か月', 0, 0, { size: 96, weight: 'bold', align: 'center', base: 'middle', color: C.ink, stroke: 14 });
+    ctx.restore();
+  }
+  // 問いかけ
+  const qa = fade(lt, 6.4, 0.5);
+  if (qa > 0) {
+    const y = 1100 + (1 - qa) * 60;
+    rrect(50, y, W - 100, 250, 28, C.panel, qa, C.gold);
+    text('一番気になった都市は?', W / 2, y + 105, { size: 66, weight: 'bold', align: 'center', color: C.gold, alpha: qa });
+    text('コメントで教えてください', W / 2, y + 185, { size: 40, align: 'center', color: C.ink2, alpha: qa });
+  }
+  // クレジット
+  const cr = fade(lt, d - 2.9, 0.5);
+  text('人口: 1940年 臨時人口調査ほか(概数・資料により差あり)/ 地図: Natural Earth', W / 2, 1640, { size: 24, color: C.ink3, align: 'center', alpha: Math.max(cr, qa * 0.0) });
+  text('ナレーション: VOICEVOX:青山龍星 / BGM: 自作', W / 2, 1680, { size: 26, color: C.ink2, align: 'center', alpha: Math.max(cr, fade(lt, 6.4)) });
+}
+
+const SCENE_FN = { hook: sceneHook, overview: sceneOverview, bonus: sceneBonus, rail: sceneRail, asia: sceneAsia, end: sceneEnd };
+for (const r of RANK) SCENE_FN[r.id] = sceneRank(r);
+
+function render(t) {
+  const c = camAt(t);
+  const [sx, sy] = shakeAt(t);
+  Object.assign(cam, c, { sx, sy });
+  const sc = T.scenes.find(s => t >= s.s && t < s.s + s.d) || T.scenes[T.scenes.length - 1];
+  ctx.save();
+  SCENE_FN[sc.id](t, t - sc.s, sc.d);
+  ctx.restore();
+  // シーン切替の白い一瞬(ワイプ)
+  const lt = t - sc.s;
+  if (sc.s > 0 && lt < 0.18) { ctx.fillStyle = `rgba(255,255,255,${0.18 * (1 - lt / 0.18)})`; ctx.fillRect(0, 0, W, H); }
+  const fl = flashAt(t);
+  if (fl > 0) { ctx.fillStyle = `rgba(255,248,225,${fl})`; ctx.fillRect(0, 0, W, H); }
+  subtitles(t);
+  // 最初と最後のフェード
+  const edge = Math.max(1 - clamp(t / 0.25), clamp((t - (DURATION - 0.6)) / 0.6));
+  if (edge > 0) { ctx.fillStyle = `rgba(0,0,0,${edge})`; ctx.fillRect(0, 0, W, H); }
+  // 進捗バー
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(0, H - 10, W, 10);
+  ctx.fillStyle = C.gold; ctx.fillRect(0, H - 10, W * clamp(t / DURATION), 10);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
