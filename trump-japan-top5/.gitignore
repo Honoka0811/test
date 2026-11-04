@@ -1,0 +1,4 @@
+fonts/*.otf
+output/still_*.png
+output/build.log
+__pycache__/

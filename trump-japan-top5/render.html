@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Trump Japan Top5</title>
+<style>
+  @font-face { font-family: 'NJP'; font-weight: 900; src: url('fonts/NotoSansJP-Black.otf'); }
+  @font-face { font-family: 'NJP'; font-weight: 700; src: url('fonts/NotoSansJP-Bold.otf'); }
+  @font-face { font-family: 'NJP'; font-weight: 500; src: url('fonts/NotoSansJP-Medium.otf'); }
+  html,body{margin:0;background:#0a0e18;}
+  canvas{display:block;max-height:100vh;}
+</style>
+<script src="output/timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// トランプ政権で日本はどう変わった？ 影響TOP5 (9:16 ショート)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン尺・字幕・効果音のタイミングは build_audio.py が書き出す output/timeline.js(TL) に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const DURATION = TL.total;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const F = 'NJP, "IPAGothic", sans-serif';
+const C = {
+  bg0: '#0a0e18', bg1: '#141c33', ink: '#ffffff', ink2: '#c3cad8', ink3: '#7f889b',
+  red: '#E8383D', redD: '#8f1d22', blue: '#2F6FE0', blueL: '#5c95ff', gold: '#FFD23F', up: '#38d39f',
+  panel: 'rgba(14,20,38,0.88)', line: 'rgba(255,255,255,0.14)'
+};
+const RANK_TITLE = {
+  r5: '株と円が乱高下', r4: '日本企業がアメリカへ', r3: '防衛費の増額圧力',
+  r2: '約80兆円の対米投資', r1: '対米輸出に15%関税'
+};
+const RANK_NUM = { r5: 5, r4: 4, r3: 3, r2: 2, r1: 1 };
+const SC = {}; TL.scenes.forEach(s => SC[s.id] = s);
+const L = (id, i) => SC[id].lines[i].t;       // 行の開始時刻
+const LE = (id, i) => SC[id].lines[i].t + SC[id].lines[i].d;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const eo = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const eio = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const back = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const seg = (t, s, d) => clamp((t - s) / d);
+function hash(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+function txt(s, x, y, o = {}) {
+  const { size = 60, w = 900, color = C.ink, align = 'center', base = 'alphabetic', alpha = 1,
+          stroke = 0, strokeColor = '#000', shadow = 0, maxW = 0 } = o;
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `${w} ${size}px ${F}`; ctx.textAlign = align; ctx.textBaseline = base;
+  if (maxW) { const m = ctx.measureText(s).width; if (m > maxW) { ctx.font = `${w} ${size * maxW / m}px ${F}`; } }
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = shadow / 3; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); ctx.shadowColor = 'transparent'; }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rr(x, y, w, h, r, fill, alpha = 1, strokeC = null, lw = 4) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (strokeC) { ctx.lineWidth = lw; ctx.strokeStyle = strokeC; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, fill, alpha = 1, strokeC = null, lw = 4) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (strokeC) { ctx.lineWidth = lw; ctx.strokeStyle = strokeC; ctx.stroke(); }
+  ctx.restore();
+}
+function arrow(x1, y1, x2, y2, color, lw = 10, alpha = 1, head = 34) {
+  if (alpha <= 0) return;
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - Math.cos(a) * head * .6, y2 - Math.sin(a) * head * .6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - Math.cos(a - .45) * head, y2 - Math.sin(a - .45) * head);
+  ctx.lineTo(x2 - Math.cos(a + .45) * head, y2 - Math.sin(a + .45) * head); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+// 拡大して叩きつける(スタンプ)演出のスケール
+function slam(p, from = 2.6) { if (p <= 0) return 0; if (p < .16) return lerp(from, .9, eio(p / .16)); return lerp(.9, 1, eo((p - .16) / .14)); }
+function withScale(x, y, s, fn) { if (s <= 0) return; ctx.save(); ctx.translate(x, y); ctx.scale(s, s); fn(); ctx.restore(); }
+
+// ---------- 背景 ----------
+function background(t, alert) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg0);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 星条旗を思わせるストライプ(左上)と日の丸(右下)を薄く
+  ctx.save(); ctx.translate(-160, 140); ctx.rotate(-0.32); ctx.globalAlpha = 0.07;
+  for (let i = 0; i < 9; i++) { ctx.fillStyle = i % 2 ? '#ffffff' : C.red; ctx.fillRect(-200 + ((t * 30) % 140), i * 46, 1500, 46); }
+  ctx.restore();
+  circle(930 + Math.sin(t * .4) * 12, 1560, 400, C.red, 0.08);
+  // 斜めに流れる細線
+  ctx.save(); ctx.globalAlpha = 0.05; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  for (let i = -20; i < 30; i++) { const x = i * 90 + (t * 40) % 90; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x - 700, H); ctx.stroke(); }
+  ctx.restore();
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H * .45, 300, W / 2, H * .45, 1250);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  if (alert > 0) {   // 第1位: 赤い警報フレーム
+    const p = (0.55 + 0.45 * Math.sin(t * 7)) * alert;
+    const e = ctx.createLinearGradient(0, 0, 0, H);
+    ctx.save(); ctx.globalAlpha = p * 0.9; ctx.lineWidth = 26; ctx.strokeStyle = C.red; ctx.strokeRect(13, 13, W - 26, H - 26); ctx.restore();
+    const rg = ctx.createRadialGradient(W / 2, H / 2, 500, W / 2, H / 2, 1150);
+    rg.addColorStop(0, 'rgba(232,56,61,0)'); rg.addColorStop(1, `rgba(232,56,61,${0.28 * p})`);
+    ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ---------- 共通 UI ----------
+function progressBar(t) {
+  rr(0, 0, W, 10, 0, 'rgba(255,255,255,0.15)');
+  rr(0, 0, W * t / DURATION, 10, 0, C.gold);
+}
+// 上部の順位トラッカー(5 → 1)
+function tracker(t, curId, alpha) {
+  if (alpha <= 0) return;
+  const ids = ['r5', 'r4', 'r3', 'r2', 'r1'];
+  const cur = ids.indexOf(curId);
+  const x0 = 250, dx = 145, y = 250;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ids.forEach((id, i) => {
+    const x = x0 + i * dx;
+    const done = cur > i || curId === 'outro', on = cur === i;
+    const s = on ? 1 + 0.06 * Math.sin(t * 6) : 1;
+    withScale(x, y, s, () => {
+      circle(0, 0, 44, on ? (id === 'r1' ? C.red : C.gold) : done ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.35)', 1,
+             on ? null : 'rgba(255,255,255,0.35)', 3);
+      txt(String(RANK_NUM[id]), 0, 2, { size: 50, w: 900, base: 'middle', color: on ? '#111' : done ? C.ink2 : C.ink3 });
+    });
+  });
+  txt('位', x0 + 4 * dx + 78, y + 18, { size: 40, w: 700, color: C.ink3, alpha: 1 });
+  ctx.restore();
+}
+
+// 字幕(*...* を強調色に)
+function subtitle(t) {
+  const s = TL.subs.find(s => t >= s.t && t < s.end);
+  if (!s) return;
+  if (s.t === L('hook', 0)) return;   // 冒頭はタイトル文字そのものが字幕
+  const p = eo((t - s.t) / 0.12);
+  const lines = s.text.split('\n');
+  const size = 68, lh = 96, y0 = 1420 - (lines.length - 1) * lh / 2;
+  ctx.save();
+  ctx.translate(W / 2, y0); ctx.scale(lerp(.86, 1, p), lerp(.86, 1, p)); ctx.globalAlpha = p;
+  lines.forEach((ln, li) => {
+    const parts = ln.split('*').map((x, i) => ({ x, hi: i % 2 === 1 })).filter(o => o.x);
+    ctx.font = `900 ${size}px ${F}`;
+    let total = parts.reduce((a, o) => a + ctx.measureText(o.x).width, 0);
+    const sc = Math.min(1, 940 / total);
+    ctx.save(); ctx.scale(sc, sc);
+    let x = -total / 2; const y = li * lh / sc;
+    parts.forEach(o => {
+      const w = ctx.measureText(o.x).width;
+      ctx.lineJoin = 'round'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 16; ctx.strokeStyle = '#000'; ctx.strokeText(o.x, x, y);
+      ctx.fillStyle = o.hi ? C.gold : '#fff'; ctx.fillText(o.x, x, y);
+      x += w;
+    });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// 順位スタンプ → 見出しへ移動
+function rankBadge(t, id) {
+  const tc = L(id, 0), p = t - tc;
+  if (p < 0) return;
+  const big = id === 'r1';
+  const mv = eio(seg(t, LE(id, 0) + 0.02, 0.32));
+  const cx = W / 2, cy = lerp(820, 395, mv), s = slam(p, big ? 3.4 : 2.6) * lerp(1, 0.42, mv);
+  withScale(cx, cy, s, () => {
+    // 背後の放射光
+    if (mv < 1) {
+      ctx.save(); ctx.globalAlpha = (1 - mv) * 0.35; ctx.rotate(t * 0.5);
+      for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.fillStyle = big ? C.red : C.gold; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(900, -70); ctx.lineTo(900, 70); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    }
+    rr(-330, -150, 660, 300, 40, big ? C.red : '#ffffff', 1);
+    rr(-330, -150, 660, 300, 40, null, 1, big ? C.gold : C.red, 14);
+    ctx.save(); ctx.font = `900 120px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = big ? '#fff' : '#111';
+    ctx.fillText('第', -200, 12); ctx.fillText('位', 205, 12);
+    ctx.font = `900 260px ${F}`; ctx.fillStyle = big ? C.gold : C.red;
+    ctx.fillText(String(RANK_NUM[id]), 0, 6);
+    ctx.restore();
+  });
+  // 見出し
+  const ta = eo(seg(t, LE(id, 0) + 0.2, 0.3));
+  txt(RANK_TITLE[id], W / 2 + (1 - ta) * 80, 560, { size: 84, w: 900, alpha: ta, stroke: 12, color: big ? C.gold : '#fff' });
+}
+
+// 画面揺れ・フラッシュ
+function impactFx(t) {
+  let shake = 0, flash = 0;
+  TL.events.forEach(e => {
+    const p = t - e.t; if (p < 0 || p > 1) return;
+    if (e.type === 'impact' || e.type === 'boom') {
+      const big = e.big || e.type === 'boom';
+      shake = Math.max(shake, (big ? 30 : 18) * Math.max(0, 1 - p / (big ? .6 : .35)));
+      flash = Math.max(flash, (big ? .85 : .6) * Math.max(0, 1 - p / .22));
+    }
+  });
+  return { shake, flash };
+}
+
+// ---------- シーン ----------
+function sceneHook(t) {
+  const t0 = L('hook', 0), t1 = L('hook', 1), t2 = L('hook', 2);
+  const out = eio(seg(t, t1 - 0.1, 0.35));     // タイトル → 上へ縮小
+  ctx.save(); ctx.translate(0, -out * 330); ctx.globalAlpha = 1 - out;
+  const words = [
+    ['トランプ', 650, 250, C.red, 0.0], ['再登場で', 850, 150, '#fff', 0.55],
+    ['日本は', 1040, 170, '#fff', 1.15], ['ここまで変わった', 1220, 128, C.gold, 1.6]];
+  words.forEach(([w, y, size, col, d], i) => {
+    const p = t - (t0 + d);
+    const s = slam(p, 2.2);
+    withScale(W / 2, y - size * .35, s, () => {
+      if (i === 0) {   // グリッチ
+        const j = (p < .5 || (t % 1.7) < .08) ? 10 : 0;
+        txt(w, -j, size * .35, { size, w: 900, color: 'rgba(0,229,255,0.75)' });
+        txt(w, j, size * .35, { size, w: 900, color: 'rgba(255,0,80,0.75)' });
+      }
+      txt(w, 0, size * .35, { size, w: 900, color: col, stroke: 16, maxW: 980 });
+    });
+  });
+  ctx.restore();
+  // TOP5 カード
+  if (t >= t1 - 0.1) {
+    const p = t - t1;
+    const s = slam(p + 0.05, 2);
+    withScale(W / 2, 640, s, () => {
+      txt('影響の大きさ', 0, -70, { size: 64, w: 700, color: C.ink2 });
+      txt('TOP5', 0, 110, { size: 230, w: 900, color: C.gold, stroke: 14 });
+    });
+    for (let i = 0; i < 5; i++) {
+      const n = 5 - i, x = 150 + i * 195, y = 1000;
+      const d = eo(seg(t, t1 + 0.35 + i * 0.12, 0.3));
+      const hl = n === 1 ? eo(seg(t, t2, 0.3)) : 0;
+      const sc = (1 + hl * (0.35 + 0.05 * Math.sin(t * 8)));
+      withScale(x, y - (1 - d) * 200 - hl * 40, d * sc, () => {
+        if (hl > 0) circle(0, 0, 120, C.red, hl * 0.35);
+        rr(-80, -110, 160, 220, 22, n === 1 && hl > 0 ? C.red : '#1d2846', 1, n === 1 && hl > 0 ? C.gold : 'rgba(255,255,255,0.35)', 5);
+        txt(`${n}位`, 0, -55, { size: 40, w: 700, color: C.ink2 });
+        txt('?', 0, 75, { size: 120, w: 900, color: n === 1 && hl > 0 ? C.gold : '#fff' });
+      });
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// 第5位: 日経平均の乱高下
+const NK = [['3/31', 35618], ['4/1', 35624], ['4/2', 35725], ['4/3', 34736], ['4/4', 33781],
+            ['4/7', 31137], ['4/8', 32013], ['4/9', 31714], ['4/10', 34609], ['4/11', 33586]];
+function sceneR5(t) {
+  const a1 = L('r5', 1), a2 = L('r5', 2);
+  const vis = eo(seg(t, a1, 0.35)); if (vis <= 0) return;
+  const x0 = 140, x1 = 960, y0 = 700, y1 = 1120, lo = 30500, hi = 36300;
+  const X = i => lerp(x0, x1, i / (NK.length - 1)), Y = v => lerp(y1, y0, (v - lo) / (hi - lo));
+  ctx.save(); ctx.globalAlpha = vis;
+  rr(60, 640, W - 120, 560, 30, C.panel, 1, C.line, 2);
+  txt('日経平均株価 終値(2025年4月)', 100, 690, { size: 34, w: 700, color: C.ink2, align: 'left' });
+  [31000, 33000, 35000].forEach(v => {
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, Y(v)); ctx.lineTo(x1, Y(v)); ctx.stroke();
+    txt(fmt(v), x0 - 10, Y(v) + 10, { size: 24, w: 500, color: C.ink3, align: 'right' });
+  });
+  [0, 2, 5, 8].forEach(i => txt(NK[i][0], X(i), y1 + 50, { size: 30, w: 700, color: C.ink3 }));
+  // 描画の進み: 行1で 4/4 まで、行2の頭で 4/7 に急落、その後リバウンド
+  let prog = 4 * eio(seg(t, a1 + .2, 1.8));
+  if (t > a2 + .5) prog = 4 + eio(seg(t, a2 + .5, .35));
+  if (t > a2 + 2.6) prog = 5 + 4 * eio(seg(t, a2 + 2.6, 1.6));
+  ctx.lineWidth = 9; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  for (let i = 1; i <= Math.ceil(prog); i++) {
+    const f = clamp(prog - (i - 1));
+    if (f <= 0) break;
+    const xa = X(i - 1), ya = Y(NK[i - 1][1]), xb = lerp(xa, X(i), f), yb = lerp(ya, Y(NK[i][1]), f);
+    ctx.strokeStyle = NK[i][1] < NK[i - 1][1] ? C.red : C.up;
+    ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke();
+  }
+  ctx.restore();
+  // 急落マーカー
+  const m = eo(seg(t, a2 + .85, .3));
+  if (m > 0) {
+    const x = X(5), y = Y(NK[5][1]);
+    circle(x, y, 18 + 10 * Math.sin(t * 10), C.red, m);
+    const cnt = lerp(0, 2644, eo(seg(t, a2 + .85, .7)));
+    withScale(x + 40, y - 190, slam(t - a2 - .85, 1.8), () => {
+      rr(-150, -70, 400, 130, 22, C.red, 1);
+      txt('4/7 1日で', 50, -25, { size: 30, w: 700 });
+      txt(`−${fmt(cnt)}円`, 50, 45, { size: 66, w: 900 });
+    });
+  }
+  const r = eo(seg(t, a2 + 3.6, .3));
+  if (r > 0) {
+    withScale(X(8) - 110, Y(NK[8][1]) - 80, r, () => {
+      rr(-120, -50, 240, 90, 18, '#0f5f45', 1, C.up, 3);
+      txt('4/10 +2,894円', 0, 12, { size: 30, w: 900, color: '#fff' });
+    });
+  }
+}
+
+function factory(x, y, s, col, alpha) {
+  withScale(x, y, s, () => {
+    ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.moveTo(-50, 30); ctx.lineTo(-50, -10); ctx.lineTo(-20, -30); ctx.lineTo(-20, -10); ctx.lineTo(10, -30); ctx.lineTo(10, -10);
+    ctx.lineTo(50, -10); ctx.lineTo(50, 30); ctx.closePath(); ctx.fill();
+    ctx.fillRect(28, -50, 14, 40);
+    ctx.restore();
+  });
+}
+// 第4位: 日本企業がアメリカへ / 日本製鉄 × USスチール
+function sceneR4(t) {
+  const a1 = L('r4', 1), a2 = L('r4', 2), a3 = L('r4', 3);
+  const v = eo(seg(t, a1, .35));
+  if (v > 0) {
+    ctx.save(); ctx.globalAlpha = v;
+    circle(200, 760, 70, C.red); txt('日本', 200, 775, { size: 40, w: 900 });
+    circle(880, 760, 70, C.blue); txt('米国', 880, 775, { size: 40, w: 900 });
+    arrow(290, 760, 790, 760, 'rgba(255,255,255,0.5)', 8, 1, 36);
+    for (let k = 0; k < 3; k++) {
+      const p = ((t - a1) * 0.6 + k / 3) % 1;
+      factory(lerp(300, 770, p), 710, 0.8, '#fff', Math.sin(Math.PI * p));
+    }
+    txt('生産・投資を米国へ', W / 2, 870, { size: 44, w: 700, color: C.ink2 });
+    ctx.restore();
+  }
+  const b = eo(seg(t, a2, .35));
+  if (b > 0) {
+    ctx.save(); ctx.globalAlpha = b;
+    rr(90, 950, 380, 150, 24, '#3a1b25', 1, C.red, 5); txt('日本製鉄', 280, 1045, { size: 58, w: 900 });
+    rr(610, 950, 380, 150, 24, '#16264a', 1, C.blueL, 5); txt('USスチール', 800, 1045, { size: 54, w: 900 });
+    arrow(480, 1025, 600, 1025, C.gold, 10, 1, 34);
+    txt('買収', 540, 990, { size: 32, w: 900, color: C.gold });
+    const cnt = lerp(0, 2, eo(seg(t, a2 + .9, .9)));
+    txt(`約${cnt.toFixed(1).replace('.0', '')}兆円`, W / 2 - 60, 1200, { size: 92, w: 900, color: C.gold, stroke: 10 });
+    txt('(約141億ドル)', W / 2 + 250, 1195, { size: 34, w: 700, color: C.ink2 });
+    ctx.restore();
+  }
+  const g = t - a3 - 1.0;
+  if (g > 0) {
+    withScale(880, 940, slam(g, 2.4), () => {
+      const gr = ctx.createRadialGradient(-20, -20, 10, 0, 0, 110);
+      gr.addColorStop(0, '#fff6c4'); gr.addColorStop(.5, '#FFD23F'); gr.addColorStop(1, '#a87b00');
+      circle(0, 0, 105, gr, 1, '#fff2a8', 6);
+      txt('黄金株', 0, 10, { size: 50, w: 900, color: '#4a3300' });
+      txt('米政府', 0, -40, { size: 26, w: 700, color: '#4a3300' });
+      txt('拒否権', 0, 55, { size: 26, w: 700, color: '#4a3300' });
+    });
+  }
+}
+
+// 第3位: 防衛費(GDP比)
+function sceneR3(t) {
+  const a1 = L('r3', 1), a2 = L('r3', 2), a3 = L('r3', 3);
+  const v = eo(seg(t, a1, .35)); if (v <= 0) return;
+  const x0 = 120, x1 = 900, MAX = 5;
+  const X = p => lerp(x0, x1, p / MAX);
+  ctx.save(); ctx.globalAlpha = v;
+  rr(60, 640, W - 120, 560, 30, C.panel, 1, C.line, 2);
+  txt('国防費の GDP比', 100, 700, { size: 38, w: 900, color: C.ink2, align: 'left' });
+  [1, 2, 3, 4, 5].forEach(p => {
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(X(p), 740); ctx.lineTo(X(p), 1130); ctx.stroke();
+    txt(p + '%', X(p), 1170, { size: 28, w: 700, color: C.ink3 });
+  });
+  const bar = (y, label, val, col, prog, valLabel) => {
+    txt(label, x0, y - 18, { size: 36, w: 700, align: 'left', color: '#fff' });
+    rr(x0, y, Math.max(0, X(val * prog) - x0), 70, 12, col);
+    if (prog > .05) txt(valLabel, X(val * prog) + 16, y + 52, { size: 52, w: 900, align: 'left', color: col === C.blue ? C.blueL : col });
+  };
+  bar(810, '日本(従来)', 1, '#8a93a6', eo(seg(t, a1 + .3, .6)), '約1%');
+  bar(950, 'NATO 新目標(2035年まで)', 5, C.blue, eo(seg(t, a2 + .6, 1.0)), '');
+  const nv = eo(seg(t, a2 + 1.2, .3));
+  if (nv > 0) withScale(X(5) - 70, 900, slam(t - a2 - 1.2, 2), () => txt('5%', 0, 0, { size: 90, w: 900, color: C.blueL, stroke: 10 }));
+  bar(1090, '日本 新目標(関連経費含む)', 2, C.red, eo(seg(t, a3 + .3, .7)), '2%');
+  ctx.restore();
+  const c = t - a3 - 1.7;
+  if (c > 0) {
+    withScale(760, 1080, slam(c, 2), () => {
+      rr(-150, -50, 300, 100, 20, C.gold, 1);
+      txt('2年前倒し', 0, 18, { size: 50, w: 900, color: '#1a1300' });
+    });
+  }
+}
+
+// 第2位: 80兆円
+function sceneR2(t) {
+  const a1 = L('r2', 1), a2 = L('r2', 2), a3 = L('r2', 3);
+  const v = t - a1; if (v <= 0) return;
+  const n = lerp(0, 80, eo(seg(t, a1, 1.2)));
+  withScale(W / 2, 800, slam(v, 1.6), () => {
+    ctx.save(); ctx.shadowColor = 'rgba(255,210,63,0.6)'; ctx.shadowBlur = 40;
+    txt(`${Math.round(n)}兆円`, 0, 0, { size: 240, w: 900, color: C.gold, stroke: 16 });
+    ctx.restore();
+    txt('約', -400, -120, { size: 70, w: 900, color: '#fff', stroke: 10 });
+  });
+  const b = eo(seg(t, a2 + .4, .4));
+  txt('= 5,500億ドル', W / 2, 940 + (1 - b) * 40, { size: 76, w: 900, alpha: b, stroke: 10 });
+  const c = eo(seg(t, a3 + .1, .4));
+  if (c > 0) {
+    ctx.save(); ctx.globalAlpha = c;
+    const after = eio(seg(t, a3 + 1.4, .9));
+    const us = lerp(.5, .9, after);
+    txt(after > .5 ? '投資の回収後の利益配分' : '投資の回収までの利益配分', W / 2, 1050, { size: 38, w: 700, color: C.ink2 });
+    const x0 = 100, w = W - 200, y = 1080, h = 110;
+    rr(x0, y, w, h, 20, C.red);
+    ctx.save(); ctx.beginPath(); ctx.roundRect(x0, y, w, h, 20); ctx.clip();
+    ctx.fillStyle = C.blue; ctx.fillRect(x0, y, w * us, h); ctx.restore();
+    txt(`米国 ${Math.round(us * 100)}%`, x0 + 30, y + 75, { size: 54, w: 900, align: 'left' });
+    txt(`日本 ${Math.round((1 - us) * 100)}%`, x0 + w - 24, y + 75, { size: after > .5 ? 34 : 54, w: 900, align: 'right' });
+    ctx.restore();
+  }
+}
+
+// 第1位: 関税 15%
+function sceneR1(t) {
+  const a1 = L('r1', 1), a2 = L('r1', 2), a3 = L('r1', 3);
+  // 行1: 巨大な 15%
+  const big = t - a1, bigOut = eio(seg(t, a2 - .05, .3));
+  if (big > 0 && bigOut < 1) {
+    withScale(W / 2, 880, slam(big, 2.8) * (1 - bigOut * .6), () => {
+      ctx.save(); ctx.globalAlpha = 1 - bigOut;
+      txt('15%', 0, 80, { size: 320, w: 900, color: C.red, stroke: 20, strokeColor: '#fff' });
+      txt('関税', 0, -200, { size: 80, w: 900, stroke: 10 });
+      ctx.restore();
+    });
+  }
+  // 行2: 自動車関税 2.5% → 27.5% → 15%
+  const v = eo(seg(t, a2, .3)), dim = 1 - .75 * eo(seg(t, a3, .3));
+  if (v > 0) {
+    ctx.save(); ctx.globalAlpha = v * dim;
+    txt('自動車の対米関税', W / 2, 690, { size: 46, w: 900, color: C.ink2 });
+    const base = 1170, sc = 15.5;
+    const bars = [['以前', 2.5, '#8a93a6', a2 + .2], ['2025年4月', 27.5, C.redD, a2 + .7], ['合意後', 15, C.red, a2 + 1.3]];
+    bars.forEach(([lab, val, col, st], i) => {
+      const x = 230 + i * 310, p = eo(seg(t, st, .45)), h = val * sc * p;
+      rr(x - 95, base - h, 190, h, 14, col);
+      if (p > 0) txt(`${val}%`, x, base - h - 22, { size: 60, w: 900, color: i === 2 ? C.gold : '#fff', stroke: 8 });
+      txt(lab, x, base + 52, { size: 36, w: 700, color: C.ink2 });
+    });
+    ctx.restore();
+    const x6 = t - a2 - 2.0;
+    if (x6 > 0 && dim > .3) withScale(W / 2 - 60, 880, slam(x6, 2.4), () => {
+      ctx.save(); ctx.globalAlpha = dim; ctx.rotate(-.12);
+      rr(-140, -80, 280, 160, 26, C.gold, 1); txt('×6', 0, 50, { size: 130, w: 900, color: '#1a0a00' });
+      ctx.restore();
+    });
+  }
+  // 行3: トヨタ
+  const k = t - a3 - .15;
+  if (k > 0) {
+    withScale(W / 2, 900, slam(k, 1.8), () => {
+      rr(-420, -200, 840, 400, 36, 'rgba(10,10,14,0.92)', 1, C.red, 8);
+      txt('トヨタ 1社だけで', 0, -100, { size: 56, w: 900, color: C.ink2 });
+      const n = lerp(0, 1, eo(seg(t, a3 + .3, .7)));
+      txt(`年間 ${n < 1 ? n.toFixed(1) : '1'}兆円超`, 0, 40, { size: 108, w: 900, color: C.red, stroke: 8, strokeColor: '#fff' });
+      txt('の減益要因(会社試算 約1.4兆円)', 0, 130, { size: 34, w: 700, color: C.ink3 });
+    });
+  }
+}
+
+// 「溜め」: 第1位の直前
+function scenePause(t, s0, s1) {
+  const p = (t - s0) / (s1 - s0);
+  ctx.fillStyle = `rgba(0,0,0,${0.93 * Math.min(1, p * 4)})`; ctx.fillRect(0, 0, W, H);
+  withScale(W / 2, 900, 1 + p * 0.12, () => txt('第1位は…', 0, 0, { size: 120, w: 900, color: C.red, alpha: eo(p * 3), stroke: 10 }));
+}
+
+const RECAP = [['1位', '対米輸出に15%関税', C.red], ['2位', '約80兆円の対米投資', C.gold], ['3位', '防衛費の増額圧力', '#fff'],
+               ['4位', '日本企業がアメリカへ', '#fff'], ['5位', '株と円が乱高下', '#fff']];
+function sceneOutro(t) {
+  const a0 = L('outro', 0), a1 = L('outro', 1);
+  const up = eio(seg(t, a1 - .1, .4));
+  ctx.save(); ctx.translate(0, -up * 120); ctx.globalAlpha = 1 - up * .55;
+  txt('まとめ', W / 2, 400, { size: 64, w: 900, color: C.gold });
+  RECAP.forEach(([r, s, col], i) => {
+    const p = eo(seg(t, a0 + i * .15, .35));
+    const y = 470 + i * 120;
+    ctx.save(); ctx.globalAlpha *= p; ctx.translate((1 - p) * 300, 0);
+    rr(90, y, W - 180, 100, 20, i === 0 ? 'rgba(232,56,61,0.28)' : C.panel, 1, i === 0 ? C.red : C.line, 3);
+    txt(r, 160, y + 68, { size: 46, w: 900, color: col });
+    txt(s, 240, y + 68, { size: 50, w: 900, align: 'left' });
+    ctx.restore();
+  });
+  ctx.restore();
+  // CTA
+  const c = t - a1 - .2;
+  if (c > 0) {
+    const s = slam(c, 1.8) * (1 + .04 * Math.sin(t * 7));
+    withScale(W / 2, 1150, s, () => {
+      ctx.save(); ctx.fillStyle = C.gold; ctx.beginPath(); ctx.roundRect(-380, -90, 760, 180, 50); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-220, 85); ctx.lineTo(-260, 160); ctx.lineTo(-140, 85); ctx.closePath(); ctx.fill(); ctx.restore();
+      txt('あなたは何位が気になる？', 0, -12, { size: 52, w: 900, color: '#1a1300' });
+      txt('コメントで教えて！', 0, 56, { size: 50, w: 900, color: C.redD });
+    });
+  }
+  const cr = eo(seg(t, a1 + 1.5, .5));
+  txt('数値は2025〜26年の公表値・報道に基づく概数', W / 2, 1565, { size: 28, w: 500, color: C.ink3, alpha: cr });
+}
+
+// ---------- メイン ----------
+const DRAW = { hook: sceneHook, r5: sceneR5, r4: sceneR4, r3: sceneR3, r2: sceneR2, r1: sceneR1, outro: sceneOutro };
+function drawScene(sc, t) {
+  if (sc.id.startsWith('r')) rankBadge(t, sc.id);
+  DRAW[sc.id](t);
+}
+function render(t) {
+  const fx = impactFx(t);
+  const sc = TL.scenes.find(s => t >= s.start && t < s.end) || TL.scenes[TL.scenes.length - 1];
+  const r1 = SC.r1, inPause = t >= r1.start - 0.7 && t < r1.start;
+  ctx.save();
+  if (fx.shake > 0) ctx.translate((hash(t * 91) - .5) * 2 * fx.shake, (hash(t * 57 + 3) - .5) * 2 * fx.shake);
+  background(t, sc.id === 'r1' ? eo(seg(t, L('r1', 0), .3)) : 0);
+  if (inPause) {
+    drawScene(SC.r2, SC.r2.end - 0.01);
+    scenePause(t, r1.start - 0.7, r1.start);
+  } else {
+    // 切り替え: 新シーンが右からスライドイン、前シーンは左へ
+    const idx = TL.scenes.indexOf(sc), p = eio(seg(t, sc.start, 0.28));
+    if (idx > 0 && p < 1 && sc.id !== 'r1') {
+      ctx.save(); ctx.translate(-W * p, 0); ctx.globalAlpha = 1 - p;
+      drawScene(TL.scenes[idx - 1], TL.scenes[idx - 1].end - 0.01); ctx.restore();
+    }
+    ctx.save(); if (idx > 0) ctx.translate(W * (1 - p), 0);
+    drawScene(sc, t); ctx.restore();
+    if (sc.id !== 'hook') tracker(t, sc.id, sc.id === 'outro' ? 1 - eo(seg(t, sc.start, .3)) : eo(seg(t, SC.r5.start, .4)));
+  }
+  subtitle(t);
+  ctx.restore();
+  progressBar(t);
+  txt('VOICEVOX:青山龍星', 40, 150, { size: 28, w: 500, color: 'rgba(255,255,255,0.55)', align: 'left' });
+  if (fx.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${fx.flash})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// サムネイル
+function renderThumb() {
+  background(3, 0);
+  circle(W / 2, 980, 520, C.red, 0.18);
+  txt('トランプ', W / 2, 560, { size: 250, w: 900, color: C.red, stroke: 18, strokeColor: '#fff' });
+  txt('再登場で', W / 2, 740, { size: 140, w: 900, stroke: 14 });
+  txt('日本は', W / 2, 930, { size: 170, w: 900, stroke: 14 });
+  txt('ここまで変わった', W / 2, 1110, { size: 128, w: 900, color: C.gold, stroke: 14, maxW: 1000 });
+  rr(190, 1220, 700, 260, 40, C.gold);
+  txt('影響TOP5', W / 2, 1400, { size: 150, w: 900, color: '#111' });
+  txt('1位は「15%」', W / 2, 1640, { size: 90, w: 900, color: '#fff', stroke: 12 });
+}
+
+window.render = render; window.renderThumb = renderThumb; window.FPS = FPS; window.DURATION = DURATION;
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  document.fonts.ready.then(() => { const s = performance.now(); (function loop() { render(((performance.now() - s) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+}
+</script>
+</body>
+</html>
