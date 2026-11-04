@@ -38,8 +38,12 @@ with wave.open(wav, 'wb') as w:
     w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR)
     w.writeframes((mix * 32767).astype(np.int16).tobytes())
 
-# -14 LUFS に正規化してステレオ AAC で合成
+# 積分ラウドネスを計測し、-14 LUFS(YouTube の基準)になるようゲインを掛けてステレオ AAC で合成
+import re
+r = subprocess.run(['ffmpeg', '-hide_banner', '-i', wav, '-af', 'ebur128', '-f', 'null', '-'], capture_output=True, text=True)
+lufs = float(re.findall(r'I:\s+(-?[\d.]+) LUFS', r.stderr)[-1])
+af = f'volume={-14 - lufs:.2f}dB,alimiter=limit=0.84:level=false'
 subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', SRC, '-i', wav, '-c:v', 'copy',
-                '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11', '-ac', '2', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k',
+                '-af', af, '-ac', '2', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k',
                 '-shortest', '-movflags', '+faststart', DST], check=True)
-print('wrote', DST)
+print(f'wrote {DST} ({lufs:.1f} LUFS -> -14 LUFS)')

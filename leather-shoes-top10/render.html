@@ -14,7 +14,7 @@
 // ------------------------------------------------------------
 // 革靴ブランド TOP10  (9:16 ショート動画)
 // render(t) は時刻 t[秒] のフレームを決定論的に描画する。
-// シーンの尺は timeline.json(narrate.py が音声から生成)、写真は photos.json に従う。
+// シーンの尺は timeline.json(narrate.py が音声から生成)。写真は使わず、革靴はイラストとして描く。
 // ------------------------------------------------------------
 const W = 1080, H = 1920, FPS = 30;
 const cv = document.getElementById('c');
@@ -28,20 +28,20 @@ const C = {
 
 // ---------- ブランドデータ(価格は既製靴のおおよその目安) ----------
 const BRANDS = {
-  r10: { rank: 10, name: 'REGAL', kana: 'リーガル', country: '🇯🇵 日本', price: 20000, model: '2504 プレーントゥ' },
-  r9:  { rank: 9,  name: 'Paraboot', kana: 'パラブーツ', country: '🇫🇷 フランス', price: 70000, model: 'シャンボード' },
-  r8:  { rank: 8,  name: 'Santoni', kana: 'サントーニ', country: '🇮🇹 イタリア', price: 120000, model: 'ダブルモンク' },
-  r7:  { rank: 7,  name: 'Alden', kana: 'オールデン', country: '🇺🇸 アメリカ', price: 100000, model: '990 コードバン' },
-  r6:  { rank: 6,  name: 'J.M. Weston', kana: 'ジェイエムウエストン', country: '🇫🇷 フランス', price: 120000, model: '180 ローファー' },
-  r5:  { rank: 5,  name: 'Crockett & Jones', kana: 'クロケット&ジョーンズ', country: '🇬🇧 イギリス', price: 100000, model: 'オードリー' },
-  r4:  { rank: 4,  name: "Church's", kana: 'チャーチ', country: '🇬🇧 イギリス', price: 120000, model: 'コンサル' },
-  r3:  { rank: 3,  name: 'Berluti', kana: 'ベルルッティ', country: '🇫🇷 フランス', price: 250000, model: 'アレッサンドロ' },
-  r2:  { rank: 2,  name: 'Edward Green', kana: 'エドワードグリーン', country: '🇬🇧 イギリス', price: 200000, model: 'チェルシー' },
-  r1:  { rank: 1,  name: 'John Lobb', kana: 'ジョンロブ', country: '🇬🇧 イギリス', price: 250000, model: 'シティII' },
+  r10: { rank: 10, name: 'REGAL', kana: 'リーガル', country: '🇯🇵 日本', price: 20000, model: '2504 プレーントゥ', shoe: { type: 'plain', c: ['#3a3a3e', '#0c0c0e'] } },
+  r9:  { rank: 9,  name: 'Paraboot', kana: 'パラブーツ', country: '🇫🇷 フランス', price: 70000, model: 'シャンボード', shoe: { type: 'chambord', c: ['#8a5a34', '#3b220f'], sole: 'chunky' } },
+  r8:  { rank: 8,  name: 'Santoni', kana: 'サントーニ', country: '🇮🇹 イタリア', price: 120000, model: 'ダブルモンク', shoe: { type: 'monk', c: ['#b07040', '#3a1d0c'], grad: true } },
+  r7:  { rank: 7,  name: 'Alden', kana: 'オールデン', country: '🇺🇸 アメリカ', price: 100000, model: '990 コードバン', shoe: { type: 'plain', c: ['#7a2430', '#2a070c'], sole: 'thick' } },
+  r6:  { rank: 6,  name: 'J.M. Weston', kana: 'ジェイエムウエストン', country: '🇫🇷 フランス', price: 120000, model: '180 ローファー', shoe: { type: 'loafer', c: ['#6a3c22', '#26130a'] } },
+  r5:  { rank: 5,  name: 'Crockett & Jones', kana: 'クロケット&ジョーンズ', country: '🇬🇧 イギリス', price: 100000, model: 'オードリー', shoe: { type: 'captoe', c: ['#b9824c', '#5a3416'] } },
+  r4:  { rank: 4,  name: "Church's", kana: 'チャーチ', country: '🇬🇧 イギリス', price: 120000, model: 'コンサル', shoe: { type: 'captoe', c: ['#2e2e33', '#08080a'], brogue: true } },
+  r3:  { rank: 3,  name: 'Berluti', kana: 'ベルルッティ', country: '🇫🇷 フランス', price: 250000, model: 'アレッサンドロ', shoe: { type: 'wholecut', c: ['#5a6fb0', '#3a1640'], patina: true } },
+  r2:  { rank: 2,  name: 'Edward Green', kana: 'エドワードグリーン', country: '🇬🇧 イギリス', price: 200000, model: 'チェルシー', shoe: { type: 'captoe', c: ['#9a5a2c', '#3c1a08'], grad: true } },
+  r1:  { rank: 1,  name: 'John Lobb', kana: 'ジョンロブ', country: '🇬🇧 イギリス', price: 250000, model: 'シティII', shoe: { type: 'captoe', c: ['#34343a', '#060607'], gold: true } },
 };
 const ORDER = ['r10', 'r9', 'r8', 'r7', 'r6', 'r5', 'r4', 'r3', 'r2', 'r1'];
 
-let TL = null, SC = {}, PH = {}, IMG = {}, DURATION = 60;
+let TL = null, DURATION = 60;
 
 // ---------- ユーティリティ ----------
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -80,38 +80,183 @@ function rrect(x, y, w, h, r, fill, alpha = 1) {
   ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = fill; rrectPath(x, y, w, h, r); ctx.fill(); ctx.restore();
 }
 
-// ---------- 写真 ----------
-// 写真をボックスにカバー表示し、ゆっくりズーム&パン(Ken Burns)
-function photo(key, x, y, w, h, p, { zoom = [1.04, 1.16], pan = [0, 0, 0, 0], alpha = 1, blur = 0, gray = 0, bright = 1 } = {}) {
-  const img = IMG[key];
+// ---------- 革靴のイラスト(横から見た図、つま先が右) ----------
+// 座標は靴の長さ 1000 の単位系。原点はかかと下端付近。
+function topY(x) { // 履き口〜甲のラインの高さ(紐やストラップの位置を決めるのに使う)
+  if (x <= 300) return lerp(-248, -224, (x - 60) / 240);
+  if (x <= 480) return lerp(-224, -266, (x - 300) / 180);
+  return lerp(-266, -200, (x - 480) / 150);
+}
+function upperPath(type) {
+  ctx.beginPath();
+  ctx.moveTo(40, -24);
+  if (type === 'loafer') {
+    ctx.bezierCurveTo(5, -105, 14, -195, 62, -236);
+    ctx.bezierCurveTo(150, -228, 260, -210, 340, -210);
+    ctx.bezierCurveTo(420, -212, 470, -228, 520, -228);
+    ctx.bezierCurveTo(620, -224, 700, -186, 760, -152);
+  } else {
+    ctx.bezierCurveTo(5, -110, 12, -200, 60, -248);
+    ctx.bezierCurveTo(150, -240, 240, -222, 300, -224);
+    ctx.bezierCurveTo(380, -238, 430, -262, 480, -266);
+    ctx.bezierCurveTo(600, -262, 690, -200, 760, -152);
+  }
+  ctx.bezierCurveTo(850, -128, 922, -116, 958, -98);
+  ctx.bezierCurveTo(1008, -76, 1012, -34, 978, -22);
+  ctx.lineTo(40, -24);
+  ctx.closePath();
+}
+function solePath(ts) {
+  const hh = ts + 34;
+  ctx.beginPath();
+  ctx.moveTo(18, -26); ctx.lineTo(985, -26);
+  ctx.quadraticCurveTo(1022, -22, 1004, ts - 8);
+  ctx.quadraticCurveTo(880, ts + 26, 660, hh - 4);
+  ctx.lineTo(560, hh - 4);
+  ctx.quadraticCurveTo(420, hh - 22, 262, hh - 10);
+  ctx.lineTo(250, hh); ctx.lineTo(28, hh); ctx.lineTo(18, -26);
+  ctx.closePath();
+}
+function stitch(fn, color, w = 4, dash = [10, 8]) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash); ctx.lineCap = 'round';
+  ctx.beginPath(); fn(); ctx.stroke(); ctx.restore();
+}
+function seam(fn, w = 5, color = 'rgba(0,0,0,0.55)') {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); fn(); ctx.stroke(); ctx.restore();
+}
+// spec: { type, c:[明, 暗], sole, grad, patina, brogue, gold }
+// o: { sil: シルエット化(0..1), sweep: 光沢の帯の位置(0..1, 範囲外なら無し) }
+function drawShoe(spec, x, y, k, o = {}) {
+  const { rot = 0, sil = 0, sweep = -1, alpha = 1 } = o;
+  const ts = spec.sole === 'chunky' ? 44 : spec.sole === 'thick' ? 30 : 22;
+  const stitchCol = spec.gold ? 'rgba(240,200,120,0.75)' : 'rgba(255,235,210,0.28)';
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
-  if (!img) {
-    const g = ctx.createLinearGradient(x, y, x + w, y + h);
-    g.addColorStop(0, '#3a2a1e'); g.addColorStop(1, '#1a120c');
-    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
-    text('PHOTO: ' + key, x + w / 2, y + h / 2, { size: 40, color: C.ink3 });
-    ctx.restore(); return;
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(k, k); ctx.translate(-505, 120);
+  // 影
+  ctx.save(); ctx.globalAlpha = alpha * 0.55; ctx.fillStyle = '#000'; ctx.filter = 'blur(18px)';
+  ctx.beginPath(); ctx.ellipse(510, ts + 50, 520, 34, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  // ソール
+  solePath(ts);
+  const sg = ctx.createLinearGradient(0, -26, 0, ts + 34);
+  sg.addColorStop(0, spec.sole === 'chunky' ? '#3a2a1e' : '#2a1a10'); sg.addColorStop(1, '#0b0705');
+  ctx.fillStyle = sg; ctx.fill();
+  if (spec.sole === 'chunky') { // ラバーソールの溝
+    for (let i = 0; i < 26; i++) seam(() => { ctx.moveTo(40 + i * 37, ts + 22); ctx.lineTo(52 + i * 37, ts + 34); }, 4, 'rgba(0,0,0,0.6)');
   }
-  const meta = PH[key] || {};
-  const z = lerp(zoom[0], zoom[1], p);
-  const s = Math.max(w / img.width, h / img.height) * z;
-  const iw = img.width * s, ih = img.height * s;
-  const fx = meta.fx ?? 0.5, fy = meta.fy ?? 0.5;     // 被写体の位置(0..1)
-  let cx = x + w / 2 - (fx - 0.5) * iw + lerp(pan[0], pan[2], p);
-  let cy = y + h / 2 - (fy - 0.5) * ih + lerp(pan[1], pan[3], p);
-  cx = clamp(cx, x + w - iw / 2, x + iw / 2); cy = clamp(cy, y + h - ih / 2, y + ih / 2);
-  const f = [];
-  if (blur) f.push(`blur(${blur}px)`); if (gray) f.push(`grayscale(${gray})`); if (bright !== 1) f.push(`brightness(${bright})`);
-  if (f.length) ctx.filter = f.join(' ');
-  ctx.drawImage(img, cx - iw / 2, cy - ih / 2, iw, ih);
+  // アッパー
+  upperPath(spec.type);
+  let g = ctx.createLinearGradient(0, -310, 0, -20);
+  g.addColorStop(0, spec.c[0]); g.addColorStop(1, spec.c[1]);
+  ctx.fillStyle = g; ctx.fill();
+  ctx.save(); upperPath(spec.type); ctx.clip();
+  if (spec.grad || spec.patina) { // つま先とかかとを明るく(アンティーク仕上げ/パティーヌ)
+    const rg = ctx.createRadialGradient(880, -110, 10, 880, -110, 330);
+    rg.addColorStop(0, spec.patina ? 'rgba(140,170,255,0.55)' : 'rgba(255,190,120,0.45)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg; ctx.fillRect(0, -330, 1050, 340);
+    const hg = ctx.createRadialGradient(70, -170, 10, 70, -170, 200);
+    hg.addColorStop(0, spec.patina ? 'rgba(200,90,190,0.5)' : 'rgba(255,190,120,0.35)'); hg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = hg; ctx.fillRect(0, -330, 1050, 340);
+    const mg = ctx.createRadialGradient(470, -170, 10, 470, -170, 260);
+    mg.addColorStop(0, 'rgba(0,0,0,0.35)'); mg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = mg; ctx.fillRect(0, -330, 1050, 340);
+  }
+  // 細部
+  const t = spec.type;
+  if (t === 'captoe' || t === 'plain' || t === 'chambord') {
+    // 羽根(紐を通す部分)
+    seam(() => { ctx.moveTo(312, -196); ctx.quadraticCurveTo(420, -222, 525, -232); ctx.quadraticCurveTo(565, -200, 540, -168); });
+    if (t !== 'captoe') seam(() => { ctx.moveTo(300, -222); ctx.bezierCurveTo(340, -160, 320, -90, 365, -26); }); // 外羽根
+    else seam(() => { ctx.moveTo(318, -200); ctx.bezierCurveTo(290, -150, 320, -90, 292, -26); });            // 内羽根のクォーター
+  }
+  if (t === 'captoe') {
+    seam(() => { ctx.moveTo(772, -146); ctx.quadraticCurveTo(800, -80, 808, -26); }, 6);
+    stitch(() => { ctx.moveTo(756, -150); ctx.quadraticCurveTo(784, -82, 790, -26); }, stitchCol, 3, [8, 7]);
+    if (spec.brogue) for (let i = 0; i < 9; i++) {
+      const u = i / 8, px = lerp(784, 798, u) + 0 * u, py = lerp(-138, -36, u);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.arc(px - 22, py, 5, 0, 7); ctx.fill();
+    }
+  }
+  if (t === 'chambord') stitch(() => { ctx.moveTo(560, -238); ctx.bezierCurveTo(700, -210, 900, -150, 970, -78); }, 'rgba(255,230,190,0.6)', 6, [14, 9]);
+  if (t === 'loafer') {
+    stitch(() => { ctx.moveTo(470, -226); ctx.bezierCurveTo(640, -214, 880, -150, 975, -70); }, 'rgba(255,230,190,0.45)', 5, [12, 8]);
+    // サドル(ストラップ)とペニースロット
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath(); ctx.moveTo(470, -224); ctx.lineTo(610, -214); ctx.quadraticCurveTo(600, -150, 560, -120); ctx.lineTo(430, -138); ctx.closePath(); ctx.fill();
+    seam(() => { ctx.moveTo(470, -224); ctx.lineTo(430, -138); ctx.lineTo(560, -120); ctx.quadraticCurveTo(600, -150, 610, -214); }, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.beginPath(); ctx.ellipse(515, -170, 40, 10, -0.1, 0, 7); ctx.fill();
+  }
+  if (t === 'monk') {
+    seam(() => { ctx.moveTo(760, -150); ctx.quadraticCurveTo(790, -80, 800, -26); }, 5);
+    for (let i = 0; i < 2; i++) {
+      const x0 = 400 + i * 66;
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.save(); ctx.beginPath(); ctx.moveTo(x0, topY(x0) + 4); ctx.lineTo(x0 + 46, topY(x0 + 46) + 4); ctx.lineTo(x0 - 6, -128 + i * 6); ctx.lineTo(x0 - 50, -136 + i * 6); ctx.closePath();
+      const sg2 = ctx.createLinearGradient(0, -300, 0, -120); sg2.addColorStop(0, spec.c[0]); sg2.addColorStop(1, spec.c[1]);
+      ctx.fillStyle = sg2; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
+      // バックル
+      ctx.save(); ctx.translate(x0 - 30, -132 + i * 6); ctx.rotate(-0.15);
+      ctx.strokeStyle = '#d9b46a'; ctx.lineWidth = 7; ctx.strokeRect(-24, -18, 48, 34); ctx.restore();
+    }
+  }
+  if (t === 'plain' || t === 'captoe' || t === 'chambord') {
+    // 靴紐
+    for (let i = 0; i < 5; i++) {
+      const lx = 336 + i * 40, ly = topY(lx) + 18;
+      ctx.fillStyle = '#1a120c'; ctx.beginPath(); ctx.arc(lx, ly, 6, 0, 7); ctx.fill();
+      seam(() => { ctx.moveTo(lx - 14, ly - 12); ctx.lineTo(lx + 22, ly + 2); }, 8, spec.gold ? '#151515' : '#120c08');
+    }
+  }
+  // ウェルトのステッチとかかとの縫い目
+  stitch(() => { ctx.moveTo(50, -36); ctx.lineTo(975, -36); }, stitchCol, 3, [9, 8]);
+  seam(() => { ctx.moveTo(30, -60); ctx.bezierCurveTo(14, -140, 24, -205, 60, -244); }, 3, 'rgba(255,255,255,0.12)');
+  // 光沢(つま先・かかと)
+  const sh = ctx.createRadialGradient(860, -130, 4, 860, -130, 120);
+  sh.addColorStop(0, spec.gold ? 'rgba(255,240,210,0.6)' : 'rgba(255,255,255,0.45)'); sh.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sh; ctx.beginPath(); ctx.ellipse(860, -130, 150, 46, -0.25, 0, 7); ctx.fill();
+  const sh2 = ctx.createRadialGradient(80, -220, 4, 80, -220, 90);
+  sh2.addColorStop(0, 'rgba(255,255,255,0.22)'); sh2.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = sh2; ctx.fillRect(0, -320, 200, 220);
+  // 光沢の帯がゆっくり横切る
+  if (sweep >= 0 && sweep <= 1) {
+    const sx = lerp(-200, 1200, sweep);
+    const bg2 = ctx.createLinearGradient(sx - 120, 0, sx + 120, 0);
+    bg2.addColorStop(0, 'rgba(255,255,255,0)'); bg2.addColorStop(0.5, 'rgba(255,248,230,0.22)'); bg2.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = bg2; ctx.fillRect(sx - 120, -330, 240, 340);
+  }
+  ctx.restore();
+  // シルエット(焦らし用): 黒く塗りつぶして金の縁取り
+  if (sil > 0) {
+    ctx.save(); ctx.globalAlpha = alpha * sil;
+    upperPath(spec.type); ctx.fillStyle = '#050403'; ctx.fill(); solePath(ts); ctx.fill();
+    ctx.shadowColor = C.gold; ctx.shadowBlur = 30; ctx.strokeStyle = 'rgba(226,181,101,0.9)'; ctx.lineWidth = 5;
+    upperPath(spec.type); ctx.stroke(); solePath(ts); ctx.stroke();
+    ctx.restore();
+  }
+  // 輪郭
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3; upperPath(spec.type); ctx.stroke();
   ctx.restore();
 }
-function credit(keys, y, alpha = 1) {
-  const s = keys.map(k => PH[k] && PH[k].credit).filter(Boolean);
-  if (!s.length) return;
-  text('Photo: ' + [...new Set(s)].join(' / '), W - 24, y, { size: 19, weight: 'normal', color: 'rgba(255,255,255,0.75)', align: 'right', alpha, maxW: W - 48, shadow: 6 });
+// スポットライトと台座
+function stage(x, y, w, alpha = 1, warm = false) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(x, y - 120, 20, x, y - 60, w * 0.75);
+  g.addColorStop(0, warm ? 'rgba(255,200,120,0.32)' : 'rgba(255,225,190,0.22)'); g.addColorStop(1, 'rgba(255,225,190,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - w, y - w, w * 2, w * 2);
+  const p = ctx.createRadialGradient(x, y + 90, 10, x, y + 90, w * 0.55);
+  p.addColorStop(0, 'rgba(255,220,170,0.18)'); p.addColorStop(1, 'rgba(255,220,170,0)');
+  ctx.fillStyle = p; ctx.beginPath(); ctx.ellipse(x, y + 90, w * 0.55, 70, 0, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function rays(x, y, t, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(t * 0.25);
+  for (let i = 0; i < 16; i++) {
+    ctx.rotate(Math.PI * 2 / 16);
+    const g = ctx.createLinearGradient(0, 0, 900, 0);
+    g.addColorStop(0, 'rgba(246,217,152,0.35)'); g.addColorStop(1, 'rgba(246,217,152,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(900, -70); ctx.lineTo(900, 70); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
 }
 
 // ---------- 背景・共通UI ----------
@@ -129,7 +274,6 @@ function vignette(a = 0.6) {
   g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${a})`);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 }
-function flash(a) { if (a <= 0) return; ctx.save(); ctx.globalAlpha = clamp(a); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 function shake(t, t0, amp = 18, dur = 0.35) {
   const p = seg(t, t0, dur); if (p <= 0 || p >= 1) return;
   const k = (1 - p) * amp; ctx.translate((hash(t * 97) - 0.5) * 2 * k, (hash(t * 53 + 1) - 0.5) * 2 * k);
@@ -175,85 +319,71 @@ function wrap(str, maxW) {
 // ---------- シーン ----------
 function sceneHook(t, s) {
   const lt = t - s.start;
-  // 写真の高速カット(0.45 秒ごと)
-  const cuts = ['hook1', 'hook2', 'hook3', 'hook4', 'hook5', 'hook6', 'hook7'];
+  background(t, true);
+  // 革靴のイラストを 0.45 秒ごとにテンポよく切り替える(横からスライドイン)
+  const cuts = ['r10', 'r8', 'r3', 'r6', 'r2', 'r9', 'r5'];
   const i = Math.min(cuts.length - 1, Math.floor(lt / 0.45));
   const p = (lt % 0.45) / 0.45;
-  photo(cuts[i], 0, 0, W, H, p, { zoom: [1.25, 1.08], bright: 0.75 });
-  vignette(0.8);
-  flash(0.55 * (1 - seg(lt % 0.45, 0, 0.12)) * (i > 0 ? 1 : 0));
+  stage(W / 2, 1380, 900, 1, true);
+  const e = easeOut(clamp(p * 2.5));
+  drawShoe(BRANDS[cuts[i]].shoe, W / 2 + (1 - e) * 500 * (i % 2 ? -1 : 1), 1380, 0.95 + 0.06 * p, { rot: -0.03 });
+  vignette(0.7);
   ctx.save(); shake(t, s.start, 22, 0.4);
   const a = backOut(seg(lt, 0.05, 0.35));
-  ctx.translate(W / 2, 820); ctx.scale(lerp(2.2, 1, a), lerp(2.2, 1, a));
+  ctx.translate(W / 2, 560); ctx.scale(lerp(2.2, 1, a), lerp(2.2, 1, a));
   text('一生モノの革靴', 0, 0, { size: 118, color: C.ink, stroke: 14, strokeColor: '#140d08', alpha: clamp(a * 2), shadow: 30 });
   ctx.restore();
   const b = backOut(seg(lt, 0.9, 0.35));
-  ctx.save(); ctx.translate(W / 2, 1000); ctx.scale(lerp(0.3, 1, b), lerp(0.3, 1, b));
+  ctx.save(); ctx.translate(W / 2, 760); ctx.scale(lerp(0.3, 1, b), lerp(0.3, 1, b));
   text('どれを選ぶ？', 0, 0, { size: 150, color: C.gold2, stroke: 16, strokeColor: '#140d08', alpha: clamp(b * 2), shadow: 30 });
   ctx.restore();
-  credit([cuts[i]], H - 50);
 }
 
 function sceneIntro(t, s) {
   const lt = t - s.start, d = s.dur;
   background(t);
-  // 写真コラージュ(3×3)が順に飛び込む
-  const keys = ['r10a', 'r9a', 'r8a', 'r7a', 'r6a', 'r5a', 'r4a', 'r3a', 'r2a'];
-  const cw = 330, ch = 330, gx = (W - cw * 3 - 24 * 2) / 2, gy = 560;
+  // 2〜10位の靴のカード(3×3)が順に飛び込む
+  const keys = ['r10', 'r9', 'r8', 'r7', 'r6', 'r5', 'r4', 'r3', 'r2'];
+  const cw = 330, ch = 330, gx = (W - cw * 3 - 24 * 2) / 2, gy = 600;
   keys.forEach((k, i) => {
     const p = backOut(seg(lt, 0.05 + i * 0.07, 0.35));
     const x = gx + (i % 3) * (cw + 24), y = gy + Math.floor(i / 3) * (ch + 24);
     ctx.save();
     ctx.translate(x + cw / 2, y + ch / 2); ctx.scale(p, p); ctx.rotate((hash(i) - 0.5) * 0.12 * (1 - p));
     ctx.beginPath(); rrectPath(-cw / 2, -ch / 2, cw, ch, 18); ctx.clip();
-    photo(k, -cw / 2, -ch / 2, cw, ch, lt / d, { zoom: [1.05, 1.15], gray: 0.15, bright: 0.85 });
+    const g = ctx.createRadialGradient(0, -40, 10, 0, 0, cw * 0.8);
+    g.addColorStop(0, '#4a3524'); g.addColorStop(1, '#1a120c');
+    ctx.fillStyle = g; ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+    drawShoe(BRANDS[k].shoe, 0, 30, 0.29 + 0.02 * (lt / d), { rot: -0.05 });
+    text(BRANDS[k].name, 0, ch / 2 - 36, { size: 28, font: SERIF, color: C.ink2, maxW: cw - 30 });
     ctx.restore();
-    // 謎の「?」を1位に(真ん中には置かず、右下を1位に置き換え)
   });
-  // 中央のタイトル帯
   const a = easeOut(seg(lt, 0.1, 0.4));
-  rrect(0, 330 - 10, W * a, 200, 0, 'rgba(10,7,5,0.88)');
-  text('世界の革靴ブランド', W / 2 - (1 - a) * 300, 380, { size: 66, color: C.ink, alpha: a });
+  rrect(0, 330, W * a, 210, 0, 'rgba(10,7,5,0.88)');
+  text('世界の革靴ブランド', W / 2 - (1 - a) * 300, 392, { size: 66, color: C.ink, alpha: a });
   const b = backOut(seg(lt, 0.45, 0.4));
-  ctx.save(); ctx.translate(W / 2, 470); ctx.scale(lerp(1.8, 1, b), lerp(1.8, 1, b));
+  ctx.save(); ctx.translate(W / 2, 485); ctx.scale(lerp(1.8, 1, b), lerp(1.8, 1, b));
   text('TOP 10', 0, 0, { size: 120, font: SERIF, color: C.gold, alpha: clamp(b * 2), stroke: 6, strokeColor: '#140d08', ls: 8 });
   ctx.restore();
   const c = easeOut(seg(lt, 1.2, 0.4));
-  rrect(140, 1680, W - 280, 110, 55, C.red, c);
-  text('1位は最後に発表！', W / 2, 1736, { size: 54, alpha: c });
-  text('※知名度・品質・歴史をもとにした独自選定 / 価格は既製靴の目安', W / 2, 1840, { size: 24, weight: 'normal', color: C.ink3, alpha: c });
-  credit(keys, 1630, a * 0.8);
+  rrect(140, 1690, W - 280, 110, 55, C.red, c);
+  text('1位は最後に発表！', W / 2, 1746, { size: 54, alpha: c });
+  text('※知名度・品質・歴史をもとにした独自選定 / 価格は既製靴の目安', W / 2, 1850, { size: 24, weight: 'normal', color: C.ink3, alpha: c });
 }
 
 function sceneRank(t, s) {
   const b = BRANDS[s.id], lt = t - s.start, d = s.dur, top3 = b.rank <= 3, gold = b.rank === 1;
   background(t, top3);
-  // 写真2枚: 前半A → 後半B(クロスズーム)
-  const ka = s.id + 'a', kb = s.id + 'b';
-  const sw = d * 0.5;
-  const px = 0, py = 170, pw = W, ph = 1060;
-  // シーン頭のスワイプイン
-  const enter = easeOut(seg(lt, 0, 0.35));
-  ctx.save();
-  ctx.translate((1 - enter) * W * 0.9, 0);
-  photo(ka, px, py, pw, ph, lt / sw, { zoom: [1.18, 1.05], pan: [-30, 0, 30, 0] });
-  const xb = easeInOut(seg(lt, sw - 0.25, 0.5));
-  if (xb > 0) {
-    ctx.save(); ctx.beginPath(); ctx.rect(px + pw * (1 - xb), py, pw * xb, ph); ctx.clip();
-    photo(kb, px, py, pw, ph, seg(lt, sw - 0.25, d - sw + 0.25), { zoom: [1.05, 1.17], pan: [20, -10, -20, 10] });
-    ctx.restore();
-    // 境目の光の線
-    if (xb < 1) { ctx.fillStyle = 'rgba(255,240,210,0.9)'; ctx.fillRect(px + pw * (1 - xb) - 4, py, 8, ph); }
-  }
-  // 写真の下側をグラデーションで背景になじませる
-  const g = ctx.createLinearGradient(0, py + ph - 420, 0, py + ph);
-  g.addColorStop(0, 'rgba(17,13,10,0)'); g.addColorStop(1, 'rgba(17,13,10,1)');
-  ctx.fillStyle = g; ctx.fillRect(px, py + ph - 420, pw, 420);
-  const g2 = ctx.createLinearGradient(0, py, 0, py + 160);
-  g2.addColorStop(0, 'rgba(17,13,10,0.85)'); g2.addColorStop(1, 'rgba(17,13,10,0)');
-  ctx.fillStyle = g2; ctx.fillRect(px, py, pw, 160);
-  ctx.restore();
-  credit(xb > 0.5 ? [kb] : [ka], py + 60, 0.9);
+  const sx = W / 2, sy = 720;
+  if (gold) rays(sx, sy - 60, t, 0.9 * easeOut(seg(lt, 0, 0.6)));
+  // 背景にブランド名を大きく薄く
+  text(b.name.toUpperCase(), sx + 200 - lt * 40, 430, { size: 210, font: SERIF, color: 'rgba(226,181,101,0.07)', maxW: 2000 });
+  stage(sx, sy, 950, 1, top3);
+  // 靴: 横からスライドイン → ゆっくりズーム&浮遊、光沢の帯が横切る
+  const enter = easeOut(seg(lt, 0, 0.45));
+  const zoom = lerp(0.9, 1.0, easeInOut(seg(lt, 0.4, d)));
+  drawShoe(b.shoe, sx + (1 - enter) * W, sy + 8 * Math.sin(lt * 2.2), zoom * (gold ? 1.02 : 0.96),
+    { rot: -0.035 + 0.012 * Math.sin(lt * 1.6), sweep: seg(lt, 0.8, 1.3) });
 
   // 順位: 巨大な数字がスラム
   ctx.save(); shake(t, s.start + 0.12, top3 ? 26 : 16, 0.35);
@@ -272,12 +402,10 @@ function sceneRank(t, s) {
     text(gold ? '👑 KING' : 'TOP 3', W - 180, 998, { size: 40, alpha: k });
   }
 
-  // ブランド名
   const n = easeOut(seg(lt, 0.35, 0.4));
   text(b.name, 70 - (1 - n) * 80, 1225, { size: gold ? 108 : 96, font: SERIF, align: 'left', color: gold ? C.gold2 : C.ink, alpha: n, maxW: W - 140, shadow: 16 });
   text(b.kana + '  ' + b.country, 74 - (1 - n) * 120, 1310, { size: 44, align: 'left', color: C.ink2, alpha: n, maxW: W - 140 });
 
-  // 価格タグ(カウントアップ)と代表モデル
   const pc = easeOut(seg(lt, 1.4, 0.55));
   const pa = easeOut(seg(lt, 1.3, 0.3));
   rrect(70, 1372, 460, 92, 18, gold ? C.gold : 'rgba(226,181,101,0.95)', pa);
@@ -290,25 +418,23 @@ function sceneRank(t, s) {
 
   subtitle(s.sub, t, s.start + 0.6);
   progress(t, s.id);
-  // 切り替わりのフラッシュ
-  flash(0.7 * (1 - seg(lt, 0, 0.18)));
-  if (gold) { confetti(t, s.start); flash(1 - seg(lt, 0, 0.35)); }
+  if (gold) confetti(t, s.start);
 }
 
 function sceneTease(t, s) {
   const lt = t - s.start, d = s.dur;
   ctx.fillStyle = '#050403'; ctx.fillRect(0, 0, W, H);
-  // 1位の写真をシルエット(強いぼかし)で見せて焦らす
+  // 1位の靴をシルエットだけ見せて焦らす(鼓動に合わせて少し脈打つ)
   const beat = Math.pow(Math.abs(Math.sin(lt * Math.PI * 2.07)), 8);
-  photo('r1a', 0, 300, W, 1100, lt / d, { zoom: [1.3, 1.5], blur: 34, bright: 0.25 + 0.15 * beat });
-  vignette(0.9);
-  ctx.save(); const z = 1 + 0.04 * beat; ctx.translate(W / 2, 820); ctx.scale(z, z);
+  stage(W / 2, 1250, 800, 0.5 + 0.2 * beat);
+  drawShoe(BRANDS.r1.shoe, W / 2, 1250, 0.9 + 0.03 * beat + 0.04 * lt / d, { rot: -0.03, sil: 1, alpha: easeOut(seg(lt, 0.2, 0.6)) });
+  vignette(0.8);
+  ctx.save(); const z = 1 + 0.04 * beat; ctx.translate(W / 2, 640); ctx.scale(z, z);
   text('第1位は…', 0, 0, { size: 150, color: C.gold2, stroke: 14, strokeColor: '#000', alpha: easeOut(seg(lt, 0.1, 0.4)), shadow: 40 });
   ctx.restore();
-  text('？', W / 2, 1080, { size: 260, font: SERIF, color: 'rgba(255,255,255,0.85)', alpha: easeOut(seg(lt, 0.6, 0.4)) * (0.6 + 0.4 * beat) });
+  text('？', W / 2, 900, { size: 220, font: SERIF, color: 'rgba(255,255,255,0.85)', alpha: easeOut(seg(lt, 0.6, 0.4)) * (0.6 + 0.4 * beat) });
   progress(t, 'r1');
   subtitle(s.sub, t, s.start + 0.1);
-  // 最後の 0.5 秒は暗転
   ctx.save(); ctx.globalAlpha = easeIn(seg(lt, d - 0.5, 0.45)); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore();
 }
 
@@ -316,7 +442,7 @@ function confetti(t, t0) {
   const lt = t - t0; if (lt < 0 || lt > 4) return;
   for (let i = 0; i < 140; i++) {
     const vx = (hash(i) - 0.5) * 900, vy = -500 - hash(i + 9) * 900;
-    const x = W / 2 + vx * lt, y = 900 + vy * lt + 700 * lt * lt;
+    const x = W / 2 + vx * lt, y = 700 + vy * lt + 700 * lt * lt;
     if (y > H + 40) continue;
     ctx.save(); ctx.translate(x, y); ctx.rotate(lt * (3 + hash(i + 3) * 8));
     ctx.globalAlpha = clamp(1.6 - lt * 0.45);
@@ -326,21 +452,20 @@ function confetti(t, t0) {
 }
 
 function sceneOutro(t, s) {
-  const lt = t - s.start, d = s.dur;
+  const lt = t - s.start;
   background(t);
-  // 背景に1位の写真を大きく
-  photo('r1b', 0, 0, W, H, lt / d, { zoom: [1.1, 1.2], bright: 0.28, blur: 4 });
-  vignette(0.6);
+  vignette(0.5);
   text('ランキングまとめ', W / 2, 190, { size: 64, color: C.gold2, alpha: easeOut(seg(lt, 0, 0.3)), shadow: 12 });
   const rows = [...ORDER].reverse();
   rows.forEach((id, i) => {
     const b = BRANDS[id], p = easeOut(seg(lt, 0.15 + i * 0.08, 0.35));
-    const y = 290 + i * 104;
-    rrect(90 - (1 - p) * 200, y, W - 180, 88, 16, i === 0 ? 'rgba(226,181,101,0.92)' : 'rgba(20,14,10,0.78)', p);
+    const y = 290 + i * 104, dx = (1 - p) * 200;
+    rrect(90 - dx, y, W - 180, 88, 16, i === 0 ? 'rgba(226,181,101,0.92)' : 'rgba(20,14,10,0.78)', p);
     const c = i === 0 ? '#1b130c' : C.ink;
-    text(`${b.rank}位`, 130 - (1 - p) * 200, y + 46, { size: 40, align: 'left', color: i === 0 ? '#1b130c' : C.gold, alpha: p });
-    text(b.name, 270 - (1 - p) * 200, y + 46, { size: 42, font: SERIF, align: 'left', color: c, alpha: p, maxW: 470 });
-    text(yen(b.price) + '〜', W - 120 - (1 - p) * 200, y + 46, { size: 32, align: 'right', color: i === 0 ? '#2a1a0c' : C.ink2, alpha: p });
+    text(`${b.rank}位`, 130 - dx, y + 46, { size: 40, align: 'left', color: i === 0 ? '#1b130c' : C.gold, alpha: p });
+    drawShoe(b.shoe, 300 - dx, y + 50, 0.1, { alpha: p });
+    text(b.name, 370 - dx, y + 46, { size: 40, font: SERIF, align: 'left', color: c, alpha: p, maxW: 380 });
+    text(yen(b.price) + '〜', W - 120 - dx, y + 46, { size: 32, align: 'right', color: i === 0 ? '#2a1a0c' : C.ink2, alpha: p });
   });
   const c = backOut(seg(lt, 1.2, 0.4));
   ctx.save(); ctx.translate(W / 2, 1400); ctx.scale(c, c);
@@ -353,8 +478,8 @@ function sceneOutro(t, s) {
   rrect(-330, -52, 660, 104, 52, C.gold, e);
   text('🔖 保存して見返そう', 0, 2, { size: 48, color: '#1b130c', alpha: e });
   ctx.restore();
-  const cr = ['ナレーション: VOICEVOX:青山龍星', 'BGM・効果音: 自作', '写真: Wikimedia Commons(各写真に撮影者・ライセンスを表示)'];
-  cr.forEach((l, i) => text(l, W / 2, 1745 + i * 36, { size: 24, weight: 'normal', color: C.ink3, alpha: e }));
+  const cr = ['ナレーション: VOICEVOX:青山龍星', 'BGM・効果音・イラスト: 自作'];
+  cr.forEach((l, i) => text(l, W / 2, 1760 + i * 38, { size: 26, weight: 'normal', color: C.ink3, alpha: e }));
 }
 
 function render(t) {
@@ -366,9 +491,8 @@ function render(t) {
   else if (s.id === 'tease') sceneTease(t, s);
   else if (s.id === 'outro') sceneOutro(t, s);
   else sceneRank(t, s);
-  if (s.id === 'intro') flash(0.6 * (1 - seg(t - s.start, 0, 0.2)));
   ctx.restore();
-  // 最後にフェードアウト
+  // 最後に黒へフェードアウト
   const fo = seg(t, DURATION - 0.6, 0.6);
   if (fo > 0) { ctx.save(); ctx.globalAlpha = fo; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
 }
@@ -376,10 +500,6 @@ function render(t) {
 async function load() {
   TL = await (await fetch('timeline.json')).json();
   DURATION = TL.total; window.DURATION = DURATION;
-  try { PH = await (await fetch('photos.json')).json(); } catch (e) { PH = {}; }
-  await Promise.all(Object.entries(PH).map(([k, m]) => new Promise(res => {
-    const im = new Image(); im.onload = () => { IMG[k] = im; res(); }; im.onerror = () => res(); im.src = 'photos/' + m.file;
-  })));
   await document.fonts.ready;
 }
 window.FPS = FPS;
