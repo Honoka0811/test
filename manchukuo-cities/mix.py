@@ -49,7 +49,7 @@ meas = subprocess.run(['ffmpeg', '-hide_banner', '-i', MIX, '-af', 'loudnorm=I=-
                       capture_output=True, text=True).stderr
 j = json.loads(meas[meas.rindex('{'): meas.rindex('}') + 1])
 af = (f"loudnorm=I=-14:TP=-1.5:LRA=11:measured_I={j['input_i']}:measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}"
-      f":measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true")
+      f":measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true,volume=1.8dB")
 subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', VIDEO, '-i', MIX, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
                 '-af', af, '-ac', '2', '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', FINAL], check=True)
 print('wrote', FINAL)
