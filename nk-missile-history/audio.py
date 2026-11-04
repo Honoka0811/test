@@ -169,12 +169,12 @@ def sfx():
         for c in s['cues']:
             ty, t = c['type'], c['t']
             if ty == 'missile':
-                add(x, t, whoosh(c['dur'] + 0.4, c.get('big', False)), 0.8 if c.get('big') else 0.55)
+                add(x, t, whoosh(c['dur'] + 0.4, c.get('big', False)), 0.45 if c.get('big') else 0.3)
                 add(x, t, boom(0.8, 90, 40), 0.35)
                 if c.get('impact'): add(x, t + c['dur'], boom(1.4, 80 if c.get('eez') else 60, 25), 1.0 if c.get('eez') else 0.6)
             elif ty == 'salvo':
                 for k in range(c['n']):
-                    add(x, t + k * c['step'], whoosh(c['dur'] + 0.2, False), 0.35)
+                    add(x, t + k * c['step'], whoosh(c['dur'] + 0.2, False), 0.2)
                     add(x, t + k * c['step'] + c['dur'], boom(0.7, 70, 35), 0.25)
             elif ty == 'stamp' and c.get('id') != 'title': add(x, t + 0.12, thud(), 0.8)
             elif ty == 'year':
@@ -220,7 +220,7 @@ if __name__ == '__main__':
     sp = np.clip(e / 0.08, 0, 1)
     k = SR // 20; sp = np.convolve(sp, np.ones(k) / k, mode='same')
     g_music = 0.55 - 0.33 * sp          # 無音時 0.55 / 発話時 0.22
-    g_fx = 0.55 - 0.2 * sp
+    g_fx = 0.30 - 0.12 * sp          # 効果音: 無音時 0.30 / 発話時 0.18
     mix = 1.0 * voice + music * g_music + fx * g_fx
     # 軽いソフトクリップで音圧を整える
     mix = np.tanh(mix * 1.2) / np.tanh(1.2)

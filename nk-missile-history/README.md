@@ -45,6 +45,7 @@ node capture.js --stills 4.6,42.9   # 指定秒の静止画だけ確認
 - `render.html` … Canvas 2D で `render(t)` がフレームを描画(ブラウザで開くとプレビュー再生)
 - `capture.js` … Playwright で1フレームずつ撮影し ffmpeg で mp4 化
 - `audio.py` … 軍事ドキュメンタリー風 BGM(D マイナー 100BPM、ギャロップの低音リフ・マーチングスネア・太鼓・ブラスのヒット・ライザー)と効果音(発射・着弾・スタンプ・カウンター・警告音)を合成し、ナレーション中は BGM を自動で下げてミックス
+- `check_readings.py` … 読み間違いチェック。ナレーションを1文ずつ日本語音声認識(sherpa-onnx の ReazonSpeech / SenseVoice)にかけ、字幕原文・VOICEVOX の読み(カナ)と並べて表示する
 - VOICEVOX CORE のセットアップは `../pacific-war-analysis/README.md` と同じ(`15.vvm` が青山龍星)
 
 警告音は実在の J アラートの音に似せていません(視聴者が本物と誤認しないため)。
