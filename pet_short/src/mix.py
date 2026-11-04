@@ -21,11 +21,11 @@ for sc in T["scenes"]:
         put(voice, load(s["file"]), t0 + s["start"])
     st = [s["start"] for s in sc["sents"]]
     if k == "hook":
-        put(sfx, S["impact"], t0, 0.8); put(sfx, S["pop"], t0 + 0.35, 0.8); put(sfx, S["shock"], t0 + st[1], 0.6)
+        put(sfx, S["pop"], t0 + 0.35, 0.8); put(sfx, S["shock"], t0 + st[1], 0.6)
     elif k == "title":
-        put(sfx, S["whoosh"], t0, 0.7); put(sfx, S["impact"], t0 + 0.2, 0.7)
+        put(sfx, S["whoosh"], t0, 0.7)
     elif k == "rank":
-        put(sfx, S["whoosh"], t0, 0.6); put(sfx, S["impact"], t0 + 0.12, 0.75)
+        put(sfx, S["whoosh"], t0, 0.6)
         put(sfx, S["pop"], t0 + 0.3, 0.7); put(sfx, S["coin"], t0 + 1.5, 0.8)
         if c.get("surprise"): put(sfx, S["shock"], t0 + 0.55, 0.7)
         if c.get("champion"): put(sfx, S["fanfare"], t0 + 0.05, 0.9)
@@ -33,11 +33,13 @@ for sc in T["scenes"]:
         put(sfx, S["whoosh"], t0, 0.6)
         put(sfx, S["drumroll"], t0 + sc["dur"] - 1.6, 1.0)
     elif k == "warn":
-        put(sfx, S["impact"], t0, 0.9); put(sfx, S["shock"], t0 + st[2], 0.5)
+        put(sfx, S["shock"], t0 + st[2], 0.5)
     elif k == "cta":
         put(sfx, S["whoosh"], t0, 0.6)
         for i in range(6): put(sfx, S["pop"], t0 + 0.08 * i, 0.4)
         put(sfx, S["pop"], t0 + st[1], 0.8); put(sfx, S["coin"], t0 + sc["dur"] - 1.2, 0.7)
+from scipy.signal import butter, sosfilt
+sfx = sosfilt(butter(4, 300, "high", fs=SR, output="sos"), sfx, axis=0).astype(np.float32)
 voice *= 0.92 / max(1e-6, np.abs(voice).max())
 bgm = load("audio/bgm.wav")[:N]; bgm = np.pad(bgm, ((0, N - len(bgm)), (0, 0)))
 # ducking envelope
