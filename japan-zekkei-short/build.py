@@ -189,61 +189,6 @@ def make_bgm(total, drop_ranges):
     return out[:int(total * SR)]
 
 
-def whoosh(rng=np.random.default_rng(5)):
-    n = int(0.45 * SR)
-    x = rng.normal(0, 1, n)
-    t = np.arange(n) / SR
-    env_ = np.sin(np.pi * t / t[-1]) ** 2
-    # 周波数スイープ風：段階的に平滑度を変える
-    y = np.zeros(n)
-    for i, w in enumerate([40, 20, 10, 5, 3]):
-        part = slice(i * n // 5, (i + 1) * n // 5)
-        y[part] = np.convolve(x, np.ones(w) / w, mode="same")[part]
-    return y * env_ * 0.6
-
-
-def impact():
-    n = int(1.2 * SR)
-    t = np.arange(n) / SR
-    f = 40 + 90 * np.exp(-t * 12)
-    boom = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 3.5)
-    rng = np.random.default_rng(6)
-    crack = np.convolve(rng.normal(0, 1, n), np.ones(6) / 6, "same") * np.exp(-t * 20)
-    return boom * 0.9 + crack * 0.5
-
-
-def riser(dur):
-    n = int(dur * SR)
-    t = np.arange(n) / SR
-    rng = np.random.default_rng(7)
-    noise = rng.normal(0, 1, n)
-    f = 200 + 1800 * (t / dur) ** 2
-    tone = np.sin(2 * np.pi * np.cumsum(f) / SR)
-    roll = np.zeros(n)  # ドラムロール
-    sn = snare()
-    step = 0.11
-    tt = 0
-    while tt < dur - 0.1:
-        j = int(tt * SR)
-        ln = min(len(sn), n - j)
-        roll[j:j + ln] += sn[:ln] * (0.3 + 0.7 * tt / dur)
-        step = max(0.035, step * 0.93)
-        tt += step
-    g = (t / dur) ** 1.5
-    return (noise * 0.15 + tone * 0.15) * g + roll * 0.8
-
-
-def chime():
-    n = int(1.5 * SR)
-    t = np.arange(n) / SR
-    out = np.zeros(n)
-    for i, m in enumerate([81, 84, 88, 93]):
-        d = int(i * 0.07 * SR)
-        f = note(m)
-        out[d:] += np.sin(2 * np.pi * f * t[:n - d]) * np.exp(-t[:n - d] * 3) * 0.25
-    return out
-
-
 def add(buf, x, at, gain=1.0):
     i = int(at * SR)
     if i >= len(buf):
@@ -255,24 +200,11 @@ def add(buf, x, at, gain=1.0):
 def make_audio(segs, total):
     n = int(total * SR)
     voice = np.zeros(n)
-    sfx = np.zeros(n)
     drops = []
     for s in segs:
         add(voice, s["audio"], s["start"] + s["voice_at"])
-        if s["kind"] == "spot":
-            add(sfx, whoosh(), s["start"] - 0.2, 0.7)
-            add(sfx, impact(), s["start"], 0.55 if s["rank"] != 1 else 0.9)
-            if s["rank"] == 1:
-                add(sfx, chime(), s["start"] + 0.05, 0.8)
-        elif s["kind"] == "hook":
-            add(sfx, impact(), 0.0, 0.7)
-            for i in range(10):
-                add(sfx, whoosh(), 0.1 + i * 0.33, 0.25)
-        elif s["kind"] == "suspense":
+        if s["kind"] == "suspense":
             drops.append((s["start"], s["start"] + s["dur"]))
-            add(sfx, riser(s["dur"]), s["start"], 0.9)
-        elif s["kind"] == "outro":
-            add(sfx, whoosh(), s["start"] - 0.2, 0.6)
     bgm = make_bgm(total, drops)
     # ダッキング（ナレーション中はBGMを下げる）
     ve = np.convolve(np.abs(voice), np.ones(4410) / 4410, mode="same")
@@ -281,7 +213,7 @@ def make_audio(segs, total):
     fade = np.ones(n)
     fl = int(1.2 * SR)
     fade[-fl:] = np.linspace(1, 0, fl)
-    mix = voice * 1.0 + bgm * 0.32 * duck * fade + sfx * 0.6
+    mix = voice * 1.0 + bgm * 0.32 * duck * fade
     mix /= max(1e-6, np.max(np.abs(mix))) / 0.95
     path = os.path.join(CACHE, "mix.wav")
     with wave.open(path, "wb") as w:
@@ -369,7 +301,7 @@ def ease_back(x):
 def kenburns(bg, t, dur, seed, punch=True):
     z = 1.0 + 0.10 * (t / dur)
     if punch:
-        z += 0.18 * (1 - ease_out(t / 0.35))
+        z += 0.05 * (1 - ease_out(t / 0.5))
     rnd = random.Random(seed)
     dx, dy = rnd.uniform(-1, 1), rnd.uniform(-1, 1)
     cw, ch = 1350 / (1.25 * z) * 1.0, 2400 / (1.25 * z)
@@ -419,12 +351,6 @@ def progress(frame, current):
         d.rounded_rectangle((x, 70, x + w, 82), radius=6, fill=col)
 
 
-def flash(frame, t, length=0.18):
-    if t < length:
-        a = int(255 * (1 - t / length))
-        frame.alpha_composite(Image.new("RGBA", frame.size, (255, 255, 255, a)))
-
-
 def credit_layer():
     return text_img("VOICEVOX:青山龍星", 30, (255, 255, 255), 4, shadow=False)
 
@@ -440,6 +366,13 @@ class Renderer:
             self.bgs[sp[0]] = bg
             self.illustrated[sp[0]] = not real
         self.credit = credit_layer()
+        cp = os.path.join(PHOTOS, "credits.json")
+        credits = json.load(open(cp, encoding="utf-8")) if os.path.exists(cp) else {}
+        self.photo_credit = {}
+        for sp in S.SPOTS:
+            c = credits.get(sp[1])
+            if c and not self.illustrated[sp[0]]:
+                self.photo_credit[sp[0]] = text_img("Photo: " + c, 24, WHITE, 3, shadow=False)
         self.img_note = text_img("※イメージ", 28, (255, 255, 255), 3, shadow=False)
         self.hook_titles = [text_img(S.HOOK["title"][0], 100, WHITE, 12),
                             text_img(S.HOOK["title"][1], 150, WHITE, 14),
@@ -459,16 +392,25 @@ class Renderer:
             )
         return self.cache[r]
 
+    def render_seg(self, s, lt):
+        return getattr(self, "r_" + s["kind"])(s, lt)
+
     def frame(self, t):
-        for s in self.segs:
+        xf = 0.3  # クロスフェード秒数
+        for i, s in enumerate(self.segs):
             if s["start"] <= t < s["start"] + s["dur"]:
                 lt = t - s["start"]
-                return getattr(self, "r_" + s["kind"])(s, lt)
+                cur = self.render_seg(s, lt)
+                if i > 0 and lt < xf:
+                    p = self.segs[i - 1]
+                    prev = self.render_seg(p, p["dur"] + lt)
+                    cur = Image.blend(prev, cur, ease_out(lt / xf))
+                return cur
         return self.r_outro(self.segs[-1], self.segs[-1]["dur"] - 0.01)
 
     def r_hook(self, s, t):
         order = [r for r in range(10, 0, -1)]
-        cut = 0.33
+        cut = 0.45
         idx = min(int(t / cut), 9)
         if t > cut * 10:
             idx = 0  # 最後は1位（富士）を背景に
@@ -479,8 +421,6 @@ class Renderer:
             frame = kenburns(self.bgs[r], t % cut, cut * 3, r, punch=True).convert("RGBA")
         frame.alpha_composite(Image.new("RGBA", frame.size, (0, 0, 0, 90)))
         frame.alpha_composite(shade())
-        if t <= cut * 10:
-            flash(frame, t % cut, 0.08)
         # タイトル（段階的に登場）
         ys = [700, 860, 1120]
         for i, ti in enumerate(self.hook_titles):
@@ -499,7 +439,6 @@ class Renderer:
             if not hasattr(self, "_hk"):
                 self._hk = chip("第1位は最後に発表！", 54, (220, 40, 60, 240))
             paste_scaled(frame, self._hk, (VW / 2, 1420), pulse * ease_back((t - 1.5) / 0.3))
-        flash(frame, t, 0.25)
         self.common(frame, None, False)
         return frame
 
@@ -528,7 +467,6 @@ class Renderer:
             paste_scaled(frame, L["season"], (VW / 2, 1790), p4, p4)
         if big:
             self.confetti(frame, t)
-        flash(frame, t, 0.2 if not big else 0.45)
         self.common(frame, r, self.illustrated[r])
         return frame
 
@@ -592,7 +530,6 @@ class Renderer:
         paste_scaled(frame, self.cache["cta"], (VW / 2, 820), ease_back((t - 0.6) / 0.4))
         paste_scaled(frame, self.cache["cta2"], (VW / 2, 1010), ease_back((t - 1.0) / 0.4) * (1 + 0.04 * math.sin(t * 8)))
         paste_scaled(frame, self.cache["cta3"], (VW / 2, 1150), ease_back((t - 1.6) / 0.4))
-        flash(frame, t, 0.2)
         self.common(frame, 0, False)
         return frame
 
@@ -601,6 +538,9 @@ class Renderer:
         frame.alpha_composite(self.credit, (VW - self.credit.width - 30, VH - self.credit.height - 30))
         if illustrated:
             frame.alpha_composite(self.img_note, (30, VH - self.img_note.height - 30))
+        elif current in self.photo_credit and current != 0:
+            c = self.photo_credit[current]
+            frame.alpha_composite(c, (30, VH - c.height - 70))
 
 
 def main():
