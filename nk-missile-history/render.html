@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NK Missile History</title>
+<style>
+  html,body{margin:0;background:#04070b;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 北朝鮮ミサイル 30年の推移 (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーンの時刻・字幕・演出キューは narrate.py が書き出す output/timeline.json(window.TIMELINE)に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const MONO = '"DejaVu Sans Mono",monospace';
+const C = {
+  bg: '#04070b', sea: '#06101a', grid: 'rgba(90,200,255,0.07)',
+  land: '#0f1a21', landStroke: '#284452', jp: '#122630', jpStroke: '#5fd4ff',
+  nk: '#2b0e11', nkStroke: '#ff5a4f', red: '#ff3b30', redSoft: 'rgba(255,59,48,0.25)',
+  hl: '#ffd23f', ink: '#f4f6f8', ink2: '#a9b4bf', ink3: '#6b7785', cyan: '#5fd4ff'
+};
+
+// ---------- 地理データ(概略, [経度, 緯度]) ----------
+const MAINLAND = [[110,53],[110,30],[121.8,30.9],[121.9,31.7],[120.9,32.6],[120.3,34.3],[119.2,34.7],[119.6,35.5],[120.7,36.3],
+  [122.5,36.9],[122.6,37.4],[121.4,37.6],[120.3,37.6],[119.0,37.2],[118.0,38.0],[117.7,38.9],[119.0,39.5],[121.0,40.9],
+  [121.6,38.9],[122.3,39.3],[123.5,39.8],[124.3,39.9],[124.8,39.6],[125.4,39.4],[125.1,38.8],[125.0,38.6],[124.7,38.2],
+  [125.6,37.9],[126.1,37.75],[126.6,37.0],[126.5,36.0],[126.5,35.1],[126.3,34.6],[127.4,34.6],[128.5,34.9],[129.1,35.1],
+  [129.4,35.5],[129.5,36.1],[129.4,37.0],[128.9,37.7],[128.4,38.6],[127.5,39.2],[127.6,39.8],[128.2,40.0],[129.2,40.65],
+  [129.7,40.85],[129.8,41.8],[130.4,42.3],[130.7,42.4],[131.8,43.0],[133.2,42.8],[135.4,43.8],[137.5,45.8],[139.5,48.0],
+  [140.5,50],[141,53]];
+const NK = [[124.3,39.9],[125.3,40.6],[126.0,41.0],[126.9,41.8],[128.1,41.4],[128.3,42.0],[129.7,42.4],[130.6,42.4],
+  [130.4,42.3],[129.8,41.8],[129.7,40.85],[129.2,40.65],[128.2,40.0],[127.6,39.8],[127.5,39.2],[128.4,38.6],[128.0,38.3],
+  [127.1,38.3],[126.7,37.95],[126.1,37.75],[125.6,37.9],[124.7,38.2],[125.0,38.6],[125.1,38.8],[125.4,39.4],[124.8,39.6]];
+const SAKHALIN = [[141.8,46.0],[142.0,47.5],[142.2,49.0],[142.1,53],[143.2,53],[143.1,49.2],[142.6,47.8],[143.3,46.6],[142.5,46.6],[142.1,46.0]];
+const JAPAN = [
+  [[141.9,45.5],[142.5,45.2],[143.6,44.3],[144.6,43.9],[145.3,44.3],[145.5,43.3],[144.3,42.9],[143.3,42.0],[141.5,42.6],
+   [140.6,42.0],[140.0,41.4],[140.1,42.3],[139.8,42.6],[140.5,43.2],[141.4,43.3],[141.6,44.4]],                // 北海道
+  [[140.9,41.5],[141.5,41.4],[141.5,40.5],[142.0,39.5],[141.5,38.3],[141.0,37.5],[140.9,36.9],[140.6,36.0],[140.9,35.7],
+   [140.0,35.0],[139.8,35.3],[139.1,35.2],[138.8,34.6],[137.0,34.6],[136.8,34.3],[136.2,33.5],[135.8,33.5],[135.1,34.3],
+   [134.2,34.6],[133.0,34.4],[132.2,33.9],[130.9,33.9],[131.0,34.4],[132.0,35.0],[133.0,35.6],[134.5,35.6],[135.8,35.6],
+   [136.0,35.9],[136.7,36.9],[137.3,36.8],[138.5,37.4],[139.5,38.2],[139.9,39.0],[140.0,40.0],[139.9,40.6],[140.3,41.2]], // 本州
+  [[132.5,32.8],[133.0,32.8],[134.3,33.3],[134.7,33.8],[134.6,34.2],[133.5,34.4],[132.6,34.1],[132.0,33.5]],        // 四国
+  [[130.0,33.9],[130.9,33.9],[131.7,33.3],[131.4,31.4],[130.7,31.0],[130.2,31.3],[130.2,32.2],[129.8,32.7],[129.6,33.3]], // 九州
+  [[138.2,37.8],[138.5,38.3],[138.5,37.9]]                                                                           // 佐渡
+];
+const EEZ = [[129.2,34.3],[130.6,35.7],[132.0,37.0],[133.6,38.3],[135.0,39.6],[136.1,41.0],[137.3,42.6],[138.6,44.0],[139.6,45.4]];
+
+// ---------- データ(概数) ----------
+const BARS = [ { y: 2016, v: 23 }, { y: 2017, v: 17 }, { y: 2018, v: 0 }, { y: 2019, v: 25 }, { y: 2020, v: 8 }, { y: 2021, v: 6 }, { y: 2022, v: 59 } ];
+const CARDS = [
+  { tag: '2023', name: '火星18', desc: '初の固体燃料ICBM' },
+  { tag: '2024', name: '火星19', desc: '固体燃料ICBM・最長飛翔' },
+  { tag: '2021〜', name: '極超音速', desc: '変則軌道で迎撃が困難' },
+];
+const DOTS2026 = ['1/4', '1/27', '3/14', '4/8', '4/19', '10/12', '10/29', '11/4'];
+const CHAPTER = { y1990: ['01', '始まり'], y2000: ['02', '散発期'], y2016: ['03', '急増'], chart: ['04', '発射数の推移'],
+  y2022: ['05', '過去最多'], quality: ['06', '数から質へ'], now: ['07', '現在'] };
+const FOOT = {
+  hook: '',
+  y1990: '1998年のテポドン発射を北朝鮮は「人工衛星」と主張',
+  y2000: '2009年の発射も北朝鮮は「人工衛星」と主張',
+  y2016: 'EEZの線は概略。2016年8月、秋田県男鹿半島沖に落下',
+  chart: '発射数は概数。出典: 防衛白書ほか\n(2016〜17年 計40発、2022年 少なくとも59発)',
+  y2022: '2022年10月4日、青森県上空を通過(防衛省発表)',
+  quality: '回数は2022年の31回から2023年は18回へ(防衛省発表)',
+  now: '累計は2026年5月末時点(令和8年版防衛白書)\n2026年の日付は報道ベースの主な発射',
+  outro: ''
+};
+const CAMS = {
+  hook: { cx: 137.0, cy: 40.0, z: 1.0 }, y1990: { cx: 135.5, cy: 40.3, z: 1.12 }, y2000: { cx: 135.0, cy: 40.2, z: 1.08 },
+  y2016: { cx: 136.5, cy: 40.6, z: 1.04 }, chart: { cx: 136.5, cy: 40.6, z: 1.04 }, y2022: { cx: 137.0, cy: 40.5, z: 1.0 },
+  quality: { cx: 134.0, cy: 39.6, z: 0.92 }, now: { cx: 134.0, cy: 39.6, z: 0.92 }, outro: { cx: 137.0, cy: 40.0, z: 0.98 }
+};
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+function txt(s, x, y, { size = 48, color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, font = FONT, bold = false, stroke = 0, strokeColor = '#000', ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); }
+  if (bold) { ctx.lineWidth = Math.max(1.5, size / 28); ctx.strokeStyle = color; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// ---------- タイムライン ----------
+let TL = null, SC = [], CUES = [], SHAKES = [], FLASHES = [];
+function setup(tl) {
+  TL = tl; SC = tl.scenes; CUES = [];
+  SC.forEach((s, i) => s.cues.forEach((c, j) => CUES.push({ ...c, scene: s.id, si: i, key: s.id + j })));
+  // salvo を個別の弾に展開(1発は直後に失敗した想定 = 2006年のテポドン2号)
+  CUES.filter(c => c.type === 'salvo').forEach(c => {
+    for (let i = 0; i < c.n; i++) {
+      const fail = i === 3;
+      const to = fail ? [c.from[0] + 0.9, c.from[1] + 0.5] : [130.6 + hash(i) * 2.6, 39.4 + hash(i + 9) * 2.0];
+      CUES.push({ type: 'missile', t: c.t + i * c.step, from: c.from, to, dur: fail ? 0.5 : c.dur * (0.8 + 0.4 * hash(i + 3)),
+        impact: true, small: true, scene: c.scene, si: c.si, key: c.key + '_' + i });
+    }
+  });
+  SHAKES = []; FLASHES = [];
+  SC.forEach((s, i) => { if (i) { SHAKES.push({ t: s.start, amp: 7, k: 9 }); FLASHES.push({ t: s.start, a: 0.28, k: 9, c: '255,255,255' }); } });
+  CUES.forEach(c => {
+    if (c.type === 'missile') {
+      FLASHES.push({ t: c.t, a: c.big ? 0.18 : 0.05, k: 10, c: '255,140,90' });
+      if (c.impact && !c.small) SHAKES.push({ t: c.t + c.dur, amp: c.eez ? 16 : 9, k: 5 });
+      if (c.eez) FLASHES.push({ t: c.t + c.dur, a: 0.35, k: 5, c: '255,40,30' });
+    }
+    if (c.type === 'stamp') SHAKES.push({ t: c.t + 0.12, amp: c.id === 'title' ? 18 : 9, k: 7 });
+    if (c.type === 'stamp' && c.id === 'title') FLASHES.push({ t: c.t, a: 0.5, k: 6, c: '255,255,255' });
+    if (c.type === 'peak') { SHAKES.push({ t: c.t + 0.55, amp: 26, k: 4 }); FLASHES.push({ t: c.t + 0.55, a: 0.45, k: 4, c: '255,50,40' }); }
+    if (c.type === 'warn') for (let k = 0; k < 4; k++) SHAKES.push({ t: c.t + k * 0.5, amp: 6, k: 8 });
+    if (c.type === 'card') SHAKES.push({ t: c.t + 0.1, amp: 6, k: 9 });
+  });
+}
+function sceneIndex(t) { let i = 0; while (i < SC.length - 1 && t >= SC[i + 1].start) i++; return i; }
+function cue(type, si, id) { return CUES.find(c => c.type === type && c.si === si && (id === undefined || c.id === id)); }
+
+// ---------- カメラと投影 ----------
+const MAP = { x: 0, y: 300, w: 1080, h: 880 };
+const K0 = 50.3, COSL = Math.cos(40 * Math.PI / 180);
+let CAM = { cx: 137, cy: 40, z: 1 };
+function P(ll) { const k = K0 * CAM.z; return [MAP.x + MAP.w / 2 + (ll[0] - CAM.cx) * k * COSL, MAP.y + MAP.h / 2 - (ll[1] - CAM.cy) * k]; }
+function camAt(t) {
+  const i = sceneIndex(t), s = SC[i], loc = t - s.start;
+  const a = CAMS[(SC[i - 1] || s).id], b = CAMS[s.id], e = easeInOut(loc / 1.0);
+  const drift = 1 + 0.035 * clamp(loc / s.dur);
+  let z = lerp(a.z, b.z, e) * drift;
+  if (s.id === 'hook') z *= lerp(1.35, 1, easeOut(loc / 2.2));
+  return { cx: lerp(a.cx, b.cx, e), cy: lerp(a.cy, b.cy, e), z };
+}
+function poly(pts) { ctx.beginPath(); pts.forEach((p, i) => { const q = P(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); }
+
+// ---------- 地図 ----------
+function drawMap(t, si, dim, jpPulse) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(MAP.x, MAP.y, MAP.w, MAP.h); ctx.clip();
+  ctx.fillStyle = C.sea; ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h);
+  // 経緯線
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1.5;
+  for (let lon = 110; lon <= 160; lon += 2) { const a = P([lon, 25]), b = P([lon, 55]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  for (let lat = 26; lat <= 54; lat += 2) { const a = P([110, lat]), b = P([160, lat]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  // 陸地
+  ctx.lineJoin = 'round';
+  poly(MAINLAND); ctx.fillStyle = C.land; ctx.fill(); ctx.strokeStyle = C.landStroke; ctx.lineWidth = 2; ctx.stroke();
+  poly(SAKHALIN); ctx.fill(); ctx.stroke();
+  poly(NK); ctx.fillStyle = C.nk; ctx.fill(); ctx.strokeStyle = C.nkStroke; ctx.lineWidth = 2.5; ctx.stroke();
+  JAPAN.forEach(isl => {
+    poly(isl); ctx.fillStyle = C.jp; ctx.fill();
+    ctx.strokeStyle = jpPulse > 0 ? `rgba(255,${Math.round(lerp(212, 70, jpPulse))},${Math.round(lerp(255, 60, jpPulse))},1)` : C.jpStroke;
+    ctx.lineWidth = 2.5 + jpPulse * 3; ctx.stroke();
+    if (jpPulse > 0) { ctx.fillStyle = `rgba(255,59,48,${0.28 * jpPulse})`; ctx.fill(); }
+  });
+  // レーダー掃引(平壌中心)
+  const c = P([125.75, 39.03]); const ang = t * 1.6;
+  const g = ctx.createConicGradient(ang, c[0], c[1]);
+  g.addColorStop(0, 'rgba(255,80,70,0.16)'); g.addColorStop(0.08, 'rgba(255,80,70,0)'); g.addColorStop(1, 'rgba(255,80,70,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c[0], c[1], 1400, 0, Math.PI * 2); ctx.fill();
+  for (let r = 1; r <= 4; r++) { ctx.strokeStyle = 'rgba(255,90,80,0.10)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(c[0], c[1], r * 230 * CAM.z, 0, Math.PI * 2); ctx.stroke(); }
+  // 地名
+  const lab = (s, ll, o = {}) => { const q = P(ll); txt(s, q[0], q[1], { size: 30, color: C.ink3, align: 'center', ...o }); };
+  lab('日本海', [134.6, 42.3], { size: 34, ls: 8 });
+  lab('太平洋', [146.5, 35.6], { size: 34, ls: 8 });
+  lab('北朝鮮', [127.3, 40.5], { color: '#ff8a80', size: 34 });
+  lab('韓国', [127.9, 36.4]); lab('中国', [124.0, 43.3]); lab('ロシア', [134.5, 46.4]);
+  lab('日本', [138.6, 36.3], { color: C.cyan, size: 36 });
+  const pyong = P([125.75, 39.03]); ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(pyong[0], pyong[1], 7, 0, 7); ctx.fill();
+  txt('平壌', pyong[0] - 14, pyong[1] + 34, { size: 26, color: '#ff8a80', align: 'center' });
+  const tok = P([139.7, 35.7]); ctx.fillStyle = C.cyan; ctx.beginPath(); ctx.arc(tok[0], tok[1], 6, 0, 7); ctx.fill();
+  txt('東京', tok[0] + 14, tok[1] + 30, { size: 26, color: C.cyan });
+  ctx.restore();
+  if (dim > 0) { ctx.fillStyle = `rgba(2,4,8,${dim})`; ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h); }
+  // 枠
+  ctx.strokeStyle = 'rgba(95,212,255,0.35)'; ctx.lineWidth = 2;
+  const L = 34; [[MAP.x + 18, MAP.y + 18, 1, 1], [MAP.x + MAP.w - 18, MAP.y + 18, -1, 1], [MAP.x + 18, MAP.y + MAP.h - 18, 1, -1], [MAP.x + MAP.w - 18, MAP.y + MAP.h - 18, -1, -1]]
+    .forEach(([x, y, sx, sy]) => { ctx.beginPath(); ctx.moveTo(x, y + sy * L); ctx.lineTo(x, y); ctx.lineTo(x + sx * L, y); ctx.stroke(); });
+}
+
+// ---------- ミサイル ----------
+function missileGeom(m) {
+  const A = P(m.from), B = P(m.to); const d = Math.hypot(B[0] - A[0], B[1] - A[1]);
+  return { A, B, h: m.small ? Math.min(90, d * 0.35) : Math.min(330, d * 0.34) };
+}
+function arcPt(g, p) { return [lerp(g.A[0], g.B[0], p), lerp(g.A[1], g.B[1], p) - g.h * Math.sin(Math.PI * p)]; }
+function crossP(m) { return clamp((140.6 - m.from[0]) / (m.to[0] - m.from[0]), 0, 1); }  // 日本(本州北部〜北海道)上空を横切る位置
+function drawMissile(m, t, opt = {}) {
+  const p = (t - m.t) / m.dur; if (p < 0) return;
+  const g = missileGeom(m), q = Math.min(p, 1);
+  const fade = opt.fade !== undefined ? opt.fade : (p > 1 ? Math.max(0.3, 1 - (p - 1) * 0.35) : 1);
+  ctx.save(); ctx.globalAlpha = fade;
+  // 地上軌跡
+  ctx.setLineDash([6, 10]); ctx.strokeStyle = 'rgba(255,120,100,0.35)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(g.A[0], g.A[1]); ctx.lineTo(lerp(g.A[0], g.B[0], q), lerp(g.A[1], g.B[1], q)); ctx.stroke(); ctx.setLineDash([]);
+  // 噴煙
+  const ts = t - m.t;
+  if (ts < 2.5) for (let i = 0; i < 6; i++) {
+    const r = (10 + i * 5) * (1 + ts * 1.6) * (m.small ? 0.5 : 1), a = 0.22 * (1 - ts / 2.5);
+    ctx.fillStyle = `rgba(200,200,210,${a})`; ctx.beginPath(); ctx.arc(g.A[0] + (hash(i + m.t) - .5) * 30 * ts, g.A[1] - i * 4, r, 0, 7); ctx.fill();
+  }
+  // 弾道(グロー + 芯)
+  const N = 48; const pts = []; for (let i = 0; i <= N; i++) pts.push(arcPt(g, q * i / N));
+  const head = pts[pts.length - 1];
+  [[m.small ? 8 : 16, 'rgba(255,60,40,0.22)'], [m.small ? 3 : 5, '#ff4b36'], [m.small ? 1.2 : 2, '#ffd9c9']].forEach(([lw, col]) => {
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.beginPath();
+    pts.forEach((pt, i) => i ? ctx.lineTo(pt[0], pt[1]) : ctx.moveTo(pt[0], pt[1])); ctx.stroke();
+  });
+  if (p < 1) {
+    const rg = ctx.createRadialGradient(head[0], head[1], 0, head[0], head[1], m.small ? 22 : 46);
+    rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(0.25, 'rgba(255,170,120,0.9)'); rg.addColorStop(1, 'rgba(255,60,40,0)');
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(head[0], head[1], m.small ? 22 : 46, 0, 7); ctx.fill();
+  }
+  // 着弾
+  if (m.impact && p >= 1) {
+    const d = t - (m.t + m.dur);
+    for (let k = 0; k < 3; k++) {
+      const dd = d - k * 0.18; if (dd < 0) continue;
+      const r = (m.small ? 14 : 26) + dd * (m.small ? 40 : 90), a = Math.max(0, 1 - dd / 1.6);
+      ctx.strokeStyle = `rgba(255,${m.eez ? 60 : 150},${m.eez ? 50 : 120},${a})`; ctx.lineWidth = m.eez ? 5 : 3;
+      ctx.beginPath(); ctx.ellipse(g.B[0], g.B[1], r, r * 0.45, 0, 0, 7); ctx.stroke();
+    }
+    if (d < 0.25) { ctx.fillStyle = `rgba(255,230,200,${1 - d / 0.25})`; ctx.beginPath(); ctx.arc(g.B[0], g.B[1], m.small ? 14 : 34, 0, 7); ctx.fill(); }
+    ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(g.B[0], g.B[1], m.small ? 5 : 9, 0, 7); ctx.fill();
+    if (m.eez) {
+      const e = backOut((d - 0.2) / 0.35); if (d > 0.2) {
+        ctx.save(); ctx.translate(g.B[0], g.B[1] - 70); ctx.scale(e, e);
+        rrect(-130, -38, 260, 66, 10); ctx.fillStyle = C.red; ctx.fill();
+        txt('EEZ内に落下', 0, 10, { size: 36, align: 'center', bold: true, color: '#fff' }); ctx.restore();
+      }
+    }
+  }
+  // 日本上空通過ラベル
+  if (m.big && opt.label !== false && !opt.montage) {
+    const pc = crossP(m), d = (t - m.t) / m.dur - pc;
+    if (d > 0) {
+      const pt = arcPt(g, pc), e = backOut(d * m.dur / 0.3);
+      ctx.save(); ctx.translate(pt[0], pt[1] - 64); ctx.scale(e, e);
+      rrect(-150, -36, 300, 60, 8); ctx.fillStyle = 'rgba(10,12,16,0.85)'; ctx.fill(); ctx.strokeStyle = C.red; ctx.lineWidth = 3; ctx.stroke();
+      txt('▼ 日本上空を通過', 0, 8, { size: 32, align: 'center', color: '#ffb3ab', bold: true }); ctx.restore();
+    }
+  }
+  ctx.restore();
+}
+function jpPulseAt(t, si) {
+  let v = 0;
+  CUES.forEach(m => { if (m.type !== 'missile' || !m.big || m.si !== si) return;
+    const tc = m.t + m.dur * crossP(m), d = t - tc; if (d > -0.15 && d < 1.2) v = Math.max(v, d < 0 ? 1 + d / 0.15 : 1 - d / 1.2); });
+  return clamp(v);
+}
+
+// ---------- HUD ----------
+function drawHUD(t, si) {
+  const s = SC[si];
+  // 上部バー
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(0, 0, W, 8);
+  ctx.fillStyle = C.red; ctx.fillRect(0, 0, W * clamp(t / TL.total), 8);
+  const blink = Math.floor(t * 2) % 2 === 0;
+  ctx.fillStyle = blink ? C.red : 'rgba(255,59,48,0.3)'; ctx.beginPath(); ctx.arc(66, 104, 10, 0, 7); ctx.fill();
+  txt('MISSILE TRACKER  DPRK ▶ JPN', 88, 115, { size: 30, font: MONO, color: C.ink2, ls: 2 });
+  // 章タイトル
+  const ch = CHAPTER[s.id];
+  if (ch) {
+    const e = easeOut((t - s.start) / 0.45);
+    ctx.save(); ctx.globalAlpha = e; ctx.translate(lerp(-40, 0, e), 0);
+    rrect(54, 158, 92, 56, 6); ctx.fillStyle = C.red; ctx.fill();
+    txt(ch[0], 100, 199, { size: 38, font: MONO, align: 'center', color: '#fff', bold: true });
+    txt(ch[1], 166, 202, { size: 48, color: C.ink, bold: true });
+    ctx.restore();
+  }
+  // 年カウンター(ロール)
+  const ys = CUES.filter(c => c.type === 'year' && c.si === si && c.t <= t + 1e-6);
+  if (ys.length && !['chart', 'quality', 'now', 'outro', 'hook'].includes(s.id)) {
+    const cur = ys[ys.length - 1], prev = ys[ys.length - 2];
+    const e = easeInOut((t - cur.t) / 0.4);
+    const draw = (v, dy, a) => txt(String(v), W - 60, 262 + dy, { size: 128, font: MONO, align: 'right', color: C.hl, alpha: a, bold: true });
+    ctx.save(); ctx.beginPath(); ctx.rect(560, 140, 480, 150); ctx.clip();
+    if (prev && e < 1 && prev.si === cur.si) draw(prev.value, -130 * e, 1 - e);
+    draw(cur.value, prev && prev.si === cur.si ? 130 * (1 - e) : 0, prev && prev.si === cur.si ? e : easeOut((t - cur.t) / 0.3));
+    ctx.restore();
+    txt('YEAR', W - 60, 150, { size: 26, font: MONO, align: 'right', color: C.ink3, ls: 6 });
+  }
+}
+
+// ---------- 字幕 ----------
+function parseShow(s) { const out = []; s.split(/(\[\[.*?\]\])/).forEach(seg => { if (!seg) return; const hl = seg.startsWith('[['); (hl ? seg.slice(2, -2) : seg).split('').forEach(ch => out.push({ ch, hl })); }); return out; }
+function drawCaption(t, si) {
+  const s = SC[si]; let ln = null;
+  s.lines.forEach((l, i) => { const next = s.lines[i + 1]; const end = next ? next.start - 0.02 : Math.min(l.end + 0.5, s.start + s.dur); if (t >= l.start - 0.08 && t < end) ln = l; });
+  if (!ln) return;
+  const size = 68, maxW = 880; ctx.font = `${size}px ${FONT}`;
+  const chars = parseShow(ln.show); const lines = [[]]; let w = 0;
+  const noStart = '、。」ー）!?';
+  chars.forEach(c => { const cw = ctx.measureText(c.ch).width; if (w + cw > maxW && !noStart.includes(c.ch)) { lines.push([]); w = 0; } lines[lines.length - 1].push({ ...c, w: cw }); w += cw; });
+  const e = (t - ln.start + 0.08) / 0.16, sc = 1 + 0.14 * (1 - easeOut(e));
+  const cy = 1330, lh = size * 1.32;
+  ctx.save(); ctx.translate(520, cy); ctx.scale(sc, sc); ctx.globalAlpha = clamp(e * 1.5);
+  lines.forEach((L, li) => {
+    const lw = L.reduce((a, c) => a + c.w, 0); let x = -lw / 2; const y = (li - (lines.length - 1) / 2) * lh + size * 0.36;
+    const runs = []; L.forEach(c => { const r = runs[runs.length - 1]; if (r && r.hl === c.hl) { r.s += c.ch; r.w += c.w; } else runs.push({ s: c.ch, hl: c.hl, w: c.w }); });
+    runs.forEach(r => { txt(r.s, x, y, { size, color: r.hl ? C.hl : '#fff', stroke: 14, strokeColor: '#000', bold: true }); x += r.w; });
+  });
+  ctx.restore();
+}
+
+// ---------- シーン固有の演出 ----------
+function stamp(label, x, y, t0, t, { color = C.red, size = 54, rot = -5, w = null, fg = '#fff', until = 1e9 } = {}) {
+  const d = t - t0; if (d < 0 || d > until + 0.25) return;
+  const e = d < 0.18 ? lerp(2.2, 1, easeOut(d / 0.18)) : 1;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot * Math.PI / 180); ctx.scale(e, e); ctx.globalAlpha = clamp(d / 0.1) * clamp((until + 0.25 - d) / 0.25);
+  ctx.font = `${size}px ${FONT}`; const tw = w || ctx.measureText(label).width + 60;
+  rrect(-tw / 2, -size * 0.85, tw, size * 1.5, 10); ctx.fillStyle = color; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 4; rrect(-tw / 2 + 8, -size * 0.85 + 8, tw - 16, size * 1.5 - 16, 6); ctx.stroke();
+  txt(label, 0, size * 0.32, { size, align: 'center', color: fg, bold: true });
+  ctx.restore();
+}
+function drawHook(t, si) {
+  const c = cue('stamp', si, 'title'); if (!c) return;
+  const d = t - c.t; if (d < 0) return;
+  const e = d < 0.2 ? lerp(1.8, 1, easeOut(d / 0.2)) : 1;
+  ctx.save(); ctx.translate(540, 560); ctx.scale(e, e); ctx.globalAlpha = clamp(d / 0.12);
+  ctx.fillStyle = 'rgba(4,7,11,0.72)'; ctx.fillRect(-540, -170, 1080, 330);
+  const gl = d < 0.5 ? (hash(Math.floor(t * 30)) - 0.5) * 18 * (1 - d / 0.5) : 0;
+  txt('北朝鮮ミサイル', gl, -50, { size: 100, align: 'center', color: '#fff', bold: true, stroke: 10 });
+  if (gl) txt('30年の推移', gl * 1.5, 100, { size: 148, align: 'center', color: 'rgba(0,255,255,0.6)', bold: true });
+  txt('30年の推移', -gl, 100, { size: 148, align: 'center', color: C.red, bold: true, stroke: 12 });
+  ctx.restore();
+  txt('1993 ▶ 2026', 540, 790, { size: 54, font: MONO, align: 'center', color: C.hl, alpha: clamp((d - 0.3) / 0.3), bold: true, ls: 4 });
+}
+function drawEEZ(t, si) {
+  const c = cue('eez', si); if (!c || t < c.t) return;
+  const p = easeInOut((t - c.t) / 1.0), n = EEZ.length - 1, k = p * n;
+  ctx.save(); ctx.setLineDash([16, 10]); ctx.lineDashOffset = -t * 30; ctx.strokeStyle = C.hl; ctx.lineWidth = 4; ctx.beginPath();
+  for (let i = 0; i <= Math.floor(k); i++) { const q = P(EEZ[i]); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+  if (k < n) { const a = EEZ[Math.floor(k)], b = EEZ[Math.floor(k) + 1], f = k - Math.floor(k); const q = P([lerp(a[0], b[0], f), lerp(a[1], b[1], f)]); ctx.lineTo(q[0], q[1]); }
+  ctx.stroke(); ctx.restore();
+  const lp = P([133.2, 37.2]); txt('日本のEEZ(概略)', lp[0] - 10, lp[1] + 52, { size: 30, color: C.hl, alpha: clamp((t - c.t - 0.6) / 0.4), align: 'center', stroke: 6 });
+}
+function drawWarn(t, si, label) {
+  const c = cue('warn', si); if (!c || t < c.t) return;
+  const d = t - c.t, a = clamp(d / 0.15) * (0.5 + 0.5 * Math.abs(Math.sin(d * 6)));
+  ctx.save();
+  const g = ctx.createRadialGradient(540, 740, 300, 540, 740, 900); g.addColorStop(0, 'rgba(255,0,0,0)'); g.addColorStop(1, `rgba(255,20,10,${0.45 * a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, MAP.y, W, MAP.h);
+  [MAP.y + 30, MAP.y + MAP.h - 90].forEach((y, bi) => {
+    ctx.save(); ctx.beginPath(); ctx.rect(0, y, W, 60); ctx.clip();
+    ctx.fillStyle = '#ffd23f'; ctx.fillRect(0, y, W, 60);
+    ctx.fillStyle = '#111'; const off = ((bi ? -1 : 1) * d * 160) % 80;
+    for (let x = -120; x < W + 120; x += 80) { ctx.beginPath(); ctx.moveTo(x + off, y + 60); ctx.lineTo(x + 30 + off, y); ctx.lineTo(x + 55 + off, y); ctx.lineTo(x + 25 + off, y + 60); ctx.fill(); }
+    ctx.fillStyle = '#111'; ctx.fillRect(W / 2 - 230, y, 460, 60);
+    txt(label, W / 2, y + 44, { size: 38, align: 'center', color: '#ffd23f', bold: true, ls: 4 });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+function drawChart(t, si) {
+  const s = SC[si], loc = t - s.start;
+  const ap = easeOut(loc / 0.5);
+  ctx.save(); ctx.globalAlpha = ap;
+  ctx.fillStyle = 'rgba(4,7,11,0.93)'; ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h);
+  txt('北朝鮮の弾道ミサイル発射数', 540, MAP.y + 80, { size: 50, align: 'center', bold: true });
+  txt('年間・発数(概数)', 540, MAP.y + 132, { size: 32, align: 'center', color: C.ink2 });
+  const base = MAP.y + MAP.h - 110, top = MAP.y + 230, maxV = 60, bw = 104, gap = 34, x0 = 540 - (BARS.length * bw + (BARS.length - 1) * gap) / 2;
+  const sy = v => base - (base - top) * v / maxV;
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 2;
+  [20, 40, 60].forEach(v => { ctx.beginPath(); ctx.moveTo(60, sy(v)); ctx.lineTo(1020, sy(v)); ctx.stroke(); txt(String(v), 60, sy(v) - 8, { size: 24, color: C.ink3, font: MONO }); });
+  const bc = cue('bars', si), zc = cue('zero', si), pc = cue('peak', si);
+  BARS.forEach((b, i) => {
+    const x = x0 + i * (bw + gap), last = i === BARS.length - 1;
+    let v;
+    if (last) { const d = pc ? t - pc.t : -1; v = d < 0 ? 0 : b.v * backOut(d / 0.6); }
+    else v = b.v * easeOut((t - (bc.t + i * 0.22)) / 0.6);
+    const y = sy(Math.max(0, v));
+    if (last && pc && t >= pc.t) {
+      ctx.save(); ctx.shadowColor = C.red; ctx.shadowBlur = 40; ctx.fillStyle = C.red; ctx.fillRect(x, y, bw, base - y); ctx.restore();
+    } else if (!last) {
+      const g = ctx.createLinearGradient(0, y, 0, base); g.addColorStop(0, '#ff7a6b'); g.addColorStop(1, '#7a1d18');
+      ctx.fillStyle = g; ctx.fillRect(x, y, bw, base - y);
+    }
+    if (last && (!pc || t < pc.t)) { ctx.setLineDash([8, 8]); ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3; ctx.strokeRect(x, top + 120, bw, base - top - 120); ctx.setLineDash([]); txt('?', x + bw / 2, base - 160, { size: 90, align: 'center', color: 'rgba(255,255,255,0.4)', font: MONO }); }
+    const shown = last ? (pc && t >= pc.t) : t >= bc.t + i * 0.22;
+    if (shown) txt(fmt(Math.max(0, Math.min(v, b.v))), x + bw / 2, y - 16, { size: last ? 64 : 40, align: 'center', font: MONO, color: last ? '#fff' : C.ink, bold: true });
+    txt(String(b.y), x + bw / 2, base + 46, { size: 30, align: 'center', font: MONO, color: b.y === 2018 && zc && t > zc.t ? C.hl : C.ink2 });
+  });
+  if (zc && t > zc.t) {
+    const i = BARS.findIndex(b => b.y === 2018), x = x0 + i * (bw + gap) + bw / 2, e = backOut((t - zc.t) / 0.35);
+    ctx.save(); ctx.translate(x, sy(36)); ctx.scale(e, e);
+    rrect(-120, -44, 240, 74, 10); ctx.fillStyle = C.hl; ctx.fill(); txt('米朝首脳会談', 0, 6, { size: 30, align: 'center', color: '#111', bold: true });
+    ctx.beginPath(); ctx.moveTo(-14, 30); ctx.lineTo(14, 30); ctx.lineTo(0, 54); ctx.fillStyle = C.hl; ctx.fill(); ctx.restore();
+  }
+  if (pc) stamp('過去最多', 735, sy(59) + 70, pc.t + 0.75, t, { size: 52, rot: -8 });
+  ctx.restore();
+}
+function drawRange(t, si) {
+  const c = cue('count', si, 'range'); if (!c || t < c.t) return;
+  const d = t - c.t, v = 4600 * easeOut(d / c.dur);
+  ctx.save(); ctx.globalAlpha = clamp(d / 0.2);
+  rrect(90, MAP.y + MAP.h - 250, 900, 200, 16); ctx.fillStyle = 'rgba(4,7,11,0.82)'; ctx.fill(); ctx.strokeStyle = C.red; ctx.lineWidth = 3; ctx.stroke();
+  txt('飛距離', 140, MAP.y + MAP.h - 190, { size: 34, color: C.ink2 });
+  txt('約' + fmt(v), 820, MAP.y + MAP.h - 92, { size: 120, font: MONO, align: 'right', color: '#fff', bold: true });
+  txt('km', 840, MAP.y + MAP.h - 92, { size: 56, font: MONO, color: C.ink2 });
+  ctx.restore();
+  if (d > c.dur) stamp('過去最長', 820, MAP.y + MAP.h - 270, c.t + c.dur, t, { size: 44, rot: 6 });
+}
+function drawQuality(t, si) {
+  const s = SC[si], loc = t - s.start;
+  // 数 ▼ 質 ▲
+  const a = easeOut(loc / 0.5);
+  ctx.save(); ctx.globalAlpha = a;
+  txt('回数', 300, MAP.y + 150, { size: 52, align: 'center', color: C.ink2 });
+  txt('▼', 300, MAP.y + 270, { size: 110, align: 'center', color: '#5fa8ff' });
+  const ev = cue('stamp', si, 'evolve');
+  if (ev && t > ev.t) {
+    const e = backOut((t - ev.t) / 0.35);
+    ctx.save(); ctx.translate(780, MAP.y + 200); ctx.scale(e, e);
+    txt('性能', 0, -50, { size: 52, align: 'center', color: '#fff', bold: true });
+    txt('▲', 0, 70, { size: 110, align: 'center', color: C.red });
+    ctx.restore();
+  }
+  ctx.restore();
+  CARDS.forEach((cd, i) => {
+    const c = cue('card', si, i); if (!c || t < c.t) return;
+    const e = backOut((t - c.t) / 0.4), y = MAP.y + 330 + i * 150;
+    ctx.save(); ctx.translate(lerp(-700, 0, clamp(e)), 0); ctx.globalAlpha = clamp((t - c.t) / 0.2);
+    rrect(90, y, 900, 128, 14); ctx.fillStyle = 'rgba(16,22,30,0.95)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,90,80,0.7)'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = C.red; ctx.fillRect(90, y, 14, 128);
+    txt(cd.tag, 140, y + 56, { size: 32, font: MONO, color: C.hl });
+    txt(cd.name, 140, y + 108, { size: 52, bold: true });
+    txt(cd.desc, 960, y + 88, { size: 36, align: 'right', color: C.ink2 });
+    ctx.restore();
+  });
+  const w = cue('warn', si);
+  if (w && t > w.t) {   // 探知困難: ノイズ
+    const d = t - w.t;
+    for (let i = 0; i < 26; i++) { const yy = MAP.y + hash(i + Math.floor(t * 20)) * MAP.h; ctx.fillStyle = `rgba(255,255,255,${0.05 + 0.08 * hash(i * 3 + Math.floor(t * 20))})`; ctx.fillRect(0, yy, W, 2 + 6 * hash(i + 7)); }
+    stamp('探知が困難に', 540, MAP.y + 818, w.t, t, { size: 50, rot: -4 });
+  }
+}
+function drawNow(t, si) {
+  const c = cue('count', si, 'total');
+  if (c && t >= c.t) {
+    const d = t - c.t, v = 214 * easeOut(d / c.dur);
+    ctx.save(); ctx.globalAlpha = clamp(d / 0.2);
+    txt('金正恩体制下の発射 累計', 540, MAP.y + 120, { size: 44, align: 'center', color: C.ink2 });
+    txt(fmt(v), 520, MAP.y + 360, { size: 240, font: MONO, align: 'center', color: '#fff', bold: true, stroke: 10 });
+    txt('発', 800, MAP.y + 360, { size: 90, color: C.red, bold: true });
+    txt('2026年5月末時点', 540, MAP.y + 430, { size: 30, align: 'center', color: C.ink3 });
+    ctx.restore();
+  }
+  const dc = cue('dots', si);
+  if (dc && t >= dc.t) {
+    const y = MAP.y + 640, x0 = 110, x1 = 970;
+    ctx.save(); ctx.globalAlpha = clamp((t - dc.t) / 0.2);
+    txt('2026年 主な発射', 540, y - 90, { size: 40, align: 'center', bold: true, color: C.hl });
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+    for (let m = 1; m <= 12; m++) { const x = lerp(x0, x1, (m - 1) / 11); ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x - 1, y - 10, 2, 20); if (m % 2 === 1 || m === 12) txt(m + '月', x, y + 52, { size: 24, align: 'center', color: C.ink3 }); }
+    DOTS2026.forEach((dt, i) => {
+      const tt = dc.t + 0.25 + i * dc.step; if (t < tt) return;
+      const [mo, da] = dt.split('/').map(Number), x = lerp(x0, x1, (mo - 1 + (da - 1) / 30) / 11), e = backOut((t - tt) / 0.3);
+      const r = 14 * e, rr = (t - tt) * 70;
+      ctx.strokeStyle = `rgba(255,59,48,${Math.max(0, 1 - (t - tt) / 0.8)})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x, y, rr, 0, 7); ctx.stroke();
+      ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+      txt(dt, x, y - 30 - (i % 3) * 32, { size: 26, align: 'center', font: MONO, color: '#ffb3ab', alpha: clamp((t - tt) / 0.2) });
+    });
+    const last = dc.t + 0.25 + (DOTS2026.length - 1) * dc.step;
+    if (t > last + 0.3) stamp('今日も発射', 760, y + 150, last + 0.3, t, { size: 44, rot: -5 });
+    ctx.restore();
+  }
+}
+function drawOutro(t, si) {
+  const s = SC[si], loc = t - s.start;
+  // これまでの弾道をまとめて再生
+  const ms = CUES.filter(c => c.type === 'missile' && !c.small);
+  ms.forEach((m, i) => { const t0 = s.start + 0.1 + i * 0.22; drawMissile({ ...m, t: t0, dur: 1.1, impact: m.impact }, t, { montage: true, fade: 0.75 }); });
+  const e = easeOut((loc - 2.0) / 0.5);
+  if (e > 0) {
+    ctx.save(); ctx.globalAlpha = e;
+    ctx.fillStyle = 'rgba(4,7,11,0.78)'; ctx.fillRect(0, MAP.y, W, MAP.h);
+    txt('北朝鮮ミサイル', 540, MAP.y + 250, { size: 84, align: 'center', bold: true });
+    txt('30年の推移', 540, MAP.y + 370, { size: 110, align: 'center', color: C.red, bold: true });
+    ctx.restore();
+  }
+  const end = cue('stamp', si, 'end');
+  if (end && t > end.t) {
+    const d = t - end.t, f = backOut(d / 0.4);
+    ctx.save(); ctx.translate(540, MAP.y + 560); ctx.scale(f, f);
+    rrect(-380, -60, 760, 110, 55); ctx.fillStyle = C.red; ctx.fill();
+    txt('フォローで最新の解説をチェック', 0, 16, { size: 42, align: 'center', color: '#fff', bold: true });
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = clamp((d - 0.3) / 0.4);
+    txt('ナレーション  VOICEVOX:青山龍星', 540, MAP.y + 720, { size: 34, align: 'center', color: C.ink });
+    txt('BGM・効果音  自作', 540, MAP.y + 772, { size: 30, align: 'center', color: C.ink2 });
+    txt('出典: 防衛白書・防衛省発表・NHK/日経ほか報道', 540, MAP.y + 822, { size: 26, align: 'center', color: C.ink3 });
+    ctx.restore();
+  }
+}
+
+// ---------- ポストエフェクト ----------
+const grain = document.createElement('canvas'); grain.width = grain.height = 256;
+{ const g = grain.getContext('2d'), im = g.createImageData(256, 256); let sd = 12345;
+  for (let i = 0; i < im.data.length; i += 4) { sd = (sd * 1103515245 + 12345) & 0x7fffffff; const v = sd % 256; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  g.putImageData(im, 0, 0); }
+const scan = document.createElement('canvas'); scan.width = 4; scan.height = 4;
+{ const g = scan.getContext('2d'); g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, 0, 4, 1); }
+function post(t, si) {
+  const f = Math.floor(t * FPS);
+  ctx.save(); ctx.globalAlpha = 0.045; ctx.globalCompositeOperation = 'overlay';
+  ctx.fillStyle = ctx.createPattern(grain, 'repeat'); ctx.translate((f * 73) % 256, (f * 151) % 256); ctx.fillRect(-256, -256, W + 512, H + 512); ctx.restore();
+  ctx.save(); ctx.fillStyle = ctx.createPattern(scan, 'repeat'); ctx.globalAlpha = 0.5; ctx.fillRect(0, 0, W, H); ctx.restore();
+  const v = ctx.createRadialGradient(540, 860, 500, 540, 860, 1250); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  FLASHES.forEach(fl => { const d = t - fl.t; if (d >= 0 && d < 1) { const a = fl.a * Math.exp(-d * fl.k); if (a > 0.005) { ctx.fillStyle = `rgba(${fl.c},${a})`; ctx.fillRect(0, 0, W, H); } } });
+  // シーン切り替え直後のグリッチ(横ずれ)
+  const d = t - SC[si].start;
+  if (si > 0 && d < 0.2) {
+    for (let i = 0; i < 7; i++) { const y = Math.floor(hash(i + f) * H), h = 20 + hash(i * 5 + f) * 90, dx = (hash(i * 9 + f) - 0.5) * 120 * (1 - d / 0.2); ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+  }
+}
+
+// ---------- メイン描画 ----------
+function render(t) {
+  if (!TL) return;
+  t = Math.min(t, TL.total - 1e-3);
+  const si = sceneIndex(t), s = SC[si];
+  CAM = camAt(t);
+  // 画面の揺れ
+  let amp = 0; SHAKES.forEach(e => { const d = t - e.t; if (d >= 0 && d < 1.5) amp += e.amp * Math.exp(-d * e.k); });
+  const sx = amp * Math.sin(t * 91.7) * 0.9, sy = amp * Math.cos(t * 77.3) * 0.9;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(sx, sy);
+  const dim = { quality: 0.55, now: 0.7 }[s.id] || 0;
+  drawMap(t, si, dim, jpPulseAt(t, si));
+  ctx.save(); ctx.beginPath(); ctx.rect(MAP.x, MAP.y, MAP.w, MAP.h); ctx.clip();
+  if (s.id !== 'outro') CUES.filter(c => c.type === 'missile' && c.si === si).forEach((m, i, arr) => drawMissile(m, t, { label: arr.findIndex(x => x.big) === i }));
+  if (s.id === 'y2016') { drawEEZ(t, si); }
+  if (s.id === 'y2016' || s.id === 'y2022' || s.id === 'y1990' || s.id === 'y2000') {
+    const st = CUES.filter(c => c.type === 'stamp' && c.si === si);
+    st.forEach(c => {
+      if (c.id === 'first_overflight') stamp('初の日本上空通過', 560, MAP.y + 700, c.t, t, { size: 52 });
+      if (c.id === 'rare') stamp('数年に1度', 560, MAP.y + 700, c.t, t, { size: 56, color: '#d9a400', fg: '#111' });
+      if (c.id === 'kim') stamp('2012年〜 金正恩体制', 540, MAP.y + 760, c.t, t, { size: 50, rot: -3, until: 2.0 });
+    });
+  }
+  if (s.id === 'y2016') drawWarn(t, si, 'Jアラート発出');
+  if (s.id === 'chart') drawChart(t, si);
+  if (s.id === 'y2022') drawRange(t, si);
+  if (s.id === 'quality') drawQuality(t, si);
+  if (s.id === 'now') drawNow(t, si);
+  if (s.id === 'outro') drawOutro(t, si);
+  ctx.restore();
+  if (s.id === 'hook') drawHook(t, si);
+  drawHUD(t, si);
+  drawCaption(t, si);
+  if (FOOT[s.id]) FOOT[s.id].split('\n').forEach((l, i) => txt(l, 540, 1515 + i * 36, { size: 26, align: 'center', color: C.ink3, alpha: clamp((t - s.start) / 0.5) }));
+  ctx.restore();
+  post(t, si);
+}
+window.render = render; window.FPS = FPS; window.setupTimeline = setup;
+Object.defineProperty(window, 'DURATION', { get: () => TL ? TL.total : 0 });
+
+if (window.TIMELINE) setup(window.TIMELINE);
+else fetch('output/timeline.json').then(r => r.json()).then(tl => {   // ブラウザでのプレビュー再生
+  setup(tl); const t0 = performance.now();
+  const loop = () => { render(((performance.now() - t0) / 1000) % tl.total); requestAnimationFrame(loop); }; loop();
+});
+</script>
+</body>
+</html>
