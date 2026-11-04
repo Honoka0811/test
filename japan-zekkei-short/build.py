@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import script as S
 from scenes import SCENES
+from bgm import compose
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "out")
@@ -82,111 +83,20 @@ def build_timeline():
 
 
 # ---------------------------------------------------------------- BGM・効果音（オリジナル合成）
-def env(n, a=0.005, r=0.2):
-    t = np.arange(n) / SR
-    return np.minimum(1, t / a) * np.exp(-t / r)
-
-
-def kick(n=int(0.35 * SR)):
-    t = np.arange(n) / SR
-    f = 50 + 120 * np.exp(-t * 35)
-    return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 9) * 0.9
-
-
-def snare(n=int(0.25 * SR), rng=np.random.default_rng(1)):
-    t = np.arange(n) / SR
-    return (rng.normal(0, 1, n) * 0.5 + np.sin(2 * np.pi * 190 * t) * 0.5) * np.exp(-t * 18) * 0.5
-
-
-def hat(n=int(0.06 * SR), rng=np.random.default_rng(2)):
-    x = rng.normal(0, 1, n)
-    x = np.diff(np.concatenate([[0], x]))
-    return x * np.exp(-np.arange(n) / SR * 70) * 0.12
-
-
-def saw(freq, n):
-    t = np.arange(n) / SR
-    return 2 * ((t * freq) % 1) - 1
-
-
-def lowpass(x, cutoff):
-    a = math.exp(-2 * math.pi * cutoff / SR)
-    y = np.empty_like(x)
-    acc = 0.0
-    for i in range(len(x)):  # 小さな配列にのみ使用
-        acc = (1 - a) * x[i] + a * acc
-        y[i] = acc
-    return y
-
-
-def note(midi):
-    return 440 * 2 ** ((midi - 69) / 12)
-
-
-def make_bgm(total, drop_ranges):
-    """124BPM のエピック・ポップ。drop_ranges の区間は静か（ため）にする"""
-    bpm = 124
-    beat = 60 / bpm
-    n = int(total * SR) + SR
-    mix = np.zeros(n)
-    pad = np.zeros(n)
-    prog = [(57, [57, 60, 64]), (53, [53, 57, 60]), (48, [55, 60, 64]), (55, [55, 59, 62])]  # Am F C G
-    k, sn, h = kick(), snare(), hat()
-    bar = beat * 4
-    nb = int(total / bar) + 2
-    rng = np.random.default_rng(3)
-    for b in range(nb):
-        root, chord = prog[b % 4]
-        t0 = b * bar
-        i0 = int(t0 * SR)
-        L = int(bar * SR)
-        if i0 >= n:
-            break
-        seg = slice(i0, min(n, i0 + L))
-        m = seg.stop - seg.start
-        # パッド
-        p = sum(saw(note(c), m) + saw(note(c) * 1.006, m) for c in chord) / 6
-        pad[seg] += p * 0.18
-        # ベース（8分）
-        for e in range(8):
-            j = i0 + int(e * beat / 2 * SR)
-            ln = int(beat / 2 * SR * 0.9)
-            if j + ln > n:
-                continue
-            bs = np.sign(np.sin(2 * np.pi * note(root - 12) * np.arange(ln) / SR)) * 0.5
-            mix[j:j + ln] += bs * env(ln, 0.003, 0.12) * 0.32
-        # アルペジオ
-        arp = chord + [chord[0] + 12, chord[1] + 12]
-        for e in range(16):
-            j = i0 + int(e * beat / 4 * SR)
-            ln = int(0.18 * SR)
-            if j + ln > n:
-                continue
-            f = note(arp[(e * 3) % len(arp)] + 12)
-            tt = np.arange(ln) / SR
-            mix[j:j + ln] += (np.sin(2 * np.pi * f * tt) + 0.3 * np.sin(4 * np.pi * f * tt)) * env(ln, 0.002, 0.08) * 0.12
-        # ドラム
-        for q in range(4):
-            j = i0 + int(q * beat * SR)
-            if j + len(k) < n:
-                mix[j:j + len(k)] += k
-            if q in (1, 3) and j + len(sn) < n:
-                mix[j:j + len(sn)] += sn
-            for e in range(2):
-                jj = j + int(e * beat / 2 * SR)
-                if jj + len(h) < n:
-                    mix[jj:jj + len(h)] += h * (1.4 if e else 0.8)
-    # パッドを柔らかく（簡易ローパス：移動平均）
-    kern = np.ones(24) / 24
-    pad = np.convolve(pad, kern, mode="same")
-    out = mix + pad
-    # 「ため」区間はリズムを抜いてパッドのみ
-    for a, b in drop_ranges:
-        ia, ib = int(a * SR), int(b * SR)
-        fade = np.ones(ib - ia)
-        f = min(int(0.05 * SR), len(fade) // 2)
-        out[ia:ib] = out[ia:ib] * 0 + pad[ia:ib] * 0.6
-    return out[:int(total * SR)]
+def load_custom_bgm(total):
+    """bgm/ フォルダに音楽ファイルがあれば、そちらを使う（ループ・トリム）"""
+    d = os.path.join(ROOT, "bgm")
+    files = sorted(f for f in os.listdir(d) if f.lower().endswith((".mp3", ".wav", ".m4a", ".ogg"))) if os.path.isdir(d) else []
+    if not files:
+        return None
+    wav = os.path.join(CACHE, "custom_bgm.wav")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", os.path.join(d, files[0]),
+                    "-t", f"{total:.2f}", "-ac", "1", "-ar", str(SR), wav], check=True)
+    with wave.open(wav) as w:
+        a = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
+    out = np.zeros(int(total * SR))
+    out[:min(len(a), len(out))] = a[:len(out)]
+    return out / (np.max(np.abs(out)) + 1e-9) * 0.9
 
 
 def add(buf, x, at, gain=1.0):
@@ -205,7 +115,12 @@ def make_audio(segs, total):
         add(voice, s["audio"], s["start"] + s["voice_at"])
         if s["kind"] == "suspense":
             drops.append((s["start"], s["start"] + s["dur"]))
-    bgm = make_bgm(total, drops)
+    bgm = load_custom_bgm(total)
+    if bgm is None:
+        spots = [x for x in segs if x["kind"] == "spot"]
+        sus = next(x for x in segs if x["kind"] == "suspense")
+        peak = next(x for x in spots if x["rank"] == 1)
+        bgm = compose(total, spots[0]["start"], sus["start"], peak["start"])
     # ダッキング（ナレーション中はBGMを下げる）
     ve = np.convolve(np.abs(voice), np.ones(4410) / 4410, mode="same")
     duck = 1 - 0.55 * np.clip(ve / 0.03, 0, 1)
@@ -213,7 +128,7 @@ def make_audio(segs, total):
     fade = np.ones(n)
     fl = int(1.2 * SR)
     fade[-fl:] = np.linspace(1, 0, fl)
-    mix = voice * 1.0 + bgm * 0.32 * duck * fade
+    mix = voice * 1.0 + bgm * 0.3 * duck * fade
     mix /= max(1e-6, np.max(np.abs(mix))) / 0.95
     path = os.path.join(CACHE, "mix.wav")
     with wave.open(path, "wb") as w:
