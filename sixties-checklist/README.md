@@ -3,7 +3,7 @@
 明るいイラスト多めでテンポよく進む縦型ショート動画(1080×1920 / 30fps / 66.6秒)です。
 ナレーションは VOICEVOX の **四国めたん**、BGM はヴィヴァルディ「四季」より「春」(パブリックドメイン)の冒頭テーマを、ビート入りの明るいポップ・クラシック風に自作アレンジしたものです(GeneralUser GS SoundFont で演奏)。
 
-- **アップロード用一式: `upload/`**(最終mp4 -14 LUFS 正規化済み・字幕SRT・サムネイルJPG)
+- **アップロード用一式: `upload/`**(最終mp4 -14 LUFS 正規化済み・字幕SRT・サムネイルJPG・タイトル案/説明文/タグの `metadata.md`)
 - 完成動画: `output/sixties_checklist.mp4`
 - 字幕: `output/subtitles_ja.srt` / サムネイル: `output/thumbnail.png`
 - ナレーション原稿: `narration_script.txt`
