@@ -18,6 +18,8 @@ def reveal(sid):
     s = S[sid]
     if sid == "rice":
         return ph("rice", "ヨンセン")
+    if sid == "gas":  # 「補助金があっても」の後に新価格を出す
+        return ph("gas", "ナナジュウ")
     i = next(i for i, p in enumerate(s["phrases"]) if p["kana"].endswith("カラ"))
     return round(s["start"] + s["phrases"][i + 1]["t"], 3)
 
@@ -30,7 +32,7 @@ cues = {
     "reveal": {i: reveal(i) for i in items},
     "stamp": {i: (ph("rice", "ニバイ") if i == "rice" else round(reveal(i) + 0.42, 3)) for i in items},
     # お米：ピーク（4000円超）から現在価格へ下がる瞬間と、「4割高い」スタンプ
-    "drop": round(ph("rice", "ハッピャク") - 0.3, 3),
+    "drop": round(ph("rice", "イマワ") + 0.2, 3),
     "stamp2": ph("rice", "ヨンワリ"),
     "chartStart": S["chart"]["start"],
     "cpi": ph("chart", "ブッカシスウ"),

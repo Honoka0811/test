@@ -107,7 +107,7 @@ for (let i = 0; i < 14; i++) {
 
 // 共通 UI
 const credit = add(`<div class="a" id="credit">VOICEVOX:青山龍星</div>`);
-const note = add(`<div class="a" id="note">※価格は全国の目安（概算）</div>`);
+const note = add(`<div class="a" id="note">※2026年10月時点の全国の目安</div>`);
 const hdr = add(`<div class="a" id="hdr"><div class="pill">2016年 → 今</div><div class="ttl stroke">10年で<b>いくら</b>上がった？</div></div>`);
 const dots = add(`<div class="a" id="dots">${items.map(() => '<i></i>').join('')}</div>`);
 const sub = add(`<div class="a" id="sub"><span></span></div>`);
@@ -141,22 +141,22 @@ const cards = items.map((s) => {
   return { s, it, e, stp, n: e.querySelector('.nw .n'), x: e.querySelector('.old .x'), emo: e.querySelector('.emo'), nwp: e.querySelector('.nw .pr'), oldp: e.querySelector('.old .pr'), nlb: e.querySelector('.nw .lb'), stpP: stp.querySelector('.p'), stpS: stp.querySelectorAll('.s') };
 });
 const x2 = add(`<div class="a stroke" id="x2" style="left:90px;top:500px;font-size:170px">×2<span class="emo">🔥</span></div>`);
-const riceNote = add(`<div class="a" style="left:70px;width:940px;top:1250px;text-align:center;font-size:38px;font-weight:900;color:#1565c0">↓ 2026年秋は11週連続で値下がり中</div>`);
+const riceNote = add(`<div class="a" style="left:70px;width:940px;top:1250px;text-align:center;font-size:38px;font-weight:900;color:#1565c0">↓ 11週連続で値下がり中（10月19〜25日の週）</div>`);
 
 // グラフ
 const rows = [...items.map((s) => ({ name: s.item.name.replace(' 並盛', ''), emoji: s.item.emoji, pct: s.item.pct }))]
   .sort((a, b) => b.pct - a.pct);
-rows.push({ name: '物価指数(平均)', emoji: '📊', pct: 15, cpi: true });
+rows.push({ name: '物価指数(平均)', emoji: '📊', pct: 17, cpi: true });
 const chart = add(`<div class="a" id="chart">
   <div class="stroke" style="text-align:center;font-weight:900;font-size:70px;margin-bottom:26px">値上がり率 <span style="color:var(--y)">ランキング</span></div>
   ${rows.map((r) => `<div class="row ${r.cpi ? 'cpi' : ''}"><div class="lab"><span class="emo">${r.emoji}</span> ${r.name}</div><div class="bar"></div><div class="val"></div></div>`).join('')}
 </div>`);
 const rowEls = [...chart.querySelectorAll('.row')].map((e, i) => ({ e, bar: e.querySelector('.bar'), val: e.querySelector('.val'), r: rows[i] }));
-const callout = add(`<div class="a" id="callout">↑ 平均はたった15%</div>`);
+const callout = add(`<div class="a" id="callout">↑ 平均は約17%</div>`);
 
 // 原因
 const whys = [
-  ['💴', '円安', '1ドル108円 → 150円台'],
+  ['💴', '円安', '1ドル108円 → 150円台後半'],
   ['🛢️', 'エネルギー高', '原油・ガス・電気が高騰'],
   ['👷', '人件費アップ', '最低賃金は10年で約36%上昇'],
 ].map(([em, a, b], i) => add(`<div class="a why" style="top:${520 + i * 300}px"><div class="emo">${em}</div><div><div class="t1">${a}</div><div class="t2">${b}</div></div></div>`));
@@ -297,7 +297,7 @@ window.render = function (t) {
     const st = second ? CU.stamp2 : CU.stamp[s.id];
     const ps = pr(t, st, 0.18);
     if (isRice) {
-      const [a, b, cc] = second ? ['今でも', '+40%', '値上げ'] : ['約', '2倍', '値上げ'];
+      const [a, b, cc] = second ? ['今でも', '+' + c.it.pct + '%', '値上げ'] : ['なんと', '2倍超', '値上げ'];
       if (c.stpP.textContent !== b) { c.stpS[0].textContent = a; c.stpP.textContent = b; c.stpS[1].textContent = cc; }
     }
     const hideBetween = isRice && t >= CU.drop && t < CU.stamp2;

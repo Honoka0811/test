@@ -1,6 +1,6 @@
 # 物価10年ショート動画
 
-`bukka-10nen-shorts.mp4`：縦型 1080×1920、30fps、約54秒。ナレーションは VOICEVOX:青山龍星。
+`bukka-10nen-shorts.mp4`：縦型 1080×1920、30fps、約60秒。ナレーションは VOICEVOX:青山龍星。
 
 ## 作り直し方
 
