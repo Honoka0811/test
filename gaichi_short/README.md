@@ -14,3 +14,4 @@
 - 1940年当時の外地（朝鮮・台湾・関東州・樺太・南洋群島）を色分けした地図上を、カメラが各都市へ飛びながら紹介
 - 地図データ：Natural Earth（world-atlas 経由, パブリックドメイン）。関東州・樺太の範囲は概略
 - 生成：`python3 src/geo.py` → `python3 src/render_map.py`
+- 音声：`python3 src/audio_soft.py`（落ち着いたBGM＋控えめな効果音）で作った `mix_soft.wav` に差し替え済み
