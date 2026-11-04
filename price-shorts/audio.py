@@ -216,6 +216,12 @@ def pop():
     return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 30) * 0.25
 
 
+def down():  # 値下がりの「ひゅーん」（下降音）
+    t = tarr(0.6)
+    f = 1200 * np.exp(-t * 3.5) + 150
+    return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 3) * 0.22
+
+
 def tick():
     t = tarr(0.05)
     return np.sin(2 * np.pi * 1600 * t) * np.exp(-t * 90) * 0.12
@@ -236,7 +242,7 @@ def riser(d):
 
 
 sfx = np.zeros(N)
-gen = {"whoosh": whoosh, "coin": coin, "stamp": stamp, "impact": impact, "hit": hit, "pop": pop, "tick": tick}
+gen = {"whoosh": whoosh, "coin": coin, "stamp": stamp, "impact": impact, "hit": hit, "pop": pop, "tick": tick, "down": down}
 for e in cues["sfx"]:
     if e["k"] == "riser":
         add(sfx, riser(e["until"] - e["t"]), e["t"])

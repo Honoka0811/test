@@ -138,10 +138,10 @@ const cards = items.map((s) => {
     <div class="nw"><div class="lb">今</div><div class="pr"><span class="n"></span><span class="yenS">円</span></div></div>
   </div>`);
   const stp = add(`<div class="a stp"><div class="s">${it.pct >= 100 ? '約' : ''}</div><div class="p">${it.pct >= 100 ? '2倍' : '+' + it.pct + '%'}</div><div class="s">値上げ</div></div>`);
-  return { s, it, e, stp, n: e.querySelector('.nw .n'), x: e.querySelector('.old .x'), emo: e.querySelector('.emo'), nwp: e.querySelector('.nw .pr'), oldp: e.querySelector('.old .pr') };
+  return { s, it, e, stp, n: e.querySelector('.nw .n'), x: e.querySelector('.old .x'), emo: e.querySelector('.emo'), nwp: e.querySelector('.nw .pr'), oldp: e.querySelector('.old .pr'), nlb: e.querySelector('.nw .lb'), stpP: stp.querySelector('.p'), stpS: stp.querySelectorAll('.s') };
 });
 const x2 = add(`<div class="a stroke" id="x2" style="left:90px;top:500px;font-size:170px">×2<span class="emo">🔥</span></div>`);
-const riceNote = add(`<div class="a" style="left:70px;width:940px;top:1250px;text-align:center;font-size:38px;font-weight:900;color:#b3000c">2025年5月には過去最高 4,285円</div>`);
+const riceNote = add(`<div class="a" style="left:70px;width:940px;top:1250px;text-align:center;font-size:38px;font-weight:900;color:#1565c0">↓ 2026年秋は11週連続で値下がり中</div>`);
 
 // グラフ
 const rows = [...items.map((s) => ({ name: s.item.name.replace(' 並盛', ''), emoji: s.item.emoji, pct: s.item.pct }))]
@@ -174,7 +174,7 @@ const grid = document.getElementById('grid');
 function vis(el, on) { el.style.display = on ? '' : 'none'; }
 function shakeAt(t) {
   let x = 0, y = 0, z = 0;
-  const kicks = [[0.6, 18], ...CU.hook.slice(1).map((v) => [v, 22]), ...Object.entries(CU.stamp).map(([k, v]) => [v, k === 'rice' ? 46 : 20]), [CU.glow, 10]];
+  const kicks = [[0.6, 18], ...CU.hook.slice(1).map((v) => [v, 22]), ...Object.entries(CU.stamp).map(([k, v]) => [v, k === 'rice' ? 46 : 20]), [CU.reveal.rice, 30], [CU.stamp2, 20], [CU.glow, 10]];
   for (const [t0, a] of kicks) {
     const d = t - t0;
     if (d < 0 || d > 0.5) continue;
@@ -204,7 +204,7 @@ window.render = function (t) {
     y.e.style.transform = `translate(${y.x}px,${yy}px) rotate(${y.r + t * 10}deg) scale(${y.s})`;
   }
   const r = sc('rice');
-  const red = pr(t, CU.reveal.rice - 0.05, 0.2) * (1 - pr(t, r.end - 0.3, 0.4));
+  const red = pr(t, CU.reveal.rice - 0.05, 0.2) * (1 - 0.75 * pr(t, CU.drop, 0.6)) * (1 - pr(t, r.end - 0.3, 0.4));
   bgred.style.opacity = red * 0.9;
   const [sx, sy, sz] = shakeAt(t);
   W.style.transform = `translate(${sx}px,${sy}px) scale(${1 + sz})`;
@@ -278,27 +278,42 @@ window.render = function (t) {
     c.emo.style.transform = `scale(${0.3 + 0.7 * eBack(pr(t, s.start, 0.45))}) translateY(${Math.sin(t * 6) * 8}px)`;
     const rv = CU.reveal[s.id];
     const cnt = eOut(pr(t, rv - 0.05, isRice ? 0.25 : 0.4));
-    const v = t < rv - 0.05 ? null : c.it.old + (c.it.new - c.it.old) * cnt;
-    c.n.textContent = v === null ? '？' : cnt >= 1 ? c.it.newLabel.replace(/\d+/, (m) => fmt(+m)) : fmt(v);
+    let v = t < rv - 0.05 ? null : c.it.old + (c.it.new - c.it.old) * cnt;
+    let label = cnt >= 1 ? c.it.newLabel.replace(/\d+/, (m) => fmt(+m)) : null;
+    if (isRice) {
+      // ピーク（2025年）まで上がってから、今の価格へ下がる
+      if (v !== null) { v = c.it.old + (c.it.peak - c.it.old) * cnt; label = cnt >= 1 ? fmt(c.it.peak) : null; }
+      const dn = eOut(pr(t, CU.drop, 0.6));
+      if (t >= CU.drop) { v = c.it.peak + (c.it.new - c.it.peak) * dn; label = dn >= 1 ? c.it.newLabel.replace(/\d+/, (m) => fmt(+m)) : null; }
+      const lbt = t >= CU.drop ? '今' : '2025年ピーク';
+      if (c.nlb.textContent !== lbt) c.nlb.textContent = lbt;
+    }
+    c.n.textContent = v === null ? '？' : label || fmt(v);
     const fit = Math.min(1, 370 / (c.nwp.offsetWidth || 1)), fitO = Math.min(1, 330 / (c.oldp.offsetWidth || 1));
     c.oldp.style.transform = `scale(${fitO})`;
     c.nwp.style.transform = `scale(${fit * (v === null ? 1 : 1 + 0.25 * Math.exp(-(t - rv) * 6) * (t > rv ? 1 : 0))})`;
     c.x.style.transform = `scaleX(${eOut(pr(t, rv, 0.25))})`;
-    const st = CU.stamp[s.id];
+    const second = isRice && t >= CU.stamp2;
+    const st = second ? CU.stamp2 : CU.stamp[s.id];
     const ps = pr(t, st, 0.18);
-    c.stp.style.opacity = t < st ? 0 : 1 - out;
+    if (isRice) {
+      const [a, b, cc] = second ? ['今でも', '+40%', '値上げ'] : ['約', '2倍', '値上げ'];
+      if (c.stpP.textContent !== b) { c.stpS[0].textContent = a; c.stpP.textContent = b; c.stpS[1].textContent = cc; }
+    }
+    const hideBetween = isRice && t >= CU.drop && t < CU.stamp2;
+    c.stp.style.opacity = t < st || hideBetween ? 0 : 1 - out;
     const sx0 = isRice ? 690 : 715, sy0 = isRice ? 450 : 430;
     c.stp.style.transform = `translate(${sx0}px,${sy0}px) scale(${(isRice ? 1.05 : 0.8) * (2.6 - 1.6 * eOut(ps))}) rotate(${-14 + 4 * (1 - ps)}deg) translateX(${-out * 1300}px)`;
   });
   // お米スペシャル
   const rOn = t >= CU.reveal.rice && t < r.end;
-  vis(x2, rOn); vis(riceNote, rOn);
+  vis(x2, rOn && t < CU.drop + 0.3); vis(riceNote, rOn && t >= CU.drop);
   if (rOn) {
-    const p = pr(t, CU.reveal.rice + 0.1, 0.25);
+    const p = pr(t, CU.stamp.rice, 0.25);
     const out = eIn(pr(t, r.end - 0.22, 0.25));
-    x2.style.opacity = cl(p * 3) * (1 - out);
+    x2.style.opacity = cl(p * 3) * (1 - pr(t, CU.drop, 0.3));
     x2.style.transform = `scale(${(3 - 2 * eOut(p)) * (1 + 0.04 * Math.sin(t * 18))}) rotate(-8deg)`;
-    riceNote.style.opacity = pr(t, CU.reveal.rice + 0.6, 0.3) * (1 - out);
+    riceNote.style.opacity = pr(t, CU.drop + 0.3, 0.3) * (1 - out);
   }
 
   // グラフ

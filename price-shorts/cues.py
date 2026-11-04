@@ -28,7 +28,10 @@ cues = {
     "hook": [ph("hook", "コノ"), ph("hook", "ブッカ"), ph("hook", "ココマデ")],
     "intro": [ph("intro", "ニセンジュウ"), ph("intro", "イマノ"), ph("intro", "クラベテ")],
     "reveal": {i: reveal(i) for i in items},
-    "stamp": {i: round(reveal(i) + (0.0 if i == "rice" else 0.42), 3) for i in items},
+    "stamp": {i: (ph("rice", "ニバイ") if i == "rice" else round(reveal(i) + 0.42, 3)) for i in items},
+    # お米：ピーク（4000円超）から現在価格へ下がる瞬間と、「4割高い」スタンプ
+    "drop": round(ph("rice", "ハッピャク") - 0.3, 3),
+    "stamp2": ph("rice", "ヨンワリ"),
     "chartStart": S["chart"]["start"],
     "cpi": ph("chart", "ブッカシスウ"),
     "glow": ph("chart", "ミノマワリ"),
@@ -47,7 +50,10 @@ for i in items:
                 {"t": cues["stamp"][i], "k": "stamp"}]
 sfx += [{"t": S["rice"]["start"] - 0.05, "k": "whoosh"},
         {"t": S["rice"]["start"] + 0.4, "k": "riser", "until": cues["reveal"]["rice"]},
-        {"t": cues["reveal"]["rice"], "k": "impact"}]
+        {"t": cues["reveal"]["rice"], "k": "impact"},
+        {"t": cues["stamp"]["rice"], "k": "stamp"},
+        {"t": cues["drop"], "k": "down"},
+        {"t": cues["stamp2"], "k": "stamp"}]
 sfx += [{"t": S["chart"]["start"] - 0.05, "k": "whoosh"}]
 sfx += [{"t": cues["chartStart"] + 0.25 + 0.13 * k, "k": "tick"} for k in range(8)]
 sfx += [{"t": cues["cpi"], "k": "pop"}, {"t": cues["glow"], "k": "hit"}]
