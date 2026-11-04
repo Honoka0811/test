@@ -536,9 +536,7 @@ class Renderer:
     def common(self, frame, current, illustrated):
         progress(frame, current)
         frame.alpha_composite(self.credit, (VW - self.credit.width - 30, VH - self.credit.height - 30))
-        if illustrated:
-            frame.alpha_composite(self.img_note, (30, VH - self.img_note.height - 30))
-        elif current in self.photo_credit and current != 0:
+        if current in self.photo_credit and current != 0:
             c = self.photo_credit[current]
             frame.alpha_composite(c, (30, VH - c.height - 70))
 
