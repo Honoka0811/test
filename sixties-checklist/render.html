@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>60代のうちにやっておくべきこと10選</title>
+<style>
+  @font-face { font-family: 'ZenMaru'; font-weight: 500; src: url(assets/fonts/zen-maru-gothic-japanese-500-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'ZenMaru'; font-weight: 700; src: url(assets/fonts/zen-maru-gothic-japanese-700-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'ZenMaru'; font-weight: 900; src: url(assets/fonts/zen-maru-gothic-japanese-900-normal.woff2) format('woff2'); }
+  @font-face { font-family: 'ZenMaru'; font-weight: 700; src: url(assets/fonts/zen-maru-gothic-latin-700-normal.woff2) format('woff2'); unicode-range: U+0000-00FF; }
+  @font-face { font-family: 'ZenMaru'; font-weight: 900; src: url(assets/fonts/zen-maru-gothic-latin-900-normal.woff2) format('woff2'); unicode-range: U+0000-00FF; }
+  html,body{margin:0;background:#FFF8EE;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="assets/svgs.js"></script>
+<script>
+// ------------------------------------------------------------
+// 60代のうちにやっておくべきこと10選  (9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"ZenMaru","IPAPGothic",sans-serif';
+const FPS = 30;
+
+// ---------- タイムライン(narrate.py の SCRIPT と対応) ----------
+const TITLE_DUR = 4.6, ITEM_DUR = 5.6, END_DUR = 6.0;
+const ITEMS = [
+  { title: '体のメンテナンス', sub: '健診・歯科検診を毎年の習慣に', illust: 'doctor', accent: '#FF6B6B', light: '#FFE3E3', dark: '#C63D3D',
+    emoji: [['tooth', 150, 560, 170, -12], ['stethoscope', 930, 640, 160, 10], ['red-heart', 900, 1180, 120, 8]] },
+  { title: '筋肉貯金', sub: '1日20分のウォーキング', illust: 'walking-together', accent: '#2EC4B6', light: '#D8F5F2', dark: '#167F76',
+    emoji: [['person-walking', 150, 600, 170, 0], ['flexed-biceps', 930, 600, 160, 12], ['running-shoe', 170, 1200, 130, -10]] },
+  { title: 'お金の棚卸し', sub: '年金と資産をまず把握する', illust: 'savings', accent: '#F4A61D', light: '#FFEFCF', dark: '#A86B00',
+    emoji: [['money-bag', 150, 600, 170, -8], ['yen-banknote', 930, 620, 170, 10], ['coin', 900, 1190, 120, 0]] },
+  { title: '持ち物を減らす', sub: '元気なうちに生前整理', illust: 'moving', accent: '#8E7DBE', light: '#E9E4F6', dark: '#5A4A8F',
+    emoji: [['package', 150, 600, 170, -6], ['broom', 930, 620, 170, 14], ['check-mark-button', 900, 1190, 120, 0]] },
+  { title: 'エンディングノート', sub: '希望と連絡先を書いて共有', illust: 'diary', accent: '#4EA8DE', light: '#DDF0FB', dark: '#1F6FA0',
+    emoji: [['memo', 150, 600, 170, -8], ['fountain-pen', 930, 620, 160, 20], ['speech-balloon', 170, 1200, 120, 0]] },
+  { title: '行きたい場所へ', sub: '動けるうちが旅のベストシーズン', illust: 'traveling', accent: '#FF8C42', light: '#FFE5D4', dark: '#B85A1C',
+    emoji: [['airplane', 150, 580, 170, -15], ['mount-fuji', 930, 620, 170, 0], ['luggage', 900, 1190, 120, 6]] },
+  { title: '新しい趣味・学び', sub: '始めるのに遅すぎることはない', illust: 'compose-music', accent: '#E86FA6', light: '#FBE0EE', dark: '#A83A72',
+    emoji: [['guitar', 150, 600, 170, -20], ['artist-palette', 930, 620, 160, 10], ['books', 900, 1190, 120, 0]] },
+  { title: '人とのつながり', sub: '仲間はこれからの大きな財産', illust: 'coffee-with-friends', accent: '#6BCB77', light: '#E0F5E3', dark: '#2F8A3B',
+    emoji: [['hot-beverage', 150, 600, 170, -8], ['handshake', 930, 620, 170, 0], ['speech-balloon', 170, 1200, 120, 10]] },
+  { title: '住まいの見直し', sub: '手すり・段差・住み替えは早めに', illust: 'sweet-home', accent: '#5B8DEF', light: '#DFE8FD', dark: '#2A58B8',
+    emoji: [['house-with-garden', 150, 600, 170, -6], ['old-key', 930, 620, 160, 20], ['sun-with-face', 900, 1190, 120, 0]] },
+  { title: '大切な人との時間', sub: '「ありがとう」は言えるうちに', illust: 'grandma', accent: '#E9505F', light: '#FBDDE0', dark: '#A62B38',
+    emoji: [['people-hugging', 150, 600, 170, -6], ['red-heart', 930, 620, 160, 12], ['bouquet', 900, 1190, 120, 0]] },
+];
+const SCENES = [{ kind: 'title', start: 0, dur: TITLE_DUR, accent: '#FF6B6B', light: '#FFE3E3', dark: '#C63D3D', illust: 'young-and-happy' }];
+ITEMS.forEach((it, i) => SCENES.push({ kind: 'item', num: i + 1, start: TITLE_DUR + i * ITEM_DUR, dur: ITEM_DUR, ...it }));
+SCENES.push({ kind: 'end', start: TITLE_DUR + ITEMS.length * ITEM_DUR, dur: END_DUR, accent: '#F4A61D', light: '#FFEFCF', dark: '#A86B00', illust: 'celebrating' });
+const DURATION = TITLE_DUR + ITEMS.length * ITEM_DUR + END_DUR;
+window.FPS = FPS; window.DURATION = DURATION; window.SCENES = SCENES;
+
+const C = { bg: '#FFF8EE', ink: '#2B2A33', ink2: '#6B6A75', card: '#FFFFFF' };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const easeBack = t => { t = clamp(t); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function text(str, x, y, { size = 48, weight = 700, color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, shadow = 0) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  if (shadow) { ctx.shadowColor = 'rgba(60,40,20,0.18)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = shadow / 3; }
+  rrectPath(x, y, w, h, r); ctx.fill();
+  ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+// 有機的なブロブ(ゆっくり揺れる)
+function blob(x, y, r, color, t, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath();
+  const N = 64;
+  for (let i = 0; i <= N; i++) {
+    const a = i / N * Math.PI * 2;
+    const rr = r * (1 + 0.06 * Math.sin(3 * a + t * 0.9) + 0.04 * Math.cos(5 * a - t * 0.6));
+    const px = x + Math.cos(a) * rr * 1.08, py = y + Math.sin(a) * rr * 0.86;
+    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+  }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function drawImageFit(img, cx, cy, maxW, maxH, scale = 1, alpha = 1, rot = 0) {
+  if (!img || !img.complete || !img.naturalWidth) return;
+  const s = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight) * scale;
+  const w = img.naturalWidth * s, h = img.naturalHeight * s;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, cy); ctx.rotate(rot);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h); ctx.restore();
+}
+
+// ---------- 画像の読み込み(イラストはアクセント色で着色) ----------
+const IMG = {};
+async function loadSvg(key, name, accent) {
+  let txt = window.SVGS[name];
+  if (accent) txt = txt.replace(/__ACCENT__/g, accent);
+  const img = new Image();
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(txt); });
+  IMG[key] = img;
+}
+window.ready = (async () => {
+  const jobs = [];
+  for (const s of SCENES) {
+    jobs.push(loadSvg('il:' + s.illust, 'illust/' + s.illust, s.accent));
+    for (const e of (s.emoji || [])) if (!IMG['em:' + e[0]]) jobs.push(loadSvg('em:' + e[0], 'emoji/' + e[0]));
+  }
+  for (const n of ['sparkles', 'glowing-star', 'old-woman', 'old-man', 'party-popper', 'thumbs-up', 'cherry-blossom', 'check-mark-button']) jobs.push(loadSvg('em:' + n, 'emoji/' + n));
+  await Promise.all(jobs);
+  await document.fonts.load('900 100px ZenMaru', '60代のうちにやっておくべきこと10選 Aa');
+  await document.fonts.load('700 100px ZenMaru', '体のメンテナンス 健診 1日20分');
+  await document.fonts.load('500 100px ZenMaru', 'ナレーション');
+  await document.fonts.ready;
+  return true;
+})();
+
+// ---------- 背景 ----------
+function background(t, sc) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // ふわっと動く大きな円
+  circle(W * 0.1 + 40 * Math.sin(t * 0.3), H * 0.18 + 30 * Math.cos(t * 0.25), 300, sc.light, 0.55);
+  circle(W * 0.95 + 30 * Math.cos(t * 0.2), H * 0.78 + 40 * Math.sin(t * 0.33), 360, sc.light, 0.55);
+  // ドットパターン
+  ctx.save(); ctx.fillStyle = sc.accent; ctx.globalAlpha = 0.08;
+  for (let y = 60; y < H; y += 72) for (let x = 60 + (y % 144 ? 36 : 0); x < W; x += 72) { ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+
+// ---------- 進捗バー(10 セグメント) ----------
+function progress(t, cur) {
+  const x0 = 80, x1 = W - 80, gap = 10, n = ITEMS.length, w = (x1 - x0 - gap * (n - 1)) / n, y = 64, h = 14;
+  for (let i = 0; i < n; i++) {
+    const it = ITEMS[i];
+    rrect(x0 + i * (w + gap), y, w, h, 7, it.accent, 0.18);
+    let f = 0;
+    if (i + 1 < cur) f = 1; else if (i + 1 === cur) f = seg(t, SCENES[i + 1].start, ITEM_DUR);
+    if (f > 0) rrect(x0 + i * (w + gap), y, w * f, h, 7, it.accent, 1);
+  }
+}
+
+// ---------- 絵文字のポップイン ----------
+function emojiPop(list, u, t, delay0 = 0.45, step = 0.22) {
+  list.forEach((e, i) => {
+    const [name, x, y, size, rot] = e;
+    const p = easeBack(seg(u, delay0 + i * step, 0.55));
+    if (p <= 0) return;
+    const fy = 10 * Math.sin(t * 2.1 + i * 1.7);
+    const fr = (rot + 4 * Math.sin(t * 1.6 + i)) * Math.PI / 180;
+    drawImageFit(IMG['em:' + name], x, y + fy, size, size, p, clamp(p * 1.5), fr);
+  });
+}
+
+// ---------- シーン描画 ----------
+function drawItem(sc, u, t) {
+  const n = sc.num;
+  // 番号
+  const pn = easeBack(seg(u, 0.05, 0.5));
+  ctx.save(); ctx.translate(120, 330); ctx.scale(pn, pn);
+  text(String(n).padStart(2, '0'), 0, 0, { size: 230, weight: 900, color: sc.accent, ls: -8 });
+  ctx.restore();
+  text('/10', 120 + (n >= 10 ? 300 : 300), 325, { size: 64, weight: 700, color: sc.dark, alpha: clamp(pn) });
+  // 右上のタグ
+  const pt = easeOut(seg(u, 0.2, 0.4));
+  rrect(640, 150 + (1 - pt) * -30, 360, 76, 38, sc.accent, pt);
+  text('60代のうちに', 820, 203 + (1 - pt) * -30, { size: 40, weight: 700, color: '#fff', align: 'center', alpha: pt });
+  // イラスト(ブロブの上に)
+  const pi = easeBack(seg(u, 0.12, 0.6));
+  blob(540, 880, 400 * clamp(pi), sc.light, t, 1);
+  drawImageFit(IMG['il:' + sc.illust], 540, 880, 760, 600, (0.92 + 0.08 * clamp(pi)) * (1 + 0.04 * seg(u, 0, sc.dur)), clamp(pi * 1.2));
+  // 絵文字
+  emojiPop(sc.emoji, u, t);
+  // 下部カード
+  const pc = easeOut(seg(u, 0.18, 0.5));
+  const cy = 1320 + (1 - pc) * 80;
+  rrect(70, cy, W - 140, 440, 44, C.card, pc, 40);
+  rrect(70, cy, 18, 440, 9, sc.accent, pc);
+  rrect(130, cy + 70, 150, 12, 6, sc.accent, pc);
+  const tsize = sc.title.length >= 9 ? 86 : 100;
+  text(sc.title, 130, cy + 200, { size: tsize, weight: 900, color: C.ink, alpha: pc, ls: 2 });
+  const ps = easeOut(seg(u, 0.45, 0.45));
+  text(sc.sub, 130, cy + 320 + (1 - ps) * 20, { size: 50, weight: 700, color: sc.dark, alpha: ps });
+}
+
+function drawTitle(sc, u, t) {
+  // 上部: イラスト
+  const pi = easeBack(seg(u, 0.1, 0.7));
+  blob(540, 700, 410 * clamp(pi), sc.light, t);
+  drawImageFit(IMG['il:' + sc.illust], 540, 700, 780, 640, 1 + 0.05 * seg(u, 0, sc.dur), clamp(pi * 1.2));
+  emojiPop([['old-man', 150, 420, 170, -8], ['old-woman', 930, 440, 170, 8], ['sparkles', 170, 1040, 130, 0], ['glowing-star', 910, 1020, 120, 10]], u, t, 0.35, 0.18);
+  // 下部: テキスト
+  const p1 = easeOut(seg(u, 0.3, 0.5));
+  rrect(360, 1210 + (1 - p1) * 40, 360, 84, 42, sc.accent, p1);
+  text('60代のうちに', 540, 1268 + (1 - p1) * 40, { size: 48, weight: 900, color: '#fff', align: 'center', alpha: p1 });
+  const p2 = easeOut(seg(u, 0.55, 0.5));
+  text('やっておくべきこと', 540, 1440 + (1 - p2) * 40, { size: 108, weight: 900, color: C.ink, align: 'center', alpha: p2, ls: 2 });
+  const p3 = easeBack(seg(u, 0.9, 0.6));
+  if (p3 > 0) {
+    ctx.save(); ctx.translate(540, 1660); ctx.scale(p3, p3);
+    rrect(-330, -130, 660, 240, 48, sc.accent, 1, 30);
+    const count = Math.round(lerp(1, 10, easeOut(seg(u, 1.2, 1.1))));
+    text(String(count), -70, 70, { size: 210, weight: 900, color: '#fff', align: 'right', ls: -6 });
+    text('選', 0, 60, { size: 130, weight: 900, color: '#fff', align: 'left' });
+    ctx.restore();
+  }
+}
+
+function drawEnd(sc, u, t) {
+  const pi = easeBack(seg(u, 0.1, 0.7));
+  blob(540, 620, 380 * clamp(pi), sc.light, t);
+  drawImageFit(IMG['il:' + sc.illust], 540, 620, 700, 560, 1 + 0.05 * seg(u, 0, sc.dur), clamp(pi * 1.2));
+  emojiPop([['party-popper', 150, 380, 170, -15], ['thumbs-up', 930, 400, 160, 10], ['cherry-blossom', 160, 900, 130, 0], ['sparkles', 920, 900, 130, 0]], u, t, 0.35, 0.18);
+  const p1 = easeOut(seg(u, 0.4, 0.5));
+  text('全部やらなくて OK', 540, 1160 + (1 - p1) * 40, { size: 96, weight: 900, color: C.ink, align: 'center', alpha: p1 });
+  const p2 = easeOut(seg(u, 0.8, 0.5));
+  text('気になった 1 つから', 540, 1310 + (1 - p2) * 40, { size: 70, weight: 700, color: sc.dark, align: 'center', alpha: p2 });
+  text('今日はじめてみませんか', 540, 1410 + (1 - p2) * 40, { size: 70, weight: 700, color: sc.dark, align: 'center', alpha: p2 });
+  // チェックリストのミニ表示
+  const p3 = easeOut(seg(u, 1.2, 0.6));
+  rrect(90, 1500, W - 180, 230, 36, C.card, p3, 30);
+  ITEMS.forEach((it, i) => {
+    const col = Math.floor(i / 5), row = i % 5;
+    const x = 130 + col * 440, y = 1555 + row * 40;
+    const pp = easeOut(seg(u, 1.3 + i * 0.07, 0.3));
+    drawImageFit(IMG['em:check-mark-button'], x + 14, y - 4, 30, 30, 1, pp * p3);
+    text(it.title, x + 44, y + 8, { size: 28, weight: 700, color: C.ink, alpha: pp * p3 });
+  });
+  // クレジット
+  const p4 = easeOut(seg(u, 1.6, 0.6));
+  text('ナレーション VOICEVOX:四国めたん ／ BGM パッヘルベル「カノン」アレンジ(自作)', 540, 1800, { size: 25, weight: 500, color: C.ink2, align: 'center', alpha: p4 });
+  text('イラスト unDraw(MIT) ／ 絵文字 Fluent Emoji(MIT)', 540, 1840, { size: 25, weight: 500, color: C.ink2, align: 'center', alpha: p4 });
+}
+
+function drawScene(sc, u, t, offsetX) {
+  ctx.save(); ctx.translate(offsetX, 0);
+  if (sc.kind === 'item') drawItem(sc, u, t);
+  else if (sc.kind === 'title') drawTitle(sc, u, t);
+  else drawEnd(sc, u, t);
+  ctx.restore();
+}
+
+const TRANS = 0.38;
+function render(t) {
+  t = clamp(t, 0, DURATION - 1 / FPS);
+  let idx = SCENES.findIndex(s => t < s.start + s.dur); if (idx < 0) idx = SCENES.length - 1;
+  const sc = SCENES[idx], u = t - sc.start;
+  background(t, sc);
+  if (idx > 0 && u < TRANS) {
+    // 前のシーンが左へ抜け、今のシーンが右から入る
+    const p = easeInOut(u / TRANS);
+    const prev = SCENES[idx - 1];
+    drawScene(prev, prev.dur + u, t, -W * p);
+    drawScene(sc, u, t, W * (1 - p));
+  } else {
+    drawScene(sc, u, t, 0);
+  }
+  if (sc.kind !== 'title' || u > 1.0) progress(t, sc.kind === 'item' ? sc.num : (sc.kind === 'end' ? 11 : 0));
+}
+window.render = render;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+}
+</script>
+</body>
+</html>
