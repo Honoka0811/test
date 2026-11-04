@@ -175,8 +175,8 @@ def pop():
     return np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t / 0.02) * 0.18
 
 
-add(sfx, impact(), tl["scenes"][0]["lines"][0]["start"] - 0.05)
-add(sfx, impact() * 0.8, tl["scenes"][0]["lines"][1]["start"] - 0.05)
+add(sfx, impact() * 0.6, tl["scenes"][0]["lines"][0]["start"] - 0.05)
+add(sfx, impact() * 0.45, tl["scenes"][0]["lines"][1]["start"] - 0.05)
 for sc in tl["scenes"][1:]:
     add(sfx, whoosh(), sc["start"] - 0.25)
     if sc["kind"] == "habit":
@@ -205,7 +205,7 @@ g = lfilter([a_up], [1, a_up - 1], gate)
 g = np.maximum(g, lfilter([a_dn], [1, a_dn - 1], gate) * 0.0)
 duck = 1 - 0.55 * np.clip(g * 1.5, 0, 1)
 
-mix = voice * 1.05 + bgm * 0.55 * duck + sfx * 0.9
+mix = voice * 1.05 + bgm * 0.55 * duck + sfx * 0.35
 # フェードアウト
 fo = int(1.2 * SR); end = int(TOTAL * SR)
 mix[end - fo:end] *= np.linspace(1, 0, fo); mix[end:] = 0
