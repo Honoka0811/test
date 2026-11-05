@@ -1,0 +1,10 @@
+{
+  "name": "prewar-population-ranking",
+  "private": true,
+  "description": "戦前(1940年)の都道府県人口ランキング TOP10 ショート動画",
+  "dependencies": {
+    "@fontsource/dela-gothic-one": "5.2.5",
+    "@fontsource/noto-sans-jp": "5.2.5",
+    "@fontsource/shippori-mincho-b1": "5.2.5"
+  }
+}

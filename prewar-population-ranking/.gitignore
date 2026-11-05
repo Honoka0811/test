@@ -1,0 +1,5 @@
+node_modules/
+output/mix.wav
+output/video_silent.mp4
+output/stills/
+__pycache__/

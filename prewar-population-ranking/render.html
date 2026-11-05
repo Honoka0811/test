@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>戦前の人口ランキング TOP10</title>
+<link rel="stylesheet" href="node_modules/@fontsource/dela-gothic-one/index.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho-b1/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+<script src="map_data.js"></script>
+<script src="timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// =====================================================================
+// 戦前(1940年国勢調査)の都道府県人口ランキング TOP10 — 1080x1920 縦型
+// window.render(t) で t 秒のフレームを描画する(capture.js が 1 フレームずつ呼ぶ)
+// =====================================================================
+const W = 1080, H = 1920;
+window.FPS = 30;
+window.DURATION = TIMELINE.total;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+const F_DELA = '"Dela Gothic One"', F_SANS = '"Noto Sans JP"', F_MIN = '"Shippori Mincho B1"';
+const C = {
+  bg0: '#120d0a', bg1: '#2a1f17', paper: '#e9dcc0', gold: '#e8b93a', gold2: '#f6dc8a', red: '#e0402a',
+  red2: '#ff6a4d', ink: '#1a120c', pref: '#46382c', prefLine: '#7a6552', up: '#4fd1a5', down: '#8fa7c8', white: '#fffaf0',
+};
+
+// 1940年(昭和15年10月1日)国勢調査人口 / 現在順位は2020年国勢調査
+const RANKS = {
+  r10: { rank: 10, name: '広島県', key: '広島県', pop: 1869504, now: 12, tag: '軍港・呉の海軍の町', z: 2.3 },
+  r9:  { rank: 9,  name: '静岡県', key: '静岡県', pop: 2017860, now: 10, tag: 'お茶とみかんの産地', z: 2.2 },
+  r8:  { rank: 8,  name: '新潟県', key: '新潟県', pop: 2064402, now: 15, tag: '明治は人口日本一', z: 1.9 },
+  r7:  { rank: 7,  name: '神奈川県', key: '神奈川県', pop: 2188974, now: 2, tag: '今は全国2位に', z: 2.6 },
+  r6:  { rank: 6,  name: '福岡県', key: '福岡県', pop: 3094132, now: 9, tag: '八幡製鉄所と炭鉱', z: 2.3 },
+  r5:  { rank: 5,  name: '愛知県', key: '愛知県', pop: 3166592, now: 4, tag: '航空機づくりの拠点', z: 2.3 },
+  r4:  { rank: 4,  name: '兵庫県', key: '兵庫県', pop: 3221232, now: 7, tag: '貿易港・神戸', z: 2.2 },
+  r3:  { rank: 3,  name: '北海道', key: '北海道', pop: 3272718, now: 8, tag: '開拓で人口急増', z: 1.35 },
+  r2:  { rank: 2,  name: '大阪府', key: '大阪府', pop: 4792966, now: 3, tag: '「大大阪」の時代', z: 2.5 },
+  r1:  { rank: 1,  name: '東京府', key: '東京都', pop: 7354971, now: 1, tag: 'まだ「東京都」ではない', z: 2.5 },
+};
+const ORDER = ['r10', 'r9', 'r8', 'r7', 'r6', 'r5', 'r4', 'r3', 'r2', 'r1'];
+const MAXPOP = RANKS.r1.pop;
+const SCENE = {}; TIMELINE.scenes.forEach(s => SCENE[s.id] = s);
+// 各順位の「県名が明かされる」時刻
+ORDER.forEach(id => {
+  const s = SCENE[id];
+  RANKS[id].slam = s.start;
+  RANKS[id].reveal = s.utts.length > 1 ? s.utts[1].start - 0.08 : s.start + 0.12;
+  RANKS[id].suspense = s.utts.length > 1;
+});
+
+// ---------- 補助 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeOut = k => 1 - Math.pow(1 - clamp(k), 3);
+const easeInOut = k => { k = clamp(k); return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const easeBack = k => { k = clamp(k); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+const prog = (t, a, d) => clamp((t - a) / d);
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+function hash(n) { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+function sceneAt(t) {
+  for (const s of TIMELINE.scenes) if (t >= s.start && t < s.end) return s;
+  return TIMELINE.scenes[TIMELINE.scenes.length - 1];
+}
+
+function text(str, x, y, { font, size, color = C.white, align = 'left', base = 'alphabetic', stroke, sw = 0, shadow, weight = '', alpha = 1, spacing = 0 }) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (spacing) ctx.letterSpacing = spacing + 'px';
+  if (shadow) { ctx.shadowColor = shadow[0]; ctx.shadowBlur = shadow[1]; ctx.shadowOffsetX = shadow[2] || 0; ctx.shadowOffsetY = shadow[3] || 0; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(str, x, y); ctx.shadowColor = 'transparent'; }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// ---------- 地図 ----------
+const PATHS = {}, CENT = {};
+for (const [name, rings] of Object.entries(MAP)) {
+  const p = new Path2D();
+  let best = null, bestA = -1;
+  for (const r of rings) {
+    p.moveTo(r[0][0], r[0][1]);
+    for (let i = 1; i < r.length; i++) p.lineTo(r[i][0], r[i][1]);
+    p.closePath();
+    let a = 0; for (let i = 0; i < r.length; i++) { const q = r[(i + 1) % r.length]; a += r[i][0] * q[1] - q[0] * r[i][1]; }
+    if (Math.abs(a) > bestA) { bestA = Math.abs(a); best = r; }
+  }
+  // 最大リングの重心
+  let cx = 0, cy = 0, A = 0;
+  for (let i = 0; i < best.length; i++) {
+    const a = best[i], b = best[(i + 1) % best.length], f = a[0] * b[1] - b[0] * a[1];
+    A += f; cx += (a[0] + b[0]) * f; cy += (a[1] + b[1]) * f;
+  }
+  CENT[name] = [cx / (3 * A), cy / (3 * A)];
+  PATHS[name] = p;
+}
+CENT['神奈川県'][1] += 0.004; CENT['兵庫県'][0] -= 0.006; // ラベルの重なりを少し避ける
+const PREFS = Object.keys(MAP);
+const MAP_C = [0.5, MAP_H / 2];
+const PANEL = { x: 40, y: 330, w: 1000, h: 640 };
+const BASE_S = Math.min(PANEL.w / 1, PANEL.h / MAP_H) * 0.94;
+
+// カメラのキーフレーム
+const KF = [];
+(() => {
+  const I = SCENE.intro;
+  KF.push({ t: 0, c: MAP_C, z: 0.8 }, { t: I.end - 0.2, c: MAP_C, z: 1.0 });
+  for (const id of ORDER) {
+    const r = RANKS[id], tgt = { c: CENT[r.key], z: r.z };
+    if (r.suspense) {
+      KF.push({ t: r.slam, ...KF[KF.length - 1], t: r.slam });
+      KF.push({ t: r.slam + 0.7, c: MAP_C, z: 1.0 });
+      KF.push({ t: r.reveal, c: MAP_C, z: 1.0 });
+      KF.push({ t: r.reveal + 0.75, ...tgt });
+    } else {
+      KF.push({ ...KF[KF.length - 1], t: r.slam });
+      KF.push({ t: r.slam + 0.75, ...tgt });
+    }
+  }
+  const O = SCENE.outro;
+  KF.push({ ...KF[KF.length - 1], t: O.start }, { t: O.start + 0.9, c: MAP_C, z: 1.0 });
+})();
+function cam(t) {
+  let i = 0; while (i < KF.length - 1 && KF[i + 1].t <= t) i++;
+  const a = KF[i], b = KF[Math.min(i + 1, KF.length - 1)];
+  const k = b.t > a.t ? easeInOut((t - a.t) / (b.t - a.t)) : 1;
+  const z = lerp(a.z, b.z, k);
+  let cx = lerp(a.c[0], b.c[0], k), cy = lerp(a.c[1], b.c[1], k);
+  // パネルの外に地図が抜けすぎないよう中心を制限
+  const hw = PANEL.w / 2 / (BASE_S * z), hh = PANEL.h / 2 / (BASE_S * z);
+  cx = hw < 0.5 ? clamp(cx, hw - 0.04, 1 - hw + 0.04) : 0.5;
+  cy = hh < MAP_H / 2 ? clamp(cy, hh - 0.04, MAP_H - hh + 0.04) : MAP_H / 2;
+  return { cx, cy, z };
+}
+
+// 上位3位発表前の「ルーレット」: 未発表の県を次々に光らせ、発表の瞬間に正解で止まる
+const ROULETTE = {};
+(() => {
+  const pool = ['京都府', '長野県', '福島県', '茨城県', '千葉県', '鹿児島県', '宮城県', '岐阜県', '岡山県', '熊本県', '北海道', '大阪府', '東京都', '岩手県', '青森県', '秋田県', '山形県', '島根県', '高知県', '長崎県'];
+  for (const id of ['r3', 'r2', 'r1']) {
+    const r = RANKS[id], R = rng(r.rank * 99 + 7);
+    const avail = pool.filter(p => !ORDER.slice(0, ORDER.indexOf(id) + 1).some(o => RANKS[o].key === p) || p === r.key);
+    const steps = []; let t = r.reveal, dt = 0.32;
+    steps.unshift({ t, p: r.key });
+    while (t - dt > r.slam + 0.55) {
+      t -= dt; dt = Math.max(0.075, dt * 0.8);
+      let p; do { p = avail[Math.floor(R() * avail.length)]; } while (p === steps[0].p || p === r.key);
+      steps.unshift({ t, p });
+    }
+    ROULETTE[id] = steps;
+  }
+})();
+
+function drawMap(t, sc) {
+  const { cx, cy, z } = cam(t);
+  const S = BASE_S * z;
+  ctx.save();
+  rrect(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 28); ctx.clip();
+  // パネル背景(海)
+  const g = ctx.createRadialGradient(540, PANEL.y + PANEL.h / 2, 50, 540, PANEL.y + PANEL.h / 2, 700);
+  g.addColorStop(0, '#2b2219'); g.addColorStop(1, '#16100c');
+  ctx.fillStyle = g; ctx.fillRect(PANEL.x, PANEL.y, PANEL.w, PANEL.h);
+  // 緯線経線風のガイド
+  ctx.strokeStyle = 'rgba(232,185,58,0.06)'; ctx.lineWidth = 2;
+  for (let i = -6; i <= 6; i++) {
+    const x = 540 + (i * 0.1 - (cx - 0.5)) * S; ctx.beginPath(); ctx.moveTo(x, PANEL.y); ctx.lineTo(x, PANEL.y + PANEL.h); ctx.stroke();
+    const y = PANEL.y + PANEL.h / 2 + (i * 0.1 - (cy - MAP_H / 2)) * S; ctx.beginPath(); ctx.moveTo(PANEL.x, y); ctx.lineTo(PANEL.x + PANEL.w, y); ctx.stroke();
+  }
+
+  ctx.translate(540, PANEL.y + PANEL.h / 2);
+  ctx.scale(S, S);
+  ctx.translate(-cx, -cy);
+  const lw = 1.6 / S;
+
+  // 現在の状態
+  const revealed = {}; let current = null, currentK = 0;
+  for (const id of ORDER) {
+    const r = RANKS[id];
+    if (t >= r.reveal) { revealed[r.key] = r; if (sc.id === id) { current = r.key; currentK = t - r.reveal; } }
+  }
+  let roul = null;
+  if (ROULETTE[sc.id] && t < RANKS[sc.id].reveal) {
+    const st = ROULETTE[sc.id]; for (const s of st) if (t >= s.t) roul = s.p;
+  }
+  const introK = sc.id === 'intro' ? t : 99;
+
+  for (const name of PREFS) {
+    const p = PATHS[name];
+    let a = 1;
+    if (introK < 99) a = clamp((introK - 0.1 - hash(name.length * 13 + name.charCodeAt(0)) * 1.4) / 0.35);
+    if (a <= 0) continue;
+    ctx.globalAlpha = a;
+    let fill = C.pref;
+    if (revealed[name]) fill = '#a07a22';
+    if (name === roul) fill = '#d9d0c0';
+    ctx.fillStyle = fill; ctx.fill(p);
+    ctx.strokeStyle = C.prefLine; ctx.lineWidth = lw; ctx.stroke(p);
+  }
+  ctx.globalAlpha = 1;
+  // 現在の県(赤・発光・点滅)
+  if (current) {
+    const p = PATHS[current];
+    const pulse = 0.5 + 0.5 * Math.sin(currentK * 7);
+    ctx.save();
+    ctx.shadowColor = C.red2; ctx.shadowBlur = 40 + 20 * pulse;
+    ctx.fillStyle = currentK < 0.12 ? '#fff' : C.red; ctx.fill(p);
+    ctx.restore();
+    ctx.strokeStyle = '#ffd7c9'; ctx.lineWidth = 3 / S; ctx.stroke(p);
+  }
+  if (roul) {
+    ctx.save(); ctx.shadowColor = '#fff'; ctx.shadowBlur = 30; ctx.fillStyle = '#efe6d6'; ctx.fill(PATHS[roul]); ctx.restore();
+  }
+  ctx.restore();
+
+  // 画面座標でのマーカー(順位バッジ・波紋)
+  const toScr = q => [540 + (q[0] - cx) * S, PANEL.y + PANEL.h / 2 + (q[1] - cy) * S];
+  ctx.save();
+  rrect(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 28); ctx.clip();
+  if (roul) { // ルーレットのカーソル
+    const [x, y] = toScr(CENT[roul]);
+    ctx.strokeStyle = 'rgba(255,250,240,0.9)'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.arc(x, y, 34, 0, 7); ctx.stroke();
+    ctx.lineWidth = 3; ctx.beginPath();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(x + dx * 22, y + dy * 22); ctx.lineTo(x + dx * 52, y + dy * 52); }
+    ctx.stroke();
+  }
+  if (current) {
+    const [x, y] = toScr(CENT[current]);
+    for (let k = 0; k < 3; k++) {
+      const ph = ((currentK + k * 0.45) % 1.35) / 1.35;
+      ctx.strokeStyle = `rgba(255,106,77,${0.8 * (1 - ph)})`; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(x, y, 20 + ph * 110, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  for (const id of ORDER) {
+    const r = RANKS[id];
+    if (t < r.reveal || r.key === current) continue;
+    const [x, y] = toScr(CENT[r.key]);
+    const k = easeBack(prog(t, r.reveal + 1.2, 0.35));
+    if (k <= 0 && sc.id === id) continue;
+    const rad = 21 * (sc.id === id ? k : 1);
+    ctx.fillStyle = C.gold; ctx.strokeStyle = C.ink; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    text(String(r.rank), x, y + 1, { font: F_DELA, size: 24 * rad / 21, color: C.ink, align: 'center', base: 'middle' });
+  }
+  ctx.restore();
+
+  // パネル枠
+  ctx.strokeStyle = 'rgba(232,185,58,0.55)'; ctx.lineWidth = 3;
+  rrect(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 28); ctx.stroke();
+  ctx.strokeStyle = 'rgba(232,185,58,0.18)'; ctx.lineWidth = 1.5;
+  rrect(PANEL.x + 10, PANEL.y + 10, PANEL.w - 20, PANEL.h - 20, 20); ctx.stroke();
+}
+
+// ---------- 背景・質感 ----------
+const GRAIN = [];
+for (let n = 0; n < 6; n++) {
+  const c = document.createElement('canvas'); c.width = 540; c.height = 960;
+  const g = c.getContext('2d'), im = g.createImageData(540, 960), R = rng(n * 31 + 5);
+  for (let i = 0; i < im.data.length; i += 4) { const v = R() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 22; }
+  g.putImageData(im, 0, 0); GRAIN.push(c);
+}
+const PAPER = (() => {
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(540, 760, 100, 540, 900, 1250);
+  grd.addColorStop(0, C.bg1); grd.addColorStop(1, C.bg0);
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  const R = rng(42);
+  for (let i = 0; i < 2600; i++) { // 紙の繊維
+    g.fillStyle = `rgba(233,220,192,${R() * 0.035})`;
+    g.fillRect(R() * W, R() * H, 1 + R() * 3, 1 + R() * 3);
+  }
+  // 斜めのストライプ(昭和ポスター風)
+  g.save(); g.globalAlpha = 0.035; g.fillStyle = C.gold; g.translate(540, 960); g.rotate(-0.5);
+  for (let i = -30; i < 30; i++) g.fillRect(i * 70, -1400, 28, 2800);
+  g.restore();
+  return c;
+})();
+
+function drawBackground(t) {
+  ctx.drawImage(PAPER, 0, 0);
+  // ゆっくり回る後光(放射線)
+  ctx.save(); ctx.translate(540, 650); ctx.rotate(t * 0.05);
+  ctx.fillStyle = 'rgba(232,185,58,0.035)';
+  for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-90, -1500); ctx.lineTo(90, -1500); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+}
+
+function drawFilm(t, shakeAmt) {
+  // 粒子・ちらつき・傷・周辺減光
+  const f = Math.floor(t * 30);
+  ctx.save(); ctx.globalCompositeOperation = 'overlay';
+  ctx.drawImage(GRAIN[f % GRAIN.length], 0, 0, W, H);
+  ctx.restore();
+  const fl = 0.035 * (hash(f) - 0.5);
+  ctx.fillStyle = fl > 0 ? `rgba(255,240,210,${fl})` : `rgba(0,0,0,${-fl})`; ctx.fillRect(0, 0, W, H);
+  if (hash(f * 3.1) > 0.82) {
+    const x = hash(f * 7.7) * W; ctx.fillStyle = 'rgba(255,245,220,0.10)'; ctx.fillRect(x, 0, 2, H);
+  }
+  for (let i = 0; i < 3; i++) { // ほこり
+    if (hash(f * 1.3 + i) > 0.7) { ctx.fillStyle = 'rgba(255,240,210,0.25)'; ctx.beginPath(); ctx.arc(hash(f + i * 9) * W, hash(f * 2 + i) * H, 1 + hash(f + i) * 2.5, 0, 7); ctx.fill(); }
+  }
+  const v = ctx.createRadialGradient(540, 900, 520, 540, 900, 1300);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.62)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- ヘッダー・進捗 ----------
+function drawHeader(t, sc) {
+  const k = easeOut(prog(t, 0.05, 0.5));
+  ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * -40);
+  text('1940年(昭和15年)国勢調査', 540, 150, { font: F_SANS, weight: 900, size: 34, color: C.gold, align: 'center', spacing: 4 });
+  ctx.strokeStyle = C.gold; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(140, 139); ctx.lineTo(310, 139); ctx.moveTo(770, 139); ctx.lineTo(940, 139); ctx.stroke();
+  text('戦前の人口ランキング', 540, 240, { font: F_DELA, size: 82, color: C.white, align: 'center', shadow: ['rgba(224,64,42,0.9)', 0, 6, 6] });
+  ctx.restore();
+
+  // 進捗ピル 10 → 1
+  const y = 296, gap = 86, x0 = 540 - gap * 4.5;
+  ORDER.forEach((id, i) => {
+    const r = RANKS[id], x = x0 + i * gap;
+    const on = t >= r.reveal, cur = sc.id === id;
+    const a = easeOut(prog(t, 0.3 + i * 0.05, 0.3));
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a;
+    const rad = cur ? 25 + 3 * Math.sin(t * 8) : 21;
+    ctx.fillStyle = cur ? C.red : on ? C.gold : 'rgba(233,220,192,0.12)';
+    ctx.strokeStyle = cur ? '#ffd7c9' : on ? C.gold2 : 'rgba(233,220,192,0.35)'; ctx.lineWidth = 2.5;
+    if (cur) { ctx.shadowColor = C.red2; ctx.shadowBlur = 24; }
+    ctx.beginPath(); ctx.arc(x, y, rad, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    text(String(r.rank), x, y + 1, { font: F_DELA, size: 22, color: on || cur ? C.ink : 'rgba(233,220,192,0.6)', align: 'center', base: 'middle', alpha: a });
+  });
+}
+
+// ---------- 順位カード ----------
+const CARD = { x: 40, y: 995, w: 1000, h: 375 };
+const SCRAMBLE = '北海道青森岩手宮城秋田山形福島茨城栃木群馬埼玉千葉東京神奈川新潟富山石川福井山梨長野岐阜静岡愛知三重滋賀京都大阪兵庫奈良';
+
+function drawCard(t, sc) {
+  const r = RANKS[sc.id]; if (!r) return;
+  const local = t - r.slam;
+  const kin = easeOut(local / 0.3);
+  ctx.save();
+  ctx.translate((1 - kin) * 260, 0); ctx.globalAlpha = kin;
+  // カード本体
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+  const cg = ctx.createLinearGradient(0, CARD.y, 0, CARD.y + CARD.h);
+  cg.addColorStop(0, '#2e231a'); cg.addColorStop(1, '#1b140f');
+  ctx.fillStyle = cg; rrect(CARD.x, CARD.y, CARD.w, CARD.h, 30); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = r.rank === 1 && t >= r.reveal ? C.gold2 : 'rgba(232,185,58,0.7)'; ctx.lineWidth = 4;
+  rrect(CARD.x, CARD.y, CARD.w, CARD.h, 30); ctx.stroke();
+
+  // 1位は発表後に後光
+  if (r.rank <= 3 && t >= r.reveal) {
+    ctx.save(); rrect(CARD.x, CARD.y, CARD.w, CARD.h, 30); ctx.clip();
+    ctx.translate(195, CARD.y + 150); ctx.rotate(t * 0.6);
+    ctx.fillStyle = r.rank === 1 ? 'rgba(246,220,138,0.16)' : 'rgba(246,220,138,0.08)';
+    for (let i = 0; i < 12; i++) { ctx.rotate(Math.PI / 6); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-60, -600); ctx.lineTo(60, -600); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+  }
+
+  // 順位メダル(叩きつけ)
+  const ks = easeBack(local / 0.38);
+  const sc2 = lerp(2.6, 1, ks);
+  ctx.save(); ctx.translate(195, CARD.y + 150); ctx.scale(sc2, sc2);
+  const mc = r.rank === 1 ? C.gold2 : r.rank <= 3 ? C.gold : '#c9a227';
+  ctx.fillStyle = r.rank <= 3 ? C.red : '#8f2a1c';
+  ctx.beginPath(); for (let i = 0; i < 32; i++) { const a = i / 32 * Math.PI * 2, rr = i % 2 ? 112 : 124; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); } ctx.closePath(); ctx.fill();
+  ctx.fillStyle = mc; ctx.beginPath(); ctx.arc(0, 0, 100, 0, 7); ctx.fill();
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 88, 0, 7); ctx.stroke();
+  text('第', -2, -50, { font: F_MIN, weight: 800, size: 30, color: C.ink, align: 'center', base: 'middle' });
+  text(String(r.rank), 0, 8, { font: F_DELA, size: r.rank === 10 ? 84 : 100, color: C.ink, align: 'center', base: 'middle' });
+  text('位', 0, 66, { font: F_MIN, weight: 800, size: 30, color: C.ink, align: 'center', base: 'middle' });
+  ctx.restore();
+
+  // 県名
+  const nx = 345, ny = CARD.y + 140;
+  if (t < r.reveal) {
+    // 発表前: ??? と文字のスクランブル
+    const f = Math.floor(t * 18);
+    let s = ''; for (let i = 0; i < 3; i++) s += SCRAMBLE[Math.floor(hash(f * 3 + i) * SCRAMBLE.length)];
+    text(s, nx, ny, { font: F_MIN, weight: 800, size: 118, color: 'rgba(233,220,192,0.18)' });
+    text('？？？', nx, ny, { font: F_DELA, size: 110, color: C.white, alpha: 0.75 + 0.25 * Math.sin(t * 10) });
+  } else {
+    const k = easeBack((t - r.reveal) / 0.35);
+    ctx.save(); ctx.translate(nx, ny); ctx.scale(lerp(1.5, 1, k), lerp(1.5, 1, k)); ctx.globalAlpha *= clamp(k * 2);
+    const size = r.name.length >= 4 ? 112 : 128;
+    text(r.name, 0, 0, { font: F_MIN, weight: 800, size, color: C.white, stroke: C.ink, sw: 10, shadow: ['rgba(224,64,42,0.85)', 0, 5, 5] });
+    ctx.restore();
+  }
+
+  // 人口カウンター
+  if (t >= r.reveal) {
+    const k = easeOut((t - r.reveal - 0.15) / 1.0);
+    const v = r.pop * k;
+    const done = k >= 1;
+    ctx.save();
+    const pulse = done ? 1 + 0.08 * Math.max(0, 1 - (t - r.reveal - 1.15) / 0.25) : 1;
+    ctx.translate(nx, CARD.y + 250); ctx.scale(pulse, pulse);
+    text(fmt(v), 0, 0, { font: F_DELA, size: 76, color: done ? C.gold2 : C.gold, shadow: ['rgba(0,0,0,0.6)', 8, 0, 4] });
+    ctx.font = `76px ${F_DELA}`; const wv = ctx.measureText(fmt(v)).width;
+    text('人', wv + 12, 0, { font: F_SANS, weight: 900, size: 44, color: C.paper });
+    ctx.restore();
+  }
+
+  // 人口バー(1位=東京府を100%)
+  const bx = 70, by = CARD.y + 292, bw = 940, bh = 22;
+  ctx.fillStyle = 'rgba(233,220,192,0.10)'; rrect(bx, by, bw, bh, 11); ctx.fill();
+  if (t >= r.reveal) {
+    const k = easeOut((t - r.reveal - 0.15) / 1.0);
+    const gw = Math.max(bh, bw * r.pop / MAXPOP * k);
+    const bg = ctx.createLinearGradient(bx, 0, bx + gw, 0);
+    bg.addColorStop(0, '#b3311f'); bg.addColorStop(1, r.rank === 1 ? C.gold2 : C.red2);
+    ctx.fillStyle = bg; rrect(bx, by, gw, bh, 11); ctx.fill();
+  }
+
+  // タグと現在順位
+  if (t >= r.reveal + 0.9) {
+    const k = easeOut((t - r.reveal - 0.9) / 0.3);
+    ctx.save(); ctx.globalAlpha *= k; ctx.translate(0, (1 - k) * 20);
+    ctx.font = `900 30px ${F_SANS}`; const tw = ctx.measureText(r.tag).width;
+    ctx.fillStyle = 'rgba(232,185,58,0.16)'; rrect(bx, by + 34, tw + 36, 46, 23); ctx.fill();
+    text(r.tag, bx + 18, by + 68, { font: F_SANS, weight: 900, size: 30, color: C.gold2 });
+    ctx.restore();
+  }
+  if (t >= r.reveal + 1.5) {
+    const k = easeBack((t - r.reveal - 1.5) / 0.35);
+    const diff = r.rank - r.now;
+    const col = diff > 0 ? C.up : diff < 0 ? C.down : C.gold2;
+    const arrow = diff > 0 ? `▲${diff}` : diff < 0 ? `▼${-diff}` : '→';
+    ctx.save(); ctx.translate(1010, by + 57); ctx.scale(k, k);
+    ctx.font = `900 30px ${F_SANS}`;
+    const label = `現在 ${r.now}位 ${arrow}`, lw = ctx.measureText(label).width + 40;
+    ctx.fillStyle = col; rrect(-lw, -23, lw, 46, 23); ctx.fill();
+    text(label, -lw / 2, 11, { font: F_SANS, weight: 900, size: 30, color: C.ink, align: 'center' });
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ---------- 紙吹雪(上位3位の発表) ----------
+function drawConfetti(t) {
+  for (const id of ['r3', 'r2', 'r1']) {
+    const r = RANKS[id], dt = t - r.reveal;
+    if (dt < 0 || dt > 3.2) continue;
+    const R = rng(r.rank * 1234), n = r.rank === 1 ? 140 : 70;
+    for (let i = 0; i < n; i++) {
+      const ang = -Math.PI / 2 + (R() - 0.5) * 2.4, sp = 900 + R() * 1300;
+      const x0 = 540 + (R() - 0.5) * 300, y0 = 1080;
+      const drag = Math.exp(-dt * 1.6);
+      const x = x0 + Math.cos(ang) * sp * (1 - drag) / 1.6 + Math.sin(dt * 3 + i) * 30;
+      const y = y0 + Math.sin(ang) * sp * (1 - drag) / 1.6 + 260 * dt * dt;
+      const col = [C.gold, C.gold2, C.red, C.paper, C.red2][i % 5];
+      ctx.save(); ctx.translate(x, y); ctx.rotate(dt * (4 + R() * 8) + i);
+      ctx.globalAlpha = clamp((3.2 - dt) / 0.8);
+      ctx.fillStyle = col; ctx.fillRect(-9, -5, 18 * Math.abs(Math.cos(dt * 6 + i)) + 2, 10);
+      ctx.restore();
+    }
+  }
+}
+
+// ---------- 字幕 ----------
+function wrap(str, maxW) {
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      // 句読点を行頭に置かない
+      if ('、。!?」…'.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function drawSubtitle(t, sc) {
+  const u = sc.utts.find(u => t >= u.start - 0.05 && t < u.end + 0.25);
+  if (!u) return;
+  const k = easeOut((t - u.start + 0.05) / 0.15);
+  ctx.font = `900 50px ${F_SANS}`;
+  let lines = wrap(u.text, 940);
+  // 句読点の位置で、なるべく中央に近いところで2行に分ける
+  const cuts = [...u.text].map((ch, i) => '、。!?'.includes(ch) ? i + 1 : -1).filter(i => i > 0 && i < [...u.text].length);
+  const chars = [...u.text];
+  const fit = cuts.filter(i => ctx.measureText(chars.slice(0, i).join('')).width <= 940 && ctx.measureText(chars.slice(i).join('')).width <= 940);
+  if (lines.length > 1 && fit.length) {
+    const mid = chars.length / 2, c = fit.reduce((p, q) => Math.abs(q - mid) < Math.abs(p - mid) ? q : p);
+    lines = [chars.slice(0, c).join(''), chars.slice(c).join('')];
+  } else if (lines.length > 1) { // 2行を均等な長さに
+    const total = ctx.measureText(u.text).width;
+    for (let w = total / lines.length; w <= 940; w += 10) { const l = wrap(u.text, w); if (l.length === lines.length) { lines = l; break; } }
+  }
+  const y0 = 1462 - (lines.length - 1) * 33 + (lines.length - 1) * 40;
+  lines.forEach((ln, i) => text(ln, 540, y0 + i * 66 + (1 - k) * 12, {
+    font: F_SANS, weight: 900, size: 50, color: '#fff', align: 'center', stroke: '#000', sw: 12, alpha: k,
+  }));
+}
+
+// ---------- イントロ ----------
+function drawIntro(t) {
+  const s = SCENE.intro; if (t >= s.end + 0.4) return;
+  const out = clamp((t - s.end + 0.35) / 0.35);
+  ctx.save(); ctx.globalAlpha = 1 - out;
+  // 画面中央に巨大な「1940」
+  const k0 = easeOut(t / 0.8);
+  text('1940', 540, 820, { font: F_DELA, size: 300, color: 'rgba(232,185,58,0.10)', align: 'center', alpha: k0 });
+  // タイトル
+  const k1 = easeBack((t - 0.15) / 0.45);
+  ctx.save(); ctx.translate(540, 580); ctx.scale(lerp(0.4, 1, k1), lerp(0.4, 1, k1)); ctx.globalAlpha *= clamp(k1 * 3);
+  text('戦前の日本', 0, 0, { font: F_MIN, weight: 800, size: 130, color: C.white, align: 'center', stroke: C.ink, sw: 14, shadow: ['rgba(0,0,0,0.7)', 20, 0, 6] });
+  ctx.restore();
+  const k2 = easeBack((t - 0.55) / 0.45);
+  ctx.save(); ctx.translate(540, 760); ctx.scale(lerp(0.4, 1, k2), lerp(0.4, 1, k2)); ctx.globalAlpha *= clamp(k2 * 3);
+  text('人口ランキング', 0, 0, { font: F_DELA, size: 118, color: C.gold2, align: 'center', stroke: C.ink, sw: 14, shadow: ['rgba(224,64,42,0.9)', 0, 8, 8] });
+  ctx.restore();
+  // TOP10 判子(叩きつけ)
+  const k3 = easeBack((t - 1.15) / 0.3);
+  if (t > 1.15) {
+    ctx.save(); ctx.translate(540, 925); ctx.rotate(-0.08); ctx.scale(lerp(3, 1, k3), lerp(3, 1, k3)); ctx.globalAlpha *= clamp(k3 * 2);
+    ctx.fillStyle = C.red; rrect(-215, -78, 430, 150, 18); ctx.fill();
+    ctx.strokeStyle = '#ffd7c9'; ctx.lineWidth = 5; rrect(-200, -64, 400, 122, 12); ctx.stroke();
+    text('TOP10', 0, 4, { font: F_DELA, size: 108, color: C.white, align: 'center', base: 'middle' });
+    ctx.restore();
+  }
+  // 問いかけ
+  const k4 = easeOut((t - 2.0) / 0.4);
+  if (t > 2.0) {
+    ctx.save(); ctx.globalAlpha *= k4; ctx.translate(0, (1 - k4) * 30);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; rrect(110, 1090, 860, 210, 30); ctx.fill();
+    ctx.strokeStyle = C.gold; ctx.lineWidth = 3; rrect(110, 1090, 860, 210, 30); ctx.stroke();
+    text('約85年前、いちばん', 540, 1170, { font: F_SANS, weight: 900, size: 54, color: C.white, align: 'center' });
+    text('人が多かったのはどこ？', 540, 1255, { font: F_SANS, weight: 900, size: 62, color: C.gold2, align: 'center' });
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ---------- まとめ ----------
+function drawOutro(t) {
+  const s = SCENE.outro; if (t < s.start) return;
+  const lt = t - s.start;
+  const k = easeOut(lt / 0.4);
+  ctx.save();
+  ctx.fillStyle = `rgba(14,10,8,${0.95 * k})`; rrect(40, 330, 1000, 1040, 30); ctx.fill();
+  ctx.globalAlpha = k;
+  ctx.strokeStyle = 'rgba(232,185,58,0.7)'; ctx.lineWidth = 4; rrect(40, 330, 1000, 1040, 30); ctx.stroke();
+  text('1940年', 300, 410, { font: F_SANS, weight: 900, size: 34, color: C.gold, align: 'center' });
+  text('人口', 650, 410, { font: F_SANS, weight: 900, size: 34, color: C.gold, align: 'center' });
+  text('現在', 900, 410, { font: F_SANS, weight: 900, size: 34, color: C.gold, align: 'center' });
+  const rows = ORDER.slice().reverse();
+  rows.forEach((id, i) => {
+    const r = RANKS[id], y = 480 + i * 74;
+    const kr = easeOut((lt - 0.15 - i * 0.07) / 0.3);
+    if (kr <= 0) return;
+    ctx.save(); ctx.globalAlpha *= kr; ctx.translate((1 - kr) * 120, 0);
+    ctx.fillStyle = i % 2 ? 'rgba(233,220,192,0.05)' : 'rgba(233,220,192,0.10)'; rrect(70, y - 34, 940, 66, 14); ctx.fill();
+    ctx.fillStyle = r.rank <= 3 ? C.gold : 'rgba(233,220,192,0.25)'; ctx.beginPath(); ctx.arc(125, y, 26, 0, 7); ctx.fill();
+    text(String(r.rank), 125, y + 2, { font: F_DELA, size: 30, color: r.rank <= 3 ? C.ink : C.white, align: 'center', base: 'middle' });
+    text(r.name, 180, y + 2, { font: F_MIN, weight: 800, size: 46, color: C.white, base: 'middle' });
+    text((r.pop / 10000).toFixed(0) + '万人', 735, y + 2, { font: F_DELA, size: 38, color: C.gold2, align: 'right', base: 'middle' });
+    const diff = r.rank - r.now, col = diff > 0 ? C.up : diff < 0 ? C.down : C.gold2;
+    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '';
+    text(`${r.now}位${arrow}`, 900, y + 2, { font: F_SANS, weight: 900, size: 40, color: col, align: 'center', base: 'middle' });
+    ctx.restore();
+  });
+  const k2 = easeOut((lt - 1.2) / 0.4);
+  if (k2 > 0) {
+    ctx.save(); ctx.globalAlpha *= k2;
+    text('※今5位の埼玉県は、当時15位', 540, 1265, { font: F_SANS, weight: 900, size: 36, color: C.paper, align: 'center' });
+    text('出典:1940年・2020年 国勢調査(総務省統計局)', 540, 1328, { font: F_SANS, weight: 700, size: 26, color: 'rgba(233,220,192,0.6)', align: 'center' });
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ---------- メイン ----------
+window.render = function (t) {
+  const sc = sceneAt(t);
+  // 画面揺れ: 順位の叩きつけ・上位発表時
+  let shake = 0;
+  for (const id of ORDER) {
+    const r = RANKS[id];
+    const d1 = t - r.slam; if (d1 >= 0.22 && d1 < 0.5) shake = Math.max(shake, (r.rank <= 3 ? 10 : 7) * (1 - (d1 - 0.22) / 0.28));
+    const d2 = t - r.reveal; if (r.suspense && d2 >= 0 && d2 < 0.5) shake = Math.max(shake, (r.rank === 1 ? 26 : 18) * (1 - d2 / 0.5));
+  }
+  const dTop = t - 1.15; if (dTop >= 0.2 && dTop < 0.5) shake = Math.max(shake, 12 * (1 - (dTop - 0.2) / 0.3));
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawBackground(t);
+  ctx.translate((hash(t * 91) - 0.5) * shake * 2, (hash(t * 57) - 0.5) * shake * 2);
+  drawHeader(t, sc);
+  drawMap(t, sc);
+  if (sc.id === 'intro') {
+    ctx.fillStyle = `rgba(10,7,5,${0.55 * (1 - clamp((t - sc.end + 0.35) / 0.35))})`;
+    rrect(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 28); ctx.fill();
+  }
+  drawCard(t, sc);
+  drawIntro(t);
+  drawOutro(t);
+  drawConfetti(t);
+  // 上位発表前の暗転(スポットライト)
+  for (const id of ['r3', 'r2', 'r1']) {
+    const r = RANKS[id];
+    if (sc.id !== id) continue;
+    const a = t < r.reveal ? 0.35 * easeOut((t - r.slam - 0.3) / 0.6) : 0;
+    if (a > 0) {
+      const g = ctx.createRadialGradient(540, 1180, 250, 540, 1000, 1100);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${a * 1.8})`);
+      ctx.fillStyle = g; ctx.fillRect(-50, -50, W + 100, H + 100);
+    }
+  }
+  drawSubtitle(t, sc);
+  ctx.restore();
+  // フラッシュ
+  let flash = 0;
+  for (const id of ORDER) {
+    const r = RANKS[id];
+    const d = t - r.slam; if (d >= 0.2 && d < 0.4) flash = Math.max(flash, 0.22 * (1 - (d - 0.2) / 0.2));
+    const d2 = t - r.reveal; if (r.suspense && d2 >= 0 && d2 < 0.45) flash = Math.max(flash, (r.rank === 1 ? 0.9 : 0.7) * (1 - d2 / 0.45));
+  }
+  if (flash > 0) { ctx.fillStyle = `rgba(255,248,230,${flash})`; ctx.fillRect(0, 0, W, H); }
+  drawFilm(t, shake);
+  // 全体のフェードイン/アウト
+  const fo = Math.max(1 - t / 0.25, (t - (TIMELINE.total - 0.6)) / 0.6);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${clamp(fo)})`; ctx.fillRect(0, 0, W, H); }
+};
+
+// 画面内で使う文字を先読みしてフォントを確定させる
+window.fontsLoaded = (async () => {
+  const all = SCRAMBLE + Object.values(RANKS).map(r => r.name + r.tag).join('') + TIMELINE.scenes.flatMap(s => s.utts.map(u => u.text)).join('') +
+    '戦前の日本人口ランキングTOP10約85年前、いちばん人が多かったのはどこ？第位現在▲▼→1940年(昭和15年)国勢調査0123456789,人万※今5位の埼玉県は、当時15位出典:・2020年総務省統計局';
+  await Promise.all([
+    document.fonts.load(`100px ${F_DELA}`, all), document.fonts.load(`900 100px ${F_SANS}`, all),
+    document.fonts.load(`700 100px ${F_SANS}`, all), document.fonts.load(`800 100px ${F_MIN}`, all),
+  ]);
+  await document.fonts.ready;
+  return true;
+})();
+</script>
+</body>
+</html>
