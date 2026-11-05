@@ -1,8 +1,11 @@
 # 戦前の北海道 人口ランキングTOP10（ショート動画）
 
-- 動画: `hokkaido_1940_population_top10.mp4`（1080×1920 / 30fps / 96秒 / 音声 -14 LUFS）
+- 動画: `hokkaido_1940_population_top10.mp4`（1080×1920 / 30fps / 約94秒 / 音声 -14 LUFS）
 - ナレーション: VOICEVOX:四国めたん（ノーマル）
-- BGM・効果音: `src/audio.py` でプログラム生成（オリジナル）
+- BGM: 魔王魂「ネオロック73（夕日の沈む丘へ）」 https://maou.audio/ ※クレジット「音楽：魔王魂」必須（動画内に表記済み。概要欄にも記載推奨）
+- 効果音: 効果音ラボ https://soundeffect-lab.info/ （和太鼓・ドラムロール・クラッカー・歓声など。クレジット任意）
+- 素材ファイル自体は各サイトの規約で再配布禁止のため、このリポジトリには含めていません（各サイトからダウンロードして使用）
+- 旧バージョンの自作BGM: `src/audio.py`
 - 地図: dataofjapan/land の都道府県 GeoJSON
 - データ出典: 昭和15年国勢調査報告 第一巻 第1表（総務省統計局 / e-Stat）
 
@@ -22,6 +25,7 @@
 ## 再生成の手順（src/）
 1. `tts.py` … ナレーション音声（voicevox_core 0.16 + 0.vvm）
 2. `timeline.py` … 音声の長さからビートに合わせたタイムラインを作成
-3. `audio.py` … BGM・効果音・ナレーションをミックスして `mix.wav` を作成
-4. `build_base.py <japan.geojson>` … ベース地図
-5. `render.py chunk <開始> <終了> <出力>` … 映像の書き出し（ffmpeg）
+3. `beats.py <bgm.mp3> beat_neorock73.json` … BGMのテンポと拍位置を解析（発表タイミングを拍に合わせるため）
+4. `audio2.py` … BGM・効果音・ナレーションをミックスして `mix.wav` を作成
+5. `build_base.py <japan.geojson>` … ベース地図
+6. `render.py chunk <開始> <終了> <出力>` … 映像の書き出し（ffmpeg）

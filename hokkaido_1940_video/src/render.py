@@ -118,7 +118,7 @@ def make_header():
     return im
 HEADER = make_header()
 
-CREDIT = text_img('VOICEVOX:四国めたん　／　出典：昭和15年国勢調査報告（総務省統計局）', F(MPM, 26), (200, 212, 225, 230), stroke=2, stroke_fill=(6, 14, 28))
+CREDIT = text_img('VOICEVOX:四国めたん　／　音楽：魔王魂　／　効果音：効果音ラボ\n出典：昭和15年国勢調査報告（総務省統計局）', F(MPM, 26), (200, 212, 225, 230), stroke=2, stroke_fill=(6, 14, 28), spacing=8, align='center')
 
 # intro title
 T1 = text_img('戦前の北海道', F(DELA, 120), (255, 255, 255), stroke=8, stroke_fill=(6, 14, 28))

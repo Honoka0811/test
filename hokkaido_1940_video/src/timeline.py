@@ -16,25 +16,28 @@ CITIES = {
 }
 NOTE = {'r9':'現・三笠市', 'r8':'現・美唄市', 'r6':'現・夕張市'}
 subs = {k:s for k,_,s in LINES}
+BEAT_INFO = json.load(open('beat_neorock73.json'))
+_b = 60 / BEAT_INFO['bpm']; _ph = BEAT_INFO['phase']
+def snap(x):
+    # first music beat at or after x
+    k = math.ceil((x - _ph) / _b - 1e-6)
+    return _ph + k * _b
 segs = []
 t = 0.0
 # intro
-segs.append(dict(key='intro', start=0.0, reveal=0.0, voice=0.8, end=math.ceil(0.8+durs['intro']+0.4)))
+segs.append(dict(key='intro', start=0.0, reveal=0.0, voice=0.8, end=0.8+durs['intro']+0.35))
 t = segs[-1]['end']
 for k in ['r10','r9','r8','r7','r6','r5','r4','r3','r2','r1a','r1']:
-    R = t + 1.0
+    R = snap(t + 0.85)
     v = R + (0.1 if k=='r1a' else 0.15)
-    if k == 'r1a':
-        L = 3.0
-    else:
-        L = math.ceil(0.15 + durs[k] + 0.45)
+    L = 3.3 if k == 'r1a' else (0.15 + durs[k] + 0.5)
     segs.append(dict(key=k, start=t, reveal=R, voice=v, end=R+L))
     t = R + L
-R = t + 1.0
-segs.append(dict(key='outro', start=t, reveal=R, voice=R+0.3, end=R+math.ceil(durs['outro']+2.2)))
+R = snap(t + 0.85)
+segs.append(dict(key='outro', start=t, reveal=R, voice=R+0.3, end=R+durs['outro']+2.5))
 for s in segs:
     s['sub'] = subs[s['key']]; s['dur'] = durs[s['key']]
     if s['key'] in CITIES: s.update(CITIES[s['key']]); s['note']=NOTE.get(s['key'],'')
-json.dump(dict(segs=segs, total=segs[-1]['end'], bpm=120), open('timeline.json','w'), ensure_ascii=False, indent=1)
-for s in segs: print(s['key'], s['start'], s['reveal'], round(s['voice'],2), s['end'])
+json.dump(dict(segs=segs, total=segs[-1]['end'], bpm=BEAT_INFO['bpm']), open('timeline.json','w'), ensure_ascii=False, indent=1)
+for s in segs: print(s['key'], round(s['start'],2), round(s['reveal'],2), round(s['voice'],2), round(s['end'],2))
 print('total', segs[-1]['end'])
