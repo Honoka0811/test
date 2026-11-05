@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Stress Relief Top10</title>
+<style>
+  @font-face { font-family: "Dela"; src: url("fonts/DelaGothicOne.ttf"); }
+  @font-face { font-family: "Maru"; src: url("fonts/MPLUSRounded1c-ExtraBold.ttf"); }
+  html,body{margin:0;background:#111;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+<script src="output/timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// オススメのストレス解消法 TOP10  (9:16 ショート / 30fps)
+// render(t) が時刻 t[秒] のフレームを決定論的に描く。
+// タイミングはすべて output/timeline.js(narrate.py が生成)に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TL, DURATION = TL.duration;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const DELA = '"Dela", "IPAPGothic", sans-serif';
+const MARU = '"Maru", "IPAPGothic", sans-serif';
+const EMOJI = '"Noto Color Emoji"';
+const BEAT = 60 / TL.bpm;
+
+const ITEMS = {
+  10: { title: '深呼吸',         emoji: '🌬️', point: '4秒吸って 8秒で吐く',     c1: '#3EC6E0', c2: '#2563C9' },
+  9:  { title: '好きな音楽を聴く', emoji: '🎧', point: 'お気に入りの1曲でリセット', c1: '#A66BFF', c2: '#5B2CC9' },
+  8:  { title: '散歩する',       emoji: '🚶', point: '外を20分歩くだけ',         c1: '#4FD08A', c2: '#178F64' },
+  7:  { title: '湯船につかる',    emoji: '🛁', point: 'ぬるめのお湯に15分',       c1: '#5AB8FF', c2: '#2B6FD6' },
+  6:  { title: '紙に書き出す',    emoji: '📝', point: 'モヤモヤを言葉にする',      c1: '#FFB547', c2: '#E5672E' },
+  5:  { title: '思いっきり笑う',  emoji: '😂', point: '声を出して笑っちゃおう',    c1: '#FFD23F', c2: '#F08A1C' },
+  4:  { title: '自然にふれる',    emoji: '🌳', point: '木や空を眺めるだけでOK',    c1: '#7DD957', c2: '#2E9E4A' },
+  3:  { title: '誰かに話す',      emoji: '💬', point: '聞いてもらうだけで軽くなる', c1: '#FF7EB6', c2: '#D6336C' },
+  2:  { title: 'スマホを置く',    emoji: '📵', point: '寝る前の1時間だけでも',     c1: '#7A8CFF', c2: '#3A3FB8' },
+  1:  { title: '睡眠',           emoji: '😴', point: 'すべての解消法の土台',       c1: '#FFD452', c2: '#E8901A' },
+};
+const MEDAL = { 3: ['#F2B48A', '#B8642E'], 2: ['#F4F7FB', '#9AA6B8'], 1: ['#FFF3A6', '#E8A21A'] };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeIn = t => Math.pow(clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const elastic = t => { t = clamp(t); if (t === 0 || t === 1) return t; return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI) / 3) + 1; };
+function rnd(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+function txt(str, x, y, o = {}) {
+  const { size = 60, font = MARU, fill = '#fff', stroke = null, sw = 0, align = 'center', base = 'alphabetic',
+          alpha = 1, shadow = null, ls = 0 } = o;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+  if (shadow) { ctx.save(); ctx.fillStyle = shadow; ctx.strokeStyle = shadow; ctx.lineWidth = sw;
+    ctx.translate(0, size * 0.08); if (sw) ctx.strokeText(str, x, y); ctx.fillText(str, x, y); ctx.restore(); }
+  if (stroke && sw) { ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = fill; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, font = MARU) { ctx.save(); ctx.font = `${size}px ${font}`; const w = ctx.measureText(str).width; ctx.restore(); return w; }
+function emoji(e, x, y, size, alpha = 1, rot = 0) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rot);
+  ctx.font = `${size}px ${EMOJI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(e, 0, size * 0.04); ctx.restore();
+}
+function rrect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2); ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function withT(x, y, s, rot, fn, alpha = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0); ctx.scale(s, s); ctx.globalAlpha *= alpha; fn(); ctx.restore();
+}
+function grad(c1, c2, ang = 0.35) {
+  const dx = Math.sin(ang) * H / 2, dy = Math.cos(ang) * H / 2;
+  const g = ctx.createLinearGradient(W / 2 - dx, H / 2 - dy, W / 2 + dx, H / 2 + dy);
+  g.addColorStop(0, c1); g.addColorStop(1, c2); return g;
+}
+
+// ---------- タイムライン参照 ----------
+const SC = TL.scenes; SC[0].a = 0;
+const byId = Object.fromEntries(SC.map(s => [s.id, s]));
+function sceneAt(t) { let s = SC[0]; for (const x of SC) if (t >= x.a) s = x; return s; }
+function captionAt(t) { for (const c of TL.captions) if (t >= c.a && t < c.b + 0.12) return c; return null; }
+const impacts = TL.sfx.filter(e => /impact|reveal/.test(e.type)).map(e => ({ t: e.t, k: e.type === 'impact' ? 14 : 30 }));
+const GROOVE = [[byId.r10.a, byId.build.a], [TL.reveal, DURATION]];
+
+function sceneColors(s) {
+  if (s.kind === 'item') return [ITEMS[s.rank].c1, ITEMS[s.rank].c2];
+  if (s.kind === 'hook') return ['#2B2140', '#120E1E'];
+  if (s.kind === 'top3') return ['#3A2A0A', '#140C02'];
+  if (s.kind === 'build') return ['#151522', '#050508'];
+  return ['#FF8FB1', '#7A5CFF'];
+}
+
+// ---------- 背景 ----------
+function background(t, s) {
+  const [c1, c2] = sceneColors(s);
+  ctx.fillStyle = grad(c1, c2); ctx.fillRect(0, 0, W, H);
+  // 前のシーンからのワイプ(斜めに切り替え)
+  const idx = SC.indexOf(s);
+  const p = easeOut((t - s.a) / 0.32);
+  if (idx > 0 && p < 1 && !(s.kind === 'item' && s.rank === 1)) {
+    const [d1, d2] = sceneColors(SC[idx - 1]);
+    ctx.save(); ctx.beginPath();
+    const off = p * (W + H * 0.5);
+    ctx.moveTo(off, 0); ctx.lineTo(W + 10, 0); ctx.lineTo(W + 10, H); ctx.lineTo(off - H * 0.5, H); ctx.closePath(); ctx.clip();
+    ctx.fillStyle = grad(d1, d2); ctx.fillRect(0, 0, W, H); ctx.restore();
+    // ワイプの縁の光
+    ctx.save(); ctx.globalAlpha = 0.6 * (1 - p); ctx.strokeStyle = '#fff'; ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.moveTo(off, 0); ctx.lineTo(off - H * 0.5, H); ctx.stroke(); ctx.restore();
+  }
+  // 回転する放射光
+  const dark = s.kind === 'build';
+  ctx.save(); ctx.translate(W / 2, 860); ctx.rotate(t * 0.18);
+  ctx.fillStyle = s.kind === 'top3' || (s.kind === 'item' && s.rank === 1) ? 'rgba(255,240,170,0.13)' : 'rgba(255,255,255,0.07)';
+  if (!dark) for (let i = 0; i < 18; i++) { ctx.rotate(Math.PI * 2 / 18); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(1500, -120); ctx.lineTo(1500, 120); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  // ふわふわ上昇する泡
+  const r = rnd(11);
+  for (let i = 0; i < 16; i++) {
+    const x = r() * W, sp = 40 + r() * 70, rad = 14 + r() * 46, ph = r() * H;
+    const y = H + 100 - ((ph + t * sp) % (H + 200));
+    ctx.save(); ctx.globalAlpha = dark ? 0.05 : 0.13; ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(x + Math.sin(t * 0.8 + i) * 20, y, rad, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+  // 周辺減光
+  const v = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.25, W / 2, H * 0.45, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- 上部: タイトルと進行バー ----------
+function topBar(t, s) {
+  if (s.kind === 'hook' && t < byId.hook.utts[1].a) return;
+  const a = s.kind === 'hook' ? easeOut((t - byId.hook.utts[1].a) / 0.3) : 1;
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; rrect(150, 120, 780, 100, 50); ctx.fill();
+  txt('ストレス解消法', 470, 191, { size: 56, font: MARU, fill: '#fff' });
+  txt('TOP10', 780, 193, { size: 60, font: DELA, fill: '#FFE14D' });
+  // 進行チップ 10 → 1
+  const shown = SC.filter(x => x.kind === 'item' && t >= x.a).map(x => x.rank);
+  for (let i = 0; i < 10; i++) {
+    const rank = 10 - i, x = 165 + i * 83, y = 290;
+    const on = shown.includes(rank), cur = s.kind === 'item' && s.rank === rank;
+    const pulse = cur ? 1 + 0.12 * Math.max(0, Math.cos((t - s.a) * Math.PI * 2 / BEAT)) : 1;
+    const rr = (cur ? 33 : 27) * pulse;
+    ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
+    ctx.fillStyle = cur ? '#FFE14D' : on ? '#ffffff' : 'rgba(255,255,255,0.18)'; ctx.fill();
+    txt(rank === 1 && !on ? '?' : String(rank), x, y + 13, { size: cur ? 36 : 30, font: DELA, fill: on || cur ? '#222' : 'rgba(255,255,255,0.75)' });
+  }
+  ctx.restore();
+}
+
+// ---------- 字幕 ----------
+function caption(t, s) {
+  const c = captionAt(t); if (!c) return;
+  const age = t - c.a;
+  const sc = lerp(0.82, 1, easeBack(age / 0.16));
+  let size = 66; let w;
+  const parts = c.text.split(/(\d+(?:秒|分|位|曲|時間|個|つ)?|TOP\d+|アレ|睡眠)/).filter(Boolean);
+  const total = () => parts.reduce((s, p) => s + measure(p, size), 0);
+  while ((w = total()) > 900 && size > 44) size -= 2;
+  const y = 1480;
+  withT(W / 2, y, sc, 0, () => {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; rrect(-w / 2 - 34, -size - 10, w + 68, size + 46, 26); ctx.fill();
+    let x = -w / 2;
+    for (const p of parts) {
+      const hi = /^\d|TOP|アレ|睡眠/.test(p);
+      txt(p, x, 0, { size, align: 'left', fill: hi ? '#FFE14D' : '#fff', stroke: '#000', sw: 10 });
+      x += measure(p, size);
+    }
+  });
+}
+
+// ---------- 順位のスラム ----------
+function rankBadge(t, s, y = 560) {
+  const age = t - s.a;
+  const k = easeOut(age / 0.22);
+  const scale = age < 0.22 ? lerp(2.6, 0.92, k) : lerp(0.92, 1, easeOut((age - 0.22) / 0.2));
+  const alpha = clamp(age / 0.08);
+  const medal = MEDAL[s.rank];
+  const fillG = (() => { if (!medal) return '#fff'; const g = ctx.createLinearGradient(0, -200, 0, 30); g.addColorStop(0, medal[0]); g.addColorStop(1, medal[1]); return g; })();
+  const big = s.rank === 10 ? 230 : 260;
+  const wD = measure('第', 96, DELA), wN = measure(String(s.rank), big, DELA), wI = measure('位', 120, DELA);
+  const tw = wD + wN + wI + 20;
+  // 衝撃波リング
+  if (age < 0.6) {
+    ctx.save(); ctx.globalAlpha = 0.7 * (1 - age / 0.6); ctx.strokeStyle = '#fff'; ctx.lineWidth = 18 * (1 - age / 0.6) + 2;
+    ctx.beginPath(); ctx.arc(W / 2, y - 80, 120 + age * 900, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+  withT(W / 2, y, scale, -0.04, () => {
+    let x = -tw / 2;
+    const o = { font: DELA, align: 'left', stroke: '#1a1a2e', sw: 22, shadow: 'rgba(0,0,0,0.35)' };
+    txt('第', x, -8, { ...o, size: 96, fill: fillG }); x += wD + 10;
+    txt(String(s.rank), x, 0, { ...o, size: big, fill: fillG }); x += wN + 10;
+    txt('位', x, -8, { ...o, size: 120, fill: fillG });
+    if (s.rank === 1) emoji('👑', tw / 2 + 40, -150, 130, 1, 0.35);
+  }, alpha);
+}
+
+function emojiCard(t, s, e, y = 870, delay = 0.18) {
+  const age = t - s.a - delay;
+  if (age < 0) return;
+  const sc = elastic(age / 0.7);
+  const bob = Math.sin(t * 2.4) * 10;
+  // ビートに合わせて軽く脈打つ
+  const beatPh = ((t % BEAT) / BEAT);
+  const pump = inGroove(t) ? 1 + 0.035 * Math.exp(-beatPh * 6) : 1;
+  withT(W / 2, y + bob, sc * pump, Math.sin(t * 1.7) * 0.04, () => {
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 18;
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 200, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 14; ctx.beginPath(); ctx.arc(0, 0, 222, 0, Math.PI * 2); ctx.stroke();
+    emoji(e, 0, 0, 230);
+  });
+}
+function inGroove(t) { return GROOVE.some(([a, b]) => t >= a && t < b); }
+
+function titleLine(t, s, str, y = 1200, size = 104, delay = 0.32) {
+  const age = t - s.a - delay; if (age < 0) return;
+  const p = easeBack(age / 0.35);
+  let sz = size; while (measure(str, sz) > 900) sz -= 4;
+  withT(W / 2, y + (1 - p) * 80, lerp(0.7, 1, p), 0, () => {
+    txt(str, 0, 0, { size: sz, fill: '#fff', stroke: '#1a1a2e', sw: 20, shadow: 'rgba(0,0,0,0.3)' });
+  }, clamp(age / 0.15));
+}
+function pointPill(t, s, str, y = 1320, delay = 1.25) {
+  const age = t - s.a - delay; if (age < 0) return;
+  const p = easeBack(age / 0.3);
+  const size = 46, tw = measure(str, size), tagW = 170, w = tw + tagW + 70;
+  withT(W / 2, y, lerp(0.6, 1, p), 0, () => {
+    ctx.fillStyle = '#fff'; rrect(-w / 2, -50, w, 92, 46); ctx.fill();
+    ctx.fillStyle = '#FF4F6D'; rrect(-w / 2 + 10, -40, tagW, 72, 36); ctx.fill();
+    txt('POINT', -w / 2 + 10 + tagW / 2, 12, { size: 36, font: DELA, fill: '#fff' });
+    txt(str, -w / 2 + tagW + 30, 13, { size, align: 'left', fill: '#222' });
+  }, clamp(age / 0.12));
+}
+
+// ---------- 各シーン ----------
+function sceneHook(t, s) {
+  const [u1, u2, u3] = s.utts;
+  if (t < u2.a - 0.05) {
+    // 「ストレス、たまってない？」ー イライラ感を出す震え
+    const age = t + 0.2;
+    const j = (Math.sin(t * 71) + Math.sin(t * 53)) * 4;
+    emoji('😩', W / 2 + j, 780, 300 * easeBack(age / 0.4), clamp(age / 0.1));
+    // 稲妻
+    ctx.save(); ctx.strokeStyle = '#FFE14D'; ctx.lineWidth = 12; ctx.lineJoin = 'round';
+    for (const [x, y, sgn] of [[230, 600, 1], [850, 640, -1], [200, 980, 1], [880, 1000, -1]]) {
+      if ((Math.floor(t * 8) + x) % 3 === 0) continue;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 40 * sgn, y + 50); ctx.lineTo(x + 5 * sgn, y + 60); ctx.lineTo(x + 50 * sgn, y + 120); ctx.stroke();
+    }
+    ctx.restore();
+    const p = easeBack((age - 0.05) / 0.3);
+    withT(W / 2 + j, 1180, lerp(1.6, 1, p), -0.05, () => {
+      txt('ストレス', 0, 0, { size: 170, font: DELA, fill: '#FF5470', stroke: '#fff', sw: 18, shadow: 'rgba(0,0,0,0.5)' });
+    }, clamp(age / 0.08));
+    const a2 = t - (u1.a + 1.0);
+    if (a2 > 0) withT(W / 2, 1330, easeBack(a2 / 0.3), 0.03, () => {
+      txt('たまってない？', 0, 0, { size: 100, fill: '#fff', stroke: '#000', sw: 16 });
+    });
+    return;
+  }
+  if (t < u3.a - 0.05) {
+    // タイトルコール
+    const age = t - u2.a;
+    const flash = 1 - clamp(age / 0.25);
+    withT(W / 2, 640, easeBack(age / 0.3), -0.03, () => {
+      txt('今日からできる', 0, 0, { size: 84, fill: '#fff', stroke: '#000', sw: 14 });
+    });
+    withT(W / 2, 860, easeBack((age - 0.15) / 0.35), 0, () => {
+      txt('ストレス解消法', 0, 0, { size: 132, font: DELA, fill: '#fff', stroke: '#FF5470', sw: 20, shadow: 'rgba(0,0,0,0.4)' });
+    });
+    withT(W / 2, 1150, elastic((age - 0.4) / 0.8), 0.04, () => {
+      const g = ctx.createLinearGradient(0, -220, 0, 20); g.addColorStop(0, '#FFF5A8'); g.addColorStop(1, '#FFB000');
+      txt('TOP10', 0, 0, { size: 215, font: DELA, fill: g, stroke: '#3a2400', sw: 24, shadow: 'rgba(0,0,0,0.45)' });
+    });
+    for (let i = 0; i < 8; i++) {
+      const e = ['🌬️', '🎧', '🛁', '📝', '😂', '🌳', '💬', '📵'][i];
+      const k = easeBack((age - 0.6 - i * 0.06) / 0.25);
+      emoji(e, 120 + i * 120, 1300 + Math.sin(t * 5 + i) * 12, 88 * k, clamp(k));
+    }
+    if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash * 0.8})`; ctx.fillRect(0, 0, W, H); }
+    return;
+  }
+  // 「1位は、みんなが後回しにしてる、アレ！」
+  const age = t - u3.a;
+  withT(W / 2, 560, easeBack(age / 0.3), 0, () => {
+    txt('第1位は…', 0, 0, { size: 120, font: DELA, fill: '#FFE14D', stroke: '#000', sw: 16 });
+  });
+  const shake = Math.sin(t * 40) * 6 * clamp((age - 0.6) / 0.5);
+  withT(W / 2 + shake, 900, easeBack((age - 0.15) / 0.4), Math.sin(t * 9) * 0.03, () => {
+    ctx.fillStyle = '#1a1a2e'; rrect(-260, -200, 520, 400, 50); ctx.fill();
+    ctx.strokeStyle = '#FFE14D'; ctx.lineWidth = 12; ctx.setLineDash([30, 20]); ctx.lineDashOffset = -t * 120;
+    rrect(-260, -200, 520, 400, 50); ctx.stroke(); ctx.setLineDash([]);
+    txt('？', 0, 90, { size: 300, font: DELA, fill: '#fff' });
+    emoji('🔒', 200, 160, 120);
+  });
+  withT(W / 2, 1240, easeBack((age - 0.5) / 0.35), 0, () => {
+    txt('みんなが後回しにしてる', 0, 0, { size: 72, fill: '#fff', stroke: '#000', sw: 14 });
+  });
+  const a4 = age - (u3.b - u3.a) + 0.3;
+  if (a4 > 0) withT(W / 2, 1640, easeBack(a4 / 0.3), -0.04, () => {
+    ctx.fillStyle = '#FF4F6D'; rrect(-300, -66, 600, 100, 50); ctx.fill();
+    txt('最後まで見てね 👀', 0, 6, { size: 56, fill: '#fff' });
+  });
+}
+
+function sceneItem(t, s) {
+  const it = ITEMS[s.rank];
+  rankBadge(t, s);
+  emojiCard(t, s, it.emoji);
+  titleLine(t, s, it.title);
+  const caps = TL.captions.filter(c => c.scene === s.id);
+  const pDelay = caps.length > 2 ? caps[2].a - s.a - 0.05 : 1.25;
+  if (s.rank !== 1) pointPill(t, s, it.point, 1320, pDelay);
+  if (s.rank === 2) tsukkomi(t, s);
+  if (s.rank === 1) sceneOne(t, s, it);
+}
+
+// 2位: ツンツン声のツッコミ
+function tsukkomi(t, s) {
+  const u = s.utts[1]; const age = t - u.a;
+  if (age < 0 || t > u.b + 0.4) return;
+  const p = easeBack(age / 0.25), out = clamp((t - u.b - 0.1) / 0.3);
+  ctx.save(); ctx.fillStyle = `rgba(0,0,0,${0.45 * (1 - out)})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+  withT(W / 2, 880, lerp(0.3, 1, p) * (1 - out * 0.3), -0.08, () => {
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#FF4F6D'; ctx.lineWidth = 14;
+    // ギザギザの吹き出し
+    ctx.beginPath();
+    for (let i = 0; i <= 28; i++) { const a = i / 28 * Math.PI * 2, r = i % 2 ? 300 : 360; ctx.lineTo(Math.cos(a) * r * 1.25, Math.sin(a) * r * 0.85); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    txt('あなたも', 0, -40, { size: 110, font: DELA, fill: '#FF4F6D' });
+    txt('だからね？', 0, 100, { size: 100, font: DELA, fill: '#222' });
+  }, 1 - out);
+  emoji('👉', 190 + Math.sin(t * 14) * 14, 1230, 170, (1 - out) * clamp(age / 0.15), -0.3);
+}
+
+// 1位: 紙吹雪と特大タイトル
+function sceneOne(t, s, it) {
+  const age = t - s.a;
+  // 紙吹雪
+  const r = rnd(99), cols = ['#FF4F6D', '#FFE14D', '#4FD08A', '#5AB8FF', '#A66BFF', '#ffffff'];
+  for (let i = 0; i < 150; i++) {
+    const x0 = r() * W, y0 = -r() * 900 - 40, vy = 260 + r() * 260, sway = 30 + r() * 60, ph = r() * 6, rs = (r() - 0.5) * 10;
+    const c = cols[i % cols.length], w = 14 + r() * 14, h = 24 + r() * 16;
+    const tt = age; if (tt < 0) continue;
+    const y = y0 + vy * tt; if (y > H + 50) continue;
+    const x = x0 + Math.sin(tt * 2 + ph) * sway;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ph + tt * rs); ctx.scale(1, Math.cos(tt * 6 + ph));
+    ctx.fillStyle = c; ctx.fillRect(-w / 2, -h / 2, w, h); ctx.restore();
+  }
+  // 「今夜は早めに寝ようね」で月のステッカー
+  const u = s.utts[2];
+  if (u && t > u.a) {
+    const a2 = t - u.a;
+    withT(830, 1060, easeBack(a2 / 0.35), 0.15, () => {
+      ctx.fillStyle = '#2B2F6B'; rrect(-150, -110, 300, 220, 40); ctx.fill();
+      emoji('🌙', 0, -25, 110); txt('早めに寝よ', 0, 80, { size: 44, fill: '#FFE14D' });
+    });
+  }
+  const pDelay = s.utts[1] ? s.utts[1].a - s.a : 1.0;
+  pointPill(t, s, it.point, 1320, pDelay);
+  // 白フラッシュ
+  const f = 1 - clamp(age / 0.45);
+  if (f > 0) { ctx.fillStyle = `rgba(255,255,255,${f})`; ctx.fillRect(0, 0, W, H); }
+}
+
+function sceneTop3(t, s) {
+  const age = t - s.a;
+  const f = 1 - clamp(age / 0.3);
+  withT(W / 2, 680, easeBack(age / 0.3), -0.03, () => {
+    txt('ここからは', 0, 0, { size: 90, fill: '#fff', stroke: '#000', sw: 14 });
+  });
+  withT(W / 2, 1010, elastic((age - 0.15) / 0.8) * (1 + 0.04 * Math.sin(t * 8)), 0, () => {
+    const g = ctx.createLinearGradient(0, -300, 0, 30); g.addColorStop(0, '#FFF7B8'); g.addColorStop(0.6, '#FFC21A'); g.addColorStop(1, '#C77700');
+    txt('TOP3', 0, 0, { size: 330, font: DELA, fill: g, stroke: '#2a1800', sw: 26, shadow: 'rgba(0,0,0,0.5)' });
+  });
+  ['🥉', '🥈', '🥇'].forEach((m, i) => emoji(m, W / 2 + (i - 1) * 250, 1260 - (i === 2 ? 30 : 0), i === 2 ? 170 : 140, clamp((age - 0.5 - i * 0.12) / 0.2)));
+  // キラキラ
+  const r = rnd(7);
+  for (let i = 0; i < 26; i++) {
+    const x = r() * W, y = 400 + r() * 1100, ph = r() * 6;
+    const a = Math.max(0, Math.sin(t * 6 + ph)); sparkle(x, y, 18 + 26 * a, a * 0.9);
+  }
+  if (f > 0) { ctx.fillStyle = `rgba(255,236,160,${f * 0.85})`; ctx.fillRect(0, 0, W, H); }
+}
+function sparkle(x, y, r, a) {
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#FFF6C8'; ctx.translate(x, y); ctx.beginPath();
+  for (let i = 0; i < 8; i++) { const ang = i * Math.PI / 4, rr = i % 2 ? r * 0.25 : r; ctx.lineTo(Math.cos(ang) * rr, Math.sin(ang) * rr); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+function sceneBuild(t, s) {
+  const age = t - s.a;
+  const roll = TL.sfx.find(e => e.type === 'drumroll');
+  const k = clamp((t - roll.t) / roll.dur);
+  // スポットライト
+  for (let i = 0; i < 2; i++) {
+    const ang = Math.sin(t * 1.6 + i * 2.2) * 0.45;
+    ctx.save(); ctx.translate(i ? W - 150 : 150, -40); ctx.rotate(ang + (i ? 0.35 : -0.35));
+    const g = ctx.createLinearGradient(0, 0, 0, 1700); g.addColorStop(0, 'rgba(255,240,180,0.35)'); g.addColorStop(1, 'rgba(255,240,180,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(30, 0); ctx.lineTo(320, 1700); ctx.lineTo(-320, 1700); ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  withT(W / 2, 600, easeBack(age / 0.35), 0, () => {
+    txt('栄えある', 0, -130, { size: 80, fill: '#fff', stroke: '#000', sw: 12 });
+    const g = ctx.createLinearGradient(0, -150, 0, 20); g.addColorStop(0, '#FFF3A6'); g.addColorStop(1, '#E8A21A');
+    txt('第1位は…', 0, 40, { size: 150, font: DELA, fill: g, stroke: '#000', sw: 18 });
+  });
+  const sh = k * 22;
+  const jx = Math.sin(t * 63) * sh, jy = Math.cos(t * 47) * sh * 0.6;
+  withT(W / 2 + jx, 1020 + jy, easeBack((age - 0.2) / 0.4) * (1 + 0.15 * k), Math.sin(t * 30) * 0.04 * k, () => {
+    ctx.fillStyle = '#1d1d2c'; rrect(-250, -250, 500, 500, 60); ctx.fill();
+    ctx.strokeStyle = `rgba(255,225,77,${0.5 + 0.5 * Math.abs(Math.sin(t * 20 * (0.3 + k)))})`; ctx.lineWidth = 16;
+    rrect(-250, -250, 500, 500, 60); ctx.stroke();
+    txt('？', 0, 110, { size: 340, font: DELA, fill: '#fff' });
+  });
+  if (k > 0) txt('ドゥルルルル…', W / 2, 1420, { size: 64, fill: `rgba(255,255,255,${0.5 + 0.5 * k})`, font: DELA });
+}
+
+function sceneEnd(t, s) {
+  const age = t - s.a;
+  withT(W / 2, 440, easeBack(age / 0.3), -0.02, () => {
+    txt('まとめ', 0, 0, { size: 96, font: DELA, fill: '#fff', stroke: '#3a2a6b', sw: 16 });
+  });
+  // 1位〜10位を2列で一覧
+  for (let rank = 1; rank <= 10; rank++) {
+    const i = rank - 1, col = i < 5 ? 0 : 1, row = i % 5;
+    const x = col ? 560 : 80, y = 540 + row * 128;
+    const a = easeBack((age - 0.15 - i * 0.07) / 0.3);
+    if (a <= 0) continue;
+    withT(x + (1 - a) * (col ? 300 : -300), y, 1, 0, () => {
+      ctx.fillStyle = rank <= 3 ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.82)'; rrect(0, 0, 440, 108, 28); ctx.fill();
+      const m = MEDAL[rank];
+      ctx.fillStyle = m ? m[1] : '#5B4BC4'; ctx.beginPath(); ctx.arc(54, 54, 38, 0, Math.PI * 2); ctx.fill();
+      txt(String(rank), 54, 70, { size: 42, font: DELA, fill: '#fff' });
+      emoji(ITEMS[rank].emoji, 136, 54, 56);
+      let sz = 40; while (measure(ITEMS[rank].title, sz) > 260) sz -= 2;
+      txt(ITEMS[rank].title, 180, 68, { size: sz, align: 'left', fill: '#222' });
+    }, clamp(a));
+  }
+  // CTA
+  const u2 = s.utts[1];
+  const a1 = t - s.utts[0].a;
+  withT(W / 2, 1255, easeBack(a1 / 0.3), 0, () => {
+    txt('どれか1つ、今日から試してみてね！', 0, 0, { size: 58, fill: '#FFE14D', stroke: '#3a2a6b', sw: 12 });
+  }, clamp(a1 / 0.1));
+  const a3 = t - (s.utts[0].b - 0.3);
+  if (a3 > 0) {
+    const pulse = 1 + 0.05 * Math.sin(t * Math.PI * 2 / BEAT);
+    withT(330, 1390, easeBack(a3 / 0.3) * pulse, 0, () => {
+      ctx.fillStyle = '#FF4F6D'; rrect(-210, -70, 420, 140, 70); ctx.fill();
+      txt('🔖 保存して', 0, 20, { size: 56, fill: '#fff', font: MARU });
+    });
+    withT(750, 1390, easeBack((a3 - 0.15) / 0.3) * (2 - pulse), 0, () => {
+      ctx.fillStyle = '#fff'; rrect(-200, -70, 400, 140, 70); ctx.fill();
+      txt('見返してね', 0, 20, { size: 56, fill: '#FF4F6D', font: MARU });
+    });
+  }
+  if (u2 && t > u2.a) {
+    const a4 = t - u2.a;
+    withT(W / 2, 1530, easeBack(a4 / 0.3), 0, () => {
+      txt('💬 あなたの解消法はコメントで！', 0, 0, { size: 54, fill: '#fff', stroke: '#3a2a6b', sw: 12 });
+    });
+  }
+  txt('VOICEVOX:四国めたん', W / 2, 1610, { size: 34, fill: 'rgba(255,255,255,0.92)', stroke: 'rgba(0,0,0,0.35)', sw: 6 });
+  txt('※感じ方・効果には個人差があります', W / 2, 1655, { size: 28, fill: 'rgba(255,255,255,0.8)' });
+}
+
+// ---------- メイン ----------
+function render(t) {
+  const s = sceneAt(t);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  // カメラ: 衝撃時の揺れ + ビートのズーム
+  let shake = 0;
+  for (const e of impacts) { const d = t - e.t; if (d >= 0 && d < 0.35) shake += e.k * Math.pow(1 - d / 0.35, 2); }
+  const sx = Math.sin(t * 97) * shake, sy = Math.cos(t * 83) * shake;
+  const beatPh = (t % BEAT) / BEAT;
+  let zoom = inGroove(t) ? 1 + 0.012 * Math.exp(-beatPh * 5) : 1;
+  if (s.kind === 'item' && s.rank === 2) { const u = s.utts[1]; if (t > u.a && t < u.b + 0.3) zoom *= 1 + 0.05 * easeOut((t - u.a) / 0.2); }
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  ctx.setTransform(zoom, 0, 0, zoom, W / 2 * (1 - zoom) + sx, H / 2 * (1 - zoom) + sy);
+  ctx.save(); ctx.translate(-20, -20); ctx.scale((W + 40) / W, (H + 40) / H); background(t, s); ctx.restore();
+  topBar(t, s);
+  if (s.kind === 'hook') sceneHook(t, s);
+  else if (s.kind === 'item') sceneItem(t, s);
+  else if (s.kind === 'top3') sceneTop3(t, s);
+  else if (s.kind === 'build') sceneBuild(t, s);
+  else sceneEnd(t, s);
+  if (s.kind !== 'end') caption(t, s);
+  // 冒頭/最後のフェード
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const fo = clamp((t - (DURATION - 0.6)) / 0.6);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// サムネイル
+function renderThumb() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const s = { kind: 'end', a: -10 };
+  ctx.fillStyle = grad('#FF8FB1', '#7A5CFF'); ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(W / 2, 900); ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  for (let i = 0; i < 18; i++) { ctx.rotate(Math.PI * 2 / 18); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(1500, -120); ctx.lineTo(1500, 120); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  txt('今日からできる', W / 2, 420, { size: 96, fill: '#fff', stroke: '#000', sw: 16 });
+  txt('ストレス', W / 2, 660, { size: 200, font: DELA, fill: '#fff', stroke: '#FF4F6D', sw: 24, shadow: 'rgba(0,0,0,0.4)' });
+  txt('解消法', W / 2, 880, { size: 200, font: DELA, fill: '#fff', stroke: '#FF4F6D', sw: 24, shadow: 'rgba(0,0,0,0.4)' });
+  const g = ctx.createLinearGradient(0, 900, 0, 1200); g.addColorStop(0, '#FFF5A8'); g.addColorStop(1, '#FFB000');
+  txt('TOP10', W / 2, 1180, { size: 235, font: DELA, fill: g, stroke: '#3a2400', sw: 26, shadow: 'rgba(0,0,0,0.45)' });
+  ['🌬️', '🎧', '🛁', '😂', '🌳', '💬'].forEach((e, i) => emoji(e, 150 + i * 156, 1340, 120));
+  ctx.fillStyle = '#1a1a2e'; rrect(190, 1440, 700, 150, 75); ctx.fill();
+  txt('1位は意外な「アレ」', W / 2, 1540, { size: 70, fill: '#FFE14D' });
+}
+
+window.render = render; window.renderThumb = renderThumb; window.FPS = FPS; window.DURATION = DURATION;
+window.ready = Promise.all([document.fonts.load('100px "Dela"'), document.fonts.load('100px "Maru"'), document.fonts.load('100px "Noto Color Emoji"', '😴')]);
+// ブラウザで開いたときはプレビュー再生
+if (!location.search.includes('capture')) {
+  window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+}
+</script>
+</body>
+</html>
