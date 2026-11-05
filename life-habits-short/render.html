@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Life Habits Short</title>
+<style>
+  @font-face { font-family: 'Rounded'; src: url('fonts/MPLUSRounded1c-Black.ttf'); }
+  @font-face { font-family: 'RoundedEB'; src: url('fonts/MPLUSRounded1c-ExtraBold.ttf'); }
+  @font-face { font-family: 'Dela'; src: url('fonts/DelaGothicOne-Regular.ttf'); }
+  @font-face { font-family: 'Emoji'; src: url('fonts/NotoColorEmoji-Regular.ttf'); }
+  html, body { margin: 0; background: #111; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 人生を楽しくする習慣10選(9:16 ショート)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーンの時刻は narrate.py が実際のナレーション長から作る timeline.js に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const DURATION = TL.duration;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const INK = '#1c1733';
+const YEL = '#FFE14D';
+
+const THEMES = {
+  sunrise: { a: '#FFB347', b: '#FF5E62', ray: 'rgba(255,255,255,0.13)', acc: '#FF5E62' },
+  mint:    { a: '#3EE6B0', b: '#12A3C7', ray: 'rgba(255,255,255,0.13)', acc: '#0E9C8A' },
+  night:   { a: '#6C5CE7', b: '#2A1F7A', ray: 'rgba(255,255,255,0.08)', acc: '#5B45E0' },
+  peach:   { a: '#FFA8B8', b: '#FF6B6B', ray: 'rgba(255,255,255,0.15)', acc: '#F0506E' },
+  lemon:   { a: '#FFE066', b: '#FF9F1C', ray: 'rgba(255,255,255,0.18)', acc: '#F08A00' },
+  sky:     { a: '#5BC0FF', b: '#2E5BE6', ray: 'rgba(255,255,255,0.12)', acc: '#2E6BE6' },
+  berry:   { a: '#D17BF2', b: '#F2547D', ray: 'rgba(255,255,255,0.13)', acc: '#C2389A' },
+  aqua:    { a: '#2CE0D0', b: '#2F80ED', ray: 'rgba(255,255,255,0.13)', acc: '#1C7FD6' },
+  coral:   { a: '#FF9966', b: '#FF3D77', ray: 'rgba(255,255,255,0.13)', acc: '#F0346A' },
+  gold:    { a: '#4A1F7A', b: '#170B33', ray: 'rgba(255,214,90,0.16)', acc: '#F5B800' },
+  pop:     { a: '#FF6FD8', b: '#3813C2', ray: 'rgba(255,255,255,0.12)', acc: '#7B2FF7' },
+  dull:    { a: '#596070', b: '#2A2E37', ray: 'rgba(255,255,255,0.0)', acc: '#888' },
+};
+const CONFETTI = ['#FFE14D', '#FF5E8A', '#4FD1FF', '#7CF29C', '#B78CFF', '#FFFFFF', '#FF9F1C'];
+
+// ---------- 数学 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeIn = t => Math.pow(clamp(t), 3);
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = (t, s = 2.2) => { t = clamp(t) - 1; return 1 + (s + 1) * t * t * t + s * t * t; };
+const elastic = t => { t = clamp(t); if (t === 0 || t === 1) return t; return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1; };
+function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+// ---------- 描画ヘルパ ----------
+function font(size, fam = 'Rounded') { return `${size}px "${fam}", "Emoji", sans-serif`; }
+function fitSize(str, maxW, size, fam = 'Rounded', ls = 0) {
+  ctx.save(); ctx.letterSpacing = ls + 'px';
+  for (; size > 20; size -= 2) { ctx.font = font(size, fam); if (ctx.measureText(str).width <= maxW) break; }
+  ctx.restore(); return size;
+}
+// 縁取り+影つきの太字テキスト(ショート動画定番の見せ方)
+function bigText(str, x, y, { size = 90, fam = 'Rounded', fill = '#fff', stroke = INK, sw = 16, shadow = null, sh = 10, align = 'center', alpha = 1, ls = 0, base = 'middle' } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = font(size, fam); ctx.textAlign = align; ctx.textBaseline = base; ctx.letterSpacing = ls + 'px';
+  ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+  if (shadow) { ctx.lineWidth = sw; ctx.strokeStyle = shadow; ctx.fillStyle = shadow; ctx.strokeText(str, x + sh * .6, y + sh); ctx.fillText(str, x + sh * .6, y + sh); }
+  if (sw) { ctx.lineWidth = sw; ctx.strokeStyle = stroke; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = fill; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function plainText(str, x, y, { size = 40, fam = 'RoundedEB', color = INK, align = 'center', alpha = 1, base = 'middle', ls = 0 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.font = font(size, fam); ctx.fillStyle = color;
+  ctx.textAlign = align; ctx.textBaseline = base; ctx.letterSpacing = ls + 'px'; ctx.fillText(str, x, y); ctx.restore();
+}
+function emoji(ch, x, y, size, { alpha = 1, rot = 0, sx = 1, sy = 1 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sx, sy);
+  ctx.font = `${size}px "Emoji"`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(ch, 0, size * 0.04); ctx.restore();
+}
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, fill, { alpha = 1, stroke = null, sw = 0, shadow = null, sh = 10 } = {}) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  if (shadow) { ctx.fillStyle = shadow; rrectPath(x, y + sh, w, h, r); ctx.fill(); }
+  ctx.fillStyle = fill; rrectPath(x, y, w, h, r); ctx.fill();
+  if (stroke) { ctx.lineWidth = sw; ctx.strokeStyle = stroke; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, fill, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function ring(x, y, r, w, color, alpha) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+
+// ---------- 背景 ----------
+function background(th, t, { rays = true, cx = W / 2, cy = 820, raySpeed = 0.12 } = {}) {
+  const g = ctx.createLinearGradient(0, 0, W * 0.3, H);
+  g.addColorStop(0, th.a); g.addColorStop(1, th.b);
+  ctx.fillStyle = g; ctx.fillRect(-50, -50, W + 100, H + 100);
+  if (rays && th.ray) {   // 回転するサンバースト
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * raySpeed); ctx.fillStyle = th.ray;
+    const n = 16;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 2000, a, a + Math.PI / n); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // ゆっくり上昇するボケ玉
+  for (let i = 0; i < 18; i++) {
+    const r = 20 + rand(i) * 70;
+    const x = rand(i + 50) * W + Math.sin(t * 0.6 + i) * 30;
+    const y = ((rand(i + 90) * (H + 300) - t * (30 + rand(i + 7) * 60)) % (H + 300) + H + 300) % (H + 300) - 150;
+    circle(x, y, r, '#fff', 0.06 + rand(i + 3) * 0.08);
+  }
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- 紙吹雪(解析的に位置を計算するので任意の t で再現可能) ----------
+function confetti(t, t0, { n = 90, x0 = W / 2, y0 = 800, speed = 1500, spread = Math.PI * 2, dir = -Math.PI / 2, seed = 1, life = 3.2 } = {}) {
+  const dt = t - t0;
+  if (dt < 0 || dt > life) return;
+  for (let i = 0; i < n; i++) {
+    const r1 = rand(seed * 1000 + i), r2 = rand(seed * 1000 + i + 300), r3 = rand(seed * 1000 + i + 600);
+    const a = dir + (r1 - 0.5) * spread;
+    const v = speed * (0.35 + 0.65 * r2);
+    const drag = 1.6;
+    const k = (1 - Math.exp(-drag * dt)) / drag;
+    const x = x0 + Math.cos(a) * v * k + Math.sin(dt * 5 + i) * 25;
+    const y = y0 + Math.sin(a) * v * k + 520 * dt * dt * 0.5 + 180 * dt;
+    if (y > H + 50) continue;
+    const alpha = clamp((life - dt) / 0.6);
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(dt * (4 + r3 * 8) + i);
+    ctx.scale(1, Math.cos(dt * (6 + r3 * 6) + i));
+    ctx.fillStyle = CONFETTI[i % CONFETTI.length];
+    if (i % 3 === 0) { ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill(); }
+    else ctx.fillRect(-10, -6, 20, 12);
+    ctx.restore();
+  }
+}
+// 上から降り続ける紙吹雪
+function confettiRain(t, t0, n = 50, seed = 7) {
+  if (t < t0) return;
+  for (let i = 0; i < n; i++) {
+    const sp = 260 + rand(seed + i) * 260;
+    const y = ((rand(seed + i + 100) * H + (t - t0) * sp) % (H + 100)) - 50;
+    const x = rand(seed + i + 200) * W + Math.sin((t - t0) * 2 + i) * 40;
+    const fade = clamp((t - t0) / 0.4);
+    ctx.save(); ctx.globalAlpha = 0.9 * fade; ctx.translate(x, y); ctx.rotate(t * 3 + i); ctx.scale(1, Math.cos(t * 5 + i));
+    ctx.fillStyle = CONFETTI[i % CONFETTI.length]; ctx.fillRect(-9, -5, 18, 10); ctx.restore();
+  }
+}
+
+// ---------- 共通 UI ----------
+// 上部のタイトル帯 + 進捗(10 → 1)
+function header(t, current, alpha = 1, title = TL.title) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  const y = 250;
+  const s = fitSize(title, 760, 54);
+  ctx.font = font(s); const w = ctx.measureText(title).width + 90;
+  rrect(W / 2 - w / 2, y - 50, w, 100, 50, '#fff', { shadow: 'rgba(0,0,0,0.25)', sh: 8 });
+  plainText(title, W / 2, y + 2, { size: s, fam: 'Rounded', color: INK });
+  if (current !== null) {
+    const n = 10, gap = 74, x0 = W / 2 - gap * (n - 1) / 2, yy = y + 105;
+    for (let i = 0; i < n; i++) {
+      const rank = 10 - i, x = x0 + i * gap;
+      const done = current !== undefined && rank > current, now = rank === current;
+      const pulse = now ? 1 + 0.08 * Math.sin(t * 8) : 1;
+      circle(x, yy, (now ? 30 : 22) * pulse, now ? YEL : done ? '#fff' : 'rgba(255,255,255,0.28)');
+      plainText(String(rank), x, yy + 2, { size: now ? 30 : 22, fam: 'Dela', color: now || done ? INK : 'rgba(255,255,255,0.85)' });
+    }
+  }
+  ctx.restore();
+}
+
+// 1文字ずつポンと出るテキスト
+function popText(str, cx, y, t0, t, { size = 96, fam = 'Rounded', fill = '#fff', stroke = INK, sw = 18, shadow = 'rgba(0,0,0,0.35)', sh = 10, stagger = 0.035, maxW = 960 } = {}) {
+  size = fitSize(str, maxW, size, fam);
+  ctx.save(); ctx.font = font(size, fam);
+  const chars = [...str];
+  const widths = chars.map(c => ctx.measureText(c).width);
+  const total = widths.reduce((a, b) => a + b, 0);
+  ctx.restore();
+  let x = cx - total / 2;
+  chars.forEach((c, i) => {
+    const p = seg(t, t0 + i * stagger, 0.22);
+    if (p > 0) {
+      const sc = backOut(p, 3);
+      ctx.save(); ctx.translate(x + widths[i] / 2, y); ctx.scale(sc, sc); ctx.rotate((1 - easeOut(p)) * 0.4);
+      bigText(c, 0, 0, { size, fam, fill, stroke, sw, shadow, sh, alpha: clamp(p * 3) });
+      ctx.restore();
+    }
+    x += widths[i];
+  });
+  return size;
+}
+
+// 白いカードに理由を表示(キーワードに黄色マーカーが走る)
+function reasonCard(chunk, t, y, accent) {
+  const p = seg(t, chunk.s - 0.08, 0.3);
+  if (p <= 0) return;
+  const lines = chunk.text.split('\n');
+  const size = Math.min(...lines.map(l => fitSize(l, 860, 62, 'RoundedEB')));
+  const lh = size * 1.42, h = lines.length * lh + 70, w = 960;
+  const yy = y + (1 - easeOut(p)) * 120;
+  ctx.save(); ctx.globalAlpha = clamp(p * 2);
+  ctx.translate(W / 2, yy + h / 2); ctx.scale(lerp(0.9, 1, backOut(p)), lerp(0.9, 1, backOut(p))); ctx.translate(-W / 2, -(yy + h / 2));
+  rrect(W / 2 - w / 2, yy, w, h, 36, '#fff', { shadow: 'rgba(0,0,0,0.25)', sh: 12 });
+  rrect(W / 2 - w / 2, yy, 18, h, 9, accent);
+  const hp = seg(t, chunk.s + 0.35, 0.5);
+  lines.forEach((l, i) => {
+    const ly = yy + 35 + lh * (i + 0.5);
+    ctx.font = font(size, 'RoundedEB');
+    const lw = ctx.measureText(l).width, lx = W / 2 - lw / 2;
+    const k = chunk.hl ? l.indexOf(chunk.hl) : -1;
+    if (k >= 0 && hp > 0) {
+      const a = ctx.measureText(l.slice(0, k)).width, b = ctx.measureText(chunk.hl).width;
+      ctx.save(); ctx.globalAlpha = 0.9; ctx.fillStyle = YEL;
+      ctx.fillRect(lx + a - 6, ly - size * 0.05, (b + 12) * easeOut(hp), size * 0.55); ctx.restore();
+    }
+    plainText(l, lx, ly, { size, color: INK, align: 'left' });
+    if (k >= 0) {   // キーワードはアクセント色で重ね描き
+      const a = ctx.measureText(l.slice(0, k)).width;
+      plainText(chunk.hl, lx + a, ly, { size, color: accent, align: 'left' });
+    }
+  });
+  ctx.restore();
+}
+
+// ---------- シーン: フック ----------
+function sceneHook(sc, t) {
+  const L = t - sc.start, drop = TL.drop;
+  const [c0, c1, c2] = sc.chunks;
+  if (t < drop) {
+    // 退屈モード: 灰色・ゆっくり・小さく揺れる
+    background(THEMES.dull, t, { rays: false });
+    const p = 1;   // 1フレーム目から絵が出ている状態にする(フィードでの第一印象)
+    emoji('😑', W / 2, 780 + Math.sin(t * 2) * 8, 300, { rot: Math.sin(t * 1.5) * 0.05 });
+    emoji('⏰', W / 2 + 230, 600, 110, { alpha: 0.6 * easeOut(p), rot: Math.sin(t * 20) * 0.12 });
+    const lines = c0.text.split('\n');
+    lines.forEach((l, i) => {
+      const q = seg(t, c0.s + i * 0.45, 0.4);
+      const shake = l.includes('つまらない') ? Math.sin(t * 40) * 3 * q : 0;
+      bigText(l, W / 2 + shake, 1120 + i * 140, { size: i ? 120 : 86, fill: i ? '#C9CFDB' : '#fff', stroke: '#1b1d23', sw: 16, alpha: easeOut(q) });
+    });
+    // ドロップ直前に画面がズームアップ
+    const z = seg(t, drop - 0.35, 0.35);
+    if (z > 0) { ctx.fillStyle = `rgba(255,255,255,${easeIn(z) * 0.9})`; ctx.fillRect(0, 0, W, H); }
+    return;
+  }
+  // ドロップ後: 一気にカラフルに
+  const d = t - drop;
+  background(THEMES.pop, t, { raySpeed: 0.25 });
+  confetti(t, drop, { n: 140, y0: 900, speed: 2000, seed: 3 });
+  const s = 1 + 0.03 * Math.sin(d * 6);
+  ctx.save(); ctx.translate(W / 2, 760); ctx.scale(s, s); ctx.translate(-W / 2, -760);
+  popText('人生を楽しくする', W / 2, 560, drop + 0.02, t, { size: 100, stagger: 0.03 });
+  // 「習慣10選」: 10 を特大で
+  const p = seg(t, drop + 0.2, 0.45);
+  if (p > 0) {
+    const k = backOut(p, 2.5);
+    ctx.save(); ctx.translate(W / 2, 800); ctx.scale(k, k); ctx.rotate(-0.05);
+    bigText('習慣', -300, 20, { size: 130, sw: 20, shadow: 'rgba(0,0,0,0.35)' });
+    bigText('10', 30, 0, { size: 300, fam: 'Dela', fill: YEL, sw: 26, shadow: '#E0367A', sh: 16 });
+    bigText('選!', 330, 20, { size: 130, sw: 20, shadow: 'rgba(0,0,0,0.35)' });
+    ctx.restore();
+  }
+  ctx.restore();
+  emoji('✨', 170, 420 + Math.sin(d * 4) * 12, 110, { alpha: seg(t, drop + 0.3, 0.3) });
+  emoji('🎉', 910, 1000 + Math.sin(d * 4 + 1) * 12, 130, { alpha: seg(t, drop + 0.35, 0.3), rot: -0.2 });
+  // 1位は最後に発表!
+  const q = seg(t, c2.s - 0.1, 0.35);
+  if (q > 0) {
+    const pulse = 1 + 0.05 * Math.sin((t - c2.s) * 9);
+    ctx.save(); ctx.translate(W / 2, 1210); ctx.scale(backOut(q) * pulse, backOut(q) * pulse);
+    rrect(-400, -95, 800, 190, 95, YEL, { shadow: '#E0367A', sh: 12 });
+    emoji('👑', -300, 0, 110, { rot: Math.sin(t * 6) * 0.15 });
+    plainText('1位は最後に発表!', 60, 4, { size: 66, fam: 'Rounded', color: INK });
+    ctx.restore();
+    const r = seg(t, c2.s + 0.6, 0.4);
+    plainText('最後まで見てね 👀', W / 2, 1380, { size: 52, fam: 'Rounded', color: '#fff', alpha: easeOut(r) });
+  }
+  // ドロップ直後の白フラッシュ
+  const f = 1 - seg(t, drop, 0.35);
+  if (f > 0) { ctx.fillStyle = `rgba(255,255,255,${f})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- シーン: ランキング ----------
+function sceneRank(sc, t) {
+  const L = t - sc.start, th = THEMES[sc.theme], first = sc.rank === 1;
+  const title = sc.chunks[0], reason = sc.chunks[1];
+  const reveal = sc.start + (first ? 0.08 : 0.12);
+  // カメラ: ゆっくりズーム + 表示の瞬間に揺れ
+  const shake = Math.exp(-Math.max(0, t - reveal) * 10) * (t > reveal ? 1 : 0) * (first ? 22 : 12);
+  ctx.save();
+  const z = 1 + 0.035 * seg(L, 0, sc.end - sc.start);
+  ctx.translate(W / 2 + Math.sin(t * 70) * shake, H / 2 + Math.cos(t * 63) * shake); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  background(th, t, { cy: 640, raySpeed: first ? 0.3 : 0.15 });
+  if (first) {
+    // スポットライト
+    const g = ctx.createRadialGradient(W / 2, 700, 50, W / 2, 700, 900);
+    g.addColorStop(0, 'rgba(255,220,120,0.35)'); g.addColorStop(1, 'rgba(255,220,120,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  ctx.restore();
+  header(t, sc.rank, 1);
+
+  // 順位バッジ
+  const p = seg(t, reveal, 0.38);
+  if (p > 0) {
+    const k = lerp(2.6, 1, easeOut(p)) * (1 + 0.12 * Math.sin(clamp(p) * Math.PI));
+    ctx.save(); ctx.translate(W / 2, 590); ctx.scale(k, k); ctx.rotate(-0.06 * (1 - p) - 0.03);
+    const numFill = first ? YEL : '#fff';
+    ctx.font = font(270, 'Dela'); const nw = ctx.measureText(String(sc.rank)).width / 2 + 70;
+    bigText('第', -nw, 40, { size: 110, sw: 18, shadow: 'rgba(0,0,0,0.35)', alpha: clamp(p * 3) });
+    bigText(String(sc.rank), 0, 0, { size: 270, fam: 'Dela', fill: numFill, sw: 26, shadow: first ? '#C2410C' : th.acc, sh: 18, alpha: clamp(p * 3) });
+    bigText('位', nw, 40, { size: 110, sw: 18, shadow: 'rgba(0,0,0,0.35)', alpha: clamp(p * 3) });
+    ctx.restore();
+    ring(W / 2, 590, 120 + easeOut(seg(t, reveal, 0.6)) * 520, 18 * (1 - seg(t, reveal, 0.6)), '#fff', 0.8 * (1 - seg(t, reveal, 0.6)));
+    if (first) emoji('👑', W / 2 + 125, 470 + Math.sin(t * 4) * 8, 120, { alpha: seg(t, reveal + 0.25, 0.3), rot: 0.35 + Math.sin(t * 3) * 0.08 });
+  }
+  // 絵文字(弾んで登場 → ふわふわ)
+  const e = seg(t, reveal + 0.18, 0.7);
+  if (e > 0) {
+    const cy = 900, bob = Math.sin((t - reveal) * 3.2) * 12;
+    const sq = 1 + 0.1 * Math.sin(seg(t, reveal + 0.18, 0.5) * Math.PI * 3) * (1 - e);
+    circle(W / 2, cy + 8, 175 * easeOut(e), 'rgba(0,0,0,0.18)');
+    circle(W / 2, cy, 170 * backOut(clamp(e * 1.5)), '#fff');
+    ring(W / 2, cy, 170 * backOut(clamp(e * 1.5)), 10, th.acc, 0.9);
+    emoji(sc.emoji, W / 2, cy + bob + (1 - elastic(e)) * -300, 210, { sx: sq, sy: 2 - sq, rot: Math.sin(t * 2) * 0.06 });
+  }
+  // タイトル(読み上げに合わせて1文字ずつ)
+  popText(sc.title, W / 2, 1185, title.s - 0.05, t, { size: 104, stagger: Math.min(0.045, (title.e - title.s) * 0.5 / [...sc.title].length), shadow: first ? '#C2410C' : th.acc });
+  reasonCard(reason, t, 1290, first ? '#E8590C' : th.acc);
+
+  if (first) {
+    confetti(t, reveal, { n: 160, y0: 620, speed: 2200, seed: 9, life: 3.5 });
+    confettiRain(t, reveal + 0.4, 60);
+  }
+  // 表示の瞬間のフラッシュ
+  const f = 1 - seg(t, reveal, first ? 0.4 : 0.18);
+  if (f > 0 && t >= reveal) { ctx.fillStyle = `rgba(255,255,255,${f * (first ? 1 : 0.55)})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- シーン: 1位の前の溜め ----------
+function sceneTeaser(sc, t) {
+  const L = t - sc.start, c = sc.chunks[0], T = sc.end - sc.start;
+  ctx.fillStyle = '#0d0820'; ctx.fillRect(0, 0, W, H);
+  // 左右に揺れるスポットライト2本
+  for (const [i, ph] of [[0, 0], [1, 2.1]]) {
+    const x = W / 2 + Math.sin(t * 2.2 + ph) * 380;
+    const g = ctx.createRadialGradient(x, 950, 30, x, 950, 520);
+    g.addColorStop(0, 'rgba(255,230,150,0.32)'); g.addColorStop(1, 'rgba(255,230,150,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  header(t, 1, 0.5);
+  // 文字が1文字ずつ
+  const chars = [...c.text];
+  const shown = Math.floor(clamp((t - c.s) / Math.max(0.3, (c.e - c.s) * 0.8)) * chars.length);
+  bigText(chars.slice(0, Math.max(0, shown)).join(''), W / 2, 640, { size: 104, fill: '#fff', sw: 0, shadow: 'rgba(255,200,80,0.35)', sh: 6 });
+  // 鼓動する「?」(だんだん速く)
+  const prog = seg(L, 0.2, T - 0.2);
+  const beat = Math.pow(Math.abs(Math.sin(L * (5 + prog * 14))), 8);
+  const k = (0.8 + prog * 0.6) * (1 + 0.12 * beat);
+  ctx.save(); ctx.translate(W / 2, 1060); ctx.scale(k, k);
+  rrect(-230, -230, 460, 460, 60, '#2a1a55', { stroke: YEL, sw: 12, shadow: 'rgba(0,0,0,0.5)', sh: 14 });
+  bigText('?', 0, 10, { size: 320, fam: 'Dela', fill: YEL, sw: 0 });
+  ctx.restore();
+  plainText('ドラムロール…🥁', W / 2, 1450, { size: 48, fam: 'Rounded', color: 'rgba(255,255,255,0.75)', alpha: seg(L, 0.6, 0.3) * (0.6 + 0.4 * beat) });
+  // 最後に「?」へズームイン
+  const zz = seg(t, sc.end - 0.25, 0.25);
+  if (zz > 0) { ctx.fillStyle = `rgba(255,236,160,${easeIn(zz)})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- シーン: まとめ + CTA ----------
+function sceneOutro(sc, t) {
+  const L = t - sc.start, c = sc.chunks[0];
+  background(THEMES.pop, t, { cy: 300, raySpeed: 0.1 });
+  header(t, null, 1, '保存版!まとめ');
+  // 1〜10位の一覧
+  const x0 = 100, y0 = 360, rowH = 64;
+  rrect(70, y0 - 20, W - 140, rowH * 10 + 40, 36, 'rgba(255,255,255,0.95)', { alpha: seg(L, 0, 0.25), shadow: 'rgba(0,0,0,0.25)', sh: 10 });
+  TL.recap.forEach((r, i) => {
+    const p = seg(L, 0.1 + i * 0.06, 0.25);
+    if (p <= 0) return;
+    const y = y0 + rowH * (i + 0.5) + (1 - easeOut(p)) * 30;
+    ctx.save(); ctx.globalAlpha = easeOut(p);
+    circle(x0 + 40, y, 26, i === 0 ? '#F5B800' : i < 3 ? '#FF6FA8' : '#7B6CF6');
+    plainText(String(r.rank), x0 + 40, y + 2, { size: 26, fam: 'Dela', color: '#fff' });
+    emoji(r.emoji, x0 + 110, y, 44);
+    plainText(r.title, x0 + 155, y + 2, { size: fitSize(r.title, 680, 42, 'RoundedEB'), color: INK, align: 'left' });
+    ctx.restore();
+  });
+  // CTA
+  const q = seg(t, c.s - 0.05, 0.35);
+  if (q > 0) {
+    const lines = c.text.split('\n');
+    const k = backOut(q, 2.5);
+    ctx.save(); ctx.translate(W / 2, 1180); ctx.scale(k, k);
+    bigText(lines[0], 0, -10, { size: fitSize(lines[0], 900, 92), fill: YEL, sw: 18, shadow: '#E0367A', sh: 10 });
+    bigText(lines[1], 0, 110, { size: fitSize(lines[1], 900, 76), sw: 16, shadow: 'rgba(0,0,0,0.35)', sh: 8 });
+    ctx.restore();
+    emoji('💬', 930, 1060 + Math.sin(L * 6) * 14, 110, { alpha: q, rot: 0.15 });
+  }
+  const s = seg(t, c.e - 0.4, 0.35);
+  if (s > 0) {
+    const pulse = 1 + 0.05 * Math.sin(L * 8);
+    ctx.save(); ctx.translate(W / 2, 1420); ctx.scale(backOut(s) * pulse, backOut(s) * pulse);
+    rrect(-330, -60, 660, 120, 60, '#fff', { shadow: 'rgba(0,0,0,0.25)', sh: 8 });
+    plainText('🔖 保存して見返そう!', 0, 3, { size: 54, fam: 'Rounded', color: '#7B2FF7' });
+    ctx.restore();
+  }
+  plainText('ナレーション VOICEVOX:四国めたん / BGM・効果音 オリジナル', W / 2, 1540, { size: 28, fam: 'RoundedEB', color: 'rgba(255,255,255,0.85)', alpha: seg(L, 0.3, 0.4) });
+  // 最後に暗転
+  const f = seg(t, DURATION - 0.5, 0.5);
+  if (f > 0) { ctx.fillStyle = `rgba(0,0,0,${f})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const DRAW = { hook: sceneHook, rank: sceneRank, teaser: sceneTeaser, outro: sceneOutro };
+function drawScene(sc, t) { ctx.save(); DRAW[sc.type](sc, Math.max(t, sc.start)); ctx.restore(); }
+
+// 場面転換: 斜めのワイプ(新シーンのテーマ色の帯 + 白いライン)
+const WIPE = 0.36;
+const usesWipe = sc => sc.type === 'outro' || (sc.type === 'rank' && sc.rank !== 1);   // 1位はティーザーからのフラッシュで入る
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const S = TL.scenes;
+  for (let k = 1; k < S.length; k++) {
+    const b = S[k].start;
+    if (usesWipe(S[k]) && t > b - WIPE / 2 && t < b + WIPE / 2) { drawScene(S[k - 1], t); wipe(S[k], t); return; }
+  }
+  let i = S.findIndex(s => t < s.end); if (i < 0) i = S.length - 1;
+  drawScene(S[i], t);
+}
+function wipe(sc, t) {
+  const p = easeInOut(seg(t, sc.start - WIPE / 2, WIPE));
+  if (p <= 0) return;
+  const slant = 500, x = lerp(W + slant, -slant - 40, p);
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(W + 10, 0); ctx.lineTo(W + 10, H); ctx.lineTo(x - slant, H); ctx.closePath();
+  ctx.clip(); drawScene(sc, t);
+  ctx.restore();
+  // エッジの白帯
+  if (p < 1) {
+    ctx.save(); ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.moveTo(x - 26, 0); ctx.lineTo(x, 0); ctx.lineTo(x - slant, H); ctx.lineTo(x - slant - 26, H); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = YEL;
+    ctx.beginPath(); ctx.moveTo(x - 60, 0); ctx.lineTo(x - 36, 0); ctx.lineTo(x - slant - 36, H); ctx.lineTo(x - slant - 60, H); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// サムネイル(1080×1920)
+function thumbnail() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  background(THEMES.pop, 1.3, { cy: 1050 });
+  const ems = TL.recap.map(r => r.emoji).reverse();
+  ems.forEach((e, i) => {   // 10個の絵文字を円形に
+    const a = -Math.PI / 2 + i / 10 * Math.PI * 2, r = 385;
+    const x = W / 2 + Math.cos(a) * r, y = 1100 + Math.sin(a) * r;
+    circle(x, y, 82, '#fff'); emoji(e, x, y, 100);
+  });
+  bigText('人生を', W / 2, 330, { size: 130, sw: 22, shadow: 'rgba(0,0,0,0.35)' });
+  bigText('楽しくする', W / 2, 500, { size: 150, sw: 24, shadow: 'rgba(0,0,0,0.35)' });
+  ctx.save(); ctx.translate(W / 2, 1100); ctx.rotate(-0.06);
+  bigText('習慣', 0, -95, { size: 110, sw: 20, shadow: 'rgba(0,0,0,0.35)' });
+  bigText('10選', 0, 60, { size: 170, fam: 'Dela', fill: YEL, sw: 26, shadow: '#E0367A', sh: 16 });
+  ctx.restore();
+  rrect(W / 2 - 380, 1560, 760, 140, 70, YEL, { shadow: '#E0367A', sh: 12 });
+  plainText('👑 1位は意外なあの習慣', W / 2, 1632, { size: 64, fam: 'Rounded', color: INK });
+}
+window.thumbnail = thumbnail;
+window.render = render; window.FPS = FPS; window.DURATION = DURATION;
+window.ready = Promise.all(['Rounded', 'RoundedEB', 'Dela', 'Emoji'].map(f => document.fonts.load(`40px "${f}"`, 'あ1😀'))).then(() => document.fonts.ready);
+// ブラウザで開いたときはプレビュー再生(#t=秒 で静止)
+window.ready.then(() => {
+  const m = location.hash.match(/t=([\d.]+)/);
+  if (m) { render(parseFloat(m[1])); return; }
+  if (location.hash === '#thumb') { thumbnail(); return; }
+  if (navigator.webdriver) return;
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+});
+</script>
+</body>

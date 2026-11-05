@@ -1,0 +1,5 @@
+fonts/
+output/mix.wav
+output/sfx.wav
+output/video_silent.mp4
+__pycache__/
