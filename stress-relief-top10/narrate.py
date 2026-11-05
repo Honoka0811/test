@@ -51,7 +51,7 @@ SCENES = [
         ('って、今これ見てるあなたも、だからね？', 'って、今これ見てるあなたも、だからね？', TSUN, 0.12),
         ('寝る前の一時間だけでも、離れてみて。', '寝る前の1時間だけでも、離れてみて。', N, 0),
     ]),
-    dict(id='build', kind='build', u=[('そして、栄えある第一位は。', 'そして、栄えある第1位は…', N, 0)], hold=1.8),
+    dict(id='build', kind='build', u=[('そして、第一位は。', 'そして、第1位は…', N, 0)], hold=0.6),
     dict(id='r1', kind='item', rank=1, u=[
         ('睡眠！', '睡眠！', N, 0.25),
         ('どんな解消法も、眠ってこそ効果が出るの。', 'どんな解消法も、眠ってこそ効果が出るの。', N, 0.1),
@@ -149,7 +149,6 @@ for sc in SCENES:
         hold = sc['hold']
         roll_a = t + 0.05
         reveal = q_beat(roll_a + hold)
-        timeline['sfx'].append(dict(t=roll_a, type='drumroll', dur=reveal - roll_a))
         timeline['sfx'].append(dict(t=reveal, type='reveal'))
         end = reveal                               # 1位シーンは reveal 時刻ちょうどに始まる
         sc_build_reveal = reveal

@@ -185,11 +185,9 @@ def generate(tl):
                 idx = order[(beat_in_bar * 4 + k) % 8]
                 add(arps, t + k * BEAT / 4, pluck(midi(ch['notes'][idx] + 12)) * vol, 0.45 if k % 2 else -0.45)
         # パッド(小節頭)
-        if beat_in_bar == 0 and sec not in ('break',):
-            vol = 0.5 if sec == 'intro' else 0.8
-            dur = BAR
-            if t + BAR > brk and t < brk: dur = brk - t
-            add(pads, t, pad_chord(ch['notes'], dur) * vol)
+        if beat_in_bar == 0:
+            vol = 0.5 if sec in ('intro', 'break') else 0.8
+            add(pads, t, pad_chord(ch['notes'], BAR) * vol)
 
     # リード: ドロップ直後の4小節と、1位発表後〜アウトロ
     def place_hook(t0, vol=0.22, octave=0):
@@ -270,11 +268,10 @@ def sfx_drumroll(dur):
     return out
 
 def sfx_reveal():
-    L = int(2.5 * SR); t = np.arange(L) / SR
-    x = sfx_impact(big=True)
-    out = np.zeros(L, np.float32); out[:len(x)] += x
-    out += hp(noise(L), 4000) * np.exp(-t / 0.9) * 0.35  # クラッシュ
-    for k, m in enumerate([72, 76, 79, 84, 88]):           # キラキラ上昇アルペジオ
+    """1位発表: 控えめなチャイム(上昇アルペジオ)と軽いシンバル"""
+    L = int(2.0 * SR); t = np.arange(L) / SR
+    out = hp(noise(L), 6000) * np.exp(-t / 0.5) * 0.12
+    for k, m in enumerate([72, 76, 79, 84]):
         b = bell(midi(m), 0.4) * 0.22; s = int((0.05 + k * 0.06) * SR)
         e = min(s + len(b), L); out[s:e] += b[:e - s]
     return out
@@ -284,11 +281,11 @@ def render_sfx(tl):
     buf = np.zeros((2, int((total + 3) * SR)), np.float32)
     for e in tl['sfx']:
         ty = e['type']
-        if ty == 'whoosh': add(buf, e['t'], sfx_whoosh() * 0.4)
-        elif ty == 'impact': add(buf, e['t'], sfx_impact() * 0.42)
-        elif ty == 'impact_big': add(buf, e['t'], sfx_impact(True) * 0.5)
+        if ty == 'whoosh': add(buf, e['t'], sfx_whoosh() * 0.28)
+        elif ty == 'impact': add(buf, e['t'], sfx_impact() * 0.22)
+        elif ty == 'impact_big': add(buf, e['t'], sfx_impact() * 0.3)
         elif ty == 'drumroll': add(buf, e['t'], sfx_drumroll(e['dur']) * 0.6)
-        elif ty == 'reveal': add(buf, e['t'], sfx_reveal() * 0.42)
+        elif ty == 'reveal': add(buf, e['t'], sfx_reveal() * 0.6)
     return buf[:, :int(total * SR)]
 
 if __name__ == '__main__':
