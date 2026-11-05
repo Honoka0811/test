@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>JR北海道 最盛期の路線網</title>
+<style>
+@font-face { font-family: 'MR'; font-weight: 800; src: url(fonts/mplus800.woff2) format('woff2'); }
+@font-face { font-family: 'MR'; font-weight: 800; src: url(fonts/mplus800-latin.woff2) format('woff2'); unicode-range: U+0000-00FF; }
+@font-face { font-family: 'MR'; font-weight: 900; src: url(fonts/mplus900.woff2) format('woff2'); }
+@font-face { font-family: 'MR'; font-weight: 900; src: url(fonts/mplus900-latin.woff2) format('woff2'); unicode-range: U+0000-00FF; }
+html, body { margin: 0; background: #000; }
+canvas { display: block; width: 1080px; height: 1920px; }
+#warm { position: absolute; left: -9999px; font-family: 'MR'; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div id="warm"><span style="font-weight:800">あ亜0</span><span style="font-weight:900">あ亜0</span></div>
+<script src="coast.js"></script>
+<script src="lines.js"></script>
+<script src="timings.js"></script>
+<script>
+'use strict';
+const W = 1080, H = 1920;
+window.FPS = 30;
+window.DURATION = TIMINGS.total;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const FONT = "'MR', 'IPAGothic', sans-serif";
+
+// ---------- utils ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const eo = k => 1 - Math.pow(1 - clamp(k), 3);              // easeOutCubic
+const eio = k => { k = clamp(k); return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const back = k => { k = clamp(k); const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+const ramp = (t, a, d) => clamp((t - a) / d);
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const fmt = v => v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+const SC = {}; TIMINGS.scenes.forEach((s, i) => { s.i = i; SC[s.id] = s; });
+const sceneAt = t => { let cur = TIMINGS.scenes[0]; for (const s of TIMINGS.scenes) if (t >= s.start) cur = s; return cur; };
+// 原稿中の語が読まれるおおよその時刻(文字位置の比率から推定)
+function wordTime(sid, word) {
+  const s = SC[sid]; const i = s.sub.indexOf(word);
+  const k = i < 0 ? 0 : i / s.sub.length;
+  return s.speech[0] + k * (s.speech[1] - s.speech[0]);
+}
+
+// ---------- colors ----------
+const C = {
+  bg1: '#060b18', bg2: '#0c1a36', land: '#14233f', land2: '#18294a', coast: '#3a5b8f',
+  line: '#e9f6ff', glow: '#38bdf8', gold: '#ffc94a', pink: '#ff5c8a', red: '#ff3b5c', green: '#34d399',
+  ghost: 'rgba(255,80,110,0.42)', text: '#ffffff', sub: '#9fb3d1', yellow: '#ffe14d',
+};
+
+// ---------- projection / camera ----------
+const LON0 = 142.6, LAT0 = 43.45, KX = Math.cos(43.3 * Math.PI / 180);
+const wx = lon => (lon - LON0) * KX, wy = lat => -(lat - LAT0);
+const CAM = {
+  full:   { lon: 142.55, lat: 43.42, s: 196 },
+  south:  { lon: 142.75, lat: 43.05, s: 228 },
+  ne:     { lon: 143.2, lat: 44.2, s: 270 },
+  seikan: { lon: 140.55, lat: 41.62, s: 470 },
+};
+const MAPC = { x: 500, y: 880 };
+function camAt(t) {
+  // シーンごとのカメラ。切り替えは 1.1 秒かけて補間
+  const plan = [
+    ['hook', 'full'], ['birth', 'full'], ['trunk', 'south'], ['north', 'ne'], ['local', 'ne'], ['local2', 'full'],
+    ['seikan', 'seikan'], ['decline', 'full'], ['recent', 'full'], ['compare', 'full'], ['cta', 'full'],
+  ];
+  let prev = CAM.full, cur = CAM.full, t0 = 0;
+  for (const [sid, cam] of plan) { if (t >= SC[sid].start) { prev = cur; cur = CAM[cam]; t0 = SC[sid].start; } }
+  const k = eio((t - t0) / 1.1);
+  let c = { lon: lerp(prev.lon, cur.lon, k), lat: lerp(prev.lat, cur.lat, k), s: lerp(prev.s, cur.s, k) };
+  // 地図全体がゆっくり寄っていく(Ken Burns)
+  c.s *= 1 + 0.025 * Math.sin(t * 0.21);
+  // フック冒頭のズームアウト演出
+  if (t < 1.4) c.s *= lerp(1.9, 1, eo(t / 1.4));
+  // compare/cta では地図を少し上へ
+  return c;
+}
+let cam = CAM.full, mapShift = 0;
+const px = (lon, lat) => [MAPC.x + (wx(lon) - wx(cam.lon)) * cam.s, MAPC.y + mapShift + (wy(lat) - wy(cam.lat)) * cam.s];
+
+// ---------- precompute segment geometry ----------
+for (const s of SEGS) {
+  s.pts = s.st.map(n => { if (!ST[n]) throw new Error('no station ' + n); return ST[n]; });
+  s.cum = [0];
+  for (let i = 1; i < s.pts.length; i++) {
+    const dx = wx(s.pts[i][0]) - wx(s.pts[i - 1][0]), dy = wy(s.pts[i][1]) - wy(s.pts[i - 1][1]);
+    s.cum.push(s.cum[i - 1] + Math.hypot(dx, dy));
+  }
+  s.len = s.cum[s.cum.length - 1];
+  // 札幌からの距離(発足シーンで内側から順に描くため)
+  const sp = ST['札幌'];
+  s.d0 = Math.hypot(wx(s.pts[0][0]) - wx(sp[0]), wy(s.pts[0][1]) - wy(sp[1]));
+}
+const SEG = {}; SEGS.forEach(s => SEG[s.id] = s);
+function pointAt(s, u) {
+  const L = clamp(u) * s.len;
+  let i = 1; while (i < s.cum.length - 1 && s.cum[i] < L) i++;
+  const a = s.pts[i - 1], b = s.pts[i]; const k = (L - s.cum[i - 1]) / ((s.cum[i] - s.cum[i - 1]) || 1);
+  return [lerp(a[0], b[0], k), lerp(a[1], b[1], k)];
+}
+function pathSeg(s, u0, u1) {
+  g.beginPath();
+  const L0 = clamp(u0) * s.len, L1 = clamp(u1) * s.len;
+  let started = false;
+  const [x0, y0] = px(...pointAt(s, u0)); g.moveTo(x0, y0); started = true;
+  for (let i = 1; i < s.pts.length; i++) if (s.cum[i] > L0 && s.cum[i] < L1) { const [x, y] = px(...s.pts[i]); g.lineTo(x, y); }
+  const [x1, y1] = px(...pointAt(s, u1)); g.lineTo(x1, y1);
+}
+
+// ---------- closure timeline ----------
+const CLOSE = {};   // segId -> 時刻
+const EVT = [];     // 表示用イベント(時刻付き)
+for (const sid of ['decline', 'recent']) {
+  const list = EVENTS[sid]; const s = SC[sid];
+  const a = s.speech[0] + 0.2, b = s.speech[1] - 0.15;
+  // 語にひもづくものは読み上げ時刻、それ以外は前後の間を均等割り
+  const times = list.map(e => e.word ? wordTime(sid, e.word) : null);
+  if (times[0] == null) times[0] = a;
+  if (times[times.length - 1] == null) times[times.length - 1] = b;
+  for (let i = 0; i < times.length; i++) if (times[i] == null) {
+    let j = i; while (times[j] == null) j++;
+    const p = times[i - 1], q = times[j];
+    for (let k = i; k < j; k++) times[k] = p + (q - p) * (k - i + 1) / (j - i + 1);
+    i = j;
+  }
+  list.forEach((e, i) => { e.t = times[i]; e.scene = sid; EVT.push(e); e.segs.forEach(id => CLOSE[id] = e.t); });
+}
+const KM_START = 3176.6, KM_END = 2091.7;
+const NET = EVT.reduce((a, e) => a + e.km, 0);
+function kmAt(t) {
+  let acc = 0;
+  for (const e of EVT) acc += e.km * eo((t - e.t) / 0.45);
+  return KM_START + acc / NET * (KM_END - KM_START);   // 終点を公式値に合わせる
+}
+
+// ---------- line state per time ----------
+const TRUNK_HL = ['hakodate', 'sawara', 'muroran', 'muroran2', 'chitose', 'nemuro_a', 'nemuro_b', 'nemuro_c'];
+const NORTH_HL = ['soya', 'sekihoku'];
+const LOCAL_HL = ['nayoro', 'nayoro2', 'tenpoku', 'chihoku'];
+const LOCAL2_HL = ['shinmei', 'shibetsu', 'shibetsu2'];
+function revealOf(s, t) {
+  if (s.id === 'kaikyo') return t < SC.seikan.start ? (t < SC.birth.start ? 1 : 0) : eio((t - (SC.seikan.start + 0.9)) / 2.6);
+  if (t < SC.birth.start) return 1;
+  if (t < SC.trunk.start) {
+    const st = SC.birth.start + 0.4 + s.d0 * 0.55;
+    return eio((t - st) / (0.6 + s.len * 0.38));
+  }
+  return 1;
+}
+function hlColor(s, t) {
+  // [色, 強調度 0..1, 減光 0..1]
+  const in_ = (sid, set, col) => {
+    const sc = SC[sid];
+    if (t < sc.start || t >= sc.start + sc.dur) return null;
+    const k = eo((t - sc.start) / 0.5) * (1 - ramp(t, sc.start + sc.dur - 0.3, 0.3));
+    return set.includes(s.id) ? [col, k, 0] : [null, 0, k];
+  };
+  return in_('trunk', TRUNK_HL, C.gold) || in_('north', NORTH_HL, C.gold) || in_('local', LOCAL_HL, C.pink)
+    || in_('local2', LOCAL2_HL, C.pink) || in_('seikan', ['kaikyo'], C.green) || [null, 0, 0];
+}
+
+function drawLines(t) {
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  const z = cam.s / 196;
+  // 1) ゴースト(廃止済み)
+  for (const s of SEGS) {
+    const tc = CLOSE[s.id]; if (tc == null || t < tc) continue;
+    const k = ramp(t, tc + 0.15, 0.6);
+    g.save(); g.setLineDash([7 * z, 7 * z]); g.strokeStyle = C.ghost; g.globalAlpha = k * (t >= SC.compare.start ? 1 : 0.85);
+    g.lineWidth = 3 * z; pathSeg(s, 0, 1); g.stroke(); g.restore();
+  }
+  // 2) 現役線(グロー + 芯)
+  for (const pass of [0, 1]) for (const s of SEGS) {
+    const r = revealOf(s, t); if (r <= 0) continue;
+    const tc = CLOSE[s.id];
+    let alive = 1, flash = 0;
+    if (tc != null && t >= tc) { const d = t - tc; flash = d < 0.7 ? 1 - d / 0.7 : 0; alive = 1 - ramp(t, tc + 0.05, 0.55); }
+    if (alive <= 0) continue;
+    const [hc, hk, dim] = hlColor(s, t);
+    let col = s.id === 'kaikyo' ? C.green : C.line;
+    let glowCol = s.id === 'kaikyo' ? C.green : C.glow;
+    if (hc) { col = hc; glowCol = hc; }
+    if (flash > 0) { col = C.red; glowCol = C.red; }
+    const a = alive * (1 - 0.7 * dim);
+    const wBase = (s.cat === 'trunk' ? 5 : 3.6) * z * (1 + 0.6 * hk + 0.8 * flash);
+    g.save(); g.globalAlpha = a;
+    if (pass === 0) {
+      g.strokeStyle = glowCol; g.globalAlpha = a * (0.28 + 0.25 * hk + 0.4 * flash);
+      g.lineWidth = wBase * 3.4; pathSeg(s, 0, r); g.stroke();
+    } else {
+      g.strokeStyle = col; g.lineWidth = wBase; pathSeg(s, 0, r); g.stroke();
+      // 描画の先端を光らせる
+      if (r < 1) { const [x, y] = px(...pointAt(s, r)); dot(x, y, 9 * z, '#fff', 0.95); dot(x, y, 22 * z, glowCol, 0.35); }
+    }
+    g.restore();
+  }
+  // 3) 走る列車の光点
+  if (t > 0.3) for (const s of SEGS) {
+    const r = revealOf(s, t); if (r < 1) continue;
+    const tc = CLOSE[s.id]; if (tc != null && t >= tc) continue;
+    const n = Math.max(1, Math.round(s.len / 1.1));
+    for (let k = 0; k < n; k++) {
+      let u = (t * 0.32 / s.len + k / n + hash(s.len * 10 + k)) % 1;
+      if ((k + s.st.length) % 2) u = 1 - u;
+      const [x, y] = px(...pointAt(s, u));
+      dot(x, y, 4.2 * z, '#fff', 0.9); dot(x, y, 11 * z, C.glow, 0.25);
+    }
+  }
+}
+function dot(x, y, r, col, a = 1) { g.save(); g.globalAlpha *= a; g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.restore(); }
+
+// ---------- map base ----------
+function drawMap(t) {
+  // 海のグリッド
+  g.save(); g.strokeStyle = 'rgba(120,160,230,0.07)'; g.lineWidth = 1;
+  for (let lon = 138; lon <= 147; lon += 0.5) { const [x0, y0] = px(lon, 46.5), [x1, y1] = px(lon, 40.3); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+  for (let lat = 40.5; lat <= 46.5; lat += 0.5) { const [x0, y0] = px(137.5, lat), [x1, y1] = px(147.5, lat); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+  g.restore();
+  // 陸地
+  for (const pass of [0, 1, 2]) for (const p of COAST) {
+    g.beginPath();
+    p.pts.forEach(([lon, lat], i) => { const [x, y] = px(lon, lat); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.closePath();
+    if (pass === 0) { g.save(); g.shadowColor = 'rgba(56,189,248,0.35)'; g.shadowBlur = 30; g.fillStyle = p.pref === 1 ? C.land : '#101a30'; g.fill(); g.restore(); }
+    else if (pass === 1) { const gr = g.createLinearGradient(0, 400, 0, 1350); gr.addColorStop(0, C.land2); gr.addColorStop(1, C.land); g.fillStyle = p.pref === 1 ? gr : '#101a30'; g.fill(); }
+    else { g.strokeStyle = p.pref === 1 ? C.coast : '#2a3a5a'; g.lineWidth = 1.6; g.stroke(); }
+  }
+  // 本州(青森)ラベル
+  if (cam.s > 300) { const [x, y] = px(140.85, 40.95); label('青森県', x, y, 30, C.sub, 0.8 * ramp(cam.s, 300, 80)); }
+}
+
+// ---------- text helpers ----------
+function txt(s, x, y, size, col, opt = {}) {
+  g.save();
+  g.font = `${opt.w || 800} ${size}px ${FONT}`;
+  g.textAlign = opt.align || 'center'; g.textBaseline = 'middle';
+  g.globalAlpha *= opt.a == null ? 1 : opt.a;
+  if (opt.stroke) { g.lineJoin = 'round'; g.strokeStyle = opt.stroke; g.lineWidth = opt.sw || size * 0.18; g.strokeText(s, x, y); }
+  if (opt.glow) { g.shadowColor = opt.glow; g.shadowBlur = opt.gb || 24; }
+  g.fillStyle = col; g.fillText(s, x, y);
+  g.restore();
+}
+function label(s, x, y, size, col, a = 1, bg = null) {
+  if (a <= 0) return;
+  g.save(); g.globalAlpha *= a;
+  g.font = `800 ${size}px ${FONT}`;
+  if (bg) {
+    const w = g.measureText(s).width + size * 0.9, h = size * 1.45;
+    rr(x - w / 2, y - h / 2, w, h, h / 2); g.fillStyle = bg; g.fill();
+    txt(s, x, y + 1, size, col);
+  } else txt(s, x, y, size, col, { stroke: 'rgba(5,10,25,0.85)', sw: size * 0.22 });
+  g.restore();
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function pill(s, x, y, size, bg, col = '#06101f', a = 1, sc = 1) {
+  if (a <= 0) return;
+  g.save(); g.translate(x, y); g.scale(sc, sc); g.globalAlpha *= a;
+  g.font = `900 ${size}px ${FONT}`;
+  const w = g.measureText(s).width + size * 1.1, h = size * 1.55;
+  rr(-w / 2, -h / 2, w, h, h / 2); g.fillStyle = bg; g.fill();
+  txt(s, 0, 2, size, col, { w: 900 });
+  g.restore();
+}
+// 弾むように出てくる見出し
+function pop(s, x, y, size, col, t0, t, opt = {}) {
+  const k = ramp(t, t0, 0.45); if (k <= 0) return;
+  const sc = back(k) * (opt.sc || 1);
+  const a = clamp(k * 3) * (opt.a == null ? 1 : opt.a);
+  g.save(); g.translate(x, y); g.scale(sc, sc); g.rotate((opt.rot || 0) * (1 - eo(k)));
+  txt(s, 0, 0, size, col, { w: 900, stroke: opt.stroke || '#050a18', sw: size * 0.2, a, glow: opt.glow, gb: opt.gb });
+  g.restore();
+}
+function pin(lon, lat, name, a, col = C.gold, side = 1) {
+  if (a <= 0) return;
+  const [x, y] = px(lon, lat);
+  const k = back(a);
+  g.save(); g.globalAlpha *= clamp(a * 2);
+  dot(x, y, 26 * k, col, 0.25); dot(x, y, 11 * k, col, 1); dot(x, y, 5 * k, '#fff', 1);
+  label(name, x + side * 18, y - 40, 38, '#fff', 1, null);
+  g.restore();
+}
+
+// ---------- background ----------
+function drawBg(t) {
+  const gr = g.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, C.bg2); gr.addColorStop(0.45, C.bg1); gr.addColorStop(1, '#040810');
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // ぼんやりした光
+  const rg = g.createRadialGradient(560, 860, 50, 560, 860, 760);
+  rg.addColorStop(0, 'rgba(56,120,248,0.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, W, H);
+  // 衰退シーンは赤みを帯びる
+  const red = clamp(ramp(t, SC.decline.start, 1.0) - ramp(t, SC.compare.start + 0.5, 1.5)) * 0.5;
+  if (red > 0) { const r2 = g.createRadialGradient(540, 900, 100, 540, 900, 900); r2.addColorStop(0, `rgba(255,40,80,${0.12 * red})`); r2.addColorStop(1, `rgba(120,0,30,${0.3 * red})`); g.fillStyle = r2; g.fillRect(0, 0, W, H); }
+}
+function drawSnow(t) {
+  const heavy = 1 + 1.5 * (clamp(ramp(t, SC.local2.start, 0.5) - ramp(t, SC.seikan.start, 0.5)));
+  const N = Math.round(70 * heavy);
+  g.save();
+  for (let i = 0; i < N; i++) {
+    const sp = 40 + 70 * hash(i * 3.1), r = 1.2 + 2.6 * hash(i * 7.7);
+    const x = (hash(i) * W + Math.sin(t * 0.7 + i) * 26 + t * 12) % W;
+    const y = (hash(i * 1.7) * H + t * sp) % H;
+    g.globalAlpha = 0.18 + 0.35 * hash(i * 9.3);
+    g.fillStyle = '#dbe8ff'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+  g.restore();
+}
+
+// ---------- captions ----------
+const KEYS = ['1.5倍', '3176.6km', '21線区', '1987年', '1988年', '1989年', '2026年', '2016年', '2091.7km', '約3分の1', '12', '21',
+  '函館本線', '室蘭本線', '千歳線', '根室本線', '宗谷本線', '石北本線', '名寄本線', '天北線', '池北線', '深名線', '標津線',
+  '海峡線', '江差線', '札沼線', '日高本線', '留萌本線', '4路線', '稚内', '網走', '根室', '青函トンネル', '本州', '最盛期', 'コメント'];
+function capChunks(s) {
+  // 句点・疑問符で区切り、文字数比で時間を割り振る
+  const parts = s.sub.match(/[^。？！]+[。？！]?/g).map(x => x.trim()).filter(Boolean);
+  const total = parts.reduce((a, p) => a + p.length, 0);
+  let acc = 0; const [a, b] = s.speech;
+  return parts.map(p => { const c = { text: p, t0: a + (b - a) * acc / total }; acc += p.length; c.t1 = a + (b - a) * acc / total; return c; });
+}
+TIMINGS.scenes.forEach(s => s.chunks = capChunks(s));
+function tokenize(str) {
+  const out = []; let i = 0;
+  while (i < str.length) {
+    let hit = null;
+    for (const k of KEYS) if (str.startsWith(k, i) && (!hit || k.length > hit.length)) hit = k;
+    if (hit) { out.push([hit, true]); i += hit.length; } else { out.push([str[i], false]); i++; }
+  }
+  return out;
+}
+function drawCaption(t) {
+  const s = sceneAt(t);
+  const ch = s.chunks.find(c => t >= c.t0 - 0.05 && t < c.t1 + 0.25) || null;
+  if (!ch) return;
+  const size = 54, maxW = 900;
+  g.font = `900 ${size}px ${FONT}`;
+  // トークン単位で折り返し(行頭禁則: 、。)
+  const toks = tokenize(ch.text); const lines = [[]]; let w = 0;
+  for (const tk of toks) {
+    const tw = g.measureText(tk[0]).width;
+    if (w + tw > maxW && !/^[、。・？！）]/.test(tk[0])) { lines.push([]); w = 0; }
+    lines[lines.length - 1].push(tk); w += tw;
+  }
+  const k = eo(ramp(t, ch.t0 - 0.05, 0.18));
+  const lh = size * 1.32, y0 = 1468 - (lines.length - 1) * lh / 2 + (1 - k) * 18;
+  g.save(); g.globalAlpha = k;
+  const boxH = lines.length * lh + 34;
+  rr(70, y0 - lh / 2 - 17, 940, boxH, 26); g.fillStyle = 'rgba(4,8,20,0.62)'; g.fill();
+  lines.forEach((ln, li) => {
+    const lw = ln.reduce((a, tk) => a + g.measureText(tk[0]).width, 0);
+    let x = 540 - lw / 2; const y = y0 + li * lh;
+    for (const [str, key] of ln) {
+      const tw = g.measureText(str).width;
+      txt(str, x + tw / 2, y, size, key ? C.yellow : '#fff', { w: 900, stroke: '#040814', sw: 11 });
+      x += tw;
+    }
+  });
+  g.restore();
+}
+
+// ---------- header ----------
+function header(t, kicker, kcol, title, tcol, s, opt = {}) {
+  const lt = t - s.start;
+  const out = 1 - ramp(t, s.start + s.dur - 0.22, 0.22);
+  pill(kicker, 540, 248, 38, kcol, '#06101f', eo(ramp(lt, 0.05, 0.3)) * out, back(ramp(lt, 0.05, 0.4)));
+  g.save(); g.globalAlpha = out;
+  pop(title, 540, 345, opt.size || 92, tcol, s.start + 0.15, t, { glow: opt.glow || tcol, gb: 30 });
+  g.restore();
+}
+
+// ---------- panels ----------
+function statPanel(x, y, w, h, a) { if (a <= 0) return; g.save(); g.globalAlpha *= a; rr(x, y, w, h, 28); g.fillStyle = 'rgba(8,16,36,0.82)'; g.fill(); g.strokeStyle = 'rgba(120,180,255,0.35)'; g.lineWidth = 2; g.stroke(); g.restore(); }
+
+// ---------- scenes ----------
+function sceneHook(t) {
+  const s = SC.hook;
+  // 「昔は今の1.5倍!?」→「JR北海道 最盛期の路線網」
+  const swap = wordTime('hook', 'JR北海道') - 0.15;
+  const out1 = 1 - ramp(t, swap - 0.2, 0.25);
+  g.save(); g.globalAlpha = out1;
+  pop('北海道の鉄道', 540, 220, 60, '#fff', 0.15, t);
+  pop('昔は今の', 540, 305, 70, '#fff', 0.55, t);
+  pop('1.5倍!?', 540, 435, 170, C.yellow, 1.0, t, { rot: -0.25, glow: '#ffb300', gb: 40 });
+  g.restore();
+  if (t >= swap - 0.05) {
+    const k = ramp(t, swap, 0.4);
+    // リボン
+    g.save(); g.globalAlpha = clamp(k * 2) * (1 - ramp(t, s.start + s.dur - 0.2, 0.2));
+    const wr = 980 * eo(k);
+    g.fillStyle = C.red; g.beginPath(); g.moveTo(540 - wr / 2, 210); g.lineTo(540 + wr / 2, 200); g.lineTo(540 + wr / 2, 290); g.lineTo(540 - wr / 2, 300); g.closePath(); g.fill();
+    txt('JR北海道', 540, 250, 66, '#fff', { w: 900, a: ramp(t, swap + 0.15, 0.2) });
+    pop('最盛期の路線網', 540, 380, 110, '#fff', swap + 0.3, t, { glow: C.glow, gb: 40 });
+    g.restore();
+  }
+  // 1987 vs 現在 の比較(1.5倍の根拠)
+  const ca = eo(ramp(t, 1.6, 0.4)) * (1 - ramp(t, s.start + s.dur - 0.25, 0.25));
+  if (ca > 0) {
+    statPanel(560, 1080, 380, 230, ca);
+    g.save(); g.globalAlpha *= ca;
+    txt('1987年', 650, 1125, 32, C.sub, { w: 800 }); txt('3,176.6km', 650 + 95, 1180, 52, C.yellow, { w: 900, align: 'center' });
+    txt('現在', 640, 1245, 32, C.sub, { w: 800 }); txt('2,091.7km', 745, 1280, 44, '#fff', { w: 900 });
+    g.restore();
+  }
+}
+
+function sceneBirth(t) {
+  const s = SC.birth;
+  header(t, '1987.4.1', C.glow, 'JR北海道 誕生', '#fff', s);
+  // 発足日の大きな日付(冒頭だけ)
+  const dk = ramp(t, s.start, 0.3) * (1 - ramp(t, s.start + 1.8, 0.4));
+  if (dk > 0) txt('1987.4.1', 540, 880, 170, '#fff', { w: 900, a: dk * 0.9, glow: C.glow, gb: 50, stroke: '#050a18', sw: 20 });
+  // 線区数と営業キロのカウントアップ
+  const k1 = eio(ramp(t, wordTime('birth', '21線区') - 0.3, 1.0));
+  const k2 = eio(ramp(t, wordTime('birth', '3176.6km') - 0.4, 1.6));
+  const a = eo(ramp(t, s.start + 1.0, 0.4)) * (1 - ramp(t, s.start + s.dur - 0.25, 0.25));
+  statPanel(560, 1060, 390, 260, a);
+  g.save(); g.globalAlpha *= a;
+  txt('線区数', 755, 1100, 30, C.sub);
+  txt(String(Math.round(21 * k1)), 720, 1158, 76, '#fff', { w: 900 }); txt('線区', 830, 1170, 36, '#fff');
+  txt('営業キロ', 755, 1225, 30, C.sub);
+  txt(fmt(KM_START * k2) + 'km', 755, 1280, 62, C.yellow, { w: 900, glow: '#ffb300', gb: k2 > 0.99 ? 28 : 0 });
+  g.restore();
+}
+
+const LAB = {  // 路線名ラベルの位置
+  '函館本線': [140.78, 42.27], '室蘭本線': [141.4, 42.33], '千歳線': [141.25, 42.80], '根室本線': [143.85, 42.70],
+  '宗谷本線': [141.62, 44.75], '石北本線': [143.2, 43.62],
+  '名寄本線': [143.15, 44.70], '天北線': [142.75, 45.25], '池北線': [144.05, 43.28],
+  '深名線': [141.75, 44.25], '標津線': [145.45, 43.52],
+};
+function lineLabels(t, sid, names, col) {
+  const s = SC[sid];
+  const out = 1 - ramp(t, s.start + s.dur - 0.25, 0.25);
+  for (const n of names) {
+    const t0 = wordTime(sid, n) - 0.1;
+    const k = ramp(t, t0, 0.35); if (k <= 0) continue;
+    const [x, y] = px(...LAB[n]);
+    g.save(); g.translate(x, y); g.scale(back(k), back(k));
+    label(n, 0, 0, 40, '#06101f', clamp(k * 3) * out, col);
+    g.restore();
+  }
+}
+function sceneTrunk(t) { const s = SC.trunk; header(t, '幹線', C.gold, '道内の大動脈', C.gold, s); lineLabels(t, 'trunk', ['函館本線', '室蘭本線', '千歳線', '根室本線'], C.gold);
+  const a = ramp(t, wordTime('trunk', '根室') + 0.6, 0.3) * (1 - ramp(t, s.start + s.dur - 0.25, 0.25)); pin(...ST['根室'], '根室', a, C.gold, -1); pin(...ST['札幌'], '札幌', ramp(t, s.start + 0.6, 0.3) * (1 - ramp(t, s.start + s.dur - 0.25, 0.25)), '#fff'); }
+function sceneNorth(t) { const s = SC.north; header(t, '道北・道東', C.gold, '最北とオホーツクへ', C.gold, s, { size: 84 }); lineLabels(t, 'north', ['宗谷本線', '石北本線'], C.gold);
+  const out = 1 - ramp(t, s.start + s.dur - 0.25, 0.25);
+  pin(...ST['稚内'], '稚内', ramp(t, wordTime('north', '稚内'), 0.3) * out, C.gold, 1);
+  pin(...ST['網走'], '網走', ramp(t, wordTime('north', '網走'), 0.3) * out, C.gold, 1); }
+function sceneLocal(t) { const s = SC.local; header(t, '今はなき路線', C.pink, '消えたローカル線', C.pink, s); lineLabels(t, 'local', ['名寄本線', '天北線', '池北線'], C.pink); }
+function sceneLocal2(t) {
+  const s = SC.local2; header(t, '今はなき路線', C.pink, '網の目のような路線網', '#fff', s, { size: 82, glow: C.glow });
+  lineLabels(t, 'local2', ['深名線', '標津線'], C.pink);
+  // 「網の目」で全路線を一斉に光らせる
+  const tw = wordTime('local2', '網の目');
+  const k = ramp(t, tw, 0.2) * (1 - ramp(t, tw + 0.5, 0.9));
+  if (k > 0) { g.save(); g.globalAlpha = k * 0.55; g.globalCompositeOperation = 'lighter'; for (const sg of SEGS) { if (sg.id === 'kaikyo') continue; g.strokeStyle = C.glow; g.lineWidth = 14; pathSeg(sg, 0, 1); g.stroke(); } g.restore(); }
+}
+function sceneSeikan(t) {
+  const s = SC.seikan; header(t, '1988.3.13', C.green, '青函トンネル開業', C.green, s, { size: 88 });
+  const out = 1 - ramp(t, s.start + s.dur - 0.25, 0.25);
+  const k = ramp(t, s.start + 1.0, 0.3) * out;
+  if (k > 0) {
+    // 海峡と区間の注記
+    const [x1, y1] = px(140.05, 41.33);
+    label('津軽海峡', x1, y1, 34, C.sub, k * 0.9);
+    const [x2, y2] = px(140.92, 41.33);
+    label('海峡線', x2, y2, 42, '#06101f', k, C.green);
+    const [x3, y3] = px(140.92, 41.20);
+    label('約53.9kmの海底トンネル', x3 + 30, y3 + 26, 28, '#fff', k * 0.9);
+  }
+  const kk = ramp(t, wordTime('seikan', '本州'), 0.4) * out;
+  if (kk > 0) { pop('本州とつながった!', 540, 1275, 74, C.green, wordTime('seikan', '本州'), t, { glow: C.green, gb: 34 }); }
+}
+function eventsPanel(t, sid) {
+  const s = SC[sid];
+  const out = 1 - ramp(t, s.start + s.dur - 0.25, 0.25);
+  // 年表示(直近のイベント)
+  const past = EVT.filter(e => e.t <= t && (e.scene === sid));
+  const cur = past[past.length - 1];
+  // 営業キロ
+  const a = eo(ramp(t, s.start + 0.2, 0.4)) * out;
+  statPanel(560, 1080, 390, 230, a);
+  g.save(); g.globalAlpha *= a;
+  txt('営業キロ(在来線)', 755, 1118, 28, C.sub);
+  const v = kmAt(t);
+  const bump = cur ? 1 - ramp(t, cur.t, 0.35) : 0;
+  txt(fmt(v) + 'km', 755, 1180, 60 + 8 * bump, bump > 0 && cur.km < 0 ? C.red : C.yellow, { w: 900 });
+  if (cur) { const km = cur.km; txt((km > 0 ? '+' : '−') + fmt(Math.abs(km)) + 'km', 755, 1255, 44, km > 0 ? C.green : C.red, { w: 900, a: 0.4 + 0.6 * (1 - ramp(t, cur.t + 1.2, 0.4)) }); }
+  g.restore();
+  // 大きな年号(日本海側の海上)
+  if (cur) {
+    const yr = cur.ym.split('.')[0];
+    const pk = 1 - ramp(t, cur.t, 0.3);
+    txt(yr, 70, 540, 110 * (1 + 0.15 * pk), cur.km > 0 ? C.green : '#fff', { w: 900, a: out, align: 'left', glow: cur.km > 0 ? C.green : C.red, gb: 30 + 30 * pk, stroke: '#050a18', sw: 16 });
+    g.font = `900 ${110 * (1 + 0.15 * pk)}px ${FONT}`;
+    txt('年', 70 + g.measureText(yr).width + 30, 565, 46, '#fff', { w: 900, a: out });
+    // イベント名チップ(最新3件)
+    past.slice(-3).forEach((e, i, arr) => {
+      const ka = eo(ramp(t, e.t, 0.3));
+      const y = 640 + (arr.length - 1 - i) * 66;
+      const col = e.km > 0 ? C.green : C.red;
+      g.save(); g.globalAlpha = out * ka * (i === arr.length - 1 ? 1 : 0.6);
+      g.font = `900 34px ${FONT}`;
+      const wd = g.measureText(e.label).width + 44;
+      rr(60 + (1 - ka) * -40, y - 26, wd, 52, 26); g.fillStyle = col; g.fill();
+      txt(e.label, 60 + wd / 2 + (1 - ka) * -40, y + 1, 34, '#fff', { w: 900 });
+      g.restore();
+    });
+  }
+  // 廃止の瞬間、線の中央に × スタンプ
+  for (const e of EVT) {
+    if (e.scene !== sid || !e.segs.length) continue;
+    const d = t - e.t; if (d < 0 || d > 1.4) continue;
+    const sg = SEG[e.segs[0]]; const [x, y] = px(...pointAt(sg, 0.5));
+    const k = back(ramp(d, 0, 0.3)); const a2 = 1 - ramp(d, 1.0, 0.4);
+    g.save(); g.translate(x, y); g.scale(k, k); g.globalAlpha = a2; g.strokeStyle = C.red; g.lineWidth = 9; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(-20, -20); g.lineTo(20, 20); g.moveTo(20, -20); g.lineTo(-20, 20); g.stroke(); g.restore();
+  }
+}
+function sceneDecline(t) { const s = SC.decline; header(t, '縮小の始まり', C.red, '次々と廃止…', '#fff', s, { glow: C.red }); eventsPanel(t, 'decline'); }
+function sceneRecent(t) { const s = SC.recent; header(t, '2016年〜', C.red, '廃止はさらに続く', '#fff', s, { size: 86, glow: C.red }); eventsPanel(t, 'recent'); }
+function sceneCompare(t) {
+  const s = SC.compare; header(t, '最盛期 vs 現在', C.yellow, '約3分の1が消えた', '#fff', s, { size: 90, glow: C.red });
+  const out = 1 - ramp(t, s.start + s.dur - 0.25, 0.25);
+  const a = eo(ramp(t, s.start + 0.2, 0.4)) * out;
+  statPanel(60, 1080, 900, 250, a);
+  g.save(); g.globalAlpha *= a;
+  const X0 = 250, BW = 650;
+  // 1987
+  const k1 = eio(ramp(t, s.start + 0.3, 0.7));
+  txt('1987年', 160, 1140, 34, '#fff', { w: 900 }); txt('21線区', 160, 1180, 28, C.sub);
+  rr(X0, 1122, BW * k1, 46, 12); g.fillStyle = C.glow; g.fill();
+  txt('3,176.6km', X0 + BW * k1 - 100, 1146, 34, '#04101f', { w: 900, a: ramp(k1, 0.8, 0.2) });
+  // 2026
+  const k2 = eio(ramp(t, wordTime('compare', '在来線') - 0.2, 0.8));
+  const r = KM_END / KM_START;
+  txt('2026年', 160, 1240, 34, '#fff', { w: 900 }); txt('12線区', 160, 1280, 28, C.sub);
+  rr(X0, 1222, BW * r * k2, 46, 12); g.fillStyle = '#e9f6ff'; g.fill();
+  txt('2,091.7km', X0 + BW * r * k2 - 100, 1246, 34, '#04101f', { w: 900, a: ramp(k2, 0.8, 0.2) });
+  // 消えた分
+  const k3 = ramp(t, wordTime('compare', '約3分の1') - 0.1, 0.35);
+  if (k3 > 0) {
+    g.save(); g.setLineDash([10, 8]); g.strokeStyle = C.red; g.lineWidth = 4; rr(X0 + BW * r + 6, 1222, BW * (1 - r) - 6, 46, 12); g.stroke(); g.restore();
+    g.save(); g.translate(X0 + BW * (r + (1 - r) / 2) + 3, 1246); g.scale(back(k3), back(k3)); txt('−34%', 0, 0, 40, C.red, { w: 900, stroke: '#050a18', sw: 8 }); g.restore();
+  }
+  g.restore();
+}
+function sceneCta(t) {
+  const s = SC.cta;
+  header(t, 'あなたなら?', C.yellow, '乗りたかった路線は?', C.yellow, s, { size: 86, glow: '#ffb300' });
+  // 廃止路線名を次々に表示
+  const names = [['天北線', 142.75, 45.25], ['名寄本線', 143.15, 44.70], ['深名線', 141.75, 44.25], ['池北線', 144.05, 43.28], ['標津線', 145.45, 43.52],
+    ['日高本線', 142.95, 42.48], ['留萌本線', 141.25, 43.80], ['札沼線', 141.35, 43.47], ['江差線', 139.75, 42.05], ['松前線', 139.95, 41.55]];
+  names.forEach(([n, lon, lat], i) => {
+    const k = ramp(t, s.start + 0.2 + i * 0.16, 0.35); if (k <= 0) return;
+    const [x, y] = px(lon, lat); g.save(); g.translate(x, y); g.scale(back(k), back(k)); label(n, 0, 0, 34, '#fff', clamp(k * 3), 'rgba(255,59,92,0.92)'); g.restore();
+  });
+  // コメント吹き出し
+  const k = ramp(t, wordTime('cta', 'コメント') - 0.1, 0.4);
+  if (k > 0) {
+    const bob = Math.sin((t - s.start) * 6) * 6;
+    g.save(); g.translate(540, 1185 + bob); g.scale(back(k), back(k));
+    rr(-330, -62, 660, 124, 62); g.fillStyle = '#fff'; g.fill();
+    g.beginPath(); g.moveTo(-60, 58); g.lineTo(-100, 110); g.lineTo(-10, 60); g.fill();
+    txt('コメントで教えて!', 0, 2, 60, '#0b1630', { w: 900 });
+    g.restore();
+  }
+  // クレジット
+  const ca = ramp(t, s.speech[1] + 0.2, 0.5);
+  if (ca > 0) {
+    txt('ナレーション: VOICEVOX:四国めたん / BGM: 自作', 540, 1660, 30, '#cfe0ff', { w: 800, a: ca });
+    txt('出典: JR北海道「線区別営業キロ」(2026.4.1現在) ほか ※路線図は模式図', 540, 1710, 26, C.sub, { w: 800, a: ca });
+  }
+}
+
+// ---------- top bar ----------
+function topBar(t) {
+  const k = t / TIMINGS.total;
+  g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(0, 0, W, 10);
+  const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, C.glow); gr.addColorStop(1, C.yellow);
+  g.fillStyle = gr; g.fillRect(0, 0, W * k, 10);
+  // チャンネル風のロゴ
+  txt('北海道 鉄道アーカイブ', 540, 130, 32, 'rgba(220,232,255,0.75)', { w: 800 });
+}
+
+// ---------- main ----------
+window.render = function (t) {
+  const s = sceneAt(t);
+  cam = camAt(t);
+  // シーン切り替えのパンチ(軽いズーム)と、廃止時のシェイク
+  const lt = t - s.start;
+  const punch = s.i > 0 ? 1 + 0.035 * (1 - eo(lt / 0.35)) : 1;
+  let shx = 0, shy = 0;
+  for (const e of EVT) { const d = t - e.t; if (d >= 0 && d < 0.3 && e.km < -100) { const m = (1 - d / 0.3) * 10; shx += Math.sin(d * 90) * m; shy += Math.cos(d * 77) * m; } }
+  if (SC.compare && t >= wordTime('compare', '約3分の1') - 0.1) { const d = t - wordTime('compare', '約3分の1') + 0.1; if (d < 0.35) { const m = (1 - d / 0.35) * 12; shx += Math.sin(d * 80) * m; shy += Math.cos(d * 70) * m; } }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  drawBg(t);
+  g.save();
+  g.translate(540 + shx, 880 + shy); g.scale(punch, punch); g.translate(-540, -880);
+  drawMap(t);
+  drawLines(t);
+  drawSnow(t);
+  ({ hook: sceneHook, birth: sceneBirth, trunk: sceneTrunk, north: sceneNorth, local: sceneLocal, local2: sceneLocal2,
+     seikan: sceneSeikan, decline: sceneDecline, recent: sceneRecent, compare: sceneCompare, cta: sceneCta })[s.id](t);
+  g.restore();
+  // 画面上下のビネット
+  const vg = g.createLinearGradient(0, 0, 0, H);
+  vg.addColorStop(0, 'rgba(0,0,0,0.35)'); vg.addColorStop(0.12, 'rgba(0,0,0,0)'); vg.addColorStop(0.8, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  topBar(t);
+  drawCaption(t);
+  // シーン頭の白フラッシュ
+  const fl = s.i > 0 ? 1 - ramp(lt, 0, 0.22) : 1 - ramp(t, 0, 0.35);
+  if (fl > 0) { g.fillStyle = `rgba(255,255,255,${0.55 * fl})`; g.fillRect(0, 0, W, H); }
+};
+
+// BGM 同期用: イベント時刻を公開
+window.SYNC = { scenes: TIMINGS.scenes.map(s => ({ id: s.id, start: s.start, dur: s.dur, speech: s.speech })),
+  events: EVT.map(e => ({ t: e.t, km: e.km, label: e.label })), compareHit: wordTime('compare', '約3分の1') - 0.1,
+  seikanHit: wordTime('seikan', '本州'), ctaHit: wordTime('cta', 'コメント') - 0.1, swap: wordTime('hook', 'JR北海道') - 0.15 };
+
+// プレビュー再生(ブラウザで直接開いた時)
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  document.fonts.ready.then(() => { const loop = () => { window.render(((performance.now() - t0) / 1000) % TIMINGS.total); requestAnimationFrame(loop); }; loop(); });
+}
+</script>
+</body>
+</html>
