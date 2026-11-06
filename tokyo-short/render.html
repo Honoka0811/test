@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>東京の秘密5選</title>
+<style>
+@font-face { font-family: 'Dela'; src: url('fonts/DelaGothicOne-Regular.ttf'); }
+@font-face { font-family: 'Maru'; src: url('fonts/MPLUSRounded1c-ExtraBold.ttf'); }
+html, body { margin: 0; background: #000; }
+canvas { display: block; width: 100vh; max-width: 100vw; aspect-ratio: 9/16; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<!-- フォントを先読みさせるためのダミー -->
+<div style="position:absolute;opacity:0;font-family:Dela">あ</div><div style="position:absolute;opacity:0;font-family:Maru">あ</div>
+<script>
+'use strict';
+const W = 1080, H = 1920;
+window.FPS = 30;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+// ---------- タイムライン(capture.js が output/timeline.json を注入。ブラウザ単体ではfetch) ----------
+let TL = null, SC = {};
+window.setTimeline = (tl) => {
+  TL = tl; SC = {};
+  tl.scenes.forEach((s, i) => { s.index = i; SC[s.id] = s; });
+  window.DURATION = tl.total;
+};
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeOut = k => 1 - Math.pow(1 - clamp(k), 3);
+const easeInOut = k => { k = clamp(k); return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const backOut = k => { k = clamp(k); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+const elastic = k => { k = clamp(k); if (k === 0 || k === 1) return k; return Math.pow(2, -10 * k) * Math.sin((k * 10 - .75) * 2 * Math.PI / 3) + 1; };
+function rand(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return ((s >>> 0) % 100000) / 100000; }; }
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+const COL = {
+  ink: '#0b0b1a', yellow: '#FFE14D', pink: '#FF3D8B', cyan: '#3DF2FF', red: '#FF3B3B', white: '#ffffff',
+  navy1: '#070b2a', navy2: '#25105a', purple: '#5a1a8c'
+};
+
+function sceneAt(t) {
+  let cur = TL.scenes[0];
+  for (const s of TL.scenes) if (t >= s.start - 0.0001) cur = s;
+  return cur;
+}
+function lineAt(s, t) {
+  let idx = -1;
+  s.lines.forEach((l, i) => { if (t >= l.start - 0.05) idx = i; });
+  return idx;
+}
+
+// ---------- 背景 ----------
+const STARS = (() => { const r = rand(11); return Array.from({ length: 140 }, () => ({ x: r() * W, y: r() * H * 0.8, s: 1 + r() * 2.5, p: r() * 6.28 })); })();
+const BOKEH = (() => { const r = rand(23); const cs = ['#FF3D8B', '#3DF2FF', '#FFE14D', '#8B5CFF', '#FF8A3D'];
+  return Array.from({ length: 34 }, () => ({ x: r() * W, y: r() * H, r: 30 + r() * 110, c: cs[Math.floor(r() * cs.length)], v: 10 + r() * 40, p: r() * 6.28 })); })();
+
+function bgNight(t, top = COL.navy1, bot = COL.navy2) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, top); g.addColorStop(0.65, bot); g.addColorStop(1, '#ff3d8b55');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (const s of STARS) {
+    ctx.globalAlpha = 0.35 + 0.35 * Math.sin(t * 2 + s.p);
+    ctx.fillStyle = '#fff'; ctx.fillRect(s.x, s.y, s.s, s.s);
+  }
+  ctx.globalAlpha = 1;
+}
+function bokeh(t, a = 0.18) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const b of BOKEH) {
+    const y = ((b.y - t * b.v) % (H + 300) + H + 300) % (H + 300) - 150;
+    const x = b.x + Math.sin(t * 0.6 + b.p) * 30;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, b.r);
+    g.addColorStop(0, b.c); g.addColorStop(1, 'transparent');
+    ctx.globalAlpha = a; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, b.r, 0, 6.29); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- 東京のシルエット ----------
+const BLD = (() => { const r = rand(5); const a = []; let x = -40;
+  while (x < W + 40) { const w = 50 + r() * 110; a.push({ x, w, h: 160 + r() * 420, win: r() }); x += w + 4 + r() * 10; } return a; })();
+function skyline(t, baseY, scale = 1, glow = 1) {
+  ctx.save();
+  ctx.translate(W / 2, baseY); ctx.scale(scale, scale); ctx.translate(-W / 2, 0);
+  // 東京タワー(左)とスカイツリー(右)
+  drawTokyoTowerSil(250, 0, 640);
+  drawSkytreeSil(800, 0, 1050);
+  for (const b of BLD) {
+    ctx.fillStyle = '#0a0820'; ctx.fillRect(b.x, -b.h, b.w, b.h + 400);
+    // 窓
+    const r = rand(Math.floor(b.x * 7 + 3));
+    for (let yy = -b.h + 20; yy < -10; yy += 26) for (let xx = b.x + 10; xx < b.x + b.w - 14; xx += 20) {
+      const on = r() < 0.45 + 0.1 * Math.sin(t * 1.3 + xx);
+      if (on) { ctx.fillStyle = r() < 0.7 ? '#ffd86b' : '#7ef3ff'; ctx.globalAlpha = 0.55 * glow + 0.25; ctx.fillRect(xx, yy, 9, 13); }
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+function drawTokyoTowerSil(cx, by, h) {
+  ctx.save(); ctx.fillStyle = '#1a0f2e';
+  ctx.beginPath();
+  ctx.moveTo(cx - h * 0.2, by); ctx.quadraticCurveTo(cx - h * 0.05, by - h * 0.5, cx - 6, by - h);
+  ctx.lineTo(cx + 6, by - h); ctx.quadraticCurveTo(cx + h * 0.05, by - h * 0.5, cx + h * 0.2, by); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ff5a3d'; ctx.globalAlpha = 0.85;
+  ctx.fillRect(cx - h * 0.07, by - h * 0.42, h * 0.14, 16); ctx.fillRect(cx - h * 0.035, by - h * 0.7, h * 0.07, 12);
+  ctx.beginPath(); ctx.arc(cx, by - h, 7, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+function drawSkytreeSil(cx, by, h) {
+  ctx.save(); ctx.fillStyle = '#16122e';
+  ctx.beginPath(); ctx.moveTo(cx - h * 0.07, by); ctx.lineTo(cx - 14, by - h * 0.85); ctx.lineTo(cx - 4, by - h);
+  ctx.lineTo(cx + 4, by - h); ctx.lineTo(cx + 14, by - h * 0.85); ctx.lineTo(cx + h * 0.07, by); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#9fd8ff'; ctx.globalAlpha = 0.8;
+  ctx.fillRect(cx - 34, by - h * 0.34, 68, 20); ctx.fillRect(cx - 24, by - h * 0.43, 48, 12);
+  ctx.restore();
+}
+
+// ---------- テロップ ----------
+// 【】で囲んだ部分を強調色・大きめで描く。行ごとに幅を自動フィット
+function parseLine(str) {
+  const segs = []; let emph = false, buf = '';
+  for (const ch of str) {
+    if (ch === '【' || ch === '】') { if (buf) segs.push({ s: buf, e: emph }); buf = ''; emph = ch === '【'; }
+    else buf += ch;
+  }
+  if (buf) segs.push({ s: buf, e: emph });
+  return segs;
+}
+function telop(text, cx, cy, k, opt = {}) {
+  const base = opt.size || 92, emphScale = opt.emphScale || 1.32, maxW = opt.maxW || 960;
+  const emphCol = opt.emphColor || COL.yellow;
+  const rows = text.split('\n').map(parseLine);
+  const measure = (segs, sz) => segs.reduce((w, sg) => { ctx.font = `${sz * (sg.e ? emphScale : 1)}px Dela`; return w + ctx.measureText(sg.s).width; }, 0);
+  const sizes = rows.map(segs => { const w = measure(segs, base); return w > maxW ? base * maxW / w : base; });
+  const heights = rows.map((segs, i) => sizes[i] * (segs.some(s => s.e) ? emphScale : 1) * 1.18);
+  const totalH = heights.reduce((a, b) => a + b, 0);
+  let y = cy - totalH / 2;
+  rows.forEach((segs, ri) => {
+    const sz = sizes[ri], rowH = heights[ri];
+    const kk = clamp((k - ri * 0.12) / 0.5);
+    const sc = backOut(kk);
+    if (kk <= 0) { y += rowH; return; }
+    const w = measure(segs, sz);
+    ctx.save();
+    ctx.translate(cx, y + rowH * 0.62); ctx.scale(sc, sc); ctx.rotate((1 - easeOut(kk)) * -0.06);
+    let x = -w / 2;
+    for (const sg of segs) {
+      const fs = sz * (sg.e ? emphScale : 1);
+      ctx.font = `${fs}px Dela`; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+      // 影 → 太いフチ → 中フチ → 塗り
+      ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillText(sg.s, x + 8, 10);
+      ctx.lineWidth = fs * 0.26; ctx.strokeStyle = sg.e ? COL.pink : '#000'; ctx.strokeText(sg.s, x, 0);
+      ctx.lineWidth = fs * 0.12; ctx.strokeStyle = sg.e ? '#000' : (opt.rim || '#1b1b3a'); ctx.strokeText(sg.s, x, 0);
+      ctx.fillStyle = sg.e ? emphCol : (opt.color || '#fff'); ctx.fillText(sg.s, x, 0);
+      x += ctx.measureText(sg.s).width;
+    }
+    ctx.restore();
+    y += rowH;
+  });
+}
+
+// 順位バッジ(シーン冒頭の「第N位」スラム)
+function rankSlam(n, lt, color) {
+  if (lt < 0 || lt > 1.4) return;
+  const k = clamp(lt / 0.25);
+  const out = clamp((lt - 1.05) / 0.35);
+  const s = lerp(3.2, 1, easeOut(k)) * (1 - 0.3 * easeInOut(out));
+  ctx.save();
+  ctx.globalAlpha = 1 - out;
+  ctx.translate(W / 2, 880); ctx.scale(s, s); ctx.rotate(-0.08);
+  // 放射線
+  ctx.save(); ctx.rotate(lt * 0.6);
+  for (let i = 0; i < 24; i++) { ctx.rotate(Math.PI / 12); ctx.fillStyle = i % 2 ? color + '55' : '#ffffff22';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(900, -70); ctx.lineTo(900, 70); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  ctx.font = '120px Dela'; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+  ctx.lineWidth = 34; ctx.strokeStyle = '#000'; ctx.strokeText('第', -150, -20);
+  ctx.fillStyle = '#fff'; ctx.fillText('第', -150, -20);
+  ctx.strokeText('位', 170, -20); ctx.fillText('位', 170, -20);
+  ctx.font = '360px Dela';
+  ctx.lineWidth = 60; ctx.strokeStyle = '#000'; ctx.strokeText(String(n), 10, 90);
+  ctx.lineWidth = 26; ctx.strokeStyle = color; ctx.strokeText(String(n), 10, 90);
+  ctx.fillStyle = COL.yellow; ctx.fillText(String(n), 10, 90);
+  ctx.restore();
+}
+
+// 進捗バー + 順位トラッカー(視聴維持用)
+function hud(t, s) {
+  const p = t / TL.total;
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(0, 0, W, 14);
+  const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, COL.cyan); g.addColorStop(1, COL.pink);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W * p, 14);
+  const ids = ['r5', 'r4', 'r3', 'r2', 'r1'];
+  const curIdx = ids.indexOf(s.id);
+  const done = s.id === 'outro' ? 5 : curIdx;
+  ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < 5; i++) {
+    const x = 270 + i * 135, y = 150;
+    const active = i === curIdx, past = i < done;
+    const sc = active ? 1 + 0.08 * Math.sin(t * 8) : 1;
+    ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
+    ctx.beginPath(); ctx.arc(0, 0, 50, 0, 6.29);
+    ctx.fillStyle = active ? COL.yellow : past ? '#ff3d8b' : 'rgba(0,0,0,.45)'; ctx.fill();
+    ctx.lineWidth = 6; ctx.strokeStyle = active ? '#000' : 'rgba(255,255,255,.8)'; ctx.stroke();
+    ctx.font = '50px Dela'; ctx.fillStyle = active ? '#000' : '#fff';
+    ctx.fillText(i === 4 ? '?' : String(5 - i), 0, 3);
+    if (i === 4 && (curIdx === 4 || done === 5)) { ctx.fillStyle = active ? COL.yellow : '#ff3d8b'; ctx.fill(); ctx.fillStyle = active ? '#000' : '#fff'; ctx.fillText('1', 0, 3); }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// カウンター
+function counter(value, unit, cx, cy, k, size = 210, col = COL.yellow) {
+  const v = value * easeOut(k);
+  const str = fmt(v);
+  ctx.save(); ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+  const pulse = k >= 1 ? 1 + 0.12 * Math.exp(-(k - 1) * 6) : 1;
+  ctx.translate(cx, cy); ctx.scale(pulse, pulse);
+  ctx.font = `${size}px Dela`;
+  const w = ctx.measureText(str).width;
+  ctx.font = `${size * 0.42}px Dela`; const uw = ctx.measureText(unit).width;
+  const total = w + uw + 10; let x = -total / 2;
+  ctx.textAlign = 'left';
+  ctx.font = `${size}px Dela`;
+  ctx.lineWidth = size * 0.2; ctx.strokeStyle = '#000'; ctx.strokeText(str, x, 0);
+  ctx.lineWidth = size * 0.08; ctx.strokeStyle = COL.pink; ctx.strokeText(str, x, 0);
+  ctx.fillStyle = col; ctx.fillText(str, x, 0);
+  ctx.font = `${size * 0.42}px Dela`;
+  ctx.lineWidth = size * 0.1; ctx.strokeStyle = '#000'; ctx.strokeText(unit, x + w + 10, 0);
+  ctx.fillStyle = '#fff'; ctx.fillText(unit, x + w + 10, 0);
+  ctx.restore();
+}
+
+// ---------- 各シーン ----------
+function sceneHook(t, s) {
+  const lt = t - s.start;
+  bgNight(t); bokeh(t, 0.22);
+  const z = 1.25 - 0.2 * easeOut(lt / 5);
+  skyline(t, 1720, z);
+  // 中央に巨大な「?」
+  ctx.save(); ctx.translate(W / 2, 820);
+  const k = clamp(lt / 0.35); ctx.scale(backOut(k) * (1 + 0.04 * Math.sin(t * 6)), backOut(k)); ctx.rotate(Math.sin(t * 3) * 0.06);
+  ctx.font = '520px Dela'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  ctx.globalAlpha = 0.9; ctx.lineWidth = 50; ctx.strokeStyle = '#000'; ctx.strokeText('?', 0, 0);
+  ctx.lineWidth = 20; ctx.strokeStyle = COL.pink; ctx.strokeText('?', 0, 0);
+  ctx.fillStyle = COL.cyan; ctx.fillText('?', 0, 0);
+  ctx.restore();
+  // 「TOKYO」ネオン
+  neon('TOKYO', W / 2, 400, 170, t, lt);
+}
+function neon(str, x, y, size, t, lt) {
+  ctx.save(); ctx.textAlign = 'center'; ctx.font = `${size}px Dela`;
+  const flick = lt < 0.6 ? (Math.sin(lt * 90) > 0 ? 1 : 0.3) : 1;
+  ctx.shadowColor = COL.pink; ctx.shadowBlur = 40; ctx.globalAlpha = flick;
+  ctx.lineWidth = 10; ctx.strokeStyle = COL.pink; ctx.strokeText(str, x, y);
+  ctx.shadowBlur = 20; ctx.fillStyle = '#ffe6f2'; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+
+// 第5位 スカイツリー
+function sceneSkytree(t, s) {
+  const lt = t - s.start; const L = s.lines;
+  bgNight(t, '#06122e', '#2a1c6e'); bokeh(t, 0.15);
+  // カメラ: 根元から先端へパン(高さカウントと同期)
+  const k = clamp((t - L[1].start - 0.1) / 1.0);
+  const pan = easeInOut(k);
+  const treeH = 2600;
+  ctx.save();
+  const zoom = lerp(1.0, 0.62, easeInOut(clamp((t - L[1].start) / 1.6)));
+  ctx.translate(W / 2 - 60, 1750 + lerp(0, -0, pan));
+  ctx.scale(zoom, zoom);
+  ctx.translate(0, lerp(treeH * 0.55, treeH * 0.0, pan) * 0 + (1 - pan) * 900);
+  drawSkytree(0, 0, treeH, t);
+  ctx.restore();
+  // 高さの目盛り
+  const hv = 634 * easeOut(k);
+  if (t > L[1].start && t < L[2].start) counter(634, 'm', W / 2, 610, k, 230);
+  // む・さ・し
+  if (t > L[2].start) {
+    const k2 = t - L[2].start;
+    ctx.fillStyle = `rgba(0,0,10,${0.55 * clamp(k2 / 0.3)})`; ctx.fillRect(0, 0, W, H);
+    const digits = ['6', '3', '4'], kana = ['む', 'さ', 'し'];
+    for (let i = 0; i < 3; i++) {
+      const kk = clamp((k2 - i * 0.18) / 0.35);
+      const flip = clamp((k2 - 0.9 - i * 0.2) / 0.3);
+      const x = W / 2 + (i - 1) * 300, y = 760;
+      ctx.save(); ctx.translate(x, y); ctx.scale(backOut(kk), backOut(kk) * Math.abs(Math.cos(flip * Math.PI)) + 0.001);
+      ctx.beginPath(); ctx.arc(0, 0, 130, 0, 6.29);
+      ctx.fillStyle = flip < 0.5 ? COL.cyan : COL.yellow; ctx.fill(); ctx.lineWidth = 12; ctx.strokeStyle = '#000'; ctx.stroke();
+      ctx.font = flip < 0.5 ? '170px Dela' : '150px Dela'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#000';
+      ctx.fillText(flip < 0.5 ? digits[i] : kana[i], 0, 8);
+      ctx.restore();
+    }
+    // 武蔵国
+    const k3 = clamp((k2 - 1.7) / 0.4);
+    if (k3 > 0) { ctx.save(); ctx.globalAlpha = k3; ctx.font = '64px Maru'; ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+      ctx.fillText('(東京のあたりの旧国名「武蔵国」)', W / 2, 1000 + (1 - easeOut(k3)) * 30); ctx.restore(); }
+  }
+}
+function drawSkytree(cx, by, h, t) {
+  // 足元の三角形断面 → 上に行くほど円形に細くなる鉄骨タワー
+  const half = y => lerp(h * 0.042, 18, Math.pow(y / h, 0.75));
+  ctx.save();
+  const g = ctx.createLinearGradient(-80, 0, 80, 0); g.addColorStop(0, '#cfe3ff'); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, '#8fb4e8');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(-half(0), by);
+  for (let y = 0; y <= h * 0.93; y += 20) ctx.lineTo(-half(y), by - y);
+  ctx.lineTo(-6, by - h); ctx.lineTo(6, by - h);
+  for (let y = h * 0.93; y >= 0; y -= 20) ctx.lineTo(half(y), by - y);
+  ctx.closePath(); ctx.fill();
+  // ラティス
+  ctx.strokeStyle = 'rgba(40,70,140,.55)'; ctx.lineWidth = 3;
+  for (let y = 0; y < h * 0.9; y += 46) {
+    const a = half(y), b = half(y + 46);
+    ctx.beginPath(); ctx.moveTo(-a, by - y); ctx.lineTo(b, by - y - 46); ctx.moveTo(a, by - y); ctx.lineTo(-b, by - y - 46); ctx.stroke();
+  }
+  // 展望デッキ(350m)・回廊(450m)
+  const deck = (yy, w, hh) => { ctx.fillStyle = '#1b2b55'; ctx.fillRect(-w / 2, by - yy - hh, w, hh);
+    ctx.fillStyle = '#9ff0ff'; for (let x = -w / 2 + 8; x < w / 2 - 8; x += 18) ctx.fillRect(x, by - yy - hh + 10, 10, hh - 22); };
+  deck(h * 350 / 634, 190, 80); deck(h * 445 / 634, 130, 50);
+  // 先端ライト
+  ctx.fillStyle = Math.sin(t * 6) > 0 ? '#ff4d4d' : '#ffb3b3';
+  ctx.beginPath(); ctx.arc(0, by - h, 14, 0, 6.29); ctx.fill();
+  ctx.restore();
+}
+
+// 第4位 渋谷スクランブル交差点(真上から)
+const PEOPLE = (() => { const r = rand(77); const cs = ['#ff5a8a', '#ffe14d', '#3df2ff', '#ffffff', '#9b7bff', '#ff9a3d', '#5dff9b'];
+  return Array.from({ length: 520 }, () => { const path = Math.floor(r() * 6); return { path, off: r(), sp: 0.12 + r() * 0.1, c: cs[Math.floor(r() * cs.length)], lane: (r() - 0.5) * 120, d: r() < 0.5 ? 1 : -1 }; }); })();
+function sceneShibuya(t, s) {
+  const lt = t - s.start; const L = s.lines;
+  ctx.fillStyle = '#2b2d36'; ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  const rot = -0.12 + lt * 0.02, z = 1.1 + lt * 0.03;
+  ctx.translate(W / 2, 900); ctx.rotate(rot); ctx.scale(z, z);
+  // 歩道ブロック
+  ctx.fillStyle = '#4a4554';
+  for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) ctx.fillRect(x * 720 - 400, y * 720 - 400, 800, 800);
+  // 横断歩道(縦・横・斜め)
+  ctx.fillStyle = '#f2f2f2';
+  const zebra = (ang, len) => { ctx.save(); ctx.rotate(ang); for (let i = -len; i < len; i += 46) ctx.fillRect(i, -95, 24, 190); ctx.restore(); };
+  for (const [x, y, a] of [[0, -400, 0], [0, 400, 0], [-400, 0, Math.PI / 2], [400, 0, Math.PI / 2]]) { ctx.save(); ctx.translate(x, y); zebra(a, 300); ctx.restore(); }
+  ctx.save(); ctx.rotate(Math.PI / 4); ctx.fillStyle = 'rgba(242,242,242,.85)'; for (let i = -480; i < 480; i += 46) ctx.fillRect(i, -70, 24, 140); ctx.restore();
+  ctx.save(); ctx.rotate(-Math.PI / 4); ctx.fillStyle = 'rgba(242,242,242,.85)'; for (let i = -480; i < 480; i += 46) ctx.fillRect(i, -70, 24, 140); ctx.restore();
+  // 人の流れ(青信号で一斉に渡る)
+  const go = clamp((t - L[1].start + 0.2) / 0.6);
+  const paths = [[[-400, -400], [400, -400]], [[400, 400], [-400, 400]], [[-400, 400], [-400, -400]], [[400, -400], [400, 400]], [[-420, -420], [420, 420]], [[420, -420], [-420, 420]]];
+  const crowd = Math.floor(lerp(120, PEOPLE.length, clamp((t - L[2].start) / 1.2)));
+  for (let i = 0; i < crowd; i++) {
+    const p = PEOPLE[i]; const [a, b] = paths[p.path];
+    let u = (p.off + (t - L[0].start) * p.sp * go) % 1; if (p.d < 0) u = 1 - u;
+    const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+    const nx = -dy / len, ny = dx / len;
+    const x = a[0] + dx * u + nx * p.lane * 1.2, y = a[1] + dy * u + ny * p.lane * 1.2;
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(x + 5, y + 6, 13, 0, 6.29); ctx.fill();
+    ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(x, y, 13, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#222'; ctx.beginPath(); ctx.arc(x, y, 6, 0, 6.29); ctx.fill();
+  }
+  ctx.restore();
+  // 信号
+  const sigOn = t > L[1].start - 0.2;
+  ctx.save(); ctx.translate(140, 330);
+  ctx.fillStyle = '#111'; roundRect(-60, -110, 120, 220, 24); ctx.fill();
+  ctx.fillStyle = sigOn ? '#333' : '#ff3b3b'; ctx.beginPath(); ctx.arc(0, -50, 38, 0, 6.29); ctx.fill();
+  ctx.fillStyle = sigOn ? '#2cff9a' : '#333'; ctx.shadowColor = '#2cff9a'; ctx.shadowBlur = sigOn ? 40 : 0; ctx.beginPath(); ctx.arc(0, 50, 38, 0, 6.29); ctx.fill();
+  ctx.restore();
+  // 暗幕(テロップの可読性)
+  vignette();
+  if (t > L[2].start) counter(3000, '人', W / 2, 560, clamp((t - L[2].start - 0.1) / 1.0), 220);
+}
+function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function vignette() {
+  const g = ctx.createRadialGradient(W / 2, H / 2, 300, W / 2, H / 2, 1200);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.6)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// 第3位 新宿駅
+function sceneShinjuku(t, s) {
+  const lt = t - s.start; const L = s.lines;
+  bgNight(t, '#0a0f24', '#3a1450');
+  ctx.save(); ctx.translate(0, 0);
+  // 線路と電車
+  const tracks = [{ y: 980, c: '#3dbd5d', v: 900 }, { y: 1100, c: '#f08a24', v: -1100 }, { y: 1220, c: '#ffd400', v: 1300 }, { y: 1340, c: '#8a7bff', v: -800 }, { y: 1460, c: '#e83e6a', v: 1000 }];
+  for (const [i, tr] of tracks.entries()) {
+    ctx.fillStyle = '#1c1b2c'; ctx.fillRect(0, tr.y - 8, W, 90);
+    ctx.fillStyle = '#555'; ctx.fillRect(0, tr.y + 60, W, 6);
+    const trainLen = 1500;
+    const sp = tr.v * (1 + 1.2 * clamp((t - L[1].start) / 1));
+    let x = ((lt * sp + i * 600) % (W + trainLen + 800));
+    if (sp < 0) x = W + 400 - ((-lt * sp + i * 600) % (W + trainLen + 800));
+    else x = x - trainLen - 400;
+    for (let c = 0; c < 5; c++) {
+      const cx = x + c * 300;
+      ctx.fillStyle = '#e8ecf2'; roundRect(cx, tr.y, 290, 62, 14); ctx.fill();
+      ctx.fillStyle = tr.c; ctx.fillRect(cx, tr.y + 40, 290, 10);
+      ctx.fillStyle = '#2a3550'; for (let w = 0; w < 5; w++) ctx.fillRect(cx + 18 + w * 54, tr.y + 10, 38, 24);
+    }
+  }
+  ctx.restore();
+  // 駅名標
+  ctx.save(); ctx.translate(W / 2, 800);
+  const k = backOut(clamp((lt - 0.5) / 0.4));
+  ctx.scale(k, k);
+  ctx.fillStyle = '#fff'; roundRect(-380, -110, 760, 200, 20); ctx.fill();
+  ctx.lineWidth = 8; ctx.strokeStyle = '#000'; ctx.stroke();
+  ctx.fillStyle = '#3dbd5d'; ctx.fillRect(-380, 50, 760, 26);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#111'; ctx.font = '120px Dela'; ctx.fillText('新宿', 0, 20);
+  ctx.font = '36px Maru'; ctx.fillText('S H I N J U K U', 0, 110 - 60 + 0 - 0 + 0 + 0 + 0 + 0 - 0 + 0);
+  ctx.restore();
+  // 人のアイコン洪水
+  if (t > L[1].start) {
+    const n = Math.floor(lerp(0, 80, clamp((t - L[1].start) / 1.2)));
+    const r = rand(99);
+    for (let i = 0; i < n; i++) { const x = r() * W, y0 = 1650 + r() * 240; personIcon(x, y0 - ((t * 120 + r() * 200) % 60), 26 + r() * 10, ['#ffe14d', '#3df2ff', '#ff3d8b', '#fff'][i % 4]); }
+    if (t < L[2].start) counter(350, '万人', W / 2, 560, clamp((t - L[1].start - 0.1) / 1.0), 230);
+  }
+  // 世界一メダル
+  if (t > L[2].start) {
+    const k2 = t - L[2].start;
+    ctx.fillStyle = `rgba(0,0,0,${0.5 * clamp(k2 / 0.3)})`; ctx.fillRect(0, 0, W, H);
+    medal(W / 2, 760, backOut(clamp(k2 / 0.4)), t);
+  }
+}
+function personIcon(x, y, r, c) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y - r * 1.4, r * 0.55, 0, 6.29); ctx.fill(); roundRect(x - r * 0.7, y - r * 0.75, r * 1.4, r * 1.5, r * 0.5); ctx.fill(); }
+function medal(x, y, k, t) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.rotate(Math.sin(t * 3) * 0.05);
+  ctx.save(); ctx.rotate(t * 0.8);
+  for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.fillStyle = i % 2 ? '#ffe14d55' : '#ffffff22'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(700, -80); ctx.lineTo(700, 80); ctx.fill(); }
+  ctx.restore();
+  ctx.fillStyle = '#e8384f'; ctx.beginPath(); ctx.moveTo(-120, -60); ctx.lineTo(-40, 330); ctx.lineTo(0, 280); ctx.lineTo(40, 330); ctx.lineTo(120, -60); ctx.fill();
+  const g = ctx.createRadialGradient(-60, -60, 20, 0, 0, 230); g.addColorStop(0, '#fff6b0'); g.addColorStop(0.5, '#ffd23d'); g.addColorStop(1, '#c98a00');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 230, 0, 6.29); ctx.fill();
+  ctx.lineWidth = 14; ctx.strokeStyle = '#8a5a00'; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.fillStyle = '#7a3e00'; ctx.font = '70px Dela'; ctx.fillText('世界', 0, -30); ctx.font = '150px Dela'; ctx.fillText('No.1', 0, 110);
+  ctx.restore();
+}
+
+// 第2位 東京タワー
+function sceneTower(t, s) {
+  const lt = t - s.start; const L = s.lines;
+  bgNight(t, '#0b0a26', '#4a1240'); bokeh(t, 0.16);
+  const k = easeInOut(clamp((t - L[1].start) / 1.8));
+  const z = lerp(0.85, 1.6, k);
+  ctx.save(); ctx.translate(W / 2, lerp(1750, 2350, k)); ctx.scale(z, z);
+  drawTokyoTower(0, 0, 1300, t, t > L[2].start ? clamp((t - L[2].start) / 0.6) : 0);
+  ctx.restore();
+  // 戦車が飛んできて上部へ吸い込まれる
+  if (t > L[2].start) {
+    const k2 = t - L[2].start;
+    for (let i = 0; i < 9; i++) {
+      const u = clamp((k2 - i * 0.08) / 0.7);
+      if (u <= 0 || u >= 1) continue;
+      const sx = i % 2 ? -200 : W + 200, sy = 1500 + (i % 3) * 120;
+      const x = lerp(sx, W / 2, easeInOut(u)), y = lerp(sy, 650, easeInOut(u)) - Math.sin(u * Math.PI) * 300;
+      tank(x, y, lerp(1.2, 0.3, u), u * 6 * (i % 2 ? 1 : -1));
+    }
+  }
+  // 約90台分(戦車アイコンのグリッド)
+  if (t > L[3].start) {
+    const k3 = t - L[3].start;
+    ctx.fillStyle = `rgba(0,0,0,${0.6 * clamp(k3 / 0.3)})`; ctx.fillRect(0, 0, W, H);
+    const shown = Math.floor(90 * easeOut(clamp((k3 - 0.1) / 1.0)));
+    for (let i = 0; i < shown; i++) {
+      const cx = 125 + (i % 9) * 104, cy = 420 + Math.floor(i / 9) * 82;
+      tank(cx, cy, 0.42, 0, i === shown - 1 ? COL.yellow : '#9bb07a');
+    }
+  }
+}
+function drawTokyoTower(cx, by, h, t, heat) {
+  ctx.save();
+  const half = y => lerp(h * 0.24, 10, Math.pow(y / h, 0.55));
+  const band = (y0, y1, c) => {
+    ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-half(y0), by - y0); ctx.lineTo(-half(y1), by - y1); ctx.lineTo(half(y1), by - y1); ctx.lineTo(half(y0), by - y0); ctx.closePath(); ctx.fill(); };
+  const n = 11;
+  for (let i = 0; i < n; i++) { const y0 = h * 0.9 * i / n, y1 = h * 0.9 * (i + 1) / n; band(y0, y1, i % 2 ? '#f6f2ee' : '#ff4a1c'); }
+  // 脚のアーチ
+  ctx.fillStyle = '#0b0a26';
+  ctx.beginPath(); ctx.moveTo(-h * 0.17, by + 1); ctx.quadraticCurveTo(0, by - h * 0.2, h * 0.17, by + 1); ctx.fill();
+  // ラティス
+  ctx.strokeStyle = 'rgba(80,0,0,.45)'; ctx.lineWidth = 3;
+  for (let y = 0; y < h * 0.88; y += 40) { const a = half(y), b = half(y + 40); ctx.beginPath(); ctx.moveTo(-a, by - y); ctx.lineTo(b, by - y - 40); ctx.moveTo(a, by - y); ctx.lineTo(-b, by - y - 40); ctx.stroke(); }
+  // 展望台
+  const deck = (yy, w, hh) => { ctx.fillStyle = '#2b1a2a'; ctx.fillRect(-w / 2, by - yy - hh, w, hh); ctx.fillStyle = '#ffe9a8'; for (let x = -w / 2 + 6; x < w / 2 - 6; x += 16) ctx.fillRect(x, by - yy - hh + 8, 9, hh - 16); };
+  deck(h * 150 / 333, h * 0.2, 60); deck(h * 250 / 333, h * 0.08, 34);
+  // アンテナ
+  ctx.fillStyle = '#ff4a1c'; ctx.fillRect(-6, by - h, 12, h * 0.1);
+  // 上部(特別展望台より上)を戦車の鉄でハイライト
+  if (heat > 0) {
+    ctx.globalAlpha = heat * (0.55 + 0.25 * Math.sin(t * 10));
+    ctx.fillStyle = '#ffe14d'; ctx.shadowColor = '#ffe14d'; ctx.shadowBlur = 50;
+    ctx.beginPath(); const y0 = h * 250 / 333;
+    ctx.moveTo(-half(y0) - 10, by - y0); ctx.lineTo(-10, by - h); ctx.lineTo(10, by - h); ctx.lineTo(half(y0) + 10, by - y0); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+function tank(x, y, s, rot, col = '#7d8f5a') {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.rotate(rot);
+  ctx.fillStyle = '#2b2f22'; roundRect(-100, 10, 200, 46, 23); ctx.fill();
+  ctx.fillStyle = '#555c44'; for (let i = -78; i <= 78; i += 39) { ctx.beginPath(); ctx.arc(i, 33, 15, 0, 6.29); ctx.fill(); }
+  ctx.fillStyle = col; roundRect(-92, -24, 184, 40, 10); ctx.fill();
+  roundRect(-50, -62, 100, 44, 18); ctx.fill();
+  ctx.fillRect(40, -50, 120, 16);
+  ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.strokeRect(-92, -24, 184, 40);
+  ctx.restore();
+}
+
+// 第1位 沖ノ鳥島・南鳥島
+// 地図は位置関係を示す模式図(縮尺はおおよそ。都心→沖ノ鳥島 約1,700km、都心→南鳥島 約1,900km)
+const MAP = { tokyo: [300, 430], oki: [210, 1130], mina: [890, 770] };
+function sceneIsland(t, s) {
+  const lt = t - s.start; const L = s.lines;
+  // ブレイク中は暗転+スポットライト
+  const brk = t < L[3].start;
+  ctx.fillStyle = '#04061a'; ctx.fillRect(0, 0, W, H);
+  if (t < L[1].start) {
+    // 「そして…第1位」ドラムロール
+    const k = clamp(lt / (L[1].start - s.start));
+    const g = ctx.createRadialGradient(W / 2, 900, 0, W / 2, 900, 600 + 200 * Math.sin(t * 20));
+    g.addColorStop(0, 'rgba(255,240,180,.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const sh = 6 * k;
+    ctx.save(); ctx.translate((Math.sin(t * 90) * sh), Math.cos(t * 70) * sh);
+    rankSlam(1, clamp(lt - 0.3, 0, 1.0), COL.red);
+    ctx.restore();
+    return;
+  }
+  // 海(グリッド)
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#062a5c'); g.addColorStop(1, '#021433');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(120,200,255,.12)'; ctx.lineWidth = 2;
+  for (let x = 0; x < W; x += 90) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = (t * 20) % 90; y < H; y += 90) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  // 波のきらめき
+  const r = rand(4); for (let i = 0; i < 60; i++) { const x = r() * W, y = r() * H; ctx.globalAlpha = 0.2 + 0.2 * Math.sin(t * 3 + i); ctx.fillStyle = '#9fe6ff'; ctx.fillRect(x, y, 18, 3); } ctx.globalAlpha = 1;
+  // 本州(簡略シルエット: 左上へはみ出す陸地)
+  ctx.fillStyle = '#2f6b3f';
+  ctx.beginPath(); ctx.moveTo(-50, 250); ctx.quadraticCurveTo(180, 330, 300, 470); ctx.quadraticCurveTo(360, 560, 440, 470);
+  ctx.quadraticCurveTo(520, 380, 560, 200); ctx.lineTo(600, -50); ctx.lineTo(-50, -50); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#7fd18f'; ctx.lineWidth = 5; ctx.stroke();
+  // 都心
+  pin(MAP.tokyo[0], MAP.tokyo[1], '東京都心', COL.yellow, 1);
+  // 点線を沖ノ鳥島へ伸ばす(距離カウントと同期)
+  const kd = easeInOut(clamp((t - L[2].start) / 1.1));
+  const okiK = clamp((t - L[1].start) / 0.4);
+  if (okiK > 0) island(MAP.oki[0], MAP.oki[1], backOut(okiK), '沖ノ鳥島', t);
+  if (kd > 0) dashed(MAP.tokyo, MAP.oki, kd, t);
+  if (t > L[2].start && t < L[4].start) counter(1700, 'km', 640, 960, clamp((t - L[2].start - 0.1) / 1.0), 160, '#fff');
+  // 南鳥島
+  if (t > L[4].start) {
+    const k4 = t - L[4].start;
+    island(MAP.mina[0], MAP.mina[1], backOut(clamp(k4 / 0.4)), '南鳥島', t);
+    dashed(MAP.tokyo, MAP.mina, easeInOut(clamp(k4 / 0.9)), t);
+    stamp(MAP.mina[0] - 20, MAP.mina[1] - 170, clamp((k4 - 0.9) / 0.25), 0.55);
+  }
+  // 「東京都」ハンコ
+  if (t > L[3].start) { const mv = easeInOut(clamp((t - L[4].start) / 0.4)); stamp(lerp(W / 2 + 20, 430, mv), lerp(640, 1000, mv), clamp((t - L[3].start) / 0.22), lerp(1.2, 0.5, mv)); }
+  // ドロップ直後のフラッシュ
+  const fl = t - L[3].start; if (fl > 0 && fl < 0.25) { ctx.fillStyle = `rgba(255,255,255,${0.8 * (1 - fl / 0.25)})`; ctx.fillRect(0, 0, W, H); }
+  // 注記
+  ctx.save(); ctx.font = '30px Maru'; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.textAlign = 'left';
+  ctx.fillText('※位置関係のイメージ図です', 40, 1640); ctx.restore();
+}
+function pin(x, y, label, col, k) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 22, 0, 6.29); ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.stroke();
+  ctx.font = '52px Dela'; ctx.textAlign = 'left'; ctx.lineJoin = 'round'; ctx.lineWidth = 14; ctx.strokeStyle = '#000'; ctx.strokeText(label, 36, 18); ctx.fillStyle = '#fff'; ctx.fillText(label, 36, 18);
+  ctx.restore();
+}
+function island(x, y, k, label, t) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  for (let i = 0; i < 3; i++) { const rr = 40 + ((t * 60 + i * 40) % 120); ctx.globalAlpha = 1 - rr / 160; ctx.strokeStyle = '#9fe6ff'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, rr, 0, 6.29); ctx.stroke(); }
+  ctx.globalAlpha = 1; ctx.fillStyle = '#f2d98a'; ctx.beginPath(); ctx.ellipse(0, 0, 40, 22, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#3aa35a'; ctx.beginPath(); ctx.arc(-6, -10, 12, 0, 6.29); ctx.fill();
+  ctx.font = '58px Dela'; ctx.textAlign = 'center'; ctx.lineJoin = 'round'; ctx.lineWidth = 16; ctx.strokeStyle = '#000'; ctx.strokeText(label, 0, 100); ctx.fillStyle = COL.cyan; ctx.fillText(label, 0, 100);
+  ctx.restore();
+}
+function dashed(a, b, k, t) {
+  ctx.save(); ctx.setLineDash([26, 18]); ctx.lineDashOffset = -t * 60; ctx.lineWidth = 9; ctx.strokeStyle = COL.yellow;
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(lerp(a[0], b[0], k), lerp(a[1], b[1], k)); ctx.stroke(); ctx.restore();
+}
+function stamp(x, y, k, s) {
+  if (k <= 0) return;
+  const sc = lerp(2.6, 1, easeOut(k)) * s;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(-0.18); ctx.scale(sc, sc); ctx.globalAlpha = clamp(k * 2);
+  ctx.fillStyle = 'rgba(255,255,255,.9)'; roundRect(-260, -120, 520, 240, 30); ctx.fill();
+  ctx.lineWidth = 18; ctx.strokeStyle = '#e8202a'; roundRect(-245, -105, 490, 210, 24); ctx.stroke();
+  ctx.font = '150px Dela'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#e8202a'; ctx.fillText('東京都', 0, 8);
+  ctx.restore();
+}
+
+// アウトロ(ループ誘導)
+function sceneOutro(t, s) {
+  const lt = t - s.start; const L = s.lines;
+  bgNight(t); bokeh(t, 0.25);
+  skyline(t, 1750, 1.05 + 0.02 * Math.sin(t));
+  // 5つの秘密を振り返るチップ
+  const items = ['634m=むさし', '3,000人', '世界一の駅', '戦車の鉄', '最南端も東京都'];
+  items.forEach((it, i) => {
+    const k = backOut(clamp((lt - i * 0.1) / 0.4));
+    const x = W / 2, y = 330 + i * 120;
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+    ctx.fillStyle = i === 4 ? COL.yellow : 'rgba(255,255,255,.92)'; roundRect(-360, -46, 720, 92, 46); ctx.fill();
+    ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.stroke();
+    ctx.font = '50px Dela'; ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${5 - i}位  ${it}`, 0, 4);
+    ctx.restore();
+  });
+  // コメント吹き出し
+  if (t > L[0].start + 0.6 && t < L[1].start) {
+    const P = [[300, 990], [780, 1010], [330, 1100], [760, 1120]];
+    for (let i = 0; i < 4; i++) {
+      const k = backOut(clamp((t - L[0].start - 0.6 - i * 0.25) / 0.4));
+      const [x, y] = P[i];
+      const msg = ['全部知ってた!', '3つ!', '戦車はマジで驚いた', '東京都すご'][i];
+      ctx.save(); ctx.translate(x, y - ((t - L[0].start) * 40) % 30); ctx.scale(k * 0.9, k * 0.9);
+      ctx.font = '40px Maru'; const w = ctx.measureText(msg).width + 60;
+      ctx.fillStyle = 'rgba(255,255,255,.95)'; roundRect(-w / 2, -40, w, 80, 40); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-20, 38); ctx.lineTo(-40, 66); ctx.lineTo(10, 38); ctx.fill();
+      ctx.fillStyle = '#222'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(msg, 0, 2);
+      ctx.restore();
+    }
+  }
+  // ループ矢印
+  if (t > L[1].start) {
+    const k = clamp((t - L[1].start) / 0.4);
+    ctx.save(); ctx.translate(W / 2, 1060); ctx.rotate(t * 4); ctx.globalAlpha = k;
+    ctx.lineWidth = 22; ctx.strokeStyle = COL.cyan; ctx.beginPath(); ctx.arc(0, 0, 70, 0.3, Math.PI * 1.75); ctx.stroke();
+    ctx.fillStyle = COL.cyan; ctx.beginPath(); ctx.moveTo(70 * Math.cos(0.3) + 30, 70 * Math.sin(0.3) - 10); ctx.lineTo(70 * Math.cos(0.3) - 34, 70 * Math.sin(0.3) - 6); ctx.lineTo(70 * Math.cos(0.3), 70 * Math.sin(0.3) + 46); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------- メイン ----------
+const RANK = { r5: 5, r4: 4, r3: 3, r2: 2 };
+const RCOL = { r5: COL.cyan, r4: '#2cff9a', r3: '#8B5CFF', r2: COL.pink };
+const DRAW = { hook: sceneHook, r5: sceneSkytree, r4: sceneShibuya, r3: sceneShinjuku, r2: sceneTower, r1: sceneIsland, outro: sceneOutro };
+
+window.render = function (t) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const s = sceneAt(t);
+  const li = lineAt(s, t);
+  const line = li >= 0 ? s.lines[li] : null;
+  // カメラ: セリフ頭のパンチイン + 衝撃シェイク
+  let punch = 0;
+  if (line) { const d = t - line.start; if (d >= 0) punch = 0.05 * Math.exp(-d * 7); }
+  const drop = SC.r1.lines[3].start;
+  let shake = 0;
+  if (t < 0.4) shake = 26 * (1 - t / 0.4);
+  if (t > drop && t < drop + 0.5) shake = 34 * (1 - (t - drop) / 0.5);
+  for (const sc of TL.scenes) { const d = t - sc.start; if (sc.index > 0 && d > 0 && d < 0.25) shake = Math.max(shake, 14 * (1 - d / 0.25)); }
+  ctx.save();
+  ctx.translate(W / 2 + Math.sin(t * 97) * shake, H / 2 + Math.cos(t * 83) * shake);
+  ctx.scale(1 + punch, 1 + punch);
+  ctx.translate(-W / 2, -H / 2);
+  DRAW[s.id](t, s);
+  // 第5〜2位の順位スラム
+  if (RANK[s.id]) rankSlam(RANK[s.id], t - s.start, RCOL[s.id]);
+  ctx.restore();
+
+  // シーン切替: ホワイトフラッシュ + 横方向ワイプ
+  const d = t - s.start;
+  if (s.index > 0 && d < 0.18) { ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - d / 0.18)})`; ctx.fillRect(0, 0, W, H); }
+  const nxt = TL.scenes[s.index + 1];
+  if (nxt) { const r = nxt.start - t; if (r < 0.2) { const k = 1 - r / 0.2; ctx.fillStyle = COL.yellow; ctx.fillRect(W * (1 - k), 0, W * k * 0.6, H); ctx.fillStyle = COL.pink; ctx.fillRect(W * (1 - k) + W * k * 0.6, 0, W * k * 0.4, H); } }
+
+  hud(t, s);
+
+  // テロップ(第N位の単発セリフはスラム演出があるので非表示)
+  if (line && !/^第\d位$/.test(line.text) && !(s.id === 'r1' && li === 0)) {
+    const k = (t - line.start) / 0.35;
+    const y = s.id === 'hook' ? 1330 : 1420;
+    // 下地の帯
+    ctx.save(); ctx.globalAlpha = 0.55 * clamp(k * 2);
+    const gg = ctx.createLinearGradient(0, y - 230, 0, y + 230); gg.addColorStop(0, 'rgba(0,0,0,0)'); gg.addColorStop(0.5, 'rgba(0,0,0,.7)'); gg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gg; ctx.fillRect(0, y - 230, W, 460); ctx.restore();
+    telop(line.text, W / 2, y, k, { size: s.id === 'hook' ? 108 : 92 });
+  }
+  // クレジット(常時、小さく)
+  ctx.save(); ctx.font = '28px Maru'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.textAlign = 'left';
+  ctx.fillText('VOICEVOX:四国めたん', 36, 236); ctx.restore();
+};
+
+// ブラウザ単体で開いた場合のプレビュー再生
+if (!window.__CAPTURE__) {
+  fetch('output/timeline.json').then(r => r.json()).then(tl => {
+    setTimeline(tl);
+    document.fonts.ready.then(() => { const t0 = performance.now(); const loop = () => { render(((performance.now() - t0) / 1000) % tl.total); requestAnimationFrame(loop); }; loop(); });
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>
