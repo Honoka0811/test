@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Prewar Weapon Patents</title>
+<style>
+  html,body{margin:0;background:#12100d;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 戦前の兵器と特許 1885→1948  (9:16 ショート動画 / 約117秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#12100d', panel: '#1e1a15', panel2: '#272119', grid: '#3a3228',
+  ink: '#f4efe6', ink2: '#c9bfae', ink3: '#8a8072',
+  red: '#D9534F', blue: '#4A90D9', green: '#5BAE7A',
+  accent: '#E0B457', accentSoft: 'rgba(224,180,87,0.18)', seal: '#B8322B'
+};
+const FPS = 30, DURATION = 116.5;
+
+// ---------- 年表(上部タイムライン) ----------
+const TL = [1885, 1917, 1921, 1926, 1937, 1948];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, stroke = false, lw = 3) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+  if (stroke) { ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke(); } else { ctx.fillStyle = color; ctx.fill(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function dot(x, y, r, color, alpha = 1, ring = true) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  if (ring) { ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// 矢印(進捗 p で伸びる)
+function arrow(x1, y1, x2, y2, color, p, width = 5, alpha = 1) {
+  if (p <= 0) return;
+  const ex = lerp(x1, x2, p), ey = lerp(y1, y2, p);
+  line(x1, y1, ex, ey, color, width, alpha);
+  const ang = Math.atan2(y2 - y1, x2 - x1), hl = 22;
+  ctx.save(); ctx.globalAlpha = clamp(alpha) * clamp(p * 3 - 2); ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - hl * Math.cos(ang - .5), ey - hl * Math.sin(ang - .5));
+  ctx.lineTo(ex - hl * Math.cos(ang + .5), ey - hl * Math.sin(ang + .5));
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function header(title, sub, alpha) {
+  text(title, 80, 300, { size: 64, weight: 'bold', alpha });
+  if (sub) text(sub, 80, 370, { size: 36, color: C.ink2, alpha });
+}
+function caption(str, y, alpha, color = C.accent, size = 44) {
+  rrect(60, y - size - 22, W - 120, size + 48, 18, C.panel, alpha);
+  text(str, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha });
+}
+function footnote(str, alpha) { text(str, W / 2, 1640, { size: 28, color: C.ink3, align: 'center', alpha }); }
+function card(x, y, w, h, alpha, color = C.panel) { rrect(x, y, w, h, 22, color, alpha); }
+
+// 「特許」の判子風マーク
+function seal(x, y, r, label, alpha, color = C.seal) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  ctx.strokeStyle = color; ctx.lineWidth = Math.max(4, r * .09);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, r * .82, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  text(label, x, y + r * .22, { size: r * .62, weight: 'bold', color, align: 'center', alpha });
+}
+
+// 上部の年タイムライン
+function timeline(year, alpha) {
+  const x0 = 110, x1 = W - 110, y = 200;
+  line(x0, y, x1, y, C.grid, 4, alpha);
+  TL.forEach((yr, i) => {
+    const x = lerp(x0, x1, i / (TL.length - 1));
+    const on = yr === year;
+    dot(x, y, on ? 14 : 8, on ? C.accent : C.grid, alpha, false);
+    text(String(yr), x, y - 28, { size: 30, color: on ? C.accent : C.ink3, align: 'center', weight: on ? 'bold' : 'normal', alpha });
+  });
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const p = easeOut(t / 1.2);
+  rrect(140, 640, 800 * p, 8, 4, C.accent, a);
+  rrect(140, 1240, 800 * p, 8, 4, C.accent, a);
+  seal(W / 2, 470, 95, '特許', a * easeOut((t - 1.4) / .8));
+  text('戦前の', W / 2, 820, { size: 96, weight: 'bold', align: 'center', alpha: a * easeOut(t / .8), ls: 6 });
+  text('兵器と特許', W / 2, 990, { size: 150, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .8), ls: 8 });
+  text('発明は、誰のものだったのか', W / 2, 1130, { size: 56, color: C.accent, align: 'center', alpha: a * easeOut((t - .7) / .8) });
+  text('1885 → 1948', W / 2, 1370, { size: 64, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.1) / .8) });
+  text('特許第1号・秘密特許・輸入ライセンス・八木アンテナ', W / 2, 1460, { size: 34, color: C.ink3, align: 'center', alpha: a * easeOut((t - 3.0) / .8) });
+}
+
+// 船体の簡略図(船底に塗料が塗られていく)
+function drawHull(x, y, w, paint, alpha) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  const h = w * .22;
+  ctx.fillStyle = '#4b4238';
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w * .9, y + h); ctx.lineTo(x + w * .12, y + h); ctx.lineTo(x, y + h * .5); ctx.closePath(); ctx.fill();
+  // 喫水線より下を塗る
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y + h * .45, w * paint, h); ctx.clip();
+  ctx.fillStyle = C.seal;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w * .9, y + h); ctx.lineTo(x + w * .12, y + h); ctx.lineTo(x, y + h * .5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 上部構造
+  ctx.fillStyle = '#6a5f52';
+  ctx.fillRect(x + w * .3, y - h * .5, w * .32, h * .5);
+  ctx.fillRect(x + w * .42, y - h * .95, w * .06, h * .45);
+  ctx.fillRect(x + w * .54, y - h * .95, w * .06, h * .45);
+  // 喫水線
+  ctx.strokeStyle = C.blue; ctx.lineWidth = 4; ctx.setLineDash([14, 10]);
+  ctx.beginPath(); ctx.moveTo(x - 30, y + h * .45); ctx.lineTo(x + w + 30, y + h * .45); ctx.stroke();
+  ctx.restore();
+}
+
+function sceneFirstPatent(t, a) {
+  timeline(1885, a);
+  header('特許制度のはじまり', '1885年(明治18年) 専売特許条例', a);
+  const la = a * easeOut((t - .3) / .6);
+  card(60, 430, W - 120, 200, la);
+  text('専売特許条例  公布', 100, 500, { size: 44, weight: 'bold', alpha: la });
+  text('1885年4月18日(現在の「発明の日」)', 100, 555, { size: 32, color: C.ink2, alpha: la });
+  text('起草・初代専売特許所長: 高橋是清', 100, 603, { size: 32, color: C.ink2, alpha: la });
+  const pa = a * easeOut((t - 2.2) / .6);
+  card(60, 680, W - 120, 690, pa);
+  seal(W - 190, 790, 80, '第1号', pa * easeOut((t - 3.4) / .6));
+  text('特許第1号', 100, 780, { size: 60, weight: 'bold', color: C.accent, alpha: pa });
+  text('堀田瑞松「堀田式錆止塗料とその塗法」', 100, 850, { size: 36, alpha: pa });
+  text('漆を主成分にした鉄製船底のさび止め', 100, 905, { size: 32, color: C.ink2, alpha: pa });
+  drawHull(190, 1110, 700, easeInOut((t - 4.6) / 2.0), pa);
+  const na = a * easeOut((t - 7.4) / .6);
+  text('→ 日本海軍の艦艇に採用、改良品はロシア海軍にも', 100, 1330, { size: 32, color: C.accent, weight: 'bold', alpha: na });
+  caption('最初の特許から、船と軍艦に結びついていた', 1560, a * easeOut((t - 10.5) / .6), C.accent, 40);
+  footnote('出典: 特許庁資料ほか', na);
+}
+
+const SECRET = [['明治', 24], ['大正', 116], ['昭和', 1432]];
+function sceneSecret(t, a) {
+  timeline(1921, a);
+  header('秘密特許制度', '軍事上秘密を要する発明は公開されない', a);
+  const la = a * easeOut((t - .3) / .6);
+  card(60, 430, W - 120, 250, la);
+  text('秘密指定の決定: 陸軍大臣・海軍大臣', 100, 500, { size: 38, weight: 'bold', alpha: la });
+  text('特許局の審査官のうち約2割は', 100, 560, { size: 32, color: C.ink2, alpha: la });
+  text('陸海軍の技術将校が兼任', 100, 610, { size: 32, color: C.ink2, alpha: la });
+  text('1899年導入 → 1921年(大正10年)特許法で本格化', 100, 660, { size: 28, color: C.ink3, alpha: la });
+  // 棒グラフ
+  const ga = a * easeOut((t - 5.5) / .6);
+  text('秘密特許の件数(時代別)', 80, 790, { size: 36, weight: 'bold', alpha: ga });
+  const px0 = 120, px1 = W - 80, py0 = 830, py1 = 1230, maxV = 1500;
+  for (let v = 0; v <= maxV; v += 500) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, ga);
+    text(fmtInt(v), px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: ga });
+  }
+  const gw = (px1 - px0) / 3, bw = 160;
+  SECRET.forEach(([lab, v], i) => {
+    const p = easeOut((t - 6.0 - i * 1.8) / 1.0);
+    const cx = px0 + gw * i + gw / 2;
+    const h = Math.max(6, (py1 - py0) * v / maxV * p);
+    rrect(cx - bw / 2, py1 - h, bw, h, 6, i === 2 ? C.seal : C.accent, ga);
+    text(lab, cx, py1 + 44, { size: 34, color: C.ink2, align: 'center', alpha: ga });
+    text(fmtInt(v * p) + '件', cx, py1 - h - 16, { size: 34, weight: 'bold', align: 'center', alpha: ga * p });
+  });
+  const na = a * easeOut((t - 12.0) / .6);
+  card(60, 1310, W - 120, 150, na);
+  text('合計 約1,600件 = 特許出願全体の約0.6%(200件に1件)', 100, 1370, { size: 32, alpha: na });
+  text('1943年には民間からの秘密指定が約7割', 100, 1425, { size: 30, color: C.ink2, alpha: na });
+  caption('公開されない発明が、約1,600件', 1560, a * easeOut((t - 14.0) / .6));
+  footnote('出典: 櫻井孝『防衛技術の守り方』, 日本知的財産協会, JIIA / 概数', na);
+}
+
+function flag(x, y, w, kind, alpha) {
+  // 簡略国旗(スイス=赤地に白十字 / ドイツ=黒赤金 / 日本=白地赤丸)
+  const h = w * .66;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  if (kind === 'ch') {
+    ctx.fillStyle = '#D52B1E'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#fff'; ctx.fillRect(x + w * .42, y + h * .18, w * .16, h * .64); ctx.fillRect(x + w * .2, y + h * .38, w * .6, h * .24);
+  } else if (kind === 'de') {
+    ctx.fillStyle = '#111'; ctx.fillRect(x, y, w, h / 3);
+    ctx.fillStyle = '#DD0000'; ctx.fillRect(x, y + h / 3, w, h / 3);
+    ctx.fillStyle = '#FFCE00'; ctx.fillRect(x, y + 2 * h / 3, w, h / 3);
+  } else {
+    ctx.fillStyle = '#f2f2f2'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#BC002D'; ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, h * .3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function sceneLicense(t, a) {
+  timeline(1937, a);
+  header('主力兵器は海外特許のライセンス', '輸入技術の上に成り立っていた', a);
+  // 20mm 機銃
+  const la = a * easeOut((t - .3) / .6);
+  card(60, 430, W - 120, 440, la);
+  text('零戦の20mm機銃', 100, 500, { size: 44, weight: 'bold', color: C.accent, alpha: la });
+  flag(100, 540, 120, 'ch', la);
+  text('スイス エリコン社 FF', 240, 590, { size: 34, alpha: la });
+  text('1935年 海軍が調査 → 1937年 採用決定', 240, 640, { size: 28, color: C.ink2, alpha: la });
+  arrow(160, 640, 160, 740, C.accent, easeOut((t - 1.4) / .8), 5, la);
+  flag(100, 760, 120, 'jp', la * easeOut((t - 2.0) / .5));
+  text('1939年 九九式二十粍機銃', 240, 800, { size: 34, alpha: la * easeOut((t - 2.0) / .5) });
+  text('製造: 大日本兵器(退役海軍提督らが設立)', 240, 848, { size: 28, color: C.ink2, alpha: la * easeOut((t - 2.0) / .5) });
+  // DB601
+  const ea = a * easeOut((t - 6.0) / .6);
+  card(60, 910, W - 120, 560, ea);
+  text('液冷エンジン DB601', 100, 980, { size: 44, weight: 'bold', color: C.accent, alpha: ea });
+  flag(100, 1020, 120, 'de', ea);
+  text('ドイツ ダイムラー・ベンツ', 240, 1070, { size: 34, alpha: ea });
+  text('倒立V12 液冷エンジン(Bf109 搭載)', 240, 1118, { size: 28, color: C.ink2, alpha: ea });
+  const ap = easeOut((t - 8.0) / .8);
+  arrow(160, 1120, 300, 1250, C.red, ap, 5, ea);
+  arrow(160, 1120, 700, 1250, C.blue, ap, 5, ea);
+  const ca = ea * easeOut((t - 8.8) / .5);
+  rrect(250, 1260, 330, 170, 16, C.panel2, ca);
+  text('川崎航空機', 270, 1310, { size: 34, weight: 'bold', color: C.red, alpha: ca });
+  text('陸軍向け ハ40', 270, 1355, { size: 28, color: C.ink2, alpha: ca });
+  text('三式戦闘機「飛燕」', 270, 1400, { size: 28, color: C.ink2, alpha: ca });
+  rrect(650, 1260, 330, 170, 16, C.panel2, ca);
+  text('愛知航空機', 670, 1310, { size: 34, weight: 'bold', color: C.blue, alpha: ca });
+  text('海軍向け 熱田', 670, 1355, { size: 28, color: C.ink2, alpha: ca });
+  text('艦上爆撃機「彗星」', 670, 1400, { size: 28, color: C.ink2, alpha: ca });
+  text('陸軍系と海軍系が別々にライセンスを取得', 100, 1455, { size: 28, color: C.accent, alpha: ca * easeOut((t - 10.5) / .5) });
+  caption('自前の特許より、輸入の特許が主力だった', 1560, a * easeOut((t - 13.0) / .6), C.accent, 40);
+  footnote('出典: 各種航空史・兵器史資料', ca);
+}
+
+// 八木・宇田アンテナの図
+function drawYagi(x, y, len, p, alpha) {
+  // ブーム
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  const boom = len * easeOut(p / .4);
+  ctx.strokeStyle = C.ink2; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + boom, y); ctx.stroke();
+  // 素子: 反射器(長い)、放射器、導波器(短い×4)
+  const els = [[0, 150, C.ink2], [.16, 140, C.accent], [.33, 128, C.ink2], [.5, 122, C.ink2], [.67, 118, C.ink2], [.84, 114, C.ink2], [1, 110, C.ink2]];
+  els.forEach(([f, hl, col], i) => {
+    const q = easeOut((p - .4 - i * .07) / .25);
+    if (q <= 0) return;
+    ctx.strokeStyle = col; ctx.lineWidth = i === 1 ? 10 : 7;
+    ctx.beginPath(); ctx.moveTo(x + len * f, y - hl * q); ctx.lineTo(x + len * f, y + hl * q); ctx.stroke();
+  });
+  // 電波(指向性)
+  const wq = easeOut((p - .95) / .5);
+  if (wq > 0) {
+    ctx.strokeStyle = C.blue; ctx.lineWidth = 4; ctx.globalAlpha = clamp(alpha) * wq;
+    for (let k = 1; k <= 3; k++) {
+      ctx.beginPath(); ctx.arc(x + len, y, 60 * k * wq + 30, -.9, .9); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function sceneYagi(t, a) {
+  timeline(1926, a);
+  header('見過ごされた日本の発明', '八木・宇田アンテナ(八木秀次・宇田新太郎)', a);
+  card(60, 430, W - 120, 420, a * easeOut((t - .3) / .6));
+  drawYagi(170, 640, 640, (t - .6) / 2.8, a * easeOut((t - .3) / .6));
+  text('反射器', 170, 840, { size: 26, color: C.ink3, align: 'center', alpha: a * easeOut((t - 2.0) / .6) });
+  text('放射器', 170 + 640 * .16, 840, { size: 26, color: C.accent, align: 'center', alpha: a * easeOut((t - 2.0) / .6) });
+  text('導波器 →', 170 + 640 * .6, 840, { size: 26, color: C.ink3, align: 'center', alpha: a * easeOut((t - 2.0) / .6) });
+  // 年表
+  const steps = [
+    ['1925年12月', '特許出願「電波指向方式」', C.ink],
+    ['1926年8月', '特許第69115号 成立', C.accent],
+    ['1930年代', '欧米がレーダー用に活用 / 日本軍は重視せず', C.ink2],
+    ['1942年', 'シンガポール陥落後、英軍のレーダー資料に「YAGI」の名(逸話)', C.red],
+  ];
+  steps.forEach((s, i) => {
+    const la = a * easeOut((t - 4.0 - i * 2.4) / .6);
+    const y = 930 + i * 150;
+    dot(110, y - 14, 12, s[2], la, false);
+    if (i < steps.length - 1) line(110, y + 4, 110, y + 120, C.grid, 4, la);
+    text(s[0], 150, y, { size: 36, weight: 'bold', color: s[2], alpha: la });
+    text(s[1], 150, y + 50, { size: i === 3 ? 27 : 30, color: C.ink2, alpha: la });
+  });
+  caption('自前の発明を、軍は見落としていた', 1560, a * easeOut((t - 15.0) / .6));
+  footnote('出典: 東北大学史料館, 講談社ブルーバックス ほか', a * easeOut((t - 15.0) / .6));
+}
+
+// 主翼断面(桁をハイライト)
+function drawWing(x, y, w, hl, alpha) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  const h = w * .16;
+  ctx.fillStyle = '#4b4238';
+  ctx.beginPath();
+  ctx.moveTo(x, y + h * .55);
+  ctx.bezierCurveTo(x + w * .1, y - h * .1, x + w * .5, y - h * .25, x + w, y + h * .5);
+  ctx.bezierCurveTo(x + w * .5, y + h * .85, x + w * .1, y + h, x, y + h * .55);
+  ctx.closePath(); ctx.fill();
+  // 桁
+  ctx.fillStyle = C.accent; ctx.globalAlpha = clamp(alpha) * clamp(hl);
+  ctx.fillRect(x + w * .28, y + h * .02, w * .05, h * .9);
+  ctx.fillRect(x + w * .62, y + h * .12, w * .04, h * .68);
+  ctx.restore();
+}
+
+function sceneMaterial(t, a) {
+  timeline(1937, a);
+  header('材料の特許が零戦を支えた', '超々ジュラルミン(ESD)', a);
+  const la = a * easeOut((t - .3) / .6);
+  card(60, 430, W - 120, 330, la);
+  text('1935年 海軍航空廠 → 住友金属に開発要請', 100, 500, { size: 36, weight: 'bold', alpha: la });
+  text('研究部員 五十嵐勇 を中心に開発', 100, 560, { size: 32, color: C.ink2, alpha: la });
+  text('クロム添加で高強度・耐応力腐食を実現', 100, 612, { size: 32, color: C.ink2, alpha: la * easeOut((t - 1.6) / .6) });
+  text('開発開始から1年以内に特許出願(1936年)', 100, 664, { size: 32, color: C.accent, weight: 'bold', alpha: la * easeOut((t - 2.8) / .6) });
+  seal(W - 170, 560, 70, '特許', la * easeOut((t - 2.8) / .6));
+  text('1936', W - 170, 660, { size: 28, color: C.ink3, align: 'center', alpha: la * easeOut((t - 2.8) / .6) });
+  const wa = a * easeOut((t - 6.5) / .6);
+  card(60, 800, W - 120, 560, wa);
+  text('零戦の主翼 断面(模式図)', 100, 870, { size: 36, weight: 'bold', alpha: wa });
+  drawWing(120, 940, 840, easeOut((t - 8.0) / 1.0), wa);
+  text('■ 桁(スパー)に超々ジュラルミンを採用', 100, 1180, { size: 32, color: C.accent, alpha: wa * easeOut((t - 8.5) / .6) });
+  text('→ 機体の軽量化 = 長い航続距離と運動性', 100, 1235, { size: 32, color: C.ink2, alpha: wa * easeOut((t - 10.0) / .6) });
+  text('※ 戦後の航空機合金 7075 の先駆けとされる', 100, 1300, { size: 28, color: C.ink3, alpha: wa * easeOut((t - 10.0) / .6) });
+  caption('材料の特許が、機体を軽くした', 1560, a * easeOut((t - 12.0) / .6));
+  footnote('出典: 国立科学博物館, 熊本県, 防衛省 海自幹部学校 資料', wa);
+}
+
+function sceneWartimeLaw(t, a) {
+  timeline(1917, a);
+  header('戦争は、敵国の特許を無効にした', '工業所有権戦時法(1917年・大正6年)', a);
+  const la = a * easeOut((t - .3) / .6);
+  card(60, 430, W - 120, 300, la);
+  text('第一次世界大戦中に制定', 100, 500, { size: 40, weight: 'bold', alpha: la });
+  text('敵国民の特許は効力を失う', 100, 560, { size: 34, color: C.accent, alpha: la });
+  text('ドイツ発の医薬品などを国内で製造できるように', 100, 615, { size: 30, color: C.ink2, alpha: la * easeOut((t - 1.6) / .6) });
+  text('特許の取消し / 第三者への専用免許(ライセンス)', 100, 670, { size: 30, color: C.ink2, alpha: la * easeOut((t - 1.6) / .6) });
+  // 年表
+  const steps = [
+    ['1917年', '工業所有権戦時法 制定', C.accent],
+    ['1942年', '閣議決定「敵性特許権処理要綱」で再び発動', C.red],
+    ['1948年', '主要条文を削除(第1〜4条・第7条)', C.ink2],
+  ];
+  const x0 = 140, x1 = W - 140, y = 900;
+  const lp = easeInOut((t - 4.5) / 5.0);
+  line(x0, y, x0 + (x1 - x0) * lp, y, C.accent, 6, a);
+  steps.forEach((s, i) => {
+    const x = lerp(x0, x1, i / 2);
+    const la2 = a * easeOut((t - 4.5 - i * 2.2) / .6);
+    dot(x, y, 16, s[2], la2);
+    text(s[0], x, y - 40, { size: 40, weight: 'bold', color: s[2], align: 'center', alpha: la2 });
+  });
+  steps.forEach((s, i) => {
+    const la2 = a * easeOut((t - 4.5 - i * 2.2) / .6);
+    const yy = 1010 + i * 120;
+    rrect(60, yy - 46, W - 120, 92, 16, C.panel, la2);
+    text(s[0], 100, yy + 12, { size: 34, weight: 'bold', color: s[2], alpha: la2 });
+    text(s[1], 280, yy + 12, { size: 30, color: C.ink2, alpha: la2 });
+  });
+  caption('特許は、戦争の道具にもなった', 1560, a * easeOut((t - 12.5) / .6));
+  footnote('出典: 国立国会図書館, 名古屋大学 日本法令外国語訳DB ほか', a * easeOut((t - 12.5) / .6));
+}
+
+function sceneSummary(t, a) {
+  text('まとめ', W / 2, 320, { size: 80, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['①', '特許第1号から軍と結びつく', '1885年 さび止め塗料は海軍艦艇に採用'],
+    ['②', '約1,600件の発明が「秘密」に', '陸海軍大臣が指定。1948年 新憲法のもとで廃止'],
+    ['③', '輸入特許に頼り、自前の発明は見落とす', '機銃・エンジンはライセンス、八木アンテナは敵が活用'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .4 - i * 1.1) / .6);
+    const y = 440 + i * 300;
+    rrect(60, y, W - 120, 240, 22, C.panel, la);
+    text(it[0], 100, y + 95, { size: 60, weight: 'bold', color: C.accent, alpha: la });
+    text(it[1], 190, y + 95, { size: 44, weight: 'bold', alpha: la });
+    text(it[2], 190, y + 170, { size: 30, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 5.5) / .6);
+  rrect(140, 1370, 800 * ca, 8, 4, C.accent, ca);
+  text('発明を守る制度は、戦争とともに形を変えた', W / 2, 1470, { size: 42, weight: 'bold', color: C.accent, align: 'center', alpha: ca });
+  text('出典: 特許庁, 櫻井孝『防衛技術の守り方』, 日本知的財産協会, 国立科学博物館,', W / 2, 1600, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+  text('東北大学史料館, 国立国会図書館 ほか / 件数は概数', W / 2, 1640, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+  text('音声: VOICEVOX:四国めたん', W / 2, 1700, { size: 28, color: C.ink2, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [
+  { s: 0, d: 8.5, f: sceneTitle },
+  { s: 8.5, d: 13.5, f: sceneFirstPatent },
+  { s: 22, d: 17.5, f: sceneSecret },
+  { s: 39.5, d: 16.5, f: sceneLicense },
+  { s: 56, d: 18.5, f: sceneYagi },
+  { s: 74.5, d: 15, f: sceneMaterial },
+  { s: 89.5, d: 15.5, f: sceneWartimeLaw },
+  { s: 105, d: 11.5, f: sceneSummary },
+];
+const XF = 0.35; // クロスフェード秒
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.accent, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
