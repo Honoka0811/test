@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Pacific War Battles</title>
+<style>html,body{margin:0;background:#0d0f13}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="assets/map.js"></script>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 太平洋戦争の激戦 一覧(9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。尺は timeline.js(narrate.py が生成)に従う
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0d0f13', sea: '#121821', land: '#2b313c', coast: '#3d4552', grid: '#1b2230',
+  panel: '#161a22', ink: '#f3f4f6', ink2: '#b7bcc7', ink3: '#7d8390',
+  jp: '#E8524F', us: '#3F8DE8', civ: '#C9A86A', accent: '#F5C451'
+};
+const FPS = 30;
+const TL = window.TIMELINE;
+const DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+
+// ---------- データ(概数・諸説あり) ----------
+const BATTLES = {
+  midway: { name: 'ミッドウェー海戦', date: '1942年6月5日〜7日', place: 'ミッドウェー島沖', lon: 182.6, lat: 28.2, label: 'ミッドウェー', zoom: 1.3,
+    stats: [{ who: '日本', what: '空母喪失', val: '4隻', c: 'jp' }, { who: '日本', what: '戦死', val: '約3,000人', c: 'jp' }, { who: '米国', what: '空母喪失', val: '1隻', c: 'us' }] },
+  guadalcanal: { name: 'ガダルカナル島の戦い', date: '1942年8月〜1943年2月', place: 'ソロモン諸島', lon: 160.0, lat: -9.5, label: 'ガダルカナル', zoom: 1.6,
+    stats: [{ who: '日本', what: '死者', val: '約2万人', c: 'jp' }, { who: '日本', what: 'うち餓死・病死', val: '約1.5万人', c: 'jp' }, { who: '米国', what: '戦死', val: '約7,000人', c: 'us' }] },
+  mariana: { name: 'マリアナ沖海戦', date: '1944年6月19日〜20日', place: 'マリアナ諸島西方', lon: 137.5, lat: 15.5, label: 'マリアナ沖',
+    stats: [{ who: '日本', what: '空母喪失', val: '3隻', c: 'jp' }, { who: '日本', what: '航空機喪失', val: '約400機', c: 'jp' }, { who: '米国', what: '航空機喪失', val: '約120機', c: 'us' }] },
+  saipan: { name: 'サイパン島の戦い', date: '1944年6月15日〜7月9日', place: 'マリアナ諸島', lon: 145.75, lat: 15.2, label: 'サイパン',
+    stats: [{ who: '日本', what: '戦死', val: '約3万人', c: 'jp' }, { who: '民間人', what: '死者', val: '約1万人', c: 'civ' }, { who: '米国', what: '戦死', val: '約3,400人', c: 'us' }] },
+  leyte: { name: 'レイテ沖海戦', date: '1944年10月23日〜26日', place: 'フィリピン周辺', lon: 125.4, lat: 11.0, label: 'レイテ沖',
+    stats: [{ who: '日本', what: '艦艇喪失', val: '約30隻', c: 'jp' }, { who: '日本', what: '戦死', val: '約1万人', c: 'jp' }, { who: '米国', what: '艦艇喪失', val: '6隻', c: 'us' }] },
+  iwojima: { name: '硫黄島の戦い', date: '1945年2月19日〜3月26日', place: '小笠原諸島', lon: 141.3, lat: 24.8, label: '硫黄島',
+    stats: [{ who: '日本', what: '戦死', val: '約2万人', c: 'jp' }, { who: '米国', what: '戦死', val: '約6,800人', c: 'us' }, { who: '米国', what: '死傷者', val: '約2.6万人', c: 'us' }] },
+  okinawa: { name: '沖縄戦', date: '1945年3月26日〜6月23日', place: '沖縄本島ほか', lon: 127.8, lat: 26.4, label: '沖縄',
+    stats: [{ who: '日本', what: '軍人・軍属', val: '約9.4万人', c: 'jp' }, { who: '沖縄', what: '一般住民', val: '約9.4万人', c: 'civ' }, { who: '米国', what: '戦死', val: '約1.25万人', c: 'us' }] },
+};
+const ORDER = ['midway', 'guadalcanal', 'mariana', 'saipan', 'leyte', 'iwojima', 'okinawa'];
+const GEO_LABELS = [
+  { s: '日本', lon: 138.6, lat: 37.6, size: 30 }, { s: '東京', lon: 139.7, lat: 35.7, size: 22, dot: true },
+  { s: 'フィリピン', lon: 121.3, lat: 16.8, size: 24 }, { s: 'ニューギニア', lon: 143.5, lat: -5.0, size: 24 },
+  { s: '太平洋', lon: 166, lat: 18, size: 44, ls: 18 },
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, shadow = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = shadow; }
+  ctx.fillText(str, x, y); ctx.restore();
+}
+function rrPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; rrPath(x, y, w, h, r); ctx.fill(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1, stroke = 0) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (stroke) { ctx.strokeStyle = color; ctx.lineWidth = stroke; ctx.stroke(); } else { ctx.fillStyle = color; ctx.fill(); }
+  ctx.restore();
+}
+function wrap(str, size, maxW) {
+  // 数字・英字の連続は1語として扱い、句読点や閉じ括弧は行頭に置かない。行の長さはなるべく揃える
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const toks = str.match(/[0-9A-Za-z.,\-]+(?:[万千][0-9A-Za-z.,\-]+)*[万千]?|./gu);
+  const NOHEAD = '、。」）,.';
+  const run = lim => {
+    const lines = []; let cur = '';
+    for (const tk of toks) {
+      if (cur && ctx.measureText(cur + tk).width > lim && !NOHEAD.includes(tk[0])) { lines.push(cur); cur = tk; }
+      else cur += tk;
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  const n = run(maxW).length;
+  let lim = ctx.measureText(str).width / n, lines = run(lim);
+  while (lines.length > n && lim < maxW) { lim += 8; lines = run(lim); }
+  ctx.restore(); return lines;
+}
+
+// ---------- 地図 ----------
+const VX = 40, VY = 196, VW = 1000, VH = 820;          // 地図の表示枠(キャンバス座標)
+const LAND_PATH = new Path2D();
+for (const r of LAND) { LAND_PATH.moveTo(r[0], r[1]); for (let i = 2; i < r.length; i += 2) LAND_PATH.lineTo(r[i], r[i + 1]); LAND_PATH.closePath(); }
+const mx = lon => (lon - MAP.lon0) * MAP.kx, my = lat => (MAP.lat1 - lat) * MAP.ky;
+
+function camFor(id) {
+  if (!BATTLES[id]) return { x: MAP.w / 2, y: MAP.h / 2 + 4, z: 1.0 };
+  const b = BATTLES[id];
+  return { x: mx(b.lon), y: my(b.lat), z: b.zoom || 1.85 };
+}
+function clampCam(c) {
+  const hw = VW / 2 / c.z, hh = VH / 2 / c.z;
+  return { x: clamp(c.x, hw, MAP.w - hw), y: clamp(c.y, hh, MAP.h - hh), z: c.z };
+}
+function camera(t) {
+  const { i, s, lt } = sceneAt(t);
+  const prev = clampCam(camFor(i > 0 ? TL.scenes[i - 1].id : 'title'));
+  const cur = clampCam(camFor(s.id));
+  const p = easeInOut(lt / 1.6);
+  // ズームは途中で少し引いてから寄る(移動が分かりやすいように)
+  const zMid = Math.min(prev.z, cur.z) * (prev.z > 1.2 && cur.z > 1.2 ? 0.78 : 1);
+  const z = p < .5 ? lerp(prev.z, zMid, easeInOut(p * 2)) : lerp(zMid, cur.z, easeInOut(p * 2 - 1));
+  // 最後のシーンはゆっくり全体へ
+  const drift = 1 + 0.025 * clamp(lt / s.dur);
+  return clampCam({ x: lerp(prev.x, cur.x, p), y: lerp(prev.y, cur.y, p), z: z * drift });
+}
+const toScreen = (cam, x, y) => [VX + VW / 2 + (x - cam.x) * cam.z, VY + VH / 2 + (y - cam.y) * cam.z];
+
+function drawMap(t, cam, curIdx, sceneLt) {
+  ctx.save();
+  rrPath(VX, VY, VW, VH, 26); ctx.clip();
+  ctx.fillStyle = C.sea; ctx.fillRect(VX, VY, VW, VH);
+  ctx.save();
+  ctx.translate(VX + VW / 2, VY + VH / 2); ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
+  // 経緯線
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1.5 / cam.z;
+  ctx.beginPath();
+  for (let lon = 120; lon <= 190; lon += 10) { ctx.moveTo(mx(lon), -200); ctx.lineTo(mx(lon), MAP.h + 200); }
+  for (let lat = -10; lat <= 40; lat += 10) { ctx.moveTo(-200, my(lat)); ctx.lineTo(MAP.w + 200, my(lat)); }
+  ctx.stroke();
+  ctx.setLineDash([10 / cam.z, 8 / cam.z]); ctx.strokeStyle = '#2a3446'; ctx.beginPath(); ctx.moveTo(-200, my(0)); ctx.lineTo(MAP.w + 200, my(0)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.land; ctx.fill(LAND_PATH);
+  ctx.strokeStyle = C.coast; ctx.lineWidth = 1.4 / cam.z; ctx.stroke(LAND_PATH);
+  ctx.restore();
+
+  // 地名
+  for (const g of GEO_LABELS) {
+    const [x, y] = toScreen(cam, mx(g.lon), my(g.lat));
+    if (g.dot) circle(x, y, 5, C.ink3, 0.9);
+    text(g.s, x + (g.dot ? 12 : 0), y + (g.dot ? 8 : 0), { size: g.size, color: g.size > 40 ? '#26303f' : C.ink3, align: g.dot ? 'left' : 'center', ls: g.ls || 0, weight: g.size > 40 ? 'bold' : 'normal' });
+  }
+
+  // 戦いの経路(時代順に結ぶ)
+  const pts = ORDER.map(id => toScreen(cam, mx(BATTLES[id].lon), my(BATTLES[id].lat)));
+  const upto = curIdx === 99 ? ORDER.length - 1 : curIdx;
+  if (upto >= 1) {
+    ctx.save(); ctx.strokeStyle = 'rgba(245,196,81,0.45)'; ctx.lineWidth = 3; ctx.setLineDash([12, 10]);
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let k = 1; k <= upto; k++) {
+      const f = k === upto && curIdx !== 99 ? easeOut((sceneLt - 0.2) / 1.4) : 1;
+      ctx.lineTo(lerp(pts[k - 1][0], pts[k][0], f), lerp(pts[k - 1][1], pts[k][1], f));
+    }
+    ctx.stroke(); ctx.restore();
+  }
+  // マーカー
+  ORDER.forEach((id, k) => {
+    const [x, y] = pts[k];
+    const isCur = k === curIdx;
+    let a;
+    if (curIdx === -1) a = easeOut((t - 1.2 - k * 0.22) / 0.5);        // タイトル: 順に点灯
+    else if (curIdx === 99) a = 1;                                    // まとめ: 全部
+    else a = k < curIdx ? 0.9 : isCur ? easeOut((sceneLt - 0.6) / 0.5) : 0;
+    if (a <= 0) return;
+    if (isCur) {
+      const ph = ((sceneLt - 0.6) % 1.6) / 1.6;
+      circle(x, y, 16 + 34 * ph, C.jp, a * (1 - ph) * 0.9, 4);
+      circle(x, y, 13, C.jp, a); circle(x, y, 5, '#fff', a);
+      const b = BATTLES[id];
+      const right = x < VX + VW - 260;
+      ctx.save(); ctx.font = `bold 40px ${FONT}`; const tw = ctx.measureText(b.label).width; ctx.restore();
+      const lx = right ? x + 30 : x - 30 - tw - 28, ly = y - 30;
+      rrect(lx, ly - 4, tw + 28, 58, 12, 'rgba(13,15,19,0.82)', a);
+      text(b.label, lx + 14, ly + 40, { size: 40, weight: 'bold', alpha: a });
+    } else {
+      circle(x, y, 9, curIdx === 99 || curIdx === -1 ? C.jp : '#a04a48', a);
+      circle(x, y, 3.5, '#fff', a * 0.9);
+      if (curIdx === 99) text(String(k + 1), x, y - 18, { size: 26, weight: 'bold', align: 'center', color: C.ink, alpha: a, shadow: 6 });
+    }
+  });
+  ctx.restore();
+  // 枠
+  ctx.save(); ctx.strokeStyle = '#232a36'; ctx.lineWidth = 2; rrPath(VX, VY, VW, VH, 26); ctx.stroke(); ctx.restore();
+  // 地図の下側を背景に溶かす
+  const g = ctx.createLinearGradient(0, VY + VH - 140, 0, VY + VH);
+  g.addColorStop(0, 'rgba(13,15,19,0)'); g.addColorStop(1, 'rgba(13,15,19,0.55)');
+  ctx.save(); rrPath(VX, VY, VW, VH, 26); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(VX, VY + VH - 140, VW, 140); ctx.restore();
+}
+
+// ---------- 画面要素 ----------
+function sceneAt(t) {
+  const S = TL.scenes;
+  let i = S.length - 1;
+  for (let k = 0; k < S.length; k++) if (t < S[k].start + S[k].dur) { i = k; break; }
+  return { i, s: S[i], lt: t - S[i].start };
+}
+function header(curIdx, alpha) {
+  text('太平洋戦争の激戦', 60, 128, { size: 46, weight: 'bold', color: C.accent, alpha, ls: 2 });
+  // 進捗(7つの区切り)
+  const x0 = 560, w = 60, gap = 9;
+  for (let k = 0; k < 7; k++) {
+    const on = curIdx === 99 || k <= curIdx;
+    rrect(x0 + k * (w + gap), 106, w, 12, 6, k === curIdx ? C.jp : on ? '#7a3533' : '#262c37', alpha);
+  }
+}
+function card(b, k, lt, dur) {
+  const a = easeOut((lt - 0.25) / 0.6) * (1 - easeOut((lt - dur + 0.35) / 0.35));
+  const dy = (1 - easeOut((lt - 0.25) / 0.7)) * 30;
+  const y0 = 1060 + dy;
+  text(String(k + 1).padStart(2, '0'), 60, y0 + 70, { size: 76, weight: 'bold', color: C.jp, alpha: a });
+  text('/ 07', 160, y0 + 70, { size: 34, color: C.ink3, alpha: a });
+  text(b.name, 60, y0 + 168, { size: b.name.length > 9 ? 80 : 88, weight: 'bold', alpha: a });
+  text(b.date + '  ・  ' + b.place, 62, y0 + 228, { size: 36, color: C.ink2, alpha: a });
+  // 数字カード 3枚
+  const cw = 312, ch = 132, gx = 22, cy = y0 + 258;
+  b.stats.forEach((s, j) => {
+    const aj = a * easeOut((lt - 0.7 - j * 0.18) / 0.5);
+    const x = 60 + j * (cw + gx);
+    rrect(x, cy, cw, ch, 16, C.panel, aj);
+    rrect(x, cy, 8, ch, 4, C[s.c], aj);
+    text(s.who + '  ' + s.what, x + 28, cy + 46, { size: 28, color: C.ink2, alpha: aj });
+    text(s.val, x + 28, cy + 108, { size: s.val.length > 6 ? 48 : 56, weight: 'bold', color: s.c === 'civ' ? C.civ : C.ink, alpha: aj });
+  });
+}
+function subtitle(t) {
+  for (const s of TL.scenes) {
+    const [a0, a1] = s.speech;
+    if (t < a0 - 0.15 || t > a1 + 0.5) continue;
+    const al = easeOut((t - a0 + 0.15) / 0.25) * (1 - easeOut((t - a1 - 0.25) / 0.25));
+    const lines = wrap(s.sub, 40, 920);
+    const lh = 56, h = lines.length * lh + 34, y = 1468;
+    rrect(60, y, W - 120, h, 18, 'rgba(22,26,34,0.92)', al);
+    lines.forEach((ln, i) => text(ln, W / 2, y + 56 + i * lh, { size: 40, weight: 'bold', align: 'center', alpha: al }));
+  }
+}
+function footnote(alpha) { text('※数値は概数(資料により諸説あり)', W - 40, 168, { size: 24, color: C.ink3, align: 'right', alpha }); }
+
+function titleOverlay(lt, dur) {
+  const a = 1 - easeOut((lt - dur + 0.5) / 0.5);
+  text('太平洋戦争', W / 2, 1200, { size: 132, weight: 'bold', align: 'center', alpha: a * easeOut(lt / 0.8), ls: 10, shadow: 20 });
+  text('激戦の一覧', W / 2, 1335, { size: 100, weight: 'bold', align: 'center', color: C.jp, alpha: a * easeOut((lt - 0.3) / 0.8), ls: 6 });
+  text('1942 – 1945  主要7つの戦い', W / 2, 1420, { size: 44, color: C.accent, align: 'center', alpha: a * easeOut((lt - 0.7) / 0.8) });
+}
+function endOverlay(lt, dur) {
+  const a = easeOut((lt - 0.2) / 0.8);
+  text('7つの激戦', 60, 1120, { size: 54, weight: 'bold', alpha: a });
+  ORDER.forEach((id, k) => {
+    const col = k < 4 ? 0 : 1, row = k < 4 ? k : k - 4;
+    const ak = a * easeOut((lt - 0.4 - k * 0.12) / 0.5);
+    const x = 60 + col * 490, y = 1186 + row * 62;
+    text(String(k + 1), x, y, { size: 34, weight: 'bold', color: C.jp, alpha: ak });
+    text(BATTLES[id].name, x + 40, y, { size: 34, alpha: ak });
+    text(BATTLES[id].date.slice(0, 4), x + 440, y, { size: 26, color: C.ink3, align: 'right', alpha: ak });
+  });
+  const ac = easeOut((lt - 3.6) / 0.8);
+  text('ナレーション: VOICEVOX:青山龍星', W / 2, 1746, { size: 26, color: C.ink3, align: 'center', alpha: ac });
+  text('BGM: J.S.バッハ「G線上のアリア」BWV1068(楽譜: Mutopia Project / PD)', W / 2, 1786, { size: 24, color: C.ink3, align: 'center', alpha: ac });
+  text('地図: Natural Earth', W / 2, 1824, { size: 24, color: C.ink3, align: 'center', alpha: ac });
+}
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const { i, s, lt } = sceneAt(t);
+  const curIdx = s.id === 'title' ? -1 : s.id === 'end' ? 99 : ORDER.indexOf(s.id);
+  const cam = camera(t);
+  drawMap(t, cam, curIdx, lt);
+  header(curIdx, 1);
+  if (s.id === 'title') titleOverlay(lt, s.dur);
+  else if (s.id === 'end') endOverlay(lt, s.dur);
+  else card(BATTLES[s.id], curIdx, lt, s.dur);
+  subtitle(t);
+  if (s.id !== 'title') footnote(s.id === 'end' ? 1 - easeOut((lt - 3.2) / 0.4) : 1);
+  // 全体のフェードイン/アウト
+  const fade = Math.min(easeOut(t / 0.6), 1 - easeOut((t - DURATION + 1.2) / 1.2));
+  if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
