@@ -1,0 +1,9 @@
+{
+  "name": "sr71-blackbird-short",
+  "private": true,
+  "description": "SR-71 ブラックバード ミリタリー解説ショート動画の生成スクリプト",
+  "dependencies": {
+    "@fontsource/dela-gothic-one": "^5.0.0",
+    "@fontsource/noto-sans-jp": "^5.0.0"
+  }
+}

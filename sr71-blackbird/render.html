@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>SR-71 Blackbird Short</title>
+<link rel="stylesheet" href="node_modules/@fontsource/dela-gothic-one/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<style>html,body{margin:0;background:#05070b}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------------
+// SR-71 ブラックバード ミリタリー解説ショート (1080x1920 / 30fps)
+// window.init(timeline) の後、window.render(t) が時刻 t のフレームを決定論的に描く
+// ------------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const DISP = '"Dela Gothic One", "Noto Sans JP", sans-serif';
+const SANS = '"Noto Sans JP", sans-serif';
+const C = {
+  bg: '#05070b', ink: '#ffffff', ink2: '#c9d1dc', ink3: '#7f8a99',
+  yellow: '#FFD400', red: '#FF3B3B', cyan: '#39E6FF', green: '#3BFF8F', orange: '#FF8A1F',
+};
+let TL = null, SC = {}, CHUNKS = [], IMPACTS = [], DURATION = 0;
+
+// ---------- 汎用 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const eOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const eIn = t => Math.pow(clamp(t), 3);
+const eIO = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const eBack = t => { t = clamp(t); const c = 2.2; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+function font(size, w = 900, fam = SANS) { return `${w} ${size}px ${fam}`; }
+function txt(s, x, y, o = {}) {
+  const { size = 60, w = 900, fam = SANS, color = C.ink, align = 'center', base = 'middle', alpha = 1,
+          stroke = 0, strokeColor = '#000', ls = 0, shadow = 0, shadowColor = 'rgba(0,0,0,.8)' } = o;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = font(size, w, fam); ctx.textAlign = align; ctx.textBaseline = base;
+  ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = shadowColor; ctx.shadowBlur = shadow; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); ctx.shadowBlur = 0; }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function inScene(t, id) { const s = SC[id]; return t >= s.start - 0.001 && t < s.end; }
+function local(t, id) { return t - SC[id].start; }
+function chunkT(id, i) { return SC[id].chunks[i].start - SC[id].start; }
+
+// ---------- SR-71(上面図・機首が +x 方向。長さ L) ----------
+const BODY = [[0.5, 0], [0.36, 0.012], [0.22, 0.028], [0.1, 0.048], [0.0, 0.075], [-0.12, 0.115], [-0.42, 0.12], [-0.5, 0.035], [-0.5, 0]];
+const OUTER = [[-0.1, 0.14], [-0.355, 0.268], [-0.425, 0.268], [-0.44, 0.15]];
+function halfPoly(pts, L) {
+  ctx.moveTo(pts[0][0] * L, pts[0][1] * L);
+  for (const p of pts) ctx.lineTo(p[0] * L, p[1] * L);
+  for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i][0] * L, -pts[i][1] * L);
+  ctx.closePath();
+}
+function planePath(L) {
+  ctx.beginPath();
+  halfPoly(BODY, L);
+  for (const s of [1, -1]) {
+    // ナセル(エンジン)+ 前方のスパイク
+    const y = 0.125 * s * L, r = 0.026 * L;
+    ctx.moveTo(0.13 * L, y);
+    ctx.lineTo(0.06 * L, y - r); ctx.lineTo(-0.46 * L, y - r); ctx.lineTo(-0.47 * L, y);
+    ctx.lineTo(-0.46 * L, y + r); ctx.lineTo(0.06 * L, y + r); ctx.closePath();
+    // 外翼
+    ctx.moveTo(OUTER[0][0] * L, OUTER[0][1] * L * s);
+    for (const p of OUTER) ctx.lineTo(p[0] * L, p[1] * L * s);
+    ctx.closePath();
+  }
+}
+function drawSR71(x, y, L, ang, o = {}) {
+  const { alpha = 1, mode = 'metal', burner = 0, t = 0, rim = C.cyan } = o;
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(ang); ctx.globalAlpha *= alpha;
+  // アフターバーナー(ショックダイヤモンド)
+  if (burner > 0) {
+    for (const s of [1, -1]) {
+      const yy = 0.125 * s * L, len = L * (0.32 + 0.05 * Math.sin(t * 40 + s)) * burner;
+      const g = ctx.createLinearGradient(-0.47 * L, 0, -0.47 * L - len, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(0.15, 'rgba(120,200,255,0.9)');
+      g.addColorStop(0.5, 'rgba(255,140,40,0.55)'); g.addColorStop(1, 'rgba(255,80,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(-0.46 * L, yy - 0.022 * L);
+      ctx.quadraticCurveTo(-0.47 * L - len * 0.5, yy - 0.03 * L, -0.47 * L - len, yy);
+      ctx.quadraticCurveTo(-0.47 * L - len * 0.5, yy + 0.03 * L, -0.46 * L, yy + 0.022 * L); ctx.fill();
+      for (let k = 1; k <= 4; k++) {
+        ctx.fillStyle = `rgba(255,255,255,${0.55 / k})`;
+        ctx.beginPath(); ctx.ellipse(-0.47 * L - len * k * 0.17, yy, 0.012 * L, 0.014 * L, 0, 0, 7); ctx.fill();
+      }
+    }
+  }
+  planePath(L);
+  if (mode === 'heat') {
+    const g = ctx.createLinearGradient(0.5 * L, 0, -0.5 * L, 0);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.08, '#fff27a'); g.addColorStop(0.3, '#ff9a1f');
+    g.addColorStop(0.6, '#e8352e'); g.addColorStop(0.85, '#8a1fa8'); g.addColorStop(1, '#ffd36a');
+    ctx.fillStyle = g; ctx.shadowColor = 'rgba(255,120,30,0.9)'; ctx.shadowBlur = 50; ctx.fill('nonzero');
+  } else {
+    const g = ctx.createLinearGradient(0, -0.27 * L, 0, 0.27 * L);
+    g.addColorStop(0, '#3a414c'); g.addColorStop(0.45, '#16191f'); g.addColorStop(1, '#07080a');
+    ctx.fillStyle = g; ctx.shadowColor = 'rgba(57,230,255,0.35)'; ctx.shadowBlur = 40; ctx.fill('nonzero');
+    ctx.shadowBlur = 0; ctx.lineWidth = Math.max(1.5, L * 0.004); ctx.strokeStyle = rim; ctx.globalAlpha *= 0.85; ctx.stroke();
+    // コクピット
+    ctx.globalAlpha = alpha * 0.9; ctx.fillStyle = '#2b5a73';
+    ctx.beginPath(); ctx.ellipse(0.3 * L, 0, 0.04 * L, 0.009 * L, 0, 0, 7); ctx.fill();
+  }
+  // 垂直尾翼(内側に傾いた2枚)
+  ctx.globalAlpha = alpha; ctx.strokeStyle = mode === 'heat' ? '#ffcc66' : '#5b6675'; ctx.lineWidth = L * 0.008;
+  for (const s of [1, -1]) {
+    ctx.beginPath(); ctx.moveTo(-0.33 * L, 0.115 * s * L); ctx.lineTo(-0.47 * L, 0.1 * s * L); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawMissile(x, y, L, ang, o = {}) {
+  const { alpha = 1, flame = 1, t = 0 } = o;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.globalAlpha *= alpha;
+  if (flame) {
+    const g = ctx.createLinearGradient(-L / 2, 0, -L / 2 - L * 0.7, 0);
+    g.addColorStop(0, 'rgba(255,255,220,1)'); g.addColorStop(0.3, 'rgba(255,160,40,.9)'); g.addColorStop(1, 'rgba(255,60,0,0)');
+    ctx.fillStyle = g; const fl = L * (0.6 + 0.15 * Math.sin(t * 50));
+    ctx.beginPath(); ctx.moveTo(-L / 2, -L * 0.05); ctx.lineTo(-L / 2 - fl, 0); ctx.lineTo(-L / 2, L * 0.05); ctx.fill();
+  }
+  ctx.fillStyle = '#e9edf2';
+  ctx.beginPath(); ctx.moveTo(L / 2, 0); ctx.lineTo(L * 0.36, -L * 0.045); ctx.lineTo(-L / 2, -L * 0.045);
+  ctx.lineTo(-L / 2, L * 0.045); ctx.lineTo(L * 0.36, L * 0.045); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = C.red;
+  for (const s of [1, -1]) { ctx.beginPath(); ctx.moveTo(-L * 0.3, s * L * 0.04); ctx.lineTo(-L * 0.5, s * L * 0.16); ctx.lineTo(-L * 0.5, s * L * 0.04); ctx.fill(); }
+  ctx.fillRect(L * 0.3, -L * 0.046, L * 0.05, L * 0.092);
+  ctx.restore();
+}
+
+// ---------- 背景・共通エフェクト ----------
+const GRAIN = [];
+function makeGrain() {
+  for (let k = 0; k < 6; k++) {
+    const g = document.createElement('canvas'); g.width = 270; g.height = 480;
+    const gx = g.getContext('2d'), im = gx.createImageData(270, 480);
+    for (let i = 0; i < im.data.length; i += 4) {
+      const v = hash(i * 0.37 + k * 999.1) * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 22;
+    }
+    gx.putImageData(im, 0, 0); GRAIN.push(g);
+  }
+}
+function bgGrid(t, color = 'rgba(57,230,255,0.07)', speed = 0) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2;
+  const off = (t * speed) % 90;
+  for (let x = 0; x <= W; x += 90) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = -90 + off; y <= H; y += 90) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.restore();
+}
+function speedLines(t, n, dir, alpha, color = '255,255,255') {
+  // dir: 'down'(縦に流れる) / 'left'(横に流れる)
+  ctx.save();
+  for (let i = 0; i < n; i++) {
+    const r = hash(i + 0.5), len = 120 + 380 * hash(i * 3.1), sp = 2600 + 2200 * hash(i * 7.7);
+    ctx.strokeStyle = `rgba(${color},${alpha * (0.25 + 0.6 * hash(i * 5.3))})`; ctx.lineWidth = 2 + 3 * hash(i * 2.2);
+    ctx.beginPath();
+    if (dir === 'down') { const x = r * W, y = ((t * sp + hash(i * 9.9) * 3000) % (H + len)) - len; ctx.moveTo(x, y); ctx.lineTo(x, y + len); }
+    else { const y = r * H, x = W - (((t * sp + hash(i * 9.9) * 3000) % (W + len))); ctx.moveTo(x, y); ctx.lineTo(x + len, y); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function vignette(a = 0.75) {
+  const g = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.25, W / 2, H * 0.45, H * 0.75);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function scanlines() {
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 2);
+  ctx.restore();
+}
+function shakeAt(t) {
+  let a = 0;
+  for (const [ti, amp] of IMPACTS) if (t >= ti) a += amp * Math.exp(-(t - ti) / 0.12);
+  return a;
+}
+function flashAt(t) {
+  let a = 0;
+  for (const [ti, amp] of IMPACTS) if (t >= ti && ti > 0) a = Math.max(a, (amp / 40) * Math.exp(-(t - ti) / 0.07));  // 1フレーム目は白飛びさせない
+  return clamp(a, 0, 0.85);
+}
+function punchAt(t) {
+  let s = 0;
+  for (const [ti, amp] of IMPACTS) if (t >= ti) s += (amp / 40) * 0.07 * Math.exp(-(t - ti) / 0.18);
+  return 1 + s;
+}
+
+// ---------- 字幕 ----------
+function captionLines(s) {
+  if (s.includes('|')) return s.split('|');
+  ctx.font = font(96);
+  if (ctx.measureText(s).width <= 940 || s.length < 9) return [s];
+  // 長い1行は中央付近の助詞の後ろで割る
+  const mid = s.length / 2; let best = Math.round(mid), bd = 99;
+  for (let i = 3; i < s.length - 2; i++) if ('はをがでのにらとも'.includes(s[i - 1]) && Math.abs(i - mid) < bd) { bd = Math.abs(i - mid); best = i; }
+  return [s.slice(0, best), s.slice(best)];
+}
+function drawCaption(t) {
+  let cur = null, idx = -1;
+  for (let i = 0; i < CHUNKS.length; i++) if (t >= (i ? CHUNKS[i].start - 0.06 : 0)) { cur = CHUNKS[i]; idx = i; }
+  if (!cur || cur.hidden) return;
+  const next = CHUNKS[idx + 1];
+  if (next && t >= next.start - 0.06) return;
+  if (cur.sid === 'ending' && cur.ci === 2) return;    // CTA は専用レイアウト
+  const u = idx ? t - (cur.start - 0.06) : t + 1;  // 冒頭の字幕は1フレーム目から表示
+  const sc = lerp(1.22, 1, eBack(u / 0.16));
+  const lines = captionLines(cur.text);
+  let size = 98;
+  ctx.font = font(size);
+  const maxw = Math.max(...lines.map(l => ctx.measureText(l).width));
+  if (maxw > 960) size = Math.floor(size * 960 / maxw);
+  const y0 = 1270 - (lines.length - 1) * size * 0.62;
+  ctx.save();
+  ctx.translate(W / 2, 1270); ctx.scale(sc, sc); ctx.translate(-W / 2, -1270);
+  ctx.globalAlpha = clamp(u / 0.08);
+  lines.forEach((ln, li) => {
+    const y = y0 + li * size * 1.24;
+    ctx.font = font(size);
+    // ハイライト区間で分割して左から描く
+    const hl = cur.hl, k = ln.indexOf(hl);
+    const parts = k >= 0 ? [[ln.slice(0, k), C.ink], [hl, C.yellow], [ln.slice(k + hl.length), C.ink]] : [[ln, C.ink]];
+    const total = ctx.measureText(ln).width;
+    let x = W / 2 - total / 2;
+    for (const [p, col] of parts) {
+      if (!p) continue;
+      txt(p, x, y, { size, align: 'left', stroke: 22, color: col, shadow: 24 });
+      x += ctx.measureText(p).width;
+    }
+  });
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneHook(t) {
+  const u = local(t, 'hook'), D = SC.hook.end - SC.hook.start;
+  ctx.fillStyle = '#020806'; ctx.fillRect(0, 0, W, H);
+  bgGrid(t, 'rgba(59,255,143,0.06)');
+  const cx = 540, cy = 720, R = 400;
+  // レーダースコープ
+  ctx.save();
+  ctx.strokeStyle = 'rgba(59,255,143,0.45)'; ctx.lineWidth = 3;
+  for (let k = 1; k <= 4; k++) { ctx.beginPath(); ctx.arc(cx, cy, R * k / 4, 0, 7); ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+  const sw = u * 2.4;
+  for (let k = 0; k < 30; k++) {
+    ctx.fillStyle = `rgba(59,255,143,${0.18 * (1 - k / 30)})`;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, sw - (k + 1) * 0.03, sw - k * 0.03); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  // 中央の機体
+  drawSR71(cx, cy, 190, -Math.PI / 2, { rim: C.green });
+  // 迫ってくるミサイル(中心に届く直前で外れて流れていく)
+  const nM = 14;
+  for (let i = 0; i < nM; i++) {
+    const t0 = 0.15 + i * 0.3; if (u < t0) continue;
+    const p = (u - t0) / 1.25; if (p > 1.3) continue;
+    const a0 = hash(i * 4.4) * Math.PI * 2;
+    const r = R * 1.05 * (1 - eOut(Math.min(p, 1)) * 0.82);
+    const miss = Math.max(0, p - 0.8) * 3;              // 外れて逸れる
+    const a = a0 + miss * 0.9;
+    const x = cx + Math.cos(a) * (r + miss * 220), y = cy + Math.sin(a) * (r + miss * 220);
+    ctx.fillStyle = C.red; ctx.shadowColor = C.red; ctx.shadowBlur = 20;
+    ctx.globalAlpha = clamp(1.3 - p);
+    ctx.beginPath(); ctx.arc(x, y, 11, 0, 7); ctx.fill();
+    ctx.shadowBlur = 0;
+    if (p > 0.85) txt('MISS', x, y - 34, { size: 30, fam: DISP, w: 400, color: C.red, alpha: clamp((p - 0.85) * 4) * clamp(1.3 - p) });
+    ctx.globalAlpha = 1;
+  }
+  // カウンター
+  const n = 4000 * eOut(seg(u, 0.05, 2.0));
+  txt('発射されたミサイル', 540, 200, { size: 54, color: C.ink2, stroke: 10 });
+  const pop = u > 2.05 ? lerp(1.25, 1, eBack((u - 2.05) / 0.2)) : 1;
+  ctx.save(); ctx.translate(540, 330); ctx.scale(pop, pop);
+  txt(fmt(n) + (u > 2.05 ? '+' : ''), 0, 0, { size: 190, fam: DISP, w: 400, color: u > 2.05 ? C.red : C.ink, stroke: 14, shadow: 40, shadowColor: 'rgba(255,59,59,.8)' });
+  ctx.restore();
+  // 警報バナー
+  const c2 = chunkT('hook', 1);
+  if (u > c2 && Math.floor(u * 6) % 2 === 0 && u < D - 0.6) {
+    ctx.fillStyle = 'rgba(255,40,40,0.85)'; ctx.fillRect(0, 1060, W, 92);
+    txt('⚠ WARNING  MISSILE LOCK ⚠', 540, 1108, { size: 52, fam: DISP, w: 400, ls: 4 });
+  }
+  // 命中 0 スタンプ
+  const st = c2 + 1.15;
+  if (u > st) {
+    const p = eBack((u - st) / 0.18);
+    ctx.save(); ctx.translate(800, 960); ctx.rotate(-0.18); ctx.scale(lerp(2.4, 1, p), lerp(2.4, 1, p));
+    ctx.globalAlpha = clamp((u - st) / 0.1);
+    ctx.strokeStyle = C.yellow; ctx.lineWidth = 10; rrect(-170, -80, 340, 160, 18); ctx.stroke();
+    txt('命中 0', 0, 6, { size: 96, fam: DISP, w: 400, color: C.yellow });
+    ctx.restore();
+  }
+  scanlines();
+}
+
+function sceneReveal(t) {
+  const u = local(t, 'reveal');
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0b1626'); g.addColorStop(0.55, '#05070b'); g.addColorStop(1, '#020305');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  bgGrid(t, 'rgba(57,230,255,0.05)');
+  speedLines(t, 60, 'left', 0.55);
+  // 機体が右下から滑り込む(モーションブラー)
+  const p = eOut(seg(u, 0, 0.9));
+  const x = lerp(1500, 600, p) + Math.sin(u * 1.3) * 10, y = lerp(1300, 800, p) + Math.sin(u * 2.1) * 8;
+  for (let k = 5; k >= 1; k--) drawSR71(x + k * 60 * (1 - p), y + k * 40 * (1 - p), 820, -0.55, { alpha: 0.12 * (1 - p) });
+  drawSR71(x, y, 820, -0.55, { burner: 1, t });
+  // タイトル(RGB ずれのグリッチ → 定着)
+  const tp = seg(u, 0.35, 0.5);
+  if (u > 0.35) {
+    const gl = (1 - tp) * 24 + (Math.floor(u * 10) % 7 === 0 ? 8 : 0);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    txt('SR-71', 540 - gl, 290, { size: 230, fam: DISP, w: 400, color: 'rgba(255,40,60,.9)' });
+    txt('SR-71', 540 + gl, 290, { size: 230, fam: DISP, w: 400, color: 'rgba(40,220,255,.9)' });
+    ctx.restore();
+    txt('SR-71', 540, 290, { size: 230, fam: DISP, w: 400, color: '#fff', alpha: tp, shadow: 40, shadowColor: 'rgba(57,230,255,.7)' });
+    txt('B L A C K B I R D', 540, 445, { size: 64, fam: DISP, w: 400, color: C.cyan, alpha: seg(u, 0.6, 0.4), ls: 6 });
+  }
+  // スペックのチップ
+  const c2 = chunkT('reveal', 1);
+  const chips = [['アメリカ空軍', C.cyan], ['戦略偵察機', C.yellow], ['1966–1998', C.ink2]];
+  chips.forEach(([s, col], i) => {
+    const q = eBack(seg(u, c2 - 0.15 + i * 0.12, 0.25)); if (q <= 0) return;
+    const yy = 1500 + i * 0; const xx = [215, 540, 865][i];
+    ctx.save(); ctx.translate(xx, lerp(yy + 60, yy, q) - 0); ctx.globalAlpha = clamp(q);
+    ctx.fillStyle = 'rgba(10,16,26,.85)'; rrect(-150, -46, 300, 92, 46); ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.stroke();
+    txt(s, 0, 2, { size: 40, color: col });
+    ctx.restore();
+  });
+}
+
+function sceneEscape(t) {
+  const u = local(t, 'escape'), D = SC.escape.end - SC.escape.start;
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0d2140'); g.addColorStop(1, '#1d4a7a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 雲
+  for (let i = 0; i < 9; i++) {
+    const y = ((u * (900 + 500 * hash(i)) + hash(i * 3) * 2000) % 2400) - 300, x = hash(i * 7) * W;
+    ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.beginPath(); ctx.ellipse(x, y, 260, 70, 0, 0, 7); ctx.fill();
+  }
+  speedLines(t, 50, 'down', 0.5);
+  // 機体は上で逃げ、ミサイルは下から追うが差が開いていく
+  const px = 540 + Math.sin(u * 3) * 20, py = 420;
+  drawSR71(px, py, 520, -Math.PI / 2, { burner: 1, t });
+  const gap = lerp(560, 1350, eIn(seg(u, 0.4, D - 0.4)));
+  const mx = 540 + Math.sin(u * 4 + 1) * 40, my = py + gap;
+  // 煙の帯
+  ctx.save();
+  for (let k = 0; k < 26; k++) {
+    const yy = my + 60 + k * 34, r = 16 + k * 3.2;
+    ctx.fillStyle = `rgba(230,235,240,${0.32 * (1 - k / 26)})`;
+    ctx.beginPath(); ctx.arc(mx + Math.sin(k * 0.8 + u * 5) * 10, yy, r, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  drawMissile(mx, my, 150, -Math.PI / 2, { t });
+  // 距離の矢印
+  const ay1 = py + 300, ay2 = my - 110;
+  if (ay2 - ay1 > 80) {
+    ctx.save(); ctx.strokeStyle = C.yellow; ctx.lineWidth = 6; ctx.setLineDash([18, 14]);
+    ctx.beginPath(); ctx.moveTo(880, ay1); ctx.lineTo(880, ay2); ctx.stroke(); ctx.restore();
+    txt('差が開く', 880, (ay1 + ay2) / 2, { size: 50, color: C.yellow, stroke: 10 });
+  }
+  txt('MACH 3+', 540, 170, { size: 120, fam: DISP, w: 400, color: C.ink, stroke: 12, alpha: seg(u, 0.1, 0.3), shadow: 30 });
+  txt('ミサイル', mx - 170, my + 10, { size: 40, color: C.red, stroke: 9, alpha: clamp(1 - (my - 1500) / 300) });
+}
+
+function sceneSpeed(t) {
+  const u = local(t, 'speed'), c2 = chunkT('speed', 1);
+  ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, W, H);
+  bgGrid(t, 'rgba(57,230,255,0.06)', 300);
+  speedLines(t, 40, 'left', 0.35, '57,230,255');
+  if (u < c2 - 0.05) {
+    // スピードメーター
+    const cx = 540, cy = 760, R = 380, a0 = Math.PI * 0.8, a1 = Math.PI * 2.2;
+    const m = 3.3 * eOut(seg(u, 0.1, 1.4)) + (u > 1.5 ? Math.sin(u * 30) * 0.01 : 0);
+    ctx.save(); ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 46; ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.stroke();
+    const ga = ctx.createLinearGradient(cx - R, 0, cx + R, 0);
+    ga.addColorStop(0, C.cyan); ga.addColorStop(0.6, C.yellow); ga.addColorStop(1, C.red);
+    ctx.strokeStyle = ga; ctx.shadowColor = C.orange; ctx.shadowBlur = 30;
+    ctx.beginPath(); ctx.arc(cx, cy, R, a0, lerp(a0, a1, m / 3.5)); ctx.stroke();
+    ctx.shadowBlur = 0;
+    for (let k = 0; k <= 7; k++) {
+      const a = lerp(a0, a1, k / 7);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * (R - 50), cy + Math.sin(a) * (R - 50)); ctx.lineTo(cx + Math.cos(a) * (R - 80), cy + Math.sin(a) * (R - 80)); ctx.stroke();
+      if (k % 2 === 0) txt(String(k / 2), cx + Math.cos(a) * (R - 125), cy + Math.sin(a) * (R - 125), { size: 44, fam: DISP, w: 400, color: C.ink2 });
+    }
+    const na = lerp(a0, a1, m / 3.5);
+    ctx.strokeStyle = C.red; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(na) * (R - 40), cy + Math.sin(na) * (R - 40)); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, 20, 0, 7); ctx.fill();
+    ctx.restore();
+    txt('MACH', 540, 860, { size: 54, fam: DISP, w: 400, color: C.ink3, ls: 8 });
+    txt(m.toFixed(1), 540, 980, { size: 170, fam: DISP, w: 400, color: m > 3.2 ? C.yellow : C.ink, shadow: 30 });
+    txt('時速 約 ' + fmt(3500 * m / 3.3) + ' km', 540, 260, { size: 70, color: C.ink, stroke: 12, alpha: seg(u, 0.2, 0.3) });
+  } else {
+    // 東京 → 大阪 7分
+    const v = u - c2;
+    txt('東京 → 大阪(約400km)', 540, 230, { size: 62, color: C.ink, stroke: 10 });
+    const x1 = 180, x2 = 900, y = 520;
+    ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 6; ctx.setLineDash([20, 16]);
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke(); ctx.restore();
+    for (const [x, s] of [[x2, '東京'], [x1, '大阪']]) {
+      ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.arc(x, y, 22, 0, 7); ctx.fill();
+      txt(s, x, y + 80, { size: 54, color: C.ink, stroke: 10 });
+    }
+    const p = eIO(seg(v, 0.1, 1.5));
+    drawSR71(lerp(x2, x1, p), y - 110, 300, Math.PI, { burner: 1, t });
+    const mins = 7 * p;
+    txt(`${String(Math.floor(mins)).padStart(2, '0')}:${String(Math.floor((mins % 1) * 60)).padStart(2, '0')}`, 540, 730, { size: 150, fam: DISP, w: 400, color: p >= 1 ? C.yellow : C.ink, shadow: 30 });
+    // 比較バー
+    const bars = [['新幹線のぞみ', '約2時間半', 1, C.ink3], ['SR-71', '約7分', 7 / 150, C.yellow]];
+    bars.forEach(([lab, val, r, col], i) => {
+      const q = eOut(seg(v, 0.2 + i * 0.25, 0.6)), yy = 860 + i * 115;
+      txt(lab, 90, yy, { size: 40, color: col, align: 'left' });
+      ctx.fillStyle = col; rrect(90, yy + 30, Math.max(14, 620 * r * q), 34, 17); ctx.fill();
+      txt(val, 90 + Math.max(14, 620 * r * q) + 20, yy + 47, { size: 38, color: col, align: 'left', alpha: q });
+    });
+  }
+}
+
+function sceneAltitude(t) {
+  const u = local(t, 'altitude'), D = SC.altitude.end - SC.altitude.start;
+  const p = eIO(seg(u, 0.05, D * 0.7));
+  const alt = 26000 * p;
+  // 空の色: 青 → 群青 → 黒(星)
+  const k = alt / 26000;
+  const top = `rgb(${lerp(70, 2, k)},${lerp(140, 4, k)},${lerp(220, 14, k)})`;
+  const bot = `rgb(${lerp(170, 10, k)},${lerp(210, 20, k)},${lerp(250, 50, k)})`;
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, top); g.addColorStop(1, bot);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 120; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${clamp((k - 0.55) * 2.2) * (0.4 + 0.6 * hash(i * 2))})`;
+    ctx.fillRect(hash(i) * W, hash(i * 5) * H * 0.75, 3, 3);
+  }
+  // 地球の丸み
+  ctx.save(); ctx.fillStyle = 'rgba(80,140,220,0.25)'; ctx.globalAlpha = k;
+  ctx.beginPath(); ctx.ellipse(540, H + 2600 - 300 * k, 3200, 2800, 0, 0, 7); ctx.fill(); ctx.restore();
+  // 高度スケール(1m = s px, カメラは機体を追う)
+  const s = 0.06, camY = 760, base = camY + alt * s;
+  const marks = [[3776, '富士山 3,776m'], [8849, 'エベレスト 8,849m'], [11000, '旅客機 約1万m'], [26000, 'SR-71 約2万6000m']];
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(150, 0); ctx.lineTo(150, H); ctx.stroke();
+  for (let a = 0; a <= 30000; a += 1000) {
+    const y = base - a * s; if (y < -20 || y > H + 20) continue;
+    ctx.beginPath(); ctx.moveTo(150, y); ctx.lineTo(a % 5000 ? 175 : 200, y); ctx.stroke();
+    if (a % 5000 === 0) txt(`${a / 1000}km`, 130, y, { size: 30, color: C.ink2, align: 'right', w: 700 });
+  }
+  ctx.restore();
+  for (const [a, lab] of marks) {
+    const y = base - a * s; if (y < -40 || y > H + 40) continue;
+    const isSR = a === 26000;
+    ctx.save(); ctx.strokeStyle = isSR ? C.yellow : 'rgba(255,255,255,.75)'; ctx.lineWidth = 4; ctx.setLineDash([14, 10]);
+    ctx.beginPath(); ctx.moveTo(150, y); ctx.lineTo(1000, y); ctx.stroke(); ctx.restore();
+    txt(lab, 990, y - 34, { size: isSR ? 50 : 42, color: isSR ? C.yellow : C.ink, align: 'right', stroke: 10 });
+    if (a === 3776) { ctx.fillStyle = 'rgba(240,245,255,.9)'; ctx.beginPath(); ctx.moveTo(300, y); ctx.lineTo(220, y + 120); ctx.lineTo(380, y + 120); ctx.fill(); }
+    if (a === 11000) { ctx.save(); ctx.translate(560, y + 40); ctx.fillStyle = '#e8edf3'; ctx.fillRect(-90, -10, 180, 20); ctx.fillRect(-20, -60, 30, 120); ctx.fillRect(-90, -30, 18, 60); ctx.restore(); }
+  }
+  drawSR71(330, camY + 20, 330, -Math.PI / 2 + 0.05 * Math.sin(u * 2), { burner: 0.6, t });
+  // 高度カウンター
+  txt('高度', 540, 170, { size: 50, color: C.ink2, stroke: 8 });
+  txt(fmt(alt) + ' m', 540, 280, { size: 150, fam: DISP, w: 400, color: p >= 1 ? C.yellow : C.ink, stroke: 12, shadow: 30 });
+}
+
+function sceneHeat(t) {
+  const u = local(t, 'heat'), c2 = chunkT('heat', 1), c3 = chunkT('heat', 2);
+  if (u < c2) {
+    // サーマルカメラ風
+    ctx.fillStyle = '#12002a'; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 6; i++) {
+      const g = ctx.createRadialGradient(hash(i) * W, hash(i * 3) * H, 0, hash(i) * W, hash(i * 3) * H, 600);
+      g.addColorStop(0, 'rgba(60,0,120,.6)'); g.addColorStop(1, 'rgba(60,0,120,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    }
+    const p = eOut(seg(u, 0.05, 1.3));
+    drawSR71(540, 720, 860 * lerp(0.9, 1, p), -Math.PI / 2, { mode: 'heat', alpha: lerp(0.4, 1, p) });
+    const temp = 300 * p;
+    txt(fmt(temp) + '℃' + (p >= 1 ? '+' : ''), 540, 250, { size: 180, fam: DISP, w: 400, color: p >= 1 ? '#fff27a' : '#fff', stroke: 14, shadow: 50, shadowColor: 'rgba(255,120,30,.9)' });
+    // カラースケール
+    const g = ctx.createLinearGradient(0, 1090, 0, 410);
+    g.addColorStop(0, '#2a0050'); g.addColorStop(0.4, '#e8352e'); g.addColorStop(0.75, '#ff9a1f'); g.addColorStop(1, '#ffffff');
+    ctx.fillStyle = g; rrect(985, 410, 34, 680, 17); ctx.fill();
+    txt('HOT', 1002, 380, { size: 28, fam: DISP, w: 400, color: '#fff' });
+    txt('マッハ3の飛行中', 540, 1110, { size: 44, color: C.ink2, stroke: 8, alpha: seg(u, 0.4, 0.3) });
+  } else if (u < c3 - 0.05) {
+    // パネルの隙間の図解
+    const v = u - c2;
+    ctx.fillStyle = '#081019'; ctx.fillRect(0, 0, W, H); bgGrid(t);
+    txt('機体パネルの継ぎ目', 540, 220, { size: 64, color: C.ink, stroke: 10 });
+    const rows = [['地上(冷えている)', 0, C.cyan, '隙間あり'], ['飛行中(300℃)', 1, C.orange, 'ピッタリ密閉']];
+    rows.forEach(([lab, hot, col, note], i) => {
+      const q = eOut(seg(v, 0.05 + i * 0.5, 0.4)); if (q <= 0) return;
+      const y = 470 + i * 400;
+      ctx.save(); ctx.globalAlpha = q;
+      txt(lab, 540, y - 60, { size: 50, color: col, stroke: 8 });
+      const gapW = hot ? lerp(60, 0, eOut(seg(v, 0.7, 0.6))) : 60;
+      const w = (760 - gapW) / 2;
+      const fill = hot ? '#c8562a' : '#3b4656';
+      ctx.fillStyle = fill; rrect(160, y, w, 140, 10); ctx.fill(); rrect(160 + w + gapW, y, w, 140, 10); ctx.fill();
+      if (!hot) { ctx.strokeStyle = C.cyan; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(540 - 30, y + 180); ctx.lineTo(540 + 30, y + 180); ctx.stroke(); }
+      txt(note, 540, y + 230, { size: 46, color: col, stroke: 8 });
+      ctx.restore();
+    });
+  } else {
+    // 地上で燃料が漏れる
+    const v = u - c3;
+    const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a0f17'); g.addColorStop(1, '#151b24');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#20262f'; ctx.fillRect(0, 900, W, H - 900);
+    for (let i = 0; i < 12; i++) { ctx.fillStyle = 'rgba(255,212,0,.5)'; ctx.fillRect(i * 110 - (v * 0) % 110, 1020, 60, 10); }
+    drawSR71(540, 640, 900, -Math.PI / 2 + 0.0, { alpha: 1 });
+    // 水たまり
+    const pr = 60 + 260 * eOut(seg(v, 0.1, 2.2));
+    const pg = ctx.createRadialGradient(540, 960, 0, 540, 960, pr);
+    pg.addColorStop(0, 'rgba(120,190,255,.55)'); pg.addColorStop(1, 'rgba(120,190,255,0)');
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.ellipse(540, 960, pr * 1.6, pr * 0.32, 0, 0, 7); ctx.fill();
+    // しずく
+    for (let i = 0; i < 18; i++) {
+      const x = 380 + hash(i * 1.7) * 320, ph = (v * 1.6 + hash(i * 9)) % 1;
+      const y = lerp(700 + hash(i * 3) * 200, 955, ph * ph);
+      ctx.fillStyle = 'rgba(150,210,255,.9)';
+      ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.quadraticCurveTo(x + 11, y, x, y + 10); ctx.quadraticCurveTo(x - 11, y, x, y - 22); ctx.fill();
+    }
+    txt('ポタポタ…', 860, 820, { size: 58, color: '#9fd4ff', stroke: 10, alpha: seg(v, 0.3, 0.3) });
+  }
+}
+
+function sceneTitanium(t) {
+  const u = local(t, 'titanium'), c2 = chunkT('titanium', 1);
+  ctx.fillStyle = '#d9cdb0'; ctx.fillRect(0, 0, W, H);       // 古い機密書類の紙
+  for (let i = 0; i < 40; i++) { ctx.fillStyle = `rgba(90,60,20,${0.04 * hash(i)})`; ctx.beginPath(); ctx.arc(hash(i * 2) * W, hash(i * 3) * H, 80 + 200 * hash(i * 4), 0, 7); ctx.fill(); }
+  ctx.fillStyle = 'rgba(40,30,20,.75)';
+  for (let i = 0; i < 26; i++) { const y = 140 + i * 66; if (y > 380 && y < 1140) continue; ctx.fillRect(90, y, 900 * (0.5 + 0.5 * hash(i * 7)), 14); }
+  txt('CLASSIFIED  //  PROJECT OXCART', 540, 160, { size: 34, fam: DISP, w: 400, color: 'rgba(40,30,20,.8)', ls: 3 });
+  // 元素タイル Ti
+  const q = eBack(seg(u, 0.05, 0.3));
+  ctx.save(); ctx.translate(u < c2 ? 540 : lerp(540, 220, eOut(seg(u, c2, 0.4))), u < c2 ? 720 : lerp(720, 560, eOut(seg(u, c2, 0.4))));
+  const ts = (u < c2 ? 1 : lerp(1, 0.6, eOut(seg(u, c2, 0.4)))) * q;
+  ctx.scale(ts, ts);
+  const tg = ctx.createLinearGradient(-200, -200, 200, 200); tg.addColorStop(0, '#e6eaef'); tg.addColorStop(0.5, '#8d96a3'); tg.addColorStop(1, '#cfd5dd');
+  ctx.fillStyle = tg; rrect(-200, -220, 400, 440, 30); ctx.fill();
+  ctx.strokeStyle = '#2b3138'; ctx.lineWidth = 8; ctx.stroke();
+  txt('22', -160, -170, { size: 50, fam: DISP, w: 400, color: '#2b3138', align: 'left' });
+  txt('Ti', 0, 0, { size: 230, fam: DISP, w: 400, color: '#1a1f25' });
+  txt('チタン', 0, 160, { size: 56, color: '#1a1f25' });
+  ctx.restore();
+  if (u >= c2) {
+    const v = u - c2;
+    const boxes = [[540, 560, 'ソ連', '#b3261e'], [540, 860, 'ダミー会社', '#4a4a4a'], [540, 1160 - 1000, '', '']];
+    // フロー: ソ連 → ダミー会社 → アメリカ(右側に縦に並べる)
+    const flow = [[700, 420, 'ソ連(敵国)', '#b3261e'], [700, 700, 'ダミー会社', '#3a3a3a'], [700, 980, 'アメリカ', '#1e4fb3']];
+    flow.forEach(([x, y, s, col], i) => {
+      const qq = eBack(seg(v, 0.1 + i * 0.45, 0.25)); if (qq <= 0) return;
+      ctx.save(); ctx.translate(x, y); ctx.scale(qq, qq);
+      ctx.fillStyle = col; rrect(-200, -70, 400, 140, 20); ctx.fill();
+      txt(s, 0, 4, { size: 54, color: '#fff' });
+      ctx.restore();
+      if (i > 0) {
+        const a = eOut(seg(v, 0.1 + i * 0.45 - 0.2, 0.25));
+        ctx.save(); ctx.strokeStyle = '#2b2116'; ctx.lineWidth = 10; ctx.setLineDash([16, 12]);
+        ctx.beginPath(); ctx.moveTo(x, flow[i - 1][1] + 75); ctx.lineTo(x, lerp(flow[i - 1][1] + 75, y - 80, a)); ctx.stroke(); ctx.restore();
+        if (a >= 1) { ctx.fillStyle = '#2b2116'; ctx.beginPath(); ctx.moveTo(x - 24, y - 100); ctx.lineTo(x + 24, y - 100); ctx.lineTo(x, y - 74); ctx.fill(); }
+      }
+    });
+    void boxes;
+    // 極秘スタンプ
+    if (v > 0.02) {
+      const sp = eBack(seg(v, 0.02, 0.16));
+      ctx.save(); ctx.translate(300, 1000); ctx.rotate(-0.22); ctx.scale(lerp(2.6, 1, sp), lerp(2.6, 1, sp)); ctx.globalAlpha = clamp(v / 0.08) * 0.88;
+      ctx.strokeStyle = '#c4161c'; ctx.lineWidth = 12; rrect(-190, -95, 380, 190, 16); ctx.stroke();
+      txt('極秘', 0, 8, { size: 130, fam: DISP, w: 400, color: '#c4161c' });
+      ctx.restore();
+    }
+  }
+}
+
+function sceneEnding(t) {
+  const u = local(t, 'ending'), zero = chunkT('ending', 1), cta = chunkT('ending', 2);
+  const drop = zero - 0.9;
+  ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, W, H);
+  if (u < zero) {
+    bgGrid(t);
+    // 32 機のアイコン(8 列 × 4 行)
+    const dim = u > drop ? lerp(1, 0.25, seg(u, drop, 0.3)) : 1;
+    for (let i = 0; i < 32; i++) {
+      const q = eBack(seg(u, 0.05 + i * 0.035, 0.2)); if (q <= 0) continue;
+      const cx = 135 + (i % 8) * 116, cy = 430 + Math.floor(i / 8) * 160;
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(q, q); ctx.globalAlpha = dim;
+      drawSR71(0, 0, 120, -Math.PI / 2, {});
+      ctx.restore();
+    }
+    txt('製造数 32機', 540, 250, { size: 90, fam: DISP, w: 400, color: C.ink, stroke: 12, alpha: seg(u, 0.1, 0.3) * dim });
+    // ドラムロール風に数字が回る
+    if (u > 1.0) {
+      const roll = u < drop ? Math.floor(hash(Math.floor(u * 18)) * 32) : '?';
+      txt('撃墜数', 470, 1050, { size: 64, color: C.ink2, stroke: 10, align: 'right' });
+      txt(String(roll), 500, 1050, { align: 'left', size: 120, fam: DISP, w: 400, color: C.red, stroke: 12, alpha: u > drop ? 0.6 + 0.4 * Math.sin(u * 30) : 1 });
+    }
+    if (u > drop) { ctx.fillStyle = `rgba(0,0,0,${0.55 * seg(u, drop, 0.3)})`; ctx.fillRect(0, 0, W, H); }
+  } else {
+    const v = u - zero;
+    // 衝撃波リング
+    for (let k = 0; k < 3; k++) {
+      const r = (v - k * 0.12) * 1800; if (r <= 0) continue;
+      ctx.strokeStyle = `rgba(255,212,0,${clamp(0.8 - (v - k * 0.12) * 0.9)})`; ctx.lineWidth = 18 - k * 4;
+      ctx.beginPath(); ctx.arc(540, 700, r, 0, 7); ctx.stroke();
+    }
+    speedLines(t, 40, 'down', 0.25 * clamp(1 - v));
+    const s = v < 0.25 ? lerp(3, 1, eBack(v / 0.25)) : 1 + 0.015 * Math.sin(v * 4);
+    const zy = v < cta - zero ? 700 : lerp(700, 560, eOut(seg(v, cta - zero, 0.4)));
+    ctx.save(); ctx.translate(540, zy); ctx.scale(s, s);
+    txt('撃墜', 0, -330, { size: 90, fam: DISP, w: 400, color: C.ink, stroke: 10 });
+    txt('0', 0, 20, { size: 560, fam: DISP, w: 400, color: '#fff', shadow: 80, shadowColor: 'rgba(255,212,0,.9)' });
+    ctx.restore();
+    txt('冷戦の空を「速さ」だけで制した', 540, zy + 400, { size: 52, color: C.yellow, stroke: 10, alpha: seg(v, 0.35, 0.3) });
+    txt('※事故などで12機を失ったが、敵の攻撃による損失はゼロ', 540, zy + 480, { size: 30, w: 700, color: C.ink3, alpha: seg(v, 0.5, 0.3) });
+    // CTA: コメント欄へ誘導
+    if (v > cta - zero) {
+      const w = v - (cta - zero), q = eBack(seg(w, 0, 0.3));
+      ctx.save(); ctx.translate(540, 1300); ctx.scale(q, q);
+      ctx.fillStyle = '#ffffff'; rrect(-420, -110, 840, 220, 40); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-260, 105); ctx.lineTo(-300, 185); ctx.lineTo(-180, 105); ctx.fill();
+      txt('次に知りたい兵器は?', 0, -30, { size: 64, color: '#0b0d12' });
+      const ideas = ['F-22 ラプター', '戦艦大和', 'A-10 サンダーボルト', 'B-2 スピリット'];
+      const id = ideas[Math.floor(w / 0.55) % ideas.length];
+      txt('例) ' + id, 0, 52, { size: 46, w: 700, color: '#e0271f' });
+      ctx.restore();
+      txt('コメントで教えて ▼', 540, 1530, { size: 60, color: C.yellow, stroke: 10, alpha: seg(w, 0.25, 0.3) * (0.75 + 0.25 * Math.sin(w * 8)) });
+    }
+  }
+}
+
+// ---------- 共通 UI ----------
+function hud(t) {
+  // 上部のバッジ(全シーン共通)
+  ctx.save(); ctx.globalAlpha = 0.95;
+  ctx.fillStyle = C.red; rrect(40, 40, 260, 62, 10); ctx.fill();
+  txt('冷戦の怪物', 170, 73, { size: 38 });
+  ctx.restore();
+  // 進捗バー
+  ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fillRect(0, H - 8, W, 8);
+  ctx.fillStyle = C.yellow; ctx.fillRect(0, H - 8, W * t / DURATION, 8);
+}
+
+const SCENE_FN = { hook: sceneHook, reveal: sceneReveal, escape: sceneEscape, speed: sceneSpeed,
+                   altitude: sceneAltitude, heat: sceneHeat, titanium: sceneTitanium, ending: sceneEnding };
+
+window.init = function (tl) {
+  TL = tl; DURATION = tl.duration; SC = {}; CHUNKS = [];
+  for (const s of tl.scenes) { SC[s.id] = s; s.chunks.forEach((c, ci) => CHUNKS.push({ ...c, sid: s.id, ci, hidden: s.id === 'ending' && ci === 1 })); }
+  IMPACTS = [[0, 30]];
+  for (const s of tl.scenes.slice(1)) IMPACTS.push([s.start, s.id === 'reveal' ? 34 : 18]);
+  IMPACTS.push([SC.ending.chunks[1].start, 46]);
+  IMPACTS.push([SC.titanium.chunks[1].start, 14]);
+  IMPACTS.push([SC.hook.start + chunkT('hook', 1) + 1.15, 16]);
+  if (!GRAIN.length) makeGrain();
+  window.DURATION = DURATION; window.FPS = FPS;
+};
+
+window.render = function (t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const sid = TL.scenes.find(s => t >= s.start && t < s.end)?.id || 'ending';
+  const sh = shakeAt(t), pz = punchAt(t);
+  ctx.save();
+  ctx.translate(W / 2 + (hash(t * 91) - 0.5) * sh, H / 2 + (hash(t * 57 + 3) - 0.5) * sh);
+  ctx.scale(pz, pz); ctx.translate(-W / 2, -H / 2);
+  SCENE_FN[sid](t);
+  ctx.restore();
+  vignette(0.7);
+  drawCaption(t);
+  hud(t);
+  // 白フラッシュ
+  const fl = flashAt(t);
+  if (fl > 0.01) { ctx.fillStyle = `rgba(255,255,255,${fl})`; ctx.fillRect(0, 0, W, H); }
+  // フィルムグレイン
+  ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(GRAIN[Math.floor(t * FPS) % GRAIN.length], 0, 0, W, H);
+  ctx.imageSmoothingEnabled = true;
+};
+
+// サムネイル用の1枚絵
+window.renderThumb = function () {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0b1626'); g.addColorStop(1, '#020305');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  bgGrid(0); speedLines(1.3, 70, 'left', 0.5);
+  for (let i = 0; i < 5; i++) drawMissile(180 + i * 150, 1500 + (i % 2) * 90, 130, -1.0 + i * 0.12, { t: i, alpha: 0.9 });
+  drawSR71(560, 980, 1000, -0.55, { burner: 1, t: 0.3 });
+  txt('ミサイル4000発', 540, 260, { size: 118, fam: DISP, w: 400, color: '#fff', stroke: 18, shadow: 40 });
+  txt('全部かわした', 540, 430, { size: 160, fam: DISP, w: 400, color: C.yellow, stroke: 18, shadow: 40 });
+  txt('飛行機', 540, 600, { size: 140, fam: DISP, w: 400, color: '#fff', stroke: 18, shadow: 40 });
+  ctx.save(); ctx.translate(780, 1640); ctx.rotate(-0.15);
+  ctx.strokeStyle = C.red; ctx.lineWidth = 12; rrect(-220, -90, 440, 180, 20); ctx.stroke();
+  txt('撃墜 0', 0, 8, { size: 110, fam: DISP, w: 400, color: C.red });
+  ctx.restore();
+  vignette(0.6);
+  ctx.drawImage(GRAIN[0], 0, 0, W, H);
+};
+</script>
+</body>
+</html>
