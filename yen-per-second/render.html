@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>1秒に1円ずつ数えたら</title>
+<style>
+  html,body{margin:0;background:#0b0d12;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 「1秒に1円ずつ数えたら、1兆円は何年かかる?」 (9:16 ショート動画 / 67秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const JP = '"IPAPGothic","IPAGothic",sans-serif';
+const NUM = '"Inter","Inter Display","DejaVu Sans",sans-serif';   // 数字用(等幅数字)
+const C = {
+  bg: '#0b0d12', panel: '#151924', panel2: '#1c2130', grid: '#2b3142',
+  ink: '#f4f5f7', ink2: '#b4bac6', ink3: '#747b8a',
+  gold: '#F5C451', goldSoft: 'rgba(245,196,81,0.18)', red: '#F0575A', blue: '#4C9BF0', green: '#55D6A6',
+};
+const FPS = 30, DURATION = 67;
+
+// ---------- シーン(開始秒, 長さ) narrate.py の SCRIPT と対応 ----------
+const SCENES = [
+  { s: 0,    d: 6.5, fn: sceneHook },
+  { s: 6.5,  d: 5.5, fn: sceneTenThousand },
+  { s: 12,   d: 6.5, fn: sceneMillion },
+  { s: 18.5, d: 6.5, fn: sceneHundredMillion },
+  { s: 25,   d: 7,   fn: sceneBillion },
+  { s: 32,   d: 8,   fn: sceneTrillion },
+  { s: 40,   d: 9,   fn: sceneBudget },
+  { s: 49,   d: 9,   fn: sceneDebt },
+  { s: 58,   d: 9,   fn: sceneSalary },
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeOutQuint = t => { t = clamp(t); return 1 - Math.pow(1 - t, 5); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, font = JP } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 'normal', font = JP) {
+  ctx.save(); ctx.font = `${weight} ${size}px ${font}`; const w = ctx.measureText(str).width; ctx.restore(); return w;
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function strokeRrect(x, y, w, h, r, color, width = 2, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function ring(x, y, r, color, width, alpha = 1, from = 0, to = 1) {
+  if (alpha <= 0 || to <= from) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2 + from * Math.PI * 2, -Math.PI / 2 + to * Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+function glow(x, y, r, color, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.restore();
+}
+
+// 背景: 薄いグリッドと中央のビネット
+function background(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = 0.5; ctx.strokeStyle = '#141824'; ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 60) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 60) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.restore();
+  const g = ctx.createRadialGradient(W / 2, 820, 100, W / 2, 820, 1300);
+  g.addColorStop(0, 'rgba(245,196,81,0.06)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// 上部のピル「1秒 = 1円」。毎秒ドットが光る(BGM のチック音と同期)
+function tickPill(t, alpha) {
+  const w = 440, x = (W - w) / 2, y = 150;
+  rrect(x, y, w, 76, 38, C.panel, alpha);
+  strokeRrect(x, y, w, 76, 38, C.grid, 2, alpha);
+  const f = t - Math.floor(t);
+  const pulse = 1 - easeOut(f / 0.6);
+  glow(x + 50, y + 38, 40, 'rgba(245,196,81,0.9)', alpha * pulse * 0.7);
+  circle(x + 50, y + 38, 12 + 4 * pulse, C.gold, alpha);
+  text('1秒 = 1円', x + 90, y + 52, { size: 40, weight: 'bold', color: C.ink, alpha });
+  text(String(Math.floor(t)).padStart(2, '0') + 's', x + w - 28, y + 51, { size: 34, color: C.ink3, align: 'right', alpha, font: NUM });
+}
+
+// 金額カウンター(数字が target までカウントアップ)
+function counter(t, target, y, alpha, { start = 0, dur = 1.4, size = 150, label = null, labelSize = 44, labelColor = C.ink2 } = {}) {
+  const p = easeOutQuint((t - start) / dur);
+  const v = Math.round(target * p);
+  const s = fmt(v);
+  // 最終的な桁数で収まるようにフォントサイズを自動調整(カウント中にサイズが揺れないように target 基準)
+  const full = measure(fmt(target), size, 'bold', NUM) + measure('¥', size * .62, 'bold', NUM) + 14;
+  if (full > W - 120) size = Math.floor(size * (W - 120) / full);
+  const ws = measure(s, size, 'bold', NUM), wy = measure('¥', size * .62, 'bold', NUM);
+  const x0 = (W - ws - wy - 14) / 2;
+  text('¥', x0, y, { size: size * .62, weight: 'bold', color: C.gold, alpha, font: NUM });
+  text(s, x0 + wy + 14, y, { size, weight: 'bold', color: C.ink, alpha, font: NUM });
+  if (label) text(label, W / 2, y + 30 + labelSize, { size: labelSize, weight: labelSize > 50 ? 'bold' : 'normal', color: labelColor, align: 'center', alpha: alpha * easeOut((t - start - dur * .6) / .5) });
+  return p;
+}
+
+// 「= 時間」の結果表示(スタンプ風に少し縮みながら出る)
+function result(t, main, sub, y, alpha, { start = 1.6, color = C.gold, size = 124 } = {}) {
+  const p = easeOutQuint((t - start) / .45);
+  if (p <= 0) return 0;
+  const sc = lerp(1.25, 1, p);
+  ctx.save(); ctx.translate(W / 2, y); ctx.scale(sc, sc); ctx.translate(-W / 2, -y);
+  text('=', W / 2, y - 150, { size: 80, color: C.ink3, align: 'center', alpha: alpha * p, font: NUM });
+  text(main, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha: alpha * p });
+  ctx.restore();
+  if (sub) text(sub, W / 2, y + 74, { size: 40, color: C.ink2, align: 'center', alpha: alpha * easeOut((t - start - .3) / .4) });
+  return p;
+}
+
+// 下部のキャプション(ナレーションの要点)
+function caption(str, y, alpha, { color = C.ink, size = 46, bg = C.panel } = {}) {
+  if (alpha <= 0) return;
+  const lines = str.split('\n');
+  const h = lines.length * (size + 18) + 36;
+  rrect(60, y - size - 20, W - 120, h, 20, bg, alpha);
+  lines.forEach((l, i) => text(l, W / 2, y + i * (size + 18), { size, weight: 'bold', color, align: 'center', alpha }));
+}
+function footnote(str, alpha) { text(str, W / 2, 1610, { size: 26, color: C.ink3, align: 'center', alpha }); }
+
+// 段階ラベル(右上):「時間」「日」「年」「万年」
+function unitBadge(str, color, alpha) {
+  const w = measure(str, 34, 'bold') + 60;
+  rrect(W - 70 - w, 150, w, 76, 20, color, alpha * 0.18);
+  strokeRrect(W - 70 - w, 150, w, 76, 20, color, 2, alpha);
+  text(str, W - 70 - w / 2, 201, { size: 34, weight: 'bold', color, align: 'center', alpha });
+}
+
+// 時計(時:分)
+function clock(cx, cy, r, hours, alpha) {
+  circle(cx, cy, r + 10, C.panel, alpha);
+  ring(cx, cy, r, C.grid, 4, alpha);
+  for (let i = 0; i < 12; i++) {
+    const a = i / 12 * Math.PI * 2;
+    line(cx + Math.sin(a) * (r - 26), cy - Math.cos(a) * (r - 26), cx + Math.sin(a) * (r - 10), cy - Math.cos(a) * (r - 10), i % 3 ? C.ink3 : C.ink2, i % 3 ? 3 : 6, alpha);
+  }
+  const ah = (hours % 12) / 12 * Math.PI * 2, am = (hours * 60 % 60) / 60 * Math.PI * 2;
+  // 経過した扇形
+  ctx.save(); ctx.globalAlpha = alpha * 0.25; ctx.fillStyle = C.gold;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r - 40, -Math.PI / 2, -Math.PI / 2 + Math.min(hours, 12) / 12 * Math.PI * 2); ctx.closePath(); ctx.fill(); ctx.restore();
+  line(cx, cy, cx + Math.sin(ah) * r * .55, cy - Math.cos(ah) * r * .55, C.ink, 14, alpha);
+  line(cx, cy, cx + Math.sin(am) * r * .8, cy - Math.cos(am) * r * .8, C.gold, 8, alpha);
+  circle(cx, cy, 14, C.ink, alpha);
+}
+
+// 日めくりグリッド(cols×rows)。filled 日分を埋める
+function dayGrid(x, y, cols, rows, cell, gap, filled, alpha, color = C.gold) {
+  for (let i = 0; i < cols * rows; i++) {
+    const cx = x + (i % cols) * (cell + gap), cy = y + Math.floor(i / cols) * (cell + gap);
+    rrect(cx, cy, cell, cell, 10, C.panel2, alpha);
+    const f = clamp(filled - i);
+    if (f > 0) {
+      rrect(cx, cy, cell, cell, 10, color, alpha * (0.35 + 0.65 * f));
+      if (f >= 1) text(String(i + 1), cx + cell / 2, cy + cell / 2 + 11, { size: 30, weight: 'bold', color: '#1a1300', align: 'center', alpha, font: NUM });
+    } else {
+      text(String(i + 1), cx + cell / 2, cy + cell / 2 + 11, { size: 30, color: C.ink3, align: 'center', alpha, font: NUM });
+    }
+  }
+}
+
+// 深い時間のタイムライン。左=過去、右=今日。years: 全体のスパン(年)。marks: [{y:何年前, label, kind:'start'|'now'|'mark', color}]
+function deepTimeline(t, span, marks, y, alpha, { sweepStart = 1.8, sweepDur = 2.4, startY = span } = {}) {
+  const x0 = 90, x1 = W - 90;
+  const xOf = ago => lerp(x1, x0, ago / span);
+  rrect(x0, y - 6, x1 - x0, 12, 6, C.grid, alpha);
+  // 数え続けている区間を光らせながら掃引
+  const sw = easeInOut((t - sweepStart) / sweepDur);
+  const xs = xOf(startY), xe = lerp(xs, x1, sw);
+  rrect(xs, y - 6, xe - xs, 12, 6, C.gold, alpha);
+  glow(xe, y, 60, 'rgba(245,196,81,0.9)', alpha * (sw > 0 && sw < 1 ? 0.8 : 0.3));
+  circle(xe, y, 14, C.gold, alpha);
+  marks.forEach((m, i) => {
+    const mx = xOf(m.ago);
+    const ma = alpha * easeOut((t - 0.9 - i * 0.35) / .5);
+    const col = m.color || (m.kind === 'start' ? C.gold : m.kind === 'now' ? C.ink : C.ink2);
+    const up = m.up !== undefined ? m.up : (i % 2 === 0);
+    const ly = up ? y - 96 - (m.lift || 0) : y + 104 + (m.lift || 0);
+    line(mx, y, mx, up ? ly + 52 : ly - 44, col, 3, ma * 0.7, [6, 8]);
+    circle(mx, y, m.kind === 'mark' ? 10 : 16, col, ma);
+    if (m.kind !== 'mark') circle(mx, y, m.kind === 'start' ? 7 : 7, C.bg, ma);
+    const align = mx < 200 ? 'left' : mx > W - 200 ? 'right' : 'center';
+    text(m.label, mx, ly, { size: m.size || 34, weight: m.kind === 'mark' ? 'normal' : 'bold', color: col, align, alpha: ma });
+    if (m.sub) text(m.sub, mx, ly + 36, { size: 28, color: C.ink3, align, alpha: ma });
+  });
+}
+
+// ---------- シーン ----------
+function sceneHook(t, a) {
+  // 猛スピードで回るカウンター(1秒=1円のルールを見せる)
+  const n = Math.floor(t);
+  const f = t - n;
+  const bump = 1 + 0.08 * (1 - easeOut(f / 0.25));
+  text('1秒に1円ずつ', W / 2, 520, { size: 92, weight: 'bold', align: 'center', alpha: a * easeOut(t / .5), ls: 4 });
+  text('数えてみます', W / 2, 640, { size: 92, weight: 'bold', align: 'center', alpha: a * easeOut((t - .25) / .5), ls: 4 });
+  // 大きな円の中に現在の円数
+  const cy = 960;
+  glow(W / 2, cy, 320, 'rgba(245,196,81,0.5)', a * 0.5);
+  circle(W / 2, cy, 230, C.panel, a);
+  ring(W / 2, cy, 230, C.gold, 10, a, 0, f);
+  ring(W / 2, cy, 230, C.grid, 10, a, f, 1);
+  ctx.save(); ctx.translate(W / 2, cy); ctx.scale(bump, bump); ctx.translate(-W / 2, -cy);
+  text('¥' + n, W / 2, cy + 60, { size: 170, weight: 'bold', color: C.gold, align: 'center', alpha: a, font: NUM });
+  ctx.restore();
+  text(n + '秒', W / 2, cy + 300, { size: 44, color: C.ink3, align: 'center', alpha: a, font: NUM });
+  const qa = a * easeOut((t - 2.6) / .6);
+  text('1兆円まで', W / 2, 1420, { size: 90, weight: 'bold', color: C.ink, align: 'center', alpha: qa });
+  text('何年かかると思いますか？', W / 2, 1530, { size: 64, weight: 'bold', color: C.gold, align: 'center', alpha: a * easeOut((t - 3.2) / .6) });
+}
+
+function sceneTenThousand(t, a) {
+  unitBadge('単位: 時間', C.green, a);
+  counter(t, 10000, 520, a, { label: '1万円' });
+  result(t, '2時間46分40秒', '10,000秒', 860, a, { color: C.green, size: 100 });
+  const p = easeInOut((t - 1.8) / 1.6);
+  clock(W / 2, 1260, 230, lerp(0, 2 + 46 / 60 + 40 / 3600, p), a * easeOut((t - 1.4) / .5));
+  caption('ランチの後に始めて、\nおやつの時間には終わる', 1660, a * easeOut((t - 3.2) / .5), { size: 40, color: C.ink2 });
+}
+
+function sceneMillion(t, a) {
+  unitBadge('単位: 日', C.green, a);
+  counter(t, 1000000, 520, a, { label: '100万円' });
+  result(t, '11日 13時間46分', '1,000,000秒 ≈ 11.57日', 860, a, { color: C.green, size: 100 });
+  const filled = lerp(0, 11.574, easeInOut((t - 1.9) / 1.8));
+  dayGrid(162, 980, 6, 5, 116, 12, filled, a * easeOut((t - 1.5) / .5), C.green);
+  caption('寝ずに数えて、11日半', 1700, a * easeOut((t - 3.6) / .5), { size: 44, color: C.ink2 });
+}
+
+function sceneHundredMillion(t, a) {
+  unitBadge('単位: 年', C.blue, a);
+  counter(t, 100000000, 520, a, { label: '1億円', labelSize: 56, labelColor: C.ink });
+  result(t, '3年 2ヶ月', '100,000,000秒 ≈ 1,157日', 860, a, { color: C.blue, size: 110 });
+  // 年のリング ×4(3つ満杯 + 1/6)
+  const prog = lerp(0, 3.17, easeInOut((t - 1.9) / 1.8));
+  const la = a * easeOut((t - 1.5) / .5);
+  for (let i = 0; i < 4; i++) {
+    const cx = 180 + i * 240, cy = 1180;
+    ring(cx, cy, 86, C.panel2, 28, la);
+    const f = clamp(prog - i);
+    ring(cx, cy, 86, C.blue, 28, la, 0, f);
+    text((i + 1) + '年目', cx, cy + 14, { size: 32, weight: 'bold', color: f >= 1 ? C.ink : C.ink3, align: 'center', alpha: la });
+  }
+  const ca = a * easeOut((t - 3.4) / .5);
+  caption('数え終わるころには\n3つ歳をとっている', 1460, ca, { size: 46 });
+  footnote('※ 365.25日=1年として計算', ca);
+}
+
+function sceneBillion(t, a) {
+  unitBadge('単位: 年', C.blue, a);
+  counter(t, 1000000000, 520, a, { label: '10億円', labelSize: 56, labelColor: C.ink });
+  result(t, '31年 8ヶ月', '1,000,000,000秒 ≈ 11,574日', 860, a, { color: C.blue, size: 110 });
+  // 人生バー 0〜85歳
+  const la = a * easeOut((t - 1.5) / .5);
+  const x0 = 90, x1 = W - 90, y = 1200;
+  rrect(x0, y - 22, x1 - x0, 44, 22, C.panel2, la);
+  const p = lerp(0, 31.69 / 85, easeInOut((t - 1.9) / 2.0));
+  rrect(x0, y - 22, (x1 - x0) * p, 44, 22, C.blue, la);
+  for (let age = 0; age <= 80; age += 20) {
+    const x = lerp(x0, x1, age / 85);
+    line(x, y + 30, x, y + 48, C.ink3, 3, la);
+    text(age + '歳', x, y + 86, { size: 30, color: C.ink3, align: age === 0 ? 'left' : 'center', alpha: la });
+  }
+  const hx = lerp(x0, x1, p);
+  glow(hx, y, 50, 'rgba(76,155,240,0.9)', la * 0.6);
+  circle(hx, y, 18, C.ink, la);
+  const age = 31.69 * easeInOut((t - 1.9) / 2.0);
+  text(Math.floor(age) + '歳', hx, y - 50, { size: 46, weight: 'bold', color: C.blue, align: hx > W - 160 ? 'right' : 'center', alpha: la * easeOut((t - 2.2) / .4) });
+  const ca = a * easeOut((t - 4.0) / .5);
+  caption('生まれた瞬間から数え始めて、\n終わるのは31歳', 1460, ca, { size: 46 });
+}
+
+function sceneTrillion(t, a) {
+  unitBadge('単位: 万年', C.red, a);
+  counter(t, 1000000000000, 520, a, { label: '1兆円', size: 132, labelSize: 72, labelColor: C.ink });
+  result(t, '3万1,700年', '1,000,000,000,000秒 ≈ 31,688年', 860, a, { color: C.red, size: 124 });
+  deepTimeline(t, 36000, [
+    { ago: 31688, label: '数え始め', sub: '3万1,700年前', kind: 'start', up: true },
+    { ago: 16000, label: '縄文時代 始まる', sub: '約1万6,000年前', kind: 'mark', up: false },
+    { ago: 2400, label: '弥生時代', kind: 'mark', up: true, size: 30 },
+    { ago: 0, label: '今日', sub: '数え終わる', kind: 'now', up: false },
+  ], 1200, a * easeOut((t - 1.5) / .5), { startY: 31688 });
+  const ca = a * easeOut((t - 4.8) / .5);
+  caption('縄文時代よりずっと前、\n旧石器時代から数え続ける', 1480, ca, { size: 46 });
+}
+
+function sceneBudget(t, a) {
+  unitBadge('単位: 万年', C.red, a);
+  text('日本の国家予算(2025年度 一般会計)', W / 2, 420, { size: 38, color: C.ink2, align: 'center', alpha: a * easeOut(t / .5) });
+  counter(t, 115000000000000, 540, a, { label: '115兆円', size: 112, labelSize: 72, labelColor: C.ink });
+  result(t, '365万年', '115,000,000,000,000秒 ≈ 3,644,000年', 880, a, { color: C.red, size: 130 });
+  deepTimeline(t, 4000000, [
+    { ago: 3644000, label: '数え始め', sub: '365万年前', kind: 'start', up: true },
+    { ago: 3660000, label: '人類の祖先が\n二足歩行', kind: 'mark', up: false, size: 0 },
+    { ago: 2600000, label: '石器を使い始める', sub: '約260万年前', kind: 'mark', up: false },
+    { ago: 300000, label: 'ホモ・サピエンス誕生', sub: '約30万年前', kind: 'mark', up: true },
+    { ago: 0, label: '今日', sub: '数え終わる', kind: 'now', up: false },
+  ].filter(m => m.size !== 0), 1220, a * easeOut((t - 1.5) / .5), { startY: 3644000 });
+  const ca = a * easeOut((t - 5.2) / .5);
+  caption('人類の祖先が二足歩行を始めたころから\n1秒も休まず数えて、今日やっと終わる', 1500, ca, { size: 42 });
+  footnote('出典: 財務省 令和7年度一般会計予算(約115.2兆円)/ 概数', ca);
+}
+
+function sceneDebt(t, a) {
+  unitBadge('単位: 万年', C.red, a);
+  text('日本の「国の借金」(2025年3月末)', W / 2, 420, { size: 38, color: C.ink2, align: 'center', alpha: a * easeOut(t / .5) });
+  counter(t, 1323000000000000, 540, a, { label: '1,323兆円', size: 104, labelSize: 72, labelColor: C.ink });
+  result(t, '4,200万年', '1,323,000,000,000,000秒 ≈ 41,930,000年', 880, a, { color: C.red, size: 130 });
+  deepTimeline(t, 70000000, [
+    { ago: 66000000, label: '恐竜絶滅', sub: '6,600万年前', kind: 'mark', up: true },
+    { ago: 41930000, label: '数え始め', sub: '4,200万年前', kind: 'start', up: false },
+    { ago: 7000000, label: '最古の人類', sub: '約700万年前', kind: 'mark', up: true },
+    { ago: 0, label: '今日', sub: '数え終わる', kind: 'now', up: false },
+  ], 1220, a * easeOut((t - 1.5) / .5), { startY: 41930000 });
+  const ca = a * easeOut((t - 5.2) / .5);
+  caption('恐竜が絶滅したあと、\nまだ猿すらいない時代からずっと', 1500, ca, { size: 44 });
+  footnote('出典: 財務省「国債及び借入金並びに政府保証債務現在高」2025年3月末 / 概数', ca);
+}
+
+function sceneSalary(t, a) {
+  unitBadge('単位: 日', C.green, a);
+  text('日本の平均年収', W / 2, 420, { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut(t / .5) });
+  counter(t, 4600000, 540, a, { label: '460万円', size: 132 });
+  result(t, '53日', '4,600,000秒 ≈ 53日 5時間46分', 880, a, { color: C.green, size: 150 });
+  const filled = lerp(0, 53.24, easeInOut((t - 1.9) / 1.6));
+  dayGrid(174, 990, 10, 6, 66, 8, filled, a * easeOut((t - 1.5) / .5), C.green);
+  // 締め
+  const ca = a * easeOut((t - 4.2) / .5);
+  text('出典: 国税庁 民間給与実態統計調査(令和5年分)平均給与460万円', W / 2, 1460, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+  caption('同じ「円」なのに、\n桁が変わると時間の意味が変わる', 1545, ca, { size: 44 });
+  const cta = a * easeOut((t - 6.3) / .5);
+  rrect(60, 1660, W - 120, 110, 20, C.gold, cta);
+  text('あなたの年収は、何日？ → コメントへ', W / 2, 1732, { size: 44, weight: 'bold', color: '#1a1300', align: 'center', alpha: cta });
+}
+
+// ---------- メイン ----------
+function render(t) {
+  background(t);
+  const idx = SCENES.findIndex(s => t < s.s + s.d);
+  const sc = SCENES[idx < 0 ? SCENES.length - 1 : idx];
+  const lt = t - sc.s;
+  const fadeIn = easeOut(lt / 0.35);
+  const fadeOut = sc === SCENES[SCENES.length - 1] ? 1 : 1 - easeOut((lt - (sc.d - 0.25)) / 0.25);
+  const a = Math.min(fadeIn, fadeOut);
+  tickPill(t, 1);
+  sc.fn(lt, a);
+  // 進捗バー(最下部)
+  rrect(0, H - 8, W * (t / DURATION), 8, 0, C.gold, 0.9);
+}
+
+// サムネイル(1080×1920)
+function thumbnail() {
+  background(0);
+  glow(W / 2, 760, 520, 'rgba(245,196,81,0.45)', 0.8);
+  text('1秒に1円ずつ', W / 2, 360, { size: 96, weight: 'bold', align: 'center', ls: 4 });
+  text('数えたら', W / 2, 480, { size: 96, weight: 'bold', align: 'center', ls: 4 });
+  circle(W / 2, 800, 250, C.panel, 1);
+  ring(W / 2, 800, 250, C.gold, 14, 1, 0, 0.72);
+  ring(W / 2, 800, 250, C.grid, 14, 1, 0.72, 1);
+  text('1兆円', W / 2, 850, { size: 150, weight: 'bold', color: C.gold, align: 'center' });
+  text('=', W / 2, 1180, { size: 100, color: C.ink3, align: 'center', font: NUM });
+  text('3万年', W / 2, 1420, { size: 240, weight: 'bold', color: C.red, align: 'center' });
+  caption('あなたの年収は、何日？', 1700, 1, { size: 56, color: '#1a1300', bg: C.gold });
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render; window.thumbnail = thumbnail;
+if (!navigator.webdriver) { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>
