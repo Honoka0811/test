@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>WWII Major Battles</title>
+<style>
+  html,body{margin:0;background:#0e0f12;}
+  canvas{display:block;max-height:100vh;width:auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/cues.js"></script>
+<script>
+// ------------------------------------------------------------
+// 第二次世界大戦 激戦の一覧  (9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0e0f12', panel: '#16181d', grid: '#2a2d35',
+  ink: '#f2efe8', ink2: '#bdb8ad', ink3: '#7f7b72',
+  accent: '#D9B26A',
+};
+// 戦線ごとの色(東部=赤 / 太平洋=青 / 西部=緑)
+const FRONT = {
+  east:    { name: '東部戦線',   color: '#E0605A' },
+  pacific: { name: '太平洋戦線', color: '#4C8FE0' },
+  west:    { name: '西部戦線',   color: '#3FB58A' },
+};
+
+// ---------- 戦いのデータ(数値は諸説あるため概数) ----------
+// s/e: [年, 月, 日]
+const BATTLES = [
+  { name: 'レニングラード包囲戦', front: 'east', place: 'ソ連・レニングラード(現サンクトペテルブルク)',
+    s: [1941, 9, 8], e: [1944, 1, 27], big: 872, unit: '日', pre: '', label: '包囲が続いた期間',
+    sub: ['市民の死者 推定 約80万〜100万人', '多くが飢えと寒さによる'] },
+  { name: 'ミッドウェー海戦', front: 'pacific', place: '中部太平洋・ミッドウェー島沖',
+    s: [1942, 6, 5], e: [1942, 6, 7], big: 4, unit: '隻', pre: '', label: '日本が失った主力空母',
+    sub: ['赤城・加賀・蒼龍・飛龍', '米軍の空母喪失は1隻(ヨークタウン)'] },
+  { name: 'スターリングラード攻防戦', front: 'east', place: 'ソ連・スターリングラード(現ヴォルゴグラード)',
+    s: [1942, 8, 23], e: [1943, 2, 2], big: 200, unit: '万人', pre: '約', label: '両軍の死傷者(推計)',
+    sub: ['ドイツ第6軍 約9万1千人が降伏', '独ソ戦の大きな転換点'] },
+  { name: 'ガダルカナル島の戦い', front: 'pacific', place: 'ソロモン諸島・ガダルカナル島',
+    s: [1942, 8, 7], e: [1943, 2, 7], big: 2, unit: '万人', pre: '約', label: '日本軍の死者',
+    sub: ['うち約1万5千人が餓死・病死', '「餓島」と呼ばれた'] },
+  { name: 'クルスクの戦い', front: 'east', place: 'ソ連・クルスク周辺',
+    s: [1943, 7, 5], e: [1943, 8, 23], big: 6000, unit: '両', pre: '約', label: '両軍の戦車・自走砲',
+    sub: ['史上最大級の戦車戦', '以後、ドイツは東部で守勢に'] },
+  { name: 'ノルマンディー上陸作戦', front: 'west', place: 'フランス・ノルマンディー海岸',
+    s: [1944, 6, 6], e: [1944, 8, 30], big: 15.6, unit: '万人', pre: '約', label: '上陸初日(D-Day)の連合軍',
+    sub: ['艦艇 約7,000隻・航空機 約1万1千機', '史上最大の上陸作戦'] },
+  { name: '硫黄島の戦い', front: 'pacific', place: '小笠原諸島・硫黄島',
+    s: [1945, 2, 19], e: [1945, 3, 26], big: 2, unit: '万人', pre: '約', label: '日本守備隊の戦死(約2万1千人中)',
+    sub: ['米軍の死傷 約2万6千人', '米軍の死傷者が日本軍を上回った'] },
+  { name: '沖縄戦', front: 'pacific', place: '沖縄本島とその周辺',
+    s: [1945, 3, 26], e: [1945, 6, 23], big: 20, unit: '万人', pre: '約', label: '戦没者の総数',
+    sub: ['うち一般住民 約9万4千人', '住民を巻き込んだ地上戦'] },
+  { name: 'ベルリンの戦い', front: 'east', place: 'ドイツ・ベルリン',
+    s: [1945, 4, 16], e: [1945, 5, 2], big: 35, unit: '万人', pre: '約', label: 'ソ連軍の死傷者',
+    sub: ['4月30日 ヒトラー自殺', '5月8日 ドイツ無条件降伏'] },
+];
+
+// ---------- シーン構成(narrate.py と同期) ----------
+const INTRO = 6, CARD = 8, SUMMARY = 8, OUTRO = 5;
+const SCENES = [{ kind: 'intro', start: 0, dur: INTRO }];
+BATTLES.forEach((b, i) => SCENES.push({ kind: 'battle', i, start: INTRO + i * CARD, dur: CARD }));
+SCENES.push({ kind: 'summary', start: INTRO + BATTLES.length * CARD, dur: SUMMARY });
+SCENES.push({ kind: 'outro', start: INTRO + BATTLES.length * CARD + SUMMARY, dur: OUTRO });
+const FPS = 30, DURATION = INTRO + BATTLES.length * CARD + SUMMARY + OUTRO;
+window.FPS = FPS; window.DURATION = DURATION; window.SCENES = SCENES;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const ym = d => d[0] + (d[1] - 1) / 12 + (d[2] - 1) / 365;   // 年の小数表現
+const fmtDate = d => `${d[0]}.${d[1]}.${d[2]}`;
+const fmtRange = b => b.s[0] === b.e[0] ? `${fmtDate(b.s)} – ${b.e[1]}.${b.e[2]}` : `${fmtDate(b.s)} – ${fmtDate(b.e)}`;
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, maxW = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (maxW) { const w = ctx.measureText(str).width; if (w > maxW) { ctx.font = `${weight} ${size * maxW / w}px ${FONT}`; } }
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 'normal') { ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`; const w = ctx.measureText(str).width; ctx.restore(); return w; }
+function rect(x, y, w, h, color, alpha = 1) { if (w <= 0 || h <= 0) return; ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.fillRect(x, y, w, h); ctx.restore(); }
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2)); ctx.fill(); ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+
+// 決定論的ノイズ(フィルムグレイン用)
+function hash(n) { n = (n << 13) ^ n; return ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 0x7fffffff; }
+const grain = (() => {
+  const g = document.createElement('canvas'); g.width = 270; g.height = 480;
+  const gc = g.getContext('2d'); const frames = [];
+  for (let f = 0; f < 6; f++) {
+    const img = gc.createImageData(270, 480);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = hash(i * 7 + f * 100003) * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+    }
+    const c2 = document.createElement('canvas'); c2.width = 270; c2.height = 480;
+    c2.getContext('2d').putImageData(img, 0, 0); frames.push(c2);
+  }
+  return frames;
+})();
+
+function background(t) {
+  rect(0, 0, W, H, C.bg);
+  // 上下の緩やかなグラデーション
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, 'rgba(217,178,106,0.06)'); g.addColorStop(0.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(217,178,106,0.04)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function overlay(t) {
+  // フィルムグレイン
+  ctx.save(); ctx.globalAlpha = 0.045; ctx.globalCompositeOperation = 'overlay';
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(grain[Math.floor(t * 12) % grain.length], 0, 0, W, H); ctx.restore();
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- 年表(1939.9 – 1945.9) ----------
+const TL = { x0: 90, x1: W - 90, y: 1560, t0: 1939 + 8 / 12, t1: 1945 + 9 / 12 };
+const tx = y => lerp(TL.x0, TL.x1, (y - TL.t0) / (TL.t1 - TL.t0));
+function timeline(t, cur, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  text('1939.9 開戦', TL.x0, TL.y - 70, { size: 26, color: C.ink3 });
+  text('1945.9 終戦', TL.x1, TL.y - 70, { size: 26, color: C.ink3, align: 'right' });
+  line(TL.x0, TL.y, TL.x1, TL.y, C.grid, 4);
+  for (let y = 1940; y <= 1945; y++) {
+    const x = tx(y);
+    line(x, TL.y - 14, x, TL.y + 14, C.grid, 3);
+    text(String(y), x, TL.y + 56, { size: 28, color: C.ink3, align: 'center' });
+  }
+  // これまでに紹介した戦い(小さなマーク)
+  BATTLES.forEach((b, i) => {
+    if (i >= cur) return;
+    const x = tx(ym(b.s)), x2 = Math.max(tx(ym(b.e)), x + 8);
+    rrect(x, TL.y - 6, x2 - x, 12, 6, FRONT[b.front].color, 0.45);
+  });
+  // 現在の戦い
+  if (cur >= 0 && cur < BATTLES.length) {
+    const b = BATTLES[cur], col = FRONT[b.front].color;
+    const p = easeOut(seg(t, 0.4, 1.2));
+    const x = tx(ym(b.s)), xe = Math.max(tx(ym(b.e)), x + 14);
+    rrect(x, TL.y - 12, (xe - x) * p, 24, 12, col);
+    // マーカー
+    const mx = x + (xe - x) * p / 2;
+    ctx.save(); ctx.globalAlpha = alpha * easeOut(seg(t, 0.6, 0.6));
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(mx, TL.y - 22); ctx.lineTo(mx - 14, TL.y - 44); ctx.lineTo(mx + 14, TL.y - 44); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ---------- シーン描画 ----------
+function sceneIntro(t, d) {
+  const a = easeOut(seg(t, 0.2, 1.0));
+  text('WORLD WAR II', W / 2, 620, { size: 40, color: C.accent, align: 'center', ls: 14, alpha: a });
+  line(W / 2 - 220 * a, 660, W / 2 + 220 * a, 660, C.accent, 2, 0.7);
+  const b = easeOut(seg(t, 0.6, 1.1));
+  text('第二次世界大戦', W / 2, 820 - 30 * (1 - b), { size: 112, weight: 'bold', align: 'center', alpha: b });
+  const c = easeOut(seg(t, 1.0, 1.1));
+  text('激戦の一覧', W / 2, 980 - 30 * (1 - c), { size: 150, weight: 'bold', align: 'center', alpha: c, color: C.ink });
+  const e = easeOut(seg(t, 1.8, 1.0));
+  text('1939 – 1945  主要な9つの戦い', W / 2, 1110, { size: 42, color: C.ink2, align: 'center', alpha: e });
+  // 凡例
+  const keys = ['east', 'pacific', 'west'];
+  const f = easeOut(seg(t, 2.4, 1.0));
+  let total = 0; const gap = 56;
+  const ws = keys.map(k => measure(FRONT[k].name, 34) + 44); total = ws.reduce((s, w) => s + w, 0) + gap * 2;
+  let x = W / 2 - total / 2;
+  keys.forEach((k, i) => {
+    rrect(x, 1262, 28, 28, 6, FRONT[k].color, f);
+    text(FRONT[k].name, x + 44, 1288, { size: 34, color: C.ink2, alpha: f });
+    x += ws[i] + gap;
+  });
+  timeline(t, -1, easeOut(seg(t, 2.8, 1.2)));
+}
+
+function sceneBattle(t, d, i) {
+  const b = BATTLES[i], fr = FRONT[b.front], col = fr.color;
+  // 背景の大きな番号
+  const nIn = easeOut(seg(t, 0, 0.9));
+  text(String(i + 1).padStart(2, '0'), W - 60, 470, { size: 420, weight: 'bold', color: col, align: 'right', alpha: 0.10 * nIn });
+  // 戦線タグ
+  const a = easeOut(seg(t, 0.1, 0.6));
+  const tagW = measure(fr.name, 34) + 48;
+  rrect(90, 230, tagW, 60, 30, col, 0.18 * a);
+  rrect(90, 230, 8, 60, 4, col, a);
+  text(fr.name, 90 + 30, 272, { size: 34, color: col, alpha: a });
+  text(`${i + 1} / ${BATTLES.length}`, W - 90, 272, { size: 32, color: C.ink3, align: 'right', alpha: a });
+  // 名称
+  const n = easeOut(seg(t, 0.25, 0.8));
+  text(b.name, 90 - 40 * (1 - n), 470, { size: 92, weight: 'bold', alpha: n, maxW: W - 180 });
+  text(fmtRange(b), 90, 560, { size: 46, color: C.accent, alpha: easeOut(seg(t, 0.45, 0.8)) });
+  text(b.place, 90, 625, { size: 32, color: C.ink2, alpha: easeOut(seg(t, 0.55, 0.8)), maxW: W - 180 });
+  line(90, 690, 90 + (W - 180) * easeInOut(seg(t, 0.5, 1.0)), 690, C.grid, 2);
+
+  // 主要な数字(カウントアップ)
+  const p = easeOut(seg(t, 1.0, 1.8));
+  const v = b.big * p;
+  const num = b.big >= 100 ? Math.round(v).toLocaleString('en-US') : (Number.isInteger(b.big) ? String(Math.round(v)) : v.toFixed(1));
+  const sA = easeOut(seg(t, 0.9, 0.6));
+  text(b.label, 90, 800, { size: 38, color: C.ink2, alpha: sA });
+  const preW = b.pre ? measure(b.pre, 64, 'bold') + 10 : 0;
+  const numW = measure(num, 230, 'bold');
+  if (b.pre) text(b.pre, 90, 1040, { size: 64, weight: 'bold', color: col, alpha: sA });
+  text(num, 90 + preW, 1040, { size: 230, weight: 'bold', color: col, alpha: sA });
+  text(b.unit, 90 + preW + numW + 14, 1040, { size: 80, weight: 'bold', color: col, alpha: sA });
+  // 補足
+  b.sub.forEach((s, k) => {
+    const q = easeOut(seg(t, 2.2 + k * 0.45, 0.7));
+    rect(90, 1140 + k * 84 - 30, 6, 40, C.ink3, q);
+    text(s, 120 - 20 * (1 - q), 1140 + k * 84, { size: 40, color: k === 0 ? C.ink : C.ink2, alpha: q, maxW: W - 220 });
+  });
+  timeline(t, i, 1);
+}
+
+function sceneSummary(t, d) {
+  const a = easeOut(seg(t, 0, 0.7));
+  text('激戦の年表', 90, 250, { size: 80, weight: 'bold', alpha: a });
+  text('1939.9 – 1945.9', 90, 320, { size: 36, color: C.accent, alpha: a });
+  // 年グリッド
+  const top = 420, rowH = 112, left = 90, right = W - 90;
+  const gx = y => lerp(left, right, (y - TL.t0) / (TL.t1 - TL.t0));
+  for (let y = 1940; y <= 1945; y++) {
+    const x = gx(y);
+    line(x, top - 20, x, top + rowH * BATTLES.length, C.grid, 2, a * 0.8, [6, 10]);
+    text(String(y), x, top + rowH * BATTLES.length + 50, { size: 28, color: C.ink3, align: 'center', alpha: a });
+  }
+  BATTLES.forEach((b, i) => {
+    const q = easeOut(seg(t, 0.3 + i * 0.18, 0.8));
+    const y = top + i * rowH;
+    const col = FRONT[b.front].color;
+    const x1 = gx(ym(b.s)), x2 = Math.max(gx(ym(b.e)), x1 + 12);
+    rrect(x1, y + 54, (x2 - x1) * q, 26, 13, col, q);
+    // 名前はバーの左右どちらかに収まる方へ
+    const w = measure(b.name, 36);
+    if (x1 - 16 - w > left) text(b.name, x1 - 16, y + 79, { size: 36, align: 'right', color: C.ink, alpha: q });
+    else if (x2 + 16 + w < right) text(b.name, x2 + 16, y + 79, { size: 36, color: C.ink, alpha: q });
+    else text(b.name, x1, y + 38, { size: 36, color: C.ink, alpha: q });
+  });
+  // 凡例
+  const f = easeOut(seg(t, 2.4, 0.8));
+  let x = 90;
+  ['east', 'pacific', 'west'].forEach(k => {
+    rrect(x, 1555, 26, 26, 6, FRONT[k].color, f);
+    text(FRONT[k].name, x + 40, 1580, { size: 32, color: C.ink2, alpha: f });
+    x += measure(FRONT[k].name, 32) + 100;
+  });
+}
+
+function sceneOutro(t, d) {
+  const a = easeOut(seg(t, 0, 0.9));
+  text('すべての犠牲者に', W / 2, 820, { size: 72, weight: 'bold', align: 'center', alpha: a });
+  text('哀悼の意を込めて', W / 2, 920, { size: 72, weight: 'bold', align: 'center', alpha: easeOut(seg(t, 0.4, 0.9)) });
+  const c = easeOut(seg(t, 1.0, 0.9));
+  const lines = [
+    '数値は諸説あるため概数で表記しています',
+    '出典: 各国公刊戦史、G.F.Krivosheev『Soviet Casualties』、',
+    '防衛庁防衛研修所『戦史叢書』、沖縄県「平和の礎」刻銘者数 ほか',
+    'BGM: J.S.バッハ「G線上のアリア」(BWV1068) 楽譜より自作合成',
+    'ナレーション: ' + (window.VOICE_CREDIT || 'VOICEVOX:青山龍星'),
+  ];
+  lines.forEach((s, k) => text(s, W / 2, 1180 + k * 54, { size: 30, color: C.ink3, align: 'center', alpha: c, maxW: W - 120 }));
+}
+
+// ---------- 字幕(narrate.py が書き出す output/cues.js の window.CUES を使用) ----------
+function wrapJa(str, size, maxW) {
+  // 改行候補: 句読点の後 / ひらがな→漢字・カタカナ・数字の境目(語の途中では切らない)
+  // 候補の中から「各行が maxW 以内で、行の長さが最もそろう」組み合わせを探す
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const ch = [...str], N = ch.length;
+  const hira = c => /[ぁ-ゖ]/.test(c), wordStart = c => /[一-龯々ァ-ヴー0-9A-Za-z「]/.test(c);
+  const cand = [];
+  for (let i = 1; i < N; i++) {
+    const p = ch[i - 1], c = ch[i];
+    if ('、。'.includes(p)) cand.push([i, 0]);
+    else if (hira(p) && wordStart(c)) cand.push([i, 0.06]);
+  }
+  const wOf = (i, j) => ctx.measureText(ch.slice(i, j).join('')).width;
+  let best = null;
+  const total = wOf(0, N);
+  for (let n = Math.max(1, Math.ceil(total / maxW)); n <= 4 && !best; n++) {
+    const target = total / n;
+    const rec = (start, k, acc, cost) => {
+      if (k === n - 1) {
+        const w = wOf(start, N); if (w > maxW) return;
+        const c = cost + Math.abs(w - target) / target;
+        if (!best || c < best.c) best = { c, br: acc };
+        return;
+      }
+      for (const [i, pen] of cand) {
+        if (i <= start) continue;
+        const w = wOf(start, i); if (w > maxW) break;
+        rec(i, k + 1, acc.concat(i), cost + Math.abs(w - target) / target + pen);
+      }
+    };
+    rec(0, 0, [], 0);
+  }
+  ctx.restore();
+  if (!best) return [str];
+  const out = []; let s0 = 0;
+  for (const i of best.br.concat(N)) { out.push(ch.slice(s0, i).join('')); s0 = i; }
+  return out;
+}
+function caption(t) {
+  const cues = window.CUES || [];
+  const c = cues.find(c => t >= c[0] && t < c[1]);
+  if (!c) return;
+  const a = Math.min(easeOut(seg(t, c[0], 0.2)), 1 - seg(t, c[1] - 0.2, 0.2));
+  const size = 46, lh = 68, maxW = W - 160;
+  const lines = wrapJa(c[2], size, maxW);
+  const y0 = 1745 - (lines.length - 1) * lh / 2;
+  lines.forEach((s, k) => {
+    ctx.save(); ctx.globalAlpha = a; ctx.font = `bold ${size}px ${FONT}`; ctx.textAlign = 'center';
+    ctx.lineJoin = 'round'; ctx.lineWidth = 10; ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.strokeText(s, W / 2, y0 + k * lh); ctx.fillStyle = C.ink; ctx.fillText(s, W / 2, y0 + k * lh);
+    ctx.restore();
+  });
+}
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.save();
+  background(t);
+  const sc = SCENES.find(s => t >= s.start && t < s.start + s.dur) || SCENES[SCENES.length - 1];
+  const lt = t - sc.start;
+  // シーン間のフェード(黒を挟む)
+  const fade = Math.min(easeOut(seg(lt, 0, 0.35)), sc.kind === 'outro' ? 1 : 1 - easeInOut(seg(lt, sc.dur - 0.35, 0.35)));
+  ctx.save(); ctx.globalAlpha = 1;
+  if (sc.kind === 'intro') sceneIntro(lt, sc.dur);
+  else if (sc.kind === 'battle') sceneBattle(lt, sc.dur, sc.i);
+  else if (sc.kind === 'summary') sceneSummary(lt, sc.dur);
+  else sceneOutro(lt, sc.dur);
+  ctx.restore();
+  rect(0, 0, W, H, '#000', 1 - fade);
+  caption(t);
+  // 最後は暗転
+  if (sc.kind === 'outro') rect(0, 0, W, H, '#000', easeInOut(seg(lt, sc.dur - 0.8, 0.8)));
+  overlay(t);
+  ctx.restore();
+}
+window.render = render;
+
+// ブラウザで開いた時のプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
