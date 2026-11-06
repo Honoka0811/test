@@ -1,0 +1,736 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Midway Short Render</title>
+<link rel="stylesheet" href="fonts/noto/package/900.css">
+<link rel="stylesheet" href="fonts/noto/package/700.css">
+<link rel="stylesheet" href="fonts/dela/package/400.css">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+  body.preview canvas { width: auto; height: 96vh; margin: 2vh auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ============================================================
+//  ミッドウェー海戦ショート — render(t) が時刻 t 秒のフレームを決定論的に描く
+//  タイムライン(output/timeline.json)は narrate.py が音声の実長から生成し、
+//  capture.js が window.init(timeline) で注入する。
+// ============================================================
+const W = 1080, H = 1920, FPS = 30;
+window.FPS = FPS;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+
+const F_HEAVY = '"Noto Sans JP", "IPAGothic", sans-serif';
+const F_DISP = '"Dela Gothic One", "Noto Sans JP", sans-serif';
+const F_MONO = '"IPAGothic", monospace';
+const C = {
+  bg: '#070b14', paper: '#ece2c6', ink: '#2a2116', red: '#e3342f', redDeep: '#8f1512',
+  yellow: '#ffd23f', blue: '#4aa3ff', blueDeep: '#173a66', jp: '#e8524f', us: '#3f8de8',
+  green: '#4dff9a', white: '#ffffff', sea: '#0c2238', seaLine: '#1b3b5c',
+};
+
+// ---------- 汎用 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => 1 - Math.pow(1 - clamp(k), 3);
+const easeIn = k => Math.pow(clamp(k), 3);
+const easeInOut = k => { k = clamp(k); return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const back = k => { k = clamp(k); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+const win = (t, a, fadeIn = .15) => clamp((t - a) / fadeIn);
+function rnd(seed) { const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function font(px, fam = F_HEAVY, w = 900) { g.font = `${w} ${px}px ${fam}`; }
+
+function text(str, x, y, { size = 60, fam = F_HEAVY, weight = 900, color = '#fff', stroke = 0, strokeColor = '#000', align = 'center', alpha = 1, glow = 0, glowColor = null, spacing = 0 } = {}) {
+  g.save();
+  g.globalAlpha *= alpha;
+  font(size, fam, weight);
+  g.textAlign = align; g.textBaseline = 'middle';
+  if (spacing) g.letterSpacing = spacing + 'px';
+  if (glow) { g.shadowColor = glowColor || color; g.shadowBlur = glow; }
+  if (stroke) { g.lineJoin = 'round'; g.lineWidth = stroke; g.strokeStyle = strokeColor; g.strokeText(str, x, y); }
+  g.fillStyle = color; g.fillText(str, x, y);
+  g.restore();
+}
+function rrect(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+
+// ---------- タイムライン ----------
+let TL = null, SC = {}, EVENTS = [];
+const S = id => SC[id];
+const ch = (id, i) => SC[id].chunks[i];
+// フレーズ内のキーワードが読まれるおおよその時刻(文字位置の比率で推定)
+function kw(id, i, word) {
+  const c = ch(id, i); const k = c.t.indexOf(word);
+  return c.start + (c.end - c.start) * (Math.max(0, k) / c.t.length);
+}
+
+window.init = function (tl) {
+  TL = tl; tl.scenes[0].start = 0;
+  SC = {}; tl.scenes.forEach(s => SC[s.id] = s);
+  window.DURATION = tl.duration;
+  buildEvents();
+  window.EVENTS = EVENTS;
+  return { duration: tl.duration, events: EVENTS };
+};
+
+// 効果音・揺れ・フラッシュのイベント(audio.py が同じリストを使って SFX を配置する)
+function buildEvents() {
+  EVENTS = [];
+  const ev = (type, t, o = {}) => EVENTS.push(Object.assign({ type, t: +t.toFixed(3) }, o));
+  TL.scenes.forEach((s, i) => { if (i) { ev('whoosh', s.start - .22); ev('flash', s.start, { amp: 0 }); } });
+  ev('boom', 0.02, { amp: 26 });
+  ev('stamp', kw('hook', 1, '嘘の電報') + .05, { amp: 30 });
+  ev('stamp', kw('empire', 1, '連戦連勝'), { amp: 18 });
+  ev('marker', kw('empire', 0, '真珠湾攻撃'), { amp: 8 });
+  ev('glitch', ch('code', 1).start, { dur: .45 });
+  ev('stinger', kw('code', 2, '分からない'), { amp: 10 });
+  ev('braam', ch('trap', 0).start + .05, { amp: 22 });
+  ev('radio', ch('trap', 1).start + .2, { dur: 1.6 });
+  ev('morse', ch('trap', 2).start, { dur: ch('trap', 2).end - ch('trap', 2).start });
+  ev('glitch', ch('bite', 1).start, { dur: .4 });
+  ev('lock', ch('bite', 2).start + .7, { amp: 10 });
+  ev('stamp', kw('bite', 2, 'バレていた'), { amp: 26 });
+  ev('alarm', ch('rearm', 1).start + .1, { dur: 1.6 });
+  ev('braam', ch('rearm', 2).start + .05, { amp: 12 });
+  // 雷撃機の撃墜
+  const a0 = ch('attack', 0);
+  for (let k = 0; k < 4; k++) ev('pop', a0.start + .45 + k * .38, { amp: 6 });
+  ev('heartbeat', ch('attack', 1).start + .1, { dur: ch('attack', 2).start - ch('attack', 1).start - .1 });
+  ev('silence', ch('attack', 1).end + .05, { dur: ch('attack', 2).start - ch('attack', 1).end - .05 });
+  ev('whistle', ch('attack', 2).start - .55, { dur: 1.6 });
+  ev('boom', ch('attack', 2).end + .05, { amp: 34 });
+  ev('ticks', ch('six', 0).start, { dur: ch('six', 0).end - ch('six', 0).start + .3 });
+  ['赤城', '加賀', '蒼龍'].forEach((n, k) => ev('explode', kw('six', 1, n) + .05, { amp: 20, name: n }));
+  ev('explode', kw('six', 2, '飛龍') + .05, { amp: 18, name: '飛龍' });
+  ev('stamp', kw('six', 2, '全滅'), { amp: 28 });
+  ev('braam', S('end').start + .05, { amp: 10 });
+  ev('ding', ch('end', 1).start + .1, { amp: 0 });
+  EVENTS.sort((a, b) => a.t - b.t);
+}
+function shakeAt(t) {
+  let a = 0;
+  for (const e of EVENTS) { if (!e.amp) continue; const d = t - e.t; if (d >= 0 && d < .6) a += e.amp * Math.exp(-d * 9); }
+  return a;
+}
+const stampT = i => EVENTS.filter(e => e.type === 'stamp')[i].t;
+function evTime(type, name) { const e = EVENTS.find(e => e.type === type && (!name || e.name === name)); return e ? e.t : 1e9; }
+
+// ---------- 背景素材(フィルムグレイン) ----------
+const grain = [];
+for (let k = 0; k < 4; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 384;
+  const x = c.getContext('2d'); const im = x.createImageData(384, 384);
+  for (let i = 0; i < im.data.length; i += 4) { const v = (rnd(i * 0.37 + k * 999) * 255) | 0; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  x.putImageData(im, 0, 0); grain.push(c);
+}
+function drawGrain(t, alpha = .07) {
+  const f = Math.floor(t * FPS);
+  g.save(); g.globalAlpha = alpha; g.globalCompositeOperation = 'overlay';
+  const c = grain[f % 4], ox = (f * 97) % 384, oy = (f * 61) % 384;
+  for (let y = -oy; y < H; y += 384) for (let x = -ox; x < W; x += 384) g.drawImage(c, x, y);
+  g.restore();
+}
+function vignette(strength = .75) {
+  const gr = g.createRadialGradient(W / 2, H * .45, H * .25, W / 2, H * .45, H * .75);
+  gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${strength})`);
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+}
+function scanlines(alpha = .12) {
+  g.save(); g.globalAlpha = alpha; g.fillStyle = '#000';
+  for (let y = 0; y < H; y += 6) g.fillRect(0, y, W, 2);
+  g.restore();
+}
+
+// ---------- 地図(簡略化した太平洋) ----------
+const MAP = { lon0: 118, lat0: 56, s: 10.64, x0: 40, y0: 380 };
+const P = (lon, lat) => [MAP.x0 + (lon - MAP.lon0) * MAP.s, MAP.y0 + (MAP.lat0 - lat) * MAP.s];
+const LAND = {
+  honshu: [[129.7,33.2],[130.5,31.2],[131.6,31.5],[132,33],[133,33.4],[134.7,33.8],[135.8,33.5],[136.9,34.3],[138.5,34.6],[139.8,35],[140.9,36],[141,38.3],[141.9,39.8],[141.4,41.4],[140.8,41.2],[140,40.5],[139.9,39.3],[139.2,38],[138.5,37.3],[137.2,36.8],[136,35.7],[133.2,35.5],[131.5,34.6],[130.9,34],[129.7,33.2]],
+  hokkaido: [[140,41.4],[141.2,41.8],[143.3,42],[145.5,43.3],[144.3,44.1],[141.8,45.4],[141.6,43.3],[140.2,42.8],[140,41.4]],
+  taiwan: [[120.1,23],[121,25.2],[121.9,25],[121,22],[120.1,23]],
+  luzon: [[120,18.5],[122.2,18.5],[122,16],[124,13],[123,13],[121,14.2],[120.5,16],[120,18.5]],
+  mindanao: [[122,8],[126,9.8],[126.5,7],[125.5,5.8],[124,6.5],[122,7.2],[122,8]],
+  guinea: [[131,-1.5],[135,-3.5],[138,-1.6],[141,-2.6],[145.7,-5],[147.5,-6.5],[150.5,-10.5],[147,-10],[143,-9],[141,-9.2],[138,-8.4],[137.5,-5.2],[134,-4],[132,-2.8],[131,-1.5]],
+  asia: [[118,-10],[118,24.5],[120.5,27.5],[122,30],[121,32],[120,34.5],[119,37],[121.5,37.5],[122.5,40],[124.5,40],[126.3,37],[126.5,34.5],[128.6,35.1],[129.4,36],[129.5,37.5],[128.4,38.7],[127.5,39.7],[129.8,40.9],[130.7,42.3],[133,43],[135.5,44],[138,46.5],[140,48.5],[141,52],[136,56],[118,56]],
+  sakhalin: [[142,46],[143.5,46.5],[143,49],[143.2,52],[142.5,54.3],[142,52],[142.2,49],[142,46]],
+  kamchatka: [[156.5,51],[158.5,52.8],[160,54],[162,56],[155,56],[156,52.5],[156.5,51]],
+  alaska: [[196,56],[198,55.2],[201,56],[201,56]],
+};
+const ISLANDS = { midway: [182.6, 28.2], hawaii: [202.1, 21.4], wake: [166.6, 19.3], tokyo: [139.7, 35.7] };
+const ALEUT = [[173,52.8],[175.5,52.3],[178,51.8],[180.5,51.6],[183,51.8],[186,52.2],[189,52.6],[192,53],[194,53.6],[196.5,54.6]];
+const HAWAII_CHAIN = [[199.5,22.1],[200.7,21.6],[202.1,21.4],[203.1,21.1],[203.6,20.8],[204.5,19.6]];
+const SPHERE = [[118,22],[118,-12],[152,-12],[160,-8],[168,2],[172,12],[167,20],[156,26],[150,33],[148,42],[153,48],[160,52],[160,56],[118,56]];
+
+function poly(pts) { g.beginPath(); pts.forEach(([lo, la], i) => { const [x, y] = P(lo, la); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.closePath(); }
+function drawMap(t, { land = '#1d2a3c', edge = '#3a5878', grid = true, labels = [], dim = 0 } = {}) {
+  g.fillStyle = '#0a1626'; g.fillRect(0, 0, W, H);
+  if (grid) {
+    g.strokeStyle = 'rgba(90,140,200,.13)'; g.lineWidth = 2;
+    for (let lo = 120; lo <= 210; lo += 10) { const [x] = P(lo, 0); g.beginPath(); g.moveTo(x, 300); g.lineTo(x, 1250); g.stroke(); }
+    for (let la = -10; la <= 55; la += 10) { const [, y] = P(0, la); g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  }
+  g.fillStyle = land; g.strokeStyle = edge; g.lineWidth = 3;
+  Object.values(LAND).forEach(p => { poly(p); g.fill(); g.stroke(); });
+  g.fillStyle = '#5d7fa3';
+  [...ALEUT, ...HAWAII_CHAIN].forEach(([lo, la]) => { const [x, y] = P(lo, la); g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); });
+  [ISLANDS.midway, ISLANDS.wake].forEach(([lo, la]) => { const [x, y] = P(lo, la); g.beginPath(); g.arc(x, y, 7, 0, 7); g.fill(); });
+  labels.forEach(l => { const [x, y] = P(...ISLANDS[l.at] || l.ll); text(l.text, x + (l.dx || 0), y + (l.dy || -38), { size: l.size || 38, color: l.color || '#cfe3ff', stroke: 8, strokeColor: 'rgba(0,0,0,.85)', alpha: l.alpha ?? 1 }); });
+  if (dim) { g.fillStyle = `rgba(0,0,0,${dim})`; g.fillRect(0, 0, W, H); }
+}
+
+// ---------- 艦・機体のシルエット ----------
+function carrierTop(x, y, len, rot, color, deck = '#3b3225', name = null) {
+  g.save(); g.translate(x, y); g.rotate(rot);
+  const w = len * .16;
+  g.fillStyle = color; g.beginPath();
+  g.moveTo(len / 2, 0); g.lineTo(len * .32, -w / 2); g.lineTo(-len / 2, -w / 2); g.lineTo(-len / 2, w / 2); g.lineTo(len * .32, w / 2); g.closePath(); g.fill();
+  g.fillStyle = deck; g.fillRect(-len * .46, -w * .38, len * .8, w * .76);
+  g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; g.setLineDash([8, 8]);
+  g.beginPath(); g.moveTo(-len * .44, 0); g.lineTo(len * .32, 0); g.stroke(); g.setLineDash([]);
+  g.fillStyle = '#222'; g.fillRect(len * .02, -w * .62, len * .12, w * .22);
+  g.restore();
+}
+function carrierSide(x, y, len, color = '#1a1d22', fire = 0, t = 0) {
+  g.save(); g.translate(x, y);
+  const h = len * .09;
+  g.fillStyle = color; g.beginPath();
+  g.moveTo(-len / 2, -h); g.lineTo(len / 2, -h); g.lineTo(len * .44, 0); g.lineTo(-len * .44, 0); g.closePath(); g.fill();
+  g.fillRect(-len / 2, -h * 1.25, len, h * .3);           // 飛行甲板
+  g.fillRect(len * .08, -h * 2.1, len * .1, h * .9);       // 艦橋
+  if (fire > 0) {
+    for (let k = 0; k < 7; k++) {
+      const fx = -len * .4 + k * len * .13, ph = t * 9 + k * 1.7;
+      const fh = h * (1.6 + Math.sin(ph) * .5 + rnd(k) * 1.2) * fire;
+      const gr = g.createLinearGradient(0, -h * 1.2, 0, -h * 1.2 - fh);
+      gr.addColorStop(0, 'rgba(255,220,120,.95)'); gr.addColorStop(.5, 'rgba(255,90,20,.85)'); gr.addColorStop(1, 'rgba(120,20,0,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(fx, -h * 1.2 - fh / 2, len * .06, fh / 2, 0, 0, 7); g.fill();
+    }
+    for (let k = 0; k < 6; k++) {   // 黒煙
+      const p = (t * .6 + k / 6) % 1;
+      g.fillStyle = `rgba(20,20,22,${.55 * (1 - p) * fire})`;
+      g.beginPath(); g.arc(-len * .3 + k * len * .12 + p * 40, -h * 2.4 - p * len * .45, len * (.05 + p * .12), 0, 7); g.fill();
+    }
+  }
+  g.restore();
+}
+function planeSide(x, y, s, rot, color) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  g.fillStyle = color; g.beginPath(); g.ellipse(0, 0, 34, 7, 0, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(-6, 0); g.lineTo(10, 0); g.lineTo(-2, 16); g.lineTo(-14, 16); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(-28, -2); g.lineTo(-40, -16); g.lineTo(-34, 0); g.closePath(); g.fill();
+  g.restore();
+}
+function planeTop(x, y, s, rot, color) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(s, s);
+  g.fillStyle = color;
+  g.beginPath(); g.ellipse(0, 0, 6, 30, 0, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(-38, -4); g.lineTo(38, -4); g.lineTo(34, 6); g.lineTo(-34, 6); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(-14, 22); g.lineTo(14, 22); g.lineTo(12, 28); g.lineTo(-12, 28); g.closePath(); g.fill();
+  g.restore();
+}
+function explosion(x, y, age, size = 1, seed = 1) {
+  if (age < 0 || age > 2.2) return;
+  g.save();
+  const fl = clamp(1 - age / .25);
+  if (fl > 0) { const gr = g.createRadialGradient(x, y, 0, x, y, 260 * size); gr.addColorStop(0, `rgba(255,250,220,${fl})`); gr.addColorStop(1, 'rgba(255,140,40,0)'); g.fillStyle = gr; g.fillRect(x - 300 * size, y - 300 * size, 600 * size, 600 * size); }
+  for (let k = 0; k < 26; k++) {
+    const a = rnd(seed * 31 + k) * Math.PI * 2, sp = (180 + rnd(seed + k * 7) * 360) * size;
+    const d = sp * (1 - Math.exp(-age * 3)), px = x + Math.cos(a) * d, py = y + Math.sin(a) * d * .7 - age * 60;
+    const life = clamp(1 - age / (1 + rnd(k + seed) * 1.1));
+    g.fillStyle = k % 3 ? `rgba(255,${120 + (k * 13) % 100},30,${life})` : `rgba(40,36,34,${life * .8})`;
+    g.beginPath(); g.arc(px, py, (8 + rnd(k * 3 + seed) * 22) * size * (1 + age), 0, 7); g.fill();
+  }
+  g.restore();
+}
+function stamp(str, x, y, t0, t, { size = 150, color = C.red, rot = -.12, box = true, fam = F_DISP, w = null } = {}) {
+  const k = (t - t0) / .18; if (k < 0) return;
+  const sc = k < 1 ? lerp(2.6, 1, easeIn(k)) : 1 + Math.max(0, .06 * Math.sin((t - t0 - .18) * 30) * Math.exp(-(t - t0 - .18) * 10));
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(sc, sc); g.globalAlpha = clamp(k * 2);
+  font(size, fam, 400); const tw = w || g.measureText(str).width + size * .6;
+  if (box) { g.strokeStyle = color; g.lineWidth = size * .09; rrect(-tw / 2, -size * .72, tw, size * 1.44, size * .16); g.stroke(); }
+  text(str, 0, size * .04, { size, fam, weight: 400, color });
+  g.restore();
+}
+function chip(str, x, y, { size = 40, bg = C.yellow, color = '#111', alpha = 1, pad = 22 } = {}) {
+  g.save(); g.globalAlpha *= alpha; font(size);
+  const w = g.measureText(str).width + pad * 2;
+  g.fillStyle = bg; rrect(x - w / 2, y - size * .78, w, size * 1.56, size * .3); g.fill();
+  text(str, x, y + 2, { size, color }); g.restore();
+}
+
+// ---------- 字幕(フレーズ単位、キーワードを黄色で強調) ----------
+function layoutChars(str, size, maxW, hl = new Set()) {
+  // 2 行に収まるよう、左右の幅がなるべく揃い、句読点・助詞の後ろで切れる位置を選ぶ
+  font(size); const chars = [...str].map((c, i) => ({ c, i, w: g.measureText(c).width }));
+  const total = chars.reduce((s, o) => s + o.w, 0);
+  if (total <= maxW) return [chars];
+  let best = 1, bestScore = 1e9, acc = 0;
+  for (let i = 1; i < chars.length; i++) {
+    acc += chars[i - 1].w; const rest = total - acc;
+    if (acc > maxW || rest > maxW) continue;
+    const prev = chars[i - 1].c, next = chars[i].c;
+    let score = Math.abs(acc - rest);
+    if ('、。！？」'.includes(prev)) score -= 900;
+    else if ('はがをにでともの'.includes(prev) && !'はがをにでともの、。'.includes(next)) score -= 350;
+    const kanji = c => /[\u4e00-\u9fff]/.test(c), kana = c => /[\u3040-\u309f]/.test(c);
+    if ((kanji(prev) && kanji(next)) || (kanji(prev) && kana(next)) || (kana(prev) && kana(next) && !'はがをにでとものも'.includes(prev))) score += 300;
+    if (next === '「') score -= 300;
+    if ('、。！？」'.includes(next)) score += 2000;
+    if (hl.has(i - 1) && hl.has(i)) score += 1500;   // 強調語の途中では切らない
+    if (score < bestScore) { bestScore = score; best = i; }
+  }
+  return [chars.slice(0, best), chars.slice(best)];
+}
+function subtitle(t) {
+  if (!TL) return;
+  let cur = null, next = null;
+  const all = TL.scenes.flatMap(s => s.chunks.map(c => Object.assign({ scene: s.id }, c)));
+  for (let i = 0; i < all.length; i++) if (t >= all[i].start - .04) { cur = all[i]; next = all[i + 1]; }
+  if (!cur || cur.scene === 'hook') return;
+  const until = Math.min(next ? next.start - .04 : 1e9, cur.end + .5);
+  if (t > until) return;
+  const hl = new Set();
+  cur.hl.forEach(wd => { const k = cur.t.indexOf(wd); if (k >= 0) for (let j = 0; j < [...wd].length; j++) hl.add(k + j); });
+  const size = 74, lines = layoutChars(cur.t, size, 940, hl);
+  const k = (t - cur.start + .04) / .16, sc = lerp(.82, 1, back(k));
+  const baseY = 1335 - (lines.length - 1) * size * .62;
+  g.save(); g.translate(W / 2, baseY); g.scale(sc, sc); g.globalAlpha = clamp(k * 3) * clamp((until - t) / .08);
+  lines.forEach((ln, li) => {
+    const lw = ln.reduce((s, o) => s + o.w, 0); let x = -lw / 2; const y = li * size * 1.25;
+    font(size); g.textBaseline = 'middle'; g.textAlign = 'left'; g.lineJoin = 'round';
+    ln.forEach(o => { g.lineWidth = 18; g.strokeStyle = '#000'; g.strokeText(o.c, x, y); x += o.w; });
+    x = -lw / 2;
+    ln.forEach(o => { g.fillStyle = hl.has(o.i) ? C.yellow : '#fff'; g.fillText(o.c, x, y); x += o.w; });
+  });
+  g.restore();
+}
+
+// ---------- 常時表示のヘッダー・進捗バー ----------
+function header(t) {
+  const a = clamp((t - .2) / .3);
+  g.save(); g.globalAlpha = a;
+  chip('太平洋戦争 1942', W / 2, 232, { size: 34, bg: C.red, color: '#fff' });
+  text('1通の電報が、戦争を変えた', W / 2, 312, { size: 54, fam: F_DISP, weight: 400, color: '#fff', stroke: 12 });
+  g.restore();
+  g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(0, 0, W, 10);
+  g.fillStyle = C.yellow; g.fillRect(0, 0, W * clamp(t / (TL ? TL.duration : 60)), 10);
+}
+
+// ============================================================
+//  シーン
+// ============================================================
+const SCENES = {
+  hook(t, s) {
+    g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+    const pulse = .5 + .5 * Math.sin(t * 5);
+    const gr = g.createRadialGradient(W / 2, 760, 0, W / 2, 760, 900);
+    gr.addColorStop(0, `rgba(150,15,12,${.45 + .15 * pulse})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, W, H);
+    text('1942', W / 2, 820, { size: 420, fam: F_DISP, weight: 400, color: 'rgba(255,255,255,.05)' });
+    const c1 = ch('hook', 1);
+    const up = ease((t - c1.start + .1) / .35);
+    const k = (t - .02) / .16;
+    g.save(); g.translate(W / 2, lerp(700, 520, up)); const sc = (k < 1 ? lerp(2.2, 1, easeIn(k)) : 1) * lerp(1, .78, up); g.scale(sc, sc);
+    text('太平洋戦争の', 0, -95, { size: 92, color: '#fff', stroke: 14, alpha: clamp(k * 2) });
+    text('流れを変えた', 0, 40, { size: 150, fam: F_DISP, weight: 400, color: C.yellow, stroke: 16, alpha: clamp(k * 2), glow: 30, glowColor: 'rgba(255,200,40,.5)' });
+    g.restore();
+    // 電報カード
+    if (t > c1.start - .1) {
+      const kk = ease((t - c1.start + .1) / .3);
+      g.save(); g.translate(W / 2, lerp(1500, 930, kk)); g.rotate(lerp(.2, -.05, kk));
+      g.shadowColor = 'rgba(0,0,0,.7)'; g.shadowBlur = 40;
+      g.fillStyle = C.paper; g.fillRect(-380, -230, 760, 460); g.shadowBlur = 0;
+      g.strokeStyle = '#a3352c'; g.lineWidth = 4; g.strokeRect(-350, -200, 700, 400);
+      text('電　報', 0, -150, { size: 64, color: '#a3352c' });
+      g.strokeStyle = 'rgba(80,60,40,.35)'; g.lineWidth = 2;
+      for (let y = -80; y <= 160; y += 64) { g.beginPath(); g.moveTo(-320, y + 28); g.lineTo(320, y + 28); g.stroke(); }
+      text('発　ミッドウェー基地', -310, -70, { size: 40, fam: F_MONO, weight: 400, color: C.ink, align: 'left' });
+      text('真水製造装置　故障', -310, -6, { size: 52, fam: F_MONO, weight: 400, color: C.ink, align: 'left' });
+      text('至急　給水ヲ要ス', -310, 58, { size: 40, fam: F_MONO, weight: 400, color: C.ink, align: 'left' });
+      g.restore();
+      stamp('嘘', W / 2 + 230, 1010, stampT(0), t, { size: 190, rot: .18 });
+    }
+    text('真実は、最後まで見ると分かる', W / 2, 1290, { size: 44, color: 'rgba(255,255,255,.85)', stroke: 10, alpha: win(t, c1.end - .3, .3) });
+  },
+
+  empire(t, s) {
+    const z = 1 + (t - s.start) * .015;
+    g.save(); g.translate(W / 2, 760); g.scale(z, z); g.translate(-W / 2, -760);
+    drawMap(t, { labels: [{ at: 'tokyo', text: '日本', dx: -70, dy: -10, size: 46 }, { at: 'hawaii', text: 'ハワイ', dy: -48 }, { at: 'midway', text: 'ミッドウェー', dy: -40, size: 32, alpha: .7 }] });
+    // 日本の勢力圏がじわじわ広がる
+    const r = ease((t - s.start) / 2.8) * 1100; const [tx, ty] = P(...ISLANDS.tokyo);
+    g.save(); g.beginPath(); g.arc(tx, ty, r, 0, 7); g.clip();
+    poly(SPHERE); g.fillStyle = 'rgba(232,82,79,.33)'; g.fill(); g.strokeStyle = 'rgba(255,110,100,.8)'; g.lineWidth = 4; g.setLineDash([14, 10]); g.stroke(); g.setLineDash([]);
+    g.restore();
+    text('日本の勢力圏', ...P(140, 6), { size: 40, color: '#ffb3ad', stroke: 8, alpha: win(t, s.start + 1.2, .4) });
+    // 真珠湾マーカー
+    const tm = evTime('marker'); const [hx, hy] = P(...ISLANDS.hawaii);
+    if (t > tm) {
+      const a = t - tm; g.strokeStyle = C.red; g.lineWidth = 6;
+      g.beginPath(); g.arc(hx, hy, 30 + 50 * (a % 1), 0, 7); g.globalAlpha = 1 - (a % 1); g.stroke(); g.globalAlpha = 1;
+      g.fillStyle = C.red; g.beginPath(); g.arc(hx, hy, 14, 0, 7); g.fill();
+      chip('真珠湾攻撃 1941.12', hx - 130, hy + 70, { size: 32, bg: C.red, color: '#fff', alpha: win(t, tm, .2) });
+    }
+    g.restore();
+    stamp('連戦連勝', W / 2, 1080, stampT(1), t, { size: 120, rot: -.08 });
+    vignette(.6);
+  },
+
+  code(t, s) {
+    g.fillStyle = '#020a06'; g.fillRect(0, 0, W, H);
+    const c1 = ch('code', 1), c2 = ch('code', 2);
+    chip('米軍 暗号解読班', W / 2, 430, { size: 34, bg: C.green, color: '#022' });
+    // 5桁の暗号群
+    const step = Math.floor(t * 12); const cols = 5, rows = 9, x0 = 120, y0 = 520, dx = 176, dy = 64;
+    font(46, F_MONO, 400); g.textAlign = 'left'; g.textBaseline = 'middle';
+    const sel = { c: 2, r: 4 };
+    const dimAll = clamp((t - c1.start) / .3) * .6;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const isSel = c === sel.c && r === sel.r;
+      let str = ''; for (let d = 0; d < 5; d++) str += Math.floor(rnd(r * 31 + c * 7 + d + (isSel ? 0 : Math.floor(step / (3 + (r + c) % 4))) * 13) * 10);
+      g.fillStyle = `rgba(77,255,154,${(isSel ? .95 : .55) * (1 - (isSel ? 0 : dimAll))})`;
+      if (!(isSel && t > c1.start)) g.fillText(str, x0 + c * dx, y0 + r * dy);
+    }
+    // 選択枠 → 「AF」に解読
+    if (t > c1.start - .2) {
+      const k = ease((t - c1.start + .2) / .35);
+      const bx = x0 + sel.c * dx - 14, by = y0 + sel.r * dy - 32;
+      const tx = W / 2 - 230, ty = 700, tw = 460, th = 300;
+      const X = lerp(bx, tx, k), Y = lerp(by, ty, k), Wd = lerp(150, tw, k), Hd = lerp(64, th, k);
+      g.fillStyle = `rgba(0,0,0,${.85 * k})`; g.fillRect(X, Y, Wd, Hd);
+      g.strokeStyle = C.yellow; g.lineWidth = 6; g.strokeRect(X, Y, Wd, Hd);
+      const gl = t - c1.start;
+      if (gl > 0) {
+        const glitch = gl < .45;
+        const s2 = glitch ? String.fromCharCode(65 + Math.floor(rnd(step) * 26)) + String.fromCharCode(65 + Math.floor(rnd(step + 3) * 26)) : 'AF';
+        text(s2, X + Wd / 2 + (glitch ? (rnd(step * 7) - .5) * 20 : 0), Y + Hd / 2 + 8, { size: 210 * k, fam: F_DISP, weight: 400, color: C.yellow, glow: 40 });
+        text('次の攻撃目標', X + Wd / 2, Y - 40, { size: 40, color: '#fff', stroke: 8, alpha: win(t, c1.start + .4) });
+      }
+    }
+    // 候補地
+    if (t > c2.start - .1) {
+      const names = ['ハワイ？', 'ミッドウェー？', 'アリューシャン？'];
+      names.forEach((n, i) => {
+        const k = back((t - c2.start - i * .12 + .1) / .3);
+        const x = W / 2 + (i - 1) * 330, y = 1120 + Math.sin(t * 3 + i) * 6;
+        g.save(); g.translate(x, y); g.scale(k, k);
+        g.fillStyle = 'rgba(20,30,25,.95)'; g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 3; rrect(-150, -55, 300, 110, 18); g.fill(); g.stroke();
+        text(n, 0, 2, { size: n.length > 6 ? 38 : 44, color: '#fff' });
+        g.restore();
+      });
+      const q = evTime('stinger');
+      if (t > q) text('？', W / 2 + 290, 690, { size: 200, fam: F_DISP, weight: 400, color: C.red, stroke: 12, alpha: win(t, q, .1), glow: 30 });
+    }
+    scanlines(.18); vignette(.7);
+  },
+
+  trap(t, s) {
+    const c0 = ch('trap', 0), c1 = ch('trap', 1), c2 = ch('trap', 2);
+    if (t < c1.start) {
+      g.fillStyle = '#060000'; g.fillRect(0, 0, W, H);
+      const k = (t - c0.start) / .2;
+      const gr = g.createRadialGradient(W / 2, 780, 0, W / 2, 780, 600); gr.addColorStop(0, 'rgba(200,20,20,.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      g.save(); g.translate(W / 2, 800); const sc = k < 1 ? lerp(2.4, 1, easeIn(k)) : 1 + (t - c0.start) * .05; g.scale(sc, sc);
+      text('罠', 0, 0, { size: 420, fam: F_DISP, weight: 400, color: C.red, glow: 60, alpha: clamp(k * 2) });
+      g.restore();
+      text('アメリカが仕掛けた', W / 2, 520, { size: 56, color: '#fff', stroke: 10, alpha: win(t, c0.start + .25) });
+      vignette(.8); return;
+    }
+    // ミッドウェー島から電波
+    g.fillStyle = '#071423'; g.fillRect(0, 0, W, H);
+    const cx = W / 2, cy = 600;
+    for (let k = 0; k < 5; k++) {
+      const p = ((t - c1.start) * .8 + k / 5) % 1;
+      g.strokeStyle = `rgba(255,210,63,${.7 * (1 - p)})`; g.lineWidth = 5;
+      g.beginPath(); g.arc(cx, cy - 40, 60 + p * 420, Math.PI * 1.1, Math.PI * 1.9); g.stroke();
+    }
+    g.fillStyle = '#2b4a33'; g.beginPath(); g.ellipse(cx, cy + 110, 220, 46, 0, 0, 7); g.fill();
+    g.fillStyle = '#c9b98a'; g.beginPath(); g.ellipse(cx, cy + 104, 200, 34, 0, 0, 7); g.fill();
+    g.strokeStyle = '#ddd'; g.lineWidth = 6;      // 電波塔
+    g.beginPath(); g.moveTo(cx - 40, cy + 100); g.lineTo(cx, cy - 60); g.lineTo(cx + 40, cy + 100); g.moveTo(cx - 24, cy + 30); g.lineTo(cx + 24, cy + 30); g.moveTo(cx - 14, cy - 10); g.lineTo(cx + 14, cy - 10); g.stroke();
+    g.fillStyle = C.red; g.beginPath(); g.arc(cx, cy - 64, 12 + Math.sin(t * 12) * 3, 0, 7); g.fill();
+    text('ミッドウェー島', cx, cy + 190, { size: 46, color: '#fff', stroke: 10 });
+    chip('暗号なし(平文)で送信', cx, 420, { size: 38, alpha: win(t, c1.start + .3, .2) });
+    // テレタイプ用紙
+    if (t > c2.start - .2) {
+      const k = ease((t - c2.start + .2) / .3);
+      g.save(); g.translate(W / 2, lerp(1700, 1010, k)); g.rotate(-.03);
+      g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 30; g.fillStyle = C.paper; g.fillRect(-420, -150, 840, 300); g.shadowBlur = 0;
+      const msg = '真水製造装置　故障';
+      const n = Math.floor(clamp((t - c2.start) / ((c2.end - c2.start) * .85)) * msg.length);
+      text(msg.slice(0, n) + ((Math.floor(t * 4) % 2) ? '▌' : ''), -380, -30, { size: 64, fam: F_MONO, weight: 400, color: C.ink, align: 'left' });
+      // モールス
+      const pattern = '.-- .- - . .-. ..-. .- .. .-..'; font(40, F_MONO, 400);
+      let x = -380; const nm = Math.floor(clamp((t - c2.start) / (c2.end - c2.start)) * pattern.length);
+      for (let i = 0; i < nm; i++) { const c = pattern[i]; g.fillStyle = '#7a2a20'; if (c === '.') g.fillRect(x, 70, 12, 12); else if (c === '-') g.fillRect(x, 70, 34, 12); x += c === ' ' ? 20 : (c === '.' ? 22 : 44); }
+      g.restore();
+      text('※ わざと流した偽の情報', W / 2, 1210, { size: 36, color: '#ffb3ad', stroke: 8, alpha: win(t, c2.start + .6) });
+    }
+    vignette(.6);
+  },
+
+  bite(t, s) {
+    const c0 = ch('bite', 0), c1 = ch('bite', 1), c2 = ch('bite', 2);
+    if (t < c2.start) {
+      g.fillStyle = '#0d0303'; g.fillRect(0, 0, W, H);
+      chip('傍受：日本海軍の暗号電報', W / 2, 430, { size: 34, bg: C.red, color: '#fff' });
+      const step = Math.floor(t * 12); font(46, F_MONO, 400); g.textAlign = 'left'; g.textBaseline = 'middle';
+      const fade = clamp((t - c1.start) / .3) * .7;
+      for (let r = 0; r < 9; r++) for (let c = 0; c < 5; c++) {
+        let str = ''; for (let d = 0; d < 5; d++) str += Math.floor(rnd(r * 17 + c * 5 + d + Math.floor(step / (2 + (r * c) % 3)) * 7) * 10);
+        g.fillStyle = `rgba(255,120,110,${.55 * (1 - fade)})`; g.fillText(str, 120 + c * 176, 520 + r * 64);
+      }
+      if (t > c1.start - .1) {
+        const k = back((t - c1.start + .1) / .3);
+        g.save(); g.translate(W / 2, 800); g.scale(k, k);
+        g.fillStyle = 'rgba(0,0,0,.9)'; g.strokeStyle = C.yellow; g.lineWidth = 6; rrect(-430, -150, 860, 300, 24); g.fill(); g.stroke();
+        const gl = t - c1.start < .4;
+        const msg = gl ? '#$%&@*!?'.split('').sort(() => rnd(Math.floor(t * 30)) - .5).join('').slice(0, 6) : 'AFは水不足';
+        text(msg, 0, 10, { size: 120, fam: F_DISP, weight: 400, color: C.yellow, glow: 30 });
+        g.restore();
+        text('解読', W / 2, 600, { size: 44, color: '#fff', stroke: 8, alpha: win(t, c1.start + .4) });
+      }
+      scanlines(.18); vignette(.7); return;
+    }
+    // 照準がミッドウェーにロック
+    drawMap(t, { labels: [{ at: 'tokyo', text: '日本', dx: -70, dy: -10, size: 46 }, { at: 'hawaii', text: 'ハワイ', dy: -48 }, { ll: [184, 52], text: 'アリューシャン', dy: -50, size: 34 }], dim: .15 });
+    const pts = [P(202.1, 21.4), P(185, 52), P(...ISLANDS.midway)];
+    const u = (t - c2.start) / .7; let x, y;
+    if (u < .5) { const k = easeInOut(u * 2); x = lerp(pts[0][0], pts[1][0], k); y = lerp(pts[0][1], pts[1][1], k); }
+    else { const k = easeInOut((u - .5) * 2); x = lerp(pts[1][0], pts[2][0], k); y = lerp(pts[1][1], pts[2][1], k); }
+    const locked = u >= 1, rr = locked ? 70 + 20 * Math.exp(-(t - c2.start - .7) * 8) : 90;
+    g.strokeStyle = locked ? C.red : C.yellow; g.lineWidth = 6;
+    g.beginPath(); g.arc(x, y, rr, 0, 7); g.stroke();
+    for (let a = 0; a < 4; a++) { const an = a * Math.PI / 2 + (locked ? 0 : t * 2); g.beginPath(); g.moveTo(x + Math.cos(an) * (rr - 25), y + Math.sin(an) * (rr - 25)); g.lineTo(x + Math.cos(an) * (rr + 30), y + Math.sin(an) * (rr + 30)); g.stroke(); }
+    if (locked) {
+      chip('AF ＝ ミッドウェー', x - 220, y + 140, { size: 50, bg: C.red, color: '#fff' });
+      stamp('バレていた', W / 2, 1080, stampT(2), t, { size: 110, rot: -.1 });
+    }
+    vignette(.6);
+  },
+
+  rearm(t, s) {
+    const c0 = ch('rearm', 0), c1 = ch('rearm', 1), c2 = ch('rearm', 2);
+    if (t < c2.start) {
+      // 上空から見た海と艦隊
+      g.fillStyle = C.sea; g.fillRect(0, 0, W, H);
+      g.strokeStyle = 'rgba(120,170,220,.12)'; g.lineWidth = 3;
+      for (let k = 0; k < 40; k++) { const y = (k * 53 + t * 25) % 1400 + 300, x = (rnd(k) * 1200 - 60); g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 30, y - 8, x + 60, y); g.stroke(); }
+      const fleet = [['赤城', 300, 820], ['加賀', 520, 900], ['蒼龍', 330, 1040], ['飛龍', 560, 1110]];
+      fleet.forEach(([n, x, y], i) => {
+        // 航跡
+        g.strokeStyle = 'rgba(255,255,255,.25)'; g.lineWidth = 10; g.beginPath(); g.moveTo(x - 100, y + 40); g.lineTo(x - 260, y + 110); g.stroke();
+        carrierTop(x, y, 210, -.42, '#3a3f47', '#6b5a3c');
+        text(n, x - 10, y + 72, { size: 38, color: '#fff', stroke: 8 });
+      });
+      // 米空母(待ち伏せ)
+      const ku = ease((t - c0.start - .4) / .6);
+      [[880, 470], [960, 600], [830, 640]].forEach(([x, y], i) => {
+        carrierTop(lerp(x + 300, x, ku), y, 160, 2.6, '#2c4f7c', '#4d6c8c');
+      });
+      text('米空母 3隻', 880, 760, { size: 40, color: '#9fd0ff', stroke: 8, alpha: ku });
+      // 攻撃隊の矢印
+      if (t > c0.start + 1) {
+        const k = clamp((t - c0.start - 1) / 1.5);
+        g.strokeStyle = 'rgba(80,170,255,.9)'; g.lineWidth = 7; g.setLineDash([22, 14]); g.lineDashOffset = -t * 120;
+        [[850, 560, 470, 860], [900, 640, 560, 1000]].forEach(([x1, y1, x2, y2]) => { g.beginPath(); g.moveTo(x1, y1); g.lineTo(lerp(x1, x2, k), lerp(y1, y2, k)); g.stroke(); });
+        g.setLineDash([]);
+      }
+      chip('待ち伏せ', 880, 380, { size: 42, bg: C.blue, color: '#fff', alpha: win(t, c0.start + .4, .2) });
+      // 兵装転換中
+      if (t > c1.start) {
+        const on = Math.floor((t - c1.start) * 4) % 2 === 0;
+        g.save(); g.translate(0, 560);
+        g.fillStyle = '#111'; g.fillRect(0, -60, W, 120);
+        g.save(); g.beginPath(); g.rect(0, -60, W, 120); g.clip();
+        g.fillStyle = C.yellow; for (let x = -200 + ((t * 120) % 80); x < W + 100; x += 80) { g.beginPath(); g.moveTo(x, -60); g.lineTo(x + 40, -60); g.lineTo(x - 20, 60); g.lineTo(x - 60, 60); g.closePath(); g.fill(); }
+        g.restore();
+        g.fillStyle = 'rgba(0,0,0,.85)'; g.fillRect(170, -48, 740, 96);
+        text('兵装転換中', W / 2, 4, { size: 72, fam: F_DISP, weight: 400, color: on ? C.yellow : '#fff' });
+        g.restore();
+        // 爆弾 → 魚雷
+        const sw = clamp((t - c1.start - .6) / .6);
+        fleet.forEach(([n, x, y], i) => {
+          const ix = x + 120, iy = y - 70;
+          g.save(); g.globalAlpha = 1 - sw; text('爆弾', ix, iy, { size: 30, color: '#fff', stroke: 6 }); g.globalAlpha = sw; text('魚雷', ix, iy, { size: 30, color: C.yellow, stroke: 6 }); g.restore();
+        });
+      }
+      vignette(.55); return;
+    }
+    // 格納庫の断面図
+    g.fillStyle = '#0b0f16'; g.fillRect(0, 0, W, H);
+    const k = ease((t - c2.start) / .35);
+    g.save(); g.translate(W / 2, 860); g.scale(lerp(.8, 1, k), lerp(.8, 1, k));
+    g.fillStyle = '#2a2f37'; g.beginPath(); g.moveTo(-500, -200); g.lineTo(500, -200); g.lineTo(440, 120); g.lineTo(-440, 120); g.closePath(); g.fill();
+    g.fillStyle = '#3a3f47'; g.fillRect(-520, -240, 1040, 40);
+    g.fillStyle = '#16181c'; g.fillRect(-440, -170, 880, 230);
+    text('格納庫', -330, -130, { size: 36, color: '#aaa' });
+    const n = Math.floor(clamp((t - c2.start) / 1.2) * 14);
+    for (let i = 0; i < n; i++) {
+      const x = -380 + (i % 7) * 120, y = -50 + Math.floor(i / 7) * 90;
+      if (i % 3 === 2) { g.fillStyle = '#7d1d14'; rrect(x - 26, y - 34, 52, 68, 6); g.fill(); text('燃', x, y, { size: 30, color: '#ffd0c0' }); }
+      else { g.fillStyle = '#c8a24a'; g.beginPath(); g.ellipse(x, y, 44, 18, 0, 0, 7); g.fill(); g.fillStyle = '#6b5525'; g.fillRect(x + 36, y - 16, 12, 32); }
+    }
+    g.restore();
+    const blink = .5 + .5 * Math.sin(t * 14);
+    g.fillStyle = `rgba(255,0,0,${.12 * blink * k})`; g.fillRect(0, 0, W, H);
+    chip('一発でも当たれば誘爆', W / 2, 1110, { size: 46, bg: C.red, color: '#fff', alpha: win(t, c2.start + .7, .2) });
+    vignette(.7);
+  },
+
+  attack(t, s) {
+    const c0 = ch('attack', 0), c1 = ch('attack', 1), c2 = ch('attack', 2);
+    const slow = t > c1.start && t < c2.start;
+    // 空と海(横から)
+    const sky = g.createLinearGradient(0, 300, 0, 1000); sky.addColorStop(0, '#2b3d55'); sky.addColorStop(1, '#8da3b6');
+    g.fillStyle = sky; g.fillRect(0, 0, W, 1000);
+    g.fillStyle = '#163049'; g.fillRect(0, 1000, W, H - 1000);
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 3;
+    for (let k = 0; k < 18; k++) { const y = 1020 + k * 18, x = (k * 173 + t * 40) % W; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 80, y); g.stroke(); }
+    carrierSide(W / 2 - 60, 1000, 520, '#1d2026');
+    // 零戦(赤い丸)— 上空から低空へ降りていく
+    const zLow = ease((t - c0.start) / 1.8);
+    for (let k = 0; k < 6; k++) {
+      const a = t * 1.3 + k, x = W / 2 + Math.cos(a) * (250 + k * 30), y = lerp(520 + k * 25, 900 + (k % 3) * 25, zLow) + Math.sin(a) * 18;
+      planeSide(x, y, .7, Math.cos(a) > 0 ? Math.PI : 0, '#3e4a2f');
+      g.fillStyle = C.red; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill();
+    }
+    // 米雷撃機(低空・右から)と撃墜
+    for (let k = 0; k < 4; k++) {
+      const hitT = c0.start + .45 + k * .38;
+      const x0 = 1180 + k * 140, y0 = 930 + (k % 2) * 22;
+      const run = t - c0.start;
+      let x = x0 - run * 260, y = y0, r = 0;
+      if (t > hitT) { const d = t - hitT; x = x0 - (hitT - c0.start) * 260 - d * 150; y = y0 + d * d * 260; r = -d * 1.5; }
+      if (y < 1010) { planeSide(x, y, .8, r, '#3a5f8a'); }
+      explosion(x0 - (hitT - c0.start) * 260, y0, t - hitT, .25, k + 3);
+      if (t > hitT && t < hitT + .1) { g.strokeStyle = 'rgba(255,230,120,.9)'; g.lineWidth = 3; g.beginPath(); g.moveTo(W / 2 - 60, 900); g.lineTo(x, y); g.stroke(); }
+    }
+    if (t < c1.start) chip('米雷撃機', 820, 830, { size: 36, bg: C.blue, color: '#fff', alpha: win(t, c0.start + .1) });
+    if (t > c1.start - .1 && t < evTime('whistle')) {
+      chip('零戦は低空に', 300, 820, { size: 38, bg: C.red, color: '#fff', alpha: win(t, c1.start) });
+      // 上空ガラ空き
+      g.save(); g.globalAlpha = win(t, c1.start + .5, .3);
+      g.strokeStyle = C.yellow; g.lineWidth = 6; g.setLineDash([18, 12]); rrect(120, 400, 840, 300, 20); g.stroke(); g.setLineDash([]);
+      text('上空はガラ空き', W / 2, 550, { size: 64, fam: F_DISP, weight: 400, color: C.yellow, stroke: 12 });
+      g.restore();
+    }
+    if (slow) { g.fillStyle = `rgba(0,0,0,${.35 * clamp((t - c1.start) / .5)})`; g.fillRect(0, 0, W, H); }
+    // 急降下爆撃機
+    const dv = evTime('whistle');
+    if (t > dv) {
+      for (let k = 0; k < 5; k++) {
+        const d = t - dv - k * .12; if (d < 0) continue;
+        const sx = 220 + k * 160, x = lerp(sx, W / 2 - 160 + k * 60, clamp(d / 1.9)), y = lerp(430, 960, easeIn(d / 1.9));
+        const sc = lerp(.7, 1.8, clamp(d / 1.9));
+        if (y < 980) { g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x, y - 30); g.lineTo(x - (x - sx) * .3, y - 140 * sc); g.stroke(); planeTop(x, y, sc, Math.PI, '#0e1a2a'); }
+      }
+      text('真上から！', W / 2, 640, { size: 120, fam: F_DISP, weight: 400, color: C.red, stroke: 16, alpha: win(t, ch('attack', 2).start, .08) });
+    }
+    const boom = EVENTS.filter(e => e.type === 'boom')[1].t;
+    explosion(W / 2 - 60, 940, t - boom, 1.4, 9);
+    vignette(.6);
+  },
+
+  six(t, s) {
+    g.fillStyle = '#0c0606'; g.fillRect(0, 0, W, H);
+    const c0 = ch('six', 0), c2 = ch('six', 2);
+    // 時計 10:22 → 10:28
+    const k = clamp((t - c0.start) / (c0.end - c0.start + .6));
+    const secs = Math.floor(lerp(22 * 60, 28 * 60, easeInOut(k)));
+    const mm = String(Math.floor(secs / 60)).padStart(2, '0'), ss = String(secs % 60).padStart(2, '0');
+    g.fillStyle = '#000'; rrect(190, 420, 700, 200, 24); g.fill(); g.strokeStyle = 'rgba(255,60,50,.6)'; g.lineWidth = 4; g.stroke();
+    text(`10:${mm}:${ss}`, W / 2, 525, { size: 128, fam: F_MONO, weight: 400, color: '#ff3b30', glow: 30 });
+    text('1942年6月4日(現地時間)', W / 2, 655, { size: 32, color: '#ccc' });
+    // 空母カード
+    const cards = [['赤城', 290, 820], ['加賀', 790, 820], ['蒼龍', 290, 1080], ['飛龍', 790, 1080]];
+    cards.forEach(([n, x, y], i) => {
+      const te = evTime('explode', n), hit = t > te;
+      g.save(); g.translate(x, y);
+      g.fillStyle = hit ? '#3a0c0a' : '#1c2028'; g.strokeStyle = hit ? C.red : 'rgba(255,255,255,.35)'; g.lineWidth = 4;
+      rrect(-235, -115, 470, 230, 18); g.fill(); g.stroke();
+      g.save(); rrect(-235, -115, 470, 230, 18); g.clip();
+      carrierSide(0, 60, 360, '#0d0f12', hit ? clamp((t - te) / .4) : 0, t);
+      explosion(0, 20, t - te, .45, i + 20);
+      g.restore();
+      text(n, -200, -78, { size: 40, color: '#fff', align: 'left', stroke: 8 });
+      if (hit) chip(i < 3 ? '炎上' : '被弾', 160, -78, { size: 32, bg: C.red, color: '#fff' });
+      g.restore();
+    });
+    const st = stampT(3);
+    if (t > st) { g.fillStyle = `rgba(0,0,0,${.5 * clamp((t - st) / .2)})`; g.fillRect(0, 700, W, 520); }
+    stamp('4隻 全滅', W / 2, 950, st, t, { size: 150, rot: -.08 });
+    vignette(.6);
+  },
+
+  end(t, s) {
+    const c1 = ch('end', 1);
+    drawMap(t, { labels: [{ at: 'tokyo', text: '日本', dx: -70, dy: -10, size: 46 }, { at: 'midway', text: 'ミッドウェー', dy: -40, size: 34 }], dim: .55 });
+    // 勢力圏が退いていく
+    const r = lerp(1100, 260, ease((t - s.start) / 4)); const [tx, ty] = P(...ISLANDS.tokyo);
+    g.save(); g.beginPath(); g.arc(tx, ty, r, 0, 7); g.clip(); poly(SPHERE); g.fillStyle = 'rgba(232,82,79,.22)'; g.fill(); g.restore();
+    const k = (t - s.start) / .25;
+    if (t < c1.start + .1) {
+      g.save(); g.translate(W / 2, 760); const sc = k < 1 ? lerp(1.8, 1, easeIn(k)) : 1 + (t - s.start) * .02; g.scale(sc, sc);
+      text('運命の転換点', 0, 0, { size: 130, fam: F_DISP, weight: 400, color: '#fff', stroke: 14, glow: 30, glowColor: 'rgba(255,80,60,.6)', alpha: clamp(k) });
+      g.restore();
+      text('ミッドウェー海戦 1942', W / 2, 900, { size: 46, color: C.yellow, stroke: 10, alpha: win(t, s.start + .4) });
+    } else {
+      // コメント誘導
+      const kk = back((t - c1.start - .1) / .35);
+      g.save(); g.translate(W / 2, 760); g.scale(kk, kk);
+      g.fillStyle = 'rgba(0,0,0,.85)'; g.strokeStyle = C.yellow; g.lineWidth = 6; rrect(-440, -210, 880, 420, 30); g.fill(); g.stroke();
+      text('あなたなら', 0, -110, { size: 66, color: '#fff' });
+      text('罠に気づけた？', 0, 0, { size: 104, fam: F_DISP, weight: 400, color: C.yellow });
+      text('コメントで教えてください', 0, 120, { size: 46, color: '#fff' });
+      g.restore();
+      const bob = Math.sin(t * 8) * 16;
+      g.save(); g.translate(930 + bob, 1080 + bob * .6); g.rotate(.6); g.fillStyle = C.yellow;
+      g.beginPath(); g.moveTo(0, 60); g.lineTo(-40, 0); g.lineTo(-16, 0); g.lineTo(-16, -70); g.lineTo(16, -70); g.lineTo(16, 0); g.lineTo(40, 0); g.closePath(); g.fill(); g.restore();
+    }
+    text('ナレーション: VOICEVOX:四国めたん / BGM・効果音: 自作', W / 2, 1180, { size: 28, color: 'rgba(255,255,255,.75)', stroke: 6, alpha: win(t, s.start + .5) });
+    vignette(.6);
+  },
+};
+
+// ============================================================
+function render(t) {
+  if (!TL) return;
+  let sc = TL.scenes[0];
+  for (const s of TL.scenes) if (t >= s.start) sc = s;
+  const sh = shakeAt(t);
+  const pz = 1 + .05 * Math.exp(-(t - sc.start) * 8);   // シーン切替のズームパンチ
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  g.translate(W / 2 + (rnd(Math.floor(t * 60)) - .5) * sh, H / 2 + (rnd(Math.floor(t * 60) + 5) - .5) * sh);
+  g.scale(pz, pz); g.translate(-W / 2, -H / 2);
+  SCENES[sc.id](t, sc);
+  g.restore();
+  // シーン切替の白フラッシュ
+  for (const e of EVENTS) if (e.type === 'flash') { const d = t - e.t; if (d >= 0 && d < .14) { g.fillStyle = `rgba(255,255,255,${.55 * (1 - d / .14)})`; g.fillRect(0, 0, W, H); } }
+  const bt = EVENTS.filter(e => e.type === 'boom')[1];
+  if (bt) { const d = t - bt.t; if (d >= 0 && d < .35) { g.fillStyle = `rgba(255,255,255,${.9 * (1 - d / .35)})`; g.fillRect(0, 0, W, H); } }
+  drawGrain(t);
+  header(t);
+  subtitle(t);
+}
+window.render = render;
+
+// プレビュー: http サーバー経由で開くと timeline.json を読んで再生する
+if (location.protocol.startsWith('http')) {
+  document.body.classList.add('preview');
+  fetch('output/timeline.json').then(r => r.json()).then(tl => {
+    init(tl); const a = new Audio('output/final_mix.wav'); let t0 = null;
+    document.body.onclick = () => { a.currentTime = 0; a.play(); t0 = performance.now(); };
+    (function loop() { const t = t0 ? (performance.now() - t0) / 1000 % tl.duration : 0; render(t); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>

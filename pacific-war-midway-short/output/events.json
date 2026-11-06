@@ -1,0 +1,228 @@
+[
+ {
+  "type": "boom",
+  "t": 0.02,
+  "amp": 26
+ },
+ {
+  "type": "stamp",
+  "t": 3.024,
+  "amp": 30
+ },
+ {
+  "type": "whoosh",
+  "t": 3.961
+ },
+ {
+  "type": "flash",
+  "t": 4.181,
+  "amp": 0
+ },
+ {
+  "type": "marker",
+  "t": 5.42,
+  "amp": 8
+ },
+ {
+  "type": "stamp",
+  "t": 8.206,
+  "amp": 18
+ },
+ {
+  "type": "whoosh",
+  "t": 9.324
+ },
+ {
+  "type": "flash",
+  "t": 9.544,
+  "amp": 0
+ },
+ {
+  "type": "glitch",
+  "t": 12.266,
+  "dur": 0.45
+ },
+ {
+  "type": "stinger",
+  "t": 16.079,
+  "amp": 10
+ },
+ {
+  "type": "whoosh",
+  "t": 16.726
+ },
+ {
+  "type": "flash",
+  "t": 16.946,
+  "amp": 0
+ },
+ {
+  "type": "braam",
+  "t": 16.996,
+  "amp": 22
+ },
+ {
+  "type": "radio",
+  "t": 18.581,
+  "dur": 1.6
+ },
+ {
+  "type": "morse",
+  "t": 20.508,
+  "dur": 1.8790000000000013
+ },
+ {
+  "type": "whoosh",
+  "t": 22.317
+ },
+ {
+  "type": "flash",
+  "t": 22.537,
+  "amp": 0
+ },
+ {
+  "type": "glitch",
+  "t": 24.671,
+  "dur": 0.4
+ },
+ {
+  "type": "lock",
+  "t": 27.196,
+  "amp": 10
+ },
+ {
+  "type": "stamp",
+  "t": 27.633,
+  "amp": 26
+ },
+ {
+  "type": "whoosh",
+  "t": 28.572
+ },
+ {
+  "type": "flash",
+  "t": 28.792,
+  "amp": 0
+ },
+ {
+  "type": "alarm",
+  "t": 31.756,
+  "dur": 1.6
+ },
+ {
+  "type": "braam",
+  "t": 34.741,
+  "amp": 12
+ },
+ {
+  "type": "whoosh",
+  "t": 36.796
+ },
+ {
+  "type": "flash",
+  "t": 37.016,
+  "amp": 0
+ },
+ {
+  "type": "pop",
+  "t": 37.466,
+  "amp": 6
+ },
+ {
+  "type": "pop",
+  "t": 37.846,
+  "amp": 6
+ },
+ {
+  "type": "pop",
+  "t": 38.226,
+  "amp": 6
+ },
+ {
+  "type": "pop",
+  "t": 38.606,
+  "amp": 6
+ },
+ {
+  "type": "heartbeat",
+  "t": 39.119,
+  "dur": 3.173000000000003
+ },
+ {
+  "type": "silence",
+  "t": 41.362,
+  "dur": 0.9300000000000039
+ },
+ {
+  "type": "whistle",
+  "t": 41.742,
+  "dur": 1.6
+ },
+ {
+  "type": "whoosh",
+  "t": 44.023
+ },
+ {
+  "type": "boom",
+  "t": 44.143,
+  "amp": 34
+ },
+ {
+  "type": "flash",
+  "t": 44.243,
+  "amp": 0
+ },
+ {
+  "type": "ticks",
+  "t": 44.243,
+  "dur": 1.2919999999999974
+ },
+ {
+  "type": "explode",
+  "t": 45.365,
+  "amp": 20,
+  "name": "赤城"
+ },
+ {
+  "type": "explode",
+  "t": 45.957,
+  "amp": 20,
+  "name": "加賀"
+ },
+ {
+  "type": "explode",
+  "t": 46.549,
+  "amp": 20,
+  "name": "蒼龍"
+ },
+ {
+  "type": "explode",
+  "t": 47.616,
+  "amp": 18,
+  "name": "飛龍"
+ },
+ {
+  "type": "stamp",
+  "t": 49.997,
+  "amp": 28
+ },
+ {
+  "type": "whoosh",
+  "t": 50.351
+ },
+ {
+  "type": "flash",
+  "t": 50.571,
+  "amp": 0
+ },
+ {
+  "type": "braam",
+  "t": 50.621,
+  "amp": 10
+ },
+ {
+  "type": "ding",
+  "t": 53.551,
+  "amp": 0
+ }
+]
