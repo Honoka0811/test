@@ -5,6 +5,7 @@ output/narration.wav と output/timeline.json(シーン/字幕のタイミング
 使い方:
   python3 narrate.py             # VOICEVOX で合成(必須)
   python3 narrate.py --estimate  # 音声なしで尺だけ見積もる(映像のプレビュー用)
+  python3 narrate.py --kana      # 全行の読みを表示(読み間違いの確認用)
 環境変数:
   VOICEVOX_ORT   libvoicevox_onnxruntime.so のパス
   VOICEVOX_VVMS  *.vvm を置いたディレクトリ(四国めたんは 0.vvm)
@@ -35,10 +36,17 @@ def _dict_dir():
 
 class Voicevox:
     def __init__(self):
-        from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile
+        from voicevox_core import UserDictWord
+        from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile, UserDict
         ort = Onnxruntime.load_once(filename=os.environ.get('VOICEVOX_ORT',
             '/home/user/vv/ort/voicevox_onnxruntime-linux-x64-1.17.3/lib/libvoicevox_onnxruntime.so'))
-        self.synth = Synthesizer(ort, OpenJtalk(_dict_dir()))
+        ojt = OpenJtalk(_dict_dir())
+        # 辞書にない人名・「〇〇家(け)」などの読みを user_dict.json で補う
+        ud = UserDict()
+        for w in json.load(open(os.path.join(HERE, 'user_dict.json'), encoding='utf-8')):
+            ud.add_word(UserDictWord(priority=10, **w))
+        ojt.use_user_dict(ud)
+        self.synth = Synthesizer(ort, ojt)
         for f in sorted(glob.glob(os.path.join(os.environ.get('VOICEVOX_VVMS', '/home/user/vv/vvms'), '*.vvm'))):
             with VoiceModelFile.open(f) as m:
                 self.synth.load_voice_model(m)
@@ -75,6 +83,12 @@ def estimate_seconds(reading):
 
 script = json.load(open(os.path.join(HERE, 'script.json'), encoding='utf-8'))
 engine = None if ESTIMATE else Voicevox()
+
+if '--kana' in sys.argv:  # 読みの確認用: 各行の読み(アクセント句 / ' がアクセント核)を表示して終了
+    for sc in script['scenes']:
+        for j, (_, reading) in enumerate(sc['lines']):
+            print(f"{sc['id']}[{j}]", engine.synth.create_audio_query(reading, engine.style).kana)
+    sys.exit(0)
 
 clips = []  # (start_sec, samples)
 timeline = {'estimated': ESTIMATE, 'scenes': []}

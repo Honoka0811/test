@@ -1,0 +1,16 @@
+[
+  {"surface": "家広", "pronunciation": "イエヒロ", "accent_type": 2, "word_type": "PROPER_NOUN"},
+  {"surface": "忠裕", "pronunciation": "タダヒロ", "accent_type": 2, "word_type": "COMMON_NOUN"},
+  {"surface": "泰宗", "pronunciation": "ヤスムネ", "accent_type": 2, "word_type": "PROPER_NOUN"},
+  {"surface": "幸俊", "pronunciation": "ユキトシ", "accent_type": 2, "word_type": "COMMON_NOUN"},
+  {"surface": "松代", "pronunciation": "マツシロ", "accent_type": 0, "word_type": "PROPER_NOUN"},
+  {"surface": "久留米", "pronunciation": "クルメ", "accent_type": 1, "word_type": "PROPER_NOUN"},
+  {"surface": "瑞鳳殿", "pronunciation": "ズイホウデン", "accent_type": 3, "word_type": "PROPER_NOUN"},
+  {"surface": "大名家", "pronunciation": "ダイミョウケ", "accent_type": 4, "word_type": "COMMON_NOUN"},
+  {"surface": "島津家", "pronunciation": "シマヅケ", "accent_type": 0, "word_type": "PROPER_NOUN"},
+  {"surface": "伊達家", "pronunciation": "ダテケ", "accent_type": 0, "word_type": "PROPER_NOUN"},
+  {"surface": "真田家", "pronunciation": "サナダケ", "accent_type": 0, "word_type": "PROPER_NOUN"},
+  {"surface": "上杉家", "pronunciation": "ウエスギケ", "accent_type": 0, "word_type": "PROPER_NOUN"},
+  {"surface": "細川家", "pronunciation": "ホソカワケ", "accent_type": 0, "word_type": "PROPER_NOUN"},
+  {"surface": "有馬家", "pronunciation": "アリマケ", "accent_type": 0, "word_type": "PROPER_NOUN"}
+]
