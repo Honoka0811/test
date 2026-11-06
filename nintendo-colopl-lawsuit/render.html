@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>任天堂 vs コロプラ 特許訴訟 解説</title>
+<style>html,body{margin:0;background:#0d1322;} canvas{display:block;}</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// ------------------------------------------------------------
+// 任天堂 vs コロプラ 特許訴訟 解説 (16:9 / 1920x1080)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// window.TIMING (narrate.py が出力する timing.json) でシーンと字幕の時刻が決まる。
+// ------------------------------------------------------------
+const W = 1920, H = 1080;
+const cv = document.getElementById('c'); const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = { bg:'#0d1322', bg2:'#131b2e', panel:'#1a2340', panel2:'#222d4f', line:'#2e3a5e',
+  ink:'#f4f6fb', ink2:'#b9c2d6', ink3:'#7e8aa6', nin:'#e8524f', col:'#3f8de8', gold:'#f5c451', green:'#4fc48a' };
+const FPS = 30;
+const T = window.TIMING || { total: 10, scenes: [] };
+const DURATION = T.total;
+
+const clamp = (x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const easeOut = t=>{t=clamp(t);return 1-Math.pow(1-t,3)};
+const easeInOut = t=>{t=clamp(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const seg = (t,s,d)=>clamp((t-s)/d);
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+function text(str,x,y,{size=40,weight='normal',color=C.ink,align='left',base='alphabetic',alpha=1}={}){
+  ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle=color; ctx.font=`${weight} ${size}px ${FONT}`;
+  ctx.textAlign=align; ctx.textBaseline=base; ctx.fillText(str,x,y); ctx.restore();
+}
+function measure(str,size,weight='normal'){ ctx.font=`${weight} ${size}px ${FONT}`; return ctx.measureText(str).width; }
+function rrect(x,y,w,h,r,color,alpha=1,stroke=null,lw=2){
+  if(w<=0||h<=0)return; ctx.save(); ctx.globalAlpha=alpha; r=Math.min(r,w/2,h/2);
+  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  if(color){ctx.fillStyle=color; ctx.fill();} if(stroke){ctx.strokeStyle=stroke; ctx.lineWidth=lw; ctx.stroke();} ctx.restore();
+}
+function line(x1,y1,x2,y2,color,w=2,alpha=1){ ctx.save(); ctx.globalAlpha=alpha; ctx.strokeStyle=color; ctx.lineWidth=w; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); ctx.restore(); }
+function circle(x,y,r,color,alpha=1,stroke=null,lw=3){ ctx.save(); ctx.globalAlpha=alpha; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); if(color){ctx.fillStyle=color; ctx.fill();} if(stroke){ctx.strokeStyle=stroke; ctx.lineWidth=lw; ctx.stroke();} ctx.restore(); }
+// 文字数で折り返し(日本語)
+function wrap(str,maxChars){ const out=[]; for(let i=0;i<str.length;i+=maxChars) out.push(str.slice(i,i+maxChars)); return out; }
+function para(str,x,y,{size=34,lh=1.5,color=C.ink2,maxChars=28,alpha=1,weight='normal',align='left'}={}){
+  wrap(str,maxChars).forEach((l,i)=>text(l,x,y+i*size*lh,{size,color,alpha,weight,align}));
+}
+
+// ---------- 背景 ----------
+function background(t){
+  const g=ctx.createLinearGradient(0,0,W,H); g.addColorStop(0,'#0f172b'); g.addColorStop(1,'#0a0f1c');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // 薄いグリッド
+  ctx.save(); ctx.globalAlpha=0.07; ctx.strokeStyle='#8fa3d6'; ctx.lineWidth=1;
+  for(let x=0;x<W;x+=80){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<H;y+=80){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.restore();
+  // ゆっくり動く光
+  const cx=W*0.5+Math.sin(t*0.08)*500, cy=H*0.4+Math.cos(t*0.06)*200;
+  const r=ctx.createRadialGradient(cx,cy,0,cx,cy,900); r.addColorStop(0,'rgba(80,110,200,0.14)'); r.addColorStop(1,'rgba(80,110,200,0)');
+  ctx.fillStyle=r; ctx.fillRect(0,0,W,H);
+}
+function header(label){
+  rrect(60,44,14,34,4,C.gold); text('任天堂 vs コロプラ 特許訴訟',92,72,{size:26,color:C.ink3});
+  if(label) text(label,W-60,72,{size:26,color:C.ink3,align:'right'});
+}
+function title(str,y=170,color=C.ink,size=64,alpha=1,x=90){
+  text(str,x,y,{size,weight:'bold',color,alpha});
+  line(x,y+22,x+Math.min(measure(str,size,'bold'),1700)*alpha,y+22,C.gold,4,alpha);
+}
+function progress(t){ ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fillRect(0,H-6,W,6); ctx.fillStyle=C.gold; ctx.fillRect(0,H-6,W*t/DURATION,6); }
+
+// ---------- 字幕 ----------
+function subtitle(t){
+  let cur=null;
+  for(const sc of T.scenes) for(const ln of sc.lines){ if(t>=ln.start-0.05 && t<=ln.end+0.4){cur=ln;break;} }
+  if(!cur)return;
+  const a=Math.min(seg(t,cur.start-0.05,0.15), 1-seg(t,cur.end+0.25,0.15));
+  const lines=wrap(cur.text,38); const size=40, lh=52; const h=lines.length*lh+34;
+  const y0=H-48-h;
+  rrect(W/2-860,y0,1720,h,14,'rgba(8,12,24,0.78)',a);
+  rrect(W/2-860,y0,8,h,4,C.gold,a);
+  lines.forEach((l,i)=>text(l,W/2,y0+26+size*0.95+i*lh-6,{size,color:C.ink,align:'center',alpha:a,weight:'bold'}));
+}
+
+// ---------- 共通部品 ----------
+function lineProgress(sc,i,t,d=0.5){ const ln=sc.lines[i]; return ln? easeOut(seg(t,ln.start,d)) : 1; }
+function card(x,y,w,h,{color=C.panel,stroke=C.line,alpha=1}={}){ rrect(x,y,w,h,18,color,alpha,stroke,2); }
+function companyBadge(x,y,name,color,alpha=1){ rrect(x,y,220,56,28,color,alpha); text(name,x+110,y+40,{size:30,weight:'bold',color:'#fff',align:'center',alpha}); }
+function bullet(x,y,str,{color=C.gold,size=36,alpha=1,maxChars=26,ink=C.ink}={}){
+  circle(x+12,y-12,8,color,alpha); para(str,x+44,y,{size,color:ink,alpha,maxChars,lh:1.4});
+}
+
+// タイムライン(2016→2021)
+const EVENTS=[
+  {k:'notice',at:2016.70,lv:0,label:'2016年9月',sub:'任天堂が侵害を指摘'},
+  {k:'suit',at:2017.98,lv:1,label:'2017年12月22日',sub:'東京地裁に提訴'},
+  {k:'pub',at:2018.03,lv:0,label:'2018年1月10日',sub:'コロプラが公表'},
+  {k:'update',at:2020.13,lv:1,label:'2020年2月',sub:'ぷにコン変更'},
+  {k:'raise1',at:2021.12,lv:0,label:'2021年2月',sub:'49.5億円に増額'},
+  {k:'raise2',at:2021.30,lv:1,label:'2021年4月',sub:'96.99億円に増額'},
+  {k:'settle',at:2021.59,lv:2,label:'2021年8月4日',sub:'和解(33億円)'},
+];
+function timeline(y,upto,alpha=1,hi=null){
+  const x0=160,x1=W-160, y0=2016.3, y1=2021.9; const X=v=>x0+(x1-x0)*(v-y0)/(y1-y0);
+  line(x0,y,x1,y,C.line,6,alpha);
+  for(let yr=2016;yr<=2021;yr++){ const x=X(yr+0.0); line(x,y-14,x,y+14,C.ink3,2,alpha); text(String(yr),x,y+52,{size:26,color:C.ink3,align:'center',alpha}); }
+  const idx=EVENTS.findIndex(e=>e.k===upto);
+  EVENTS.forEach((e,i)=>{
+    const on=i<=idx; const x=X(e.at); const isHi=e.k===hi;
+    circle(x,y,isHi?16:11,on?(isHi?C.gold:C.ink2):C.bg2,alpha,on?null:C.line,2);
+    if(on){ const up=e.lv!==1; const ty=e.lv===0?y-60:(e.lv===1?y+100:y-130);
+      text(e.label,x,ty,{size:isHi?26:22,color:isHi?C.gold:C.ink2,align:'center',alpha,weight:isHi?'bold':'normal'});
+      text(e.sub,x,ty+(up?-30:32),{size:isHi?24:20,color:isHi?C.ink:C.ink3,align:'center',alpha});
+    }
+  });
+}
+
+// ---------- 各シーン ----------
+const SCENE = {
+  title(sc,t,lt){
+    header('');
+    const a=easeOut(seg(lt,0.2,0.8));
+    text('任天堂',W/2-250,440,{size:150,weight:'bold',color:C.nin,align:'center',alpha:a});
+    text('vs',W/2,420,{size:90,weight:'bold',color:C.ink3,align:'center',alpha:a});
+    text('コロプラ',W/2+300,440,{size:150,weight:'bold',color:C.col,align:'center',alpha:a});
+    const b=easeOut(seg(lt,0.9,0.8));
+    line(W/2-700*b,520,W/2+700*b,520,C.gold,5);
+    text('『白猫プロジェクト』をめぐる特許訴訟を解説',W/2,620,{size:64,weight:'bold',color:C.ink,align:'center',alpha:b});
+    const c=easeOut(seg(lt,1.6,0.8));
+    text('2016年の指摘から、2021年の和解まで',W/2,710,{size:38,color:C.ink2,align:'center',alpha:c});
+    text('ナレーション: VOICEVOX 四国めたん',W/2,860,{size:30,color:C.ink3,align:'center',alpha:c});
+  },
+  players(sc,t,lt){
+    header('登場する2社'); title('登場する2社');
+    const a=lineProgress(sc,1,t), b=lineProgress(sc,2,t);
+    const y=260, h=560;
+    card(110,y,800,h,{alpha:a}); companyBadge(150,y+36,'任天堂',C.nin,a);
+    text('Nintendo',880,y+78,{size:30,color:C.ink3,align:'right',alpha:a});
+    [['京都に本社を置く老舗ゲームメーカー'],['ゲーム機とソフトの両方を開発'],['ハード・操作系・通信など多数の特許を保有']].forEach((s,i)=>bullet(160,y+170+i*110,s[0],{color:C.nin,alpha:easeOut(seg(t,sc.lines[1].start+0.3+i*0.9,0.5)),size:36,maxChars:20}));
+    card(1010,y,800,h,{alpha:b}); companyBadge(1050,y+36,'コロプラ',C.col,b);
+    text('COLOPL',1780,y+78,{size:30,color:C.ink3,align:'right',alpha:b});
+    [['2008年設立のスマートフォンゲーム会社'],['2014年7月『白猫プロジェクト』配信開始'],['独自操作「ぷにコン」で大ヒット']].forEach((s,i)=>bullet(1060,y+170+i*110,s[0],{color:C.col,alpha:easeOut(seg(t,sc.lines[2].start+0.3+i*0.9,0.5)),size:36,maxChars:20}));
+  },
+  punicon(sc,t,lt){
+    header('白猫プロジェクトの「ぷにコン」'); title('ぷにコンとは');
+    // スマホの図
+    const a=easeOut(seg(lt,0.3,0.6));
+    const px=330,py=240,pw=400,ph=600;
+    rrect(px,py,pw,ph,40,'#1b2238',a,'#4a5a85',4); rrect(px+16,py+16,pw-32,ph-32,28,'#0e1424',a);
+    // 指の軌跡: 起点 → スライド
+    const ph2=(lt*0.9)%4; const drag=easeInOut(seg(ph2,0.6,1.2)); const back=seg(ph2,3.0,0.6);
+    const ox=px+140, oy=py+420; const dx=ox+150*drag, dy=oy-120*drag;
+    circle(ox,oy,70,'rgba(245,196,81,0.12)',a,'rgba(245,196,81,0.6)',2);
+    line(ox,oy,dx,dy,C.gold,6,a*drag);
+    circle(dx,dy,34,'rgba(245,196,81,0.9)',a*(1-back));
+    // キャラクター(動く)
+    const cxp=px+210+120*drag, cyp=py+200-80*drag;
+    circle(cxp,cyp,26,C.col,a); circle(cxp-6,cyp-8,4,'#fff',a); circle(cxp+6,cyp-8,4,'#fff',a);
+    text('起点',ox,oy+105,{size:24,color:C.gold,align:'center',alpha:a});
+    text('起点からスライドで移動',px+pw/2,py+60,{size:26,color:C.ink2,align:'center',alpha:a});
+    // 説明
+    const items=[['画面のどこに指を置いても OK',1],['起点からスライド → キャラクターが移動',1],['タップ → 攻撃',1],['片手で快適に遊べる',2],['この操作が、争いの火種に',3]];
+    items.forEach((it,i)=>{ const ln=sc.lines[it[1]]; const al=easeOut(seg(t,ln.start+0.2+(it[1]===1?i*0.8:0),0.5));
+      bullet(900,330+i*110,it[0],{color:i===4?C.nin:C.gold,alpha:al,size:40,maxChars:22,ink:i===4?C.nin:C.ink}); });
+  },
+  notice(sc,t,lt){
+    header('経緯'); title('きっかけは 2016年9月');
+    timeline(330,'notice',easeOut(seg(lt,0.2,0.6)),'notice');
+    const a=lineProgress(sc,1,t), b=lineProgress(sc,2,t);
+    card(260,500,1400,360,{alpha:Math.max(a,0.001)});
+    companyBadge(320,545,'任天堂',C.nin,a); text('→',600,587,{size:44,color:C.ink3,alpha:a}); companyBadge(680,545,'コロプラ',C.col,a);
+    para('「白猫プロジェクトは当社の特許を侵害している」',320,675,{size:38,color:C.ink,alpha:a,maxChars:30,weight:'bold'});
+    para('コロプラは否定 → 約1年にわたり協議するも決裂',320,775,{size:36,color:C.ink2,alpha:b,maxChars:30});
+  },
+  suit(sc,t,lt){
+    header('提訴'); title('2017年12月22日、提訴');
+    timeline(330,'pub',easeOut(seg(lt,0.2,0.6)),'suit');
+    const a=lineProgress(sc,0,t),b=lineProgress(sc,1,t),c=lineProgress(sc,2,t),d=lineProgress(sc,3,t);
+    card(110,500,860,360,{alpha:a}); text('任天堂の提訴',150,560,{size:34,weight:'bold',color:C.nin,alpha:a});
+    bullet(150,640,'東京地方裁判所に提訴(2017年12月22日)',{color:C.nin,alpha:a,size:32,maxChars:26});
+    bullet(150,730,'コロプラが公表(2018年1月10日)',{color:C.nin,alpha:b,size:32,maxChars:26});
+    card(1010,500,800,360,{alpha:c}); text('請求の内容',1050,560,{size:34,weight:'bold',color:C.gold,alpha:c});
+    bullet(1050,640,'白猫プロジェクトの配信等の差し止め',{alpha:c,size:32,maxChars:22});
+    bullet(1050,715,'損害賠償 44億円(一部請求)',{alpha:c,size:32,maxChars:22});
+    para('※ 白猫の利益は「400億円を下らない」と主張',1050,820,{size:28,color:C.ink3,alpha:d,maxChars:26});
+  },
+  patents(sc,t,lt){
+    header('争点'); title('争点となった 5つの特許');
+    const names=[['ぷにコン','タッチ操作で移動'],['チャージ攻撃','長押しで自動攻撃'],['スリープモード','復帰時の確認画面'],['フォローシステム','協力プレイ・通信'],['シルエット表示','障害物の陰の表現']];
+    names.forEach((n,i)=>{ const a=easeOut(seg(lt,0.6+i*0.35,0.5)); const x=110+i*350; const y=360+(1-a)*30;
+      card(x,y,320,420,{alpha:a}); circle(x+160,y+90,44,C.gold,a); text(String(i+1),x+160,y+106,{size:46,weight:'bold',color:'#1a1a1a',align:'center',alpha:a});
+      text(n[0],x+160,y+220,{size:36,weight:'bold',color:C.ink,align:'center',alpha:a});
+      text(n[1],x+160,y+290,{size:26,color:C.ink2,align:'center',alpha:a}); });
+    para('いずれも任天堂が保有する日本特許。白猫プロジェクトがこれらを侵害していると主張',110,880,{size:30,color:C.ink3,alpha:easeOut(seg(lt,2.6,0.6)),maxChars:60});
+  },
+  patent1(sc,t,lt){
+    header('争点'); title('特許① ぷにコン(タッチ操作でキャラクターを移動)');
+    const a=lineProgress(sc,0,t),b=lineProgress(sc,1,t),c=lineProgress(sc,2,t),d=lineProgress(sc,3,t);
+    card(110,250,860,610,{alpha:a});
+    text('特許第3734820号',150,320,{size:40,weight:'bold',color:C.gold,alpha:a});
+    bullet(150,400,'タッチパネル上の操作でキャラクターを移動させる(仮想ジョイスティック)',{alpha:b,size:32,maxChars:22});
+    bullet(150,540,'もともとはニンテンドーDS時代に取得した特許',{alpha:b,size:32,maxChars:22});
+    bullet(150,660,'白猫の「ぷにコン」がこれに当たる、と任天堂は主張',{alpha:b,size:32,maxChars:22});
+    card(1010,250,800,610,{alpha:c,color:'#231f33',stroke:'#5a4a8a'});
+    text('提訴の前年に「訂正」',1050,320,{size:40,weight:'bold',color:'#c9b6ff',alpha:c});
+    text('2016年8月',1050,390,{size:30,color:C.ink2,alpha:c});
+    rrect(1050,430,720,100,14,C.bg2,c); text('ポインティングデバイス',1410,492,{size:34,color:C.ink2,align:'center',alpha:c});
+    text('↓',1410,600,{size:50,color:C.gold,align:'center',alpha:c});
+    rrect(1050,630,720,100,14,'rgba(245,196,81,0.18)',c,C.gold,2); text('タッチパネルを含む記載に',1410,692,{size:34,weight:'bold',color:C.gold,align:'center',alpha:c});
+    para('訴訟に向けた周到な準備だった、との見方も',1050,800,{size:30,color:C.ink2,alpha:d,maxChars:24});
+  },
+  patents2(sc,t,lt){
+    header('争点'); title('特許②〜⑤');
+    const items=[['② チャージ攻撃','長押しで近くの相手を自動攻撃','特許第4262217号'],['③ スリープモード','省電力モードからの復帰時に確認画面','特許第4010533号'],['④ フォローシステム','友人と協力プレイ・メッセージ交換','特許第5595991号'],['⑤ シルエット表示','障害物の陰のキャラクターをシルエットで表示','特許第3637031号']];
+    items.forEach((it,i)=>{ const a=lineProgress(sc,i+1,t); const x=110+(i%2)*900, y=235+Math.floor(i/2)*265+(1-a)*20;
+      card(x,y,860,235,{alpha:a}); text(it[0],x+40,y+66,{size:38,weight:'bold',color:C.gold,alpha:a});
+      para(it[1],x+40,y+130,{size:32,color:C.ink,alpha:a,maxChars:24}); text(it[2],x+820,y+205,{size:24,color:C.ink3,align:'right',alpha:a}); });
+    para('「当たり前」に見える仕組みでも、特許として成立している',110,830,{size:34,weight:'bold',color:C.gold,alpha:lineProgress(sc,5,t),maxChars:60});
+  },
+  defense(sc,t,lt){
+    header('コロプラの反論'); title('コロプラの反論');
+    const a=lineProgress(sc,0,t),b=lineProgress(sc,1,t),c=lineProgress(sc,2,t);
+    card(110,250,1000,360,{alpha:a,color:'#15223a',stroke:'#2f5a8f'});
+    text('“',160,360,{size:120,color:C.col,alpha:a});
+    para('特許侵害の事実は一切ないものと確信している',230,350,{size:44,weight:'bold',color:C.ink,alpha:a,maxChars:18});
+    text('― コロプラ(2018年1月)',1070,570,{size:28,color:C.ink3,align:'right',alpha:a});
+    card(1150,250,660,360,{alpha:b}); text('姿勢',1190,315,{size:34,weight:'bold',color:C.col,alpha:b});
+    bullet(1190,395,'サービスは継続',{color:C.col,alpha:b,size:34,maxChars:16});
+    bullet(1190,475,'答弁書を提出し争う(2018年2月)',{color:C.col,alpha:b,size:34,maxChars:18});
+    card(110,640,1700,220,{alpha:c}); text('論点のひとつ',150,705,{size:30,color:C.gold,alpha:c});
+    para('任天堂の特許がいう「ゲーム装置」に、スマートフォンやタブレットは当たるのか?',150,780,{size:38,weight:'bold',color:C.ink,alpha:c,maxChars:44});
+  },
+  update(sc,t,lt){
+    header('経緯'); title('2020年2月、ぷにコンの操作を変更');
+    timeline(330,'update',easeOut(seg(lt,0.2,0.6)),'update');
+    const a=lineProgress(sc,0,t),b=lineProgress(sc,1,t),c=lineProgress(sc,2,t);
+    card(260,500,1400,370,{alpha:a}); companyBadge(320,540,'コロプラ',C.col,a);
+    bullet(320,665,'2020年2月19日 ぷにコンの操作方法を変えるアップデートを配信',{color:C.col,alpha:a,size:34,maxChars:34});
+    bullet(320,745,'「訴訟に関わる対応」と説明',{color:C.col,alpha:b,size:34,maxChars:34});
+    bullet(320,825,'ただし侵害は認めず、裁判では争う姿勢を継続',{color:C.col,alpha:c,size:34,maxChars:34});
+  },
+  raise(sc,t,lt){
+    header('経緯'); title('任天堂、請求額を引き上げ');
+    const bars=[['提訴時',44,'44億円',0],['2021年2月',49.5,'49.5億円',1],['2021年4月',96.99,'96億9900万円',2]];
+    const bx=170, bw=280, gap=100, base=800, hmax=440;
+    bars.forEach((b,i)=>{ const a=easeOut(seg(t,sc.lines[b[3]].start+0.3,0.8)); const x=bx+i*(bw+gap); const h=hmax*b[1]/100*a;
+      rrect(x,base-h,bw,h,10,i===2?C.nin:'#b84e4c',1); text(b[0],x+bw/2,base+50,{size:30,color:C.ink2,align:'center'});
+      text(b[2],x+bw/2,base-h-24,{size:i===2?44:36,weight:'bold',color:i===2?C.nin:C.ink,align:'center',alpha:a}); });
+    line(bx-40,base,bx+3*bw+2*gap+40,base,C.line,3);
+    const c=lineProgress(sc,3,t),d=lineProgress(sc,4,t);
+    card(1300,260,510,560,{alpha:c}); text('増額の理由',1340,330,{size:34,weight:'bold',color:C.gold,alpha:c});
+    bullet(1340,420,'提訴からの時間の経過',{alpha:c,size:32,maxChars:12});
+    bullet(1340,540,'配信が続く限り、損害が積み上がるという考え方',{alpha:d,size:32,maxChars:12});
+  },
+  settle(sc,t,lt){
+    header('和解'); title('2021年8月4日、和解');
+    timeline(330,'settle',easeOut(seg(lt,0.2,0.6)),'settle');
+    const a=lineProgress(sc,0,t),b=lineProgress(sc,1,t),c=lineProgress(sc,2,t),d=lineProgress(sc,3,t);
+    card(110,500,1020,370,{alpha:a});
+    companyBadge(150,540,'コロプラ',C.col,b); text('→',430,582,{size:44,color:C.ink3,alpha:b}); companyBadge(510,540,'任天堂',C.nin,b);
+    text('和解金 33億円',150,700,{size:72,weight:'bold',color:C.gold,alpha:b});
+    para('今後の特許ライセンスを含む。任天堂は訴えを取り下げ',150,780,{size:32,color:C.ink2,alpha:b,maxChars:30});
+    card(1170,500,640,370,{alpha:c});
+    bullet(1210,570,'提訴からおよそ3年8か月',{alpha:c,size:34,maxChars:14});
+    bullet(1210,690,'その他の条件は秘密保持のため非公表',{alpha:d,size:34,maxChars:14});
+  },
+  points(sc,t,lt){
+    header('ポイント'); title('この訴訟からわかる 3つのポイント');
+    const pts=[['特許を侵害していると判断すれば、任天堂は裁判も辞さない',C.nin],['「当たり前」に見える仕組みでも、特許として成立している',C.gold],['判決ではなく、ライセンス契約を含む和解で決着した',C.green]];
+    pts.forEach((p,i)=>{ const a=lineProgress(sc,i+1,t); const y=250+i*205+(1-a)*20;
+      card(110,y,1700,175,{alpha:a}); circle(200,y+87,46,p[1],a); text(String(i+1),200,y+104,{size:48,weight:'bold',color:'#1a1a1a',align:'center',alpha:a});
+      para(p[0],290,y+102,{size:40,weight:'bold',color:C.ink,alpha:a,maxChars:34}); });
+  },
+  after(sc,t,lt){
+    header('その後'); title('その後の任天堂');
+    const a=lineProgress(sc,0,t),b=lineProgress(sc,1,t);
+    card(110,250,1700,280,{alpha:a}); text('2024年9月',150,315,{size:30,color:C.ink3,alpha:a});
+    para('任天堂とポケモン、『パルワールド』のポケットペアを特許侵害で提訴',150,400,{size:40,weight:'bold',color:C.ink,alpha:a,maxChars:40});
+    para('東京地方裁判所に提訴。特許による権利行使は続いている',150,475,{size:30,color:C.ink2,alpha:a,maxChars:50});
+    card(110,570,1700,280,{alpha:b,color:'#2a2416',stroke:'#7a6630'});
+    para('コロプラとの裁判は、任天堂が特許をどう扱うかを示した象徴的な事例に',150,670,{size:40,weight:'bold',color:C.gold,alpha:b,maxChars:40});
+    para('ゲームの「操作方法」や「画面の仕組み」も、特許という権利の対象になる',150,780,{size:30,color:C.ink2,alpha:b,maxChars:50});
+  },
+  end(sc,t,lt){
+    header('');
+    const a=easeOut(seg(lt,0.2,0.8));
+    text('任天堂 vs コロプラ 特許訴訟',W/2,300,{size:72,weight:'bold',color:C.ink,align:'center',alpha:a});
+    text('2016年9月 指摘 → 2017年12月 提訴 → 2021年8月 和解(33億円)',W/2,380,{size:34,color:C.ink2,align:'center',alpha:a});
+    const b=easeOut(seg(lt,1.2,0.8));
+    text('ご視聴ありがとうございました',W/2,560,{size:52,weight:'bold',color:C.gold,align:'center',alpha:b});
+    const c=easeOut(seg(lt,2.0,0.8));
+    [['ナレーション','VOICEVOX:四国めたん'],['BGM','自作(プログラム生成)'],['出典','両社プレスリリース、弁護士ドットコム、GameBusiness.jp、電ファミニコゲーマー ほか公開報道'],['注記','本動画は公開情報をもとに作成しています。日付・金額は報道に基づく概要です']].forEach((r,i)=>{
+      text(r[0],560,700+i*56,{size:26,color:C.ink3,align:'right',alpha:c}); text(r[1],600,700+i*56,{size:26,color:C.ink2,alpha:c}); });
+  },
+};
+
+function render(t){
+  background(t);
+  let sc=null; for(const s of T.scenes){ if(t>=s.start && t<s.end){sc=s;break;} }
+  if(!sc) sc=T.scenes[T.scenes.length-1];
+  if(sc && SCENE[sc.id]){
+    const lt=t-sc.start;
+    const fade=Math.min(seg(lt,0,0.4), 1-seg(t,sc.end-0.4,0.4));
+    SCENE[sc.id](sc,t,lt);
+    if(fade<1){ ctx.save(); ctx.globalAlpha=1-fade; ctx.fillStyle='#0a0f1c'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+  }
+  if(!window.__thumb){ subtitle(t); progress(t); }
+}
+window.render=render; window.FPS=FPS; window.DURATION=DURATION;
+// ブラウザで開いたときのプレビュー
+if(!window.__capture){ const t0=performance.now(); (function loop(){ render(((performance.now()-t0)/1000)%DURATION); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>
