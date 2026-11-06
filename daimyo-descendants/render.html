@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Daimyo Descendants</title>
+<style>
+  @font-face { font-family: 'Mincho'; src: url(fonts/ShipporiMinchoB1-ExtraBold.ttf); font-weight: 800; }
+  @font-face { font-family: 'Goth'; src: url(fonts/ZenKakuGothicNew-Bold.ttf); font-weight: 700; }
+  html,body{margin:0;background:#0d1424;}
+  canvas{display:block;max-width:100vw;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// ------------------------------------------------------------
+// 江戸時代の大名の子孫は今なにしてる？ (16:9 / 1920x1080)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// タイミングは narrate.py が書き出す timeline.json を setTimeline() で渡す。
+// ------------------------------------------------------------
+const W = 1920, H = 1080, FPS = 30;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MIN = '"Mincho","IPAPGothic",serif', GOT = '"Goth","IPAPGothic",sans-serif';
+const C = {
+  bg0: '#0d1424', bg1: '#1a2742', gold: '#e2bd63', gold2: '#f6dc96', ver: '#d2483a',
+  paper: '#f6efdf', ink: '#1d1a17', ink2: '#5b5247', white: '#ffffff', metan: '#e2468f'
+};
+let SCRIPT = null, TL = null;
+window.DURATION = 0;
+window.setData = (script, tl) => { SCRIPT = script; TL = tl; window.DURATION = tl.total; };
+
+// ---------- 小道具 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function txt(s, x, y, o = {}) {
+  const { size = 48, font = GOT, color = C.white, align = 'left', base = 'alphabetic', alpha = 1,
+          stroke = null, sw = 0, weight = 700, shadow = 0 } = o;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  ctx.lineJoin = 'round';
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = shadow / 3; }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(s, x, y); ctx.shadowColor = 'transparent'; }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function measure(s, size, font = GOT, weight = 700) { ctx.font = `${weight} ${size}px ${font}`; return ctx.measureText(s).width; }
+function rrect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+// 文字列を幅 maxW で折り返す(日本語は1文字単位、句読点は行頭に来ないように)
+function wrap(s, size, maxW, font = GOT) {
+  const lines = []; let cur = '';
+  for (const ch of s) {
+    if (measure(cur + ch, size, font) > maxW && cur) {
+      if ('、。！？」』）'.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// 空白区切りを優先して折り返す(「慶應義塾大学 理工学部 教授」などを語の途中で切らない)
+function wrapWords(s, size, maxW, font = GOT) {
+  if (measure(s, size, font) <= maxW || !s.includes(' ')) return wrap(s, size, maxW, font);
+  const out = []; let cur = '';
+  for (const w of s.split(' ')) {
+    const cand = cur ? cur + ' ' + w : w;
+    if (measure(cand, size, font) > maxW && cur) { out.push(cur); cur = w; } else cur = cand;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+// ---------- 背景(青海波パターンを一度だけ描いて使い回す) ----------
+const bgCanvas = document.createElement('canvas'); bgCanvas.width = W; bgCanvas.height = H;
+(function drawBg() {
+  const g = bgCanvas.getContext('2d');
+  const grd = g.createRadialGradient(W * 0.5, H * 0.35, 100, W * 0.5, H * 0.5, W * 0.8);
+  grd.addColorStop(0, C.bg1); grd.addColorStop(1, C.bg0);
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(226,189,99,0.07)'; g.lineWidth = 2;
+  const R = 46;
+  for (let row = -1; row < H / (R / 2) + 2; row++) {
+    for (let col = -1; col < W / (R * 2) + 2; col++) {
+      const cx = col * R * 2 + (row % 2 ? R : 0), cy = row * R / 2;
+      for (let k = 1; k <= 3; k++) { g.beginPath(); g.arc(cx, cy + R, R * k / 3, Math.PI, 2 * Math.PI); g.stroke(); }
+    }
+  }
+  const v = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 1.0);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
+})();
+
+// ---------- アイコン(線画) ----------
+function icon(name, cx, cy, s, color) {
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s / 100, s / 100);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const P = () => ctx.beginPath(), S = () => ctx.stroke(), F = () => ctx.fill();
+  switch (name) {
+    case 'pen': // 本 + ペン
+      P(); ctx.moveTo(-45, -30); ctx.lineTo(0, -20); ctx.lineTo(45, -30); ctx.lineTo(45, 35); ctx.lineTo(0, 45); ctx.lineTo(-45, 35); ctx.closePath(); S();
+      P(); ctx.moveTo(0, -20); ctx.lineTo(0, 45); S();
+      P(); ctx.moveTo(20, -55); ctx.lineTo(60, -95); ctx.lineTo(70, -85); ctx.lineTo(30, -45); ctx.closePath(); S();
+      break;
+    case 'museum':
+      P(); ctx.moveTo(-60, -20); ctx.lineTo(0, -60); ctx.lineTo(60, -20); ctx.closePath(); S();
+      for (const x of [-40, -13, 13, 40]) { P(); ctx.moveTo(x, -10); ctx.lineTo(x, 40); S(); }
+      P(); ctx.moveTo(-65, 50); ctx.lineTo(65, 50); S(); P(); ctx.moveTo(-55, -12); ctx.lineTo(55, -12); S();
+      break;
+    case 'garden': // 桜島と煙
+      P(); ctx.moveTo(-70, 45); ctx.lineTo(-25, -15); ctx.lineTo(-5, -5); ctx.lineTo(15, -25); ctx.lineTo(70, 45); S();
+      P(); ctx.moveTo(-70, 45); ctx.lineTo(70, 45); S();
+      P(); ctx.arc(10, -50, 12, 0, 7); S(); P(); ctx.arc(28, -68, 16, 0, 7); S(); P(); ctx.arc(52, -78, 10, 0, 7); S();
+      break;
+    case 'shrine': // 鳥居
+      P(); ctx.moveTo(-70, -50); ctx.quadraticCurveTo(0, -38, 70, -50); S();
+      P(); ctx.moveTo(-55, -28); ctx.lineTo(55, -28); S();
+      P(); ctx.moveTo(-38, -45); ctx.lineTo(-45, 55); S(); P(); ctx.moveTo(38, -45); ctx.lineTo(45, 55); S();
+      P(); ctx.moveTo(0, -42); ctx.lineTo(0, -28); S();
+      break;
+    case 'antenna':
+      P(); ctx.moveTo(0, -20); ctx.lineTo(-30, 55); S(); P(); ctx.moveTo(0, -20); ctx.lineTo(30, 55); S();
+      P(); ctx.moveTo(-18, 20); ctx.lineTo(18, 20); S();
+      P(); ctx.arc(0, -25, 7, 0, 7); F();
+      for (const r of [25, 45, 65]) { P(); ctx.arc(0, -25, r, -Math.PI * 0.8, -Math.PI * 0.2); S(); }
+      break;
+    case 'rocket':
+      ctx.rotate(Math.PI / 4);
+      P(); ctx.moveTo(0, -70); ctx.quadraticCurveTo(28, -40, 22, 25); ctx.lineTo(-22, 25); ctx.quadraticCurveTo(-28, -40, 0, -70); S();
+      P(); ctx.arc(0, -25, 10, 0, 7); S();
+      P(); ctx.moveTo(-22, 5); ctx.lineTo(-40, 40); ctx.lineTo(-20, 30); S(); P(); ctx.moveTo(22, 5); ctx.lineTo(40, 40); ctx.lineTo(20, 30); S();
+      P(); ctx.moveTo(-10, 38); ctx.lineTo(0, 65); ctx.lineTo(10, 38); S();
+      break;
+    case 'coffee':
+      P(); ctx.moveTo(-45, -10); ctx.lineTo(-38, 45); ctx.lineTo(30, 45); ctx.lineTo(37, -10); ctx.closePath(); S();
+      P(); ctx.arc(45, 12, 15, -Math.PI / 2, Math.PI / 2); S();
+      P(); ctx.moveTo(-60, 58); ctx.lineTo(55, 58); S();
+      for (const x of [-20, 0, 20]) { P(); ctx.moveTo(x, -25); ctx.bezierCurveTo(x - 10, -40, x + 10, -50, x, -65); S(); }
+      break;
+    case 'trophy':
+      P(); ctx.moveTo(-38, -55); ctx.lineTo(38, -55); ctx.quadraticCurveTo(38, 5, 0, 10); ctx.quadraticCurveTo(-38, 5, -38, -55); S();
+      P(); ctx.arc(-40, -32, 18, Math.PI / 2, Math.PI * 1.5); S(); P(); ctx.arc(40, -32, 18, -Math.PI / 2, Math.PI / 2); S();
+      P(); ctx.moveTo(0, 10); ctx.lineTo(0, 35); S(); P(); ctx.moveTo(-28, 50); ctx.lineTo(28, 50); ctx.lineTo(20, 35); ctx.lineTo(-20, 35); ctx.closePath(); S();
+      break;
+    case 'bowl': // 茶碗
+      P(); ctx.moveTo(-62, -20); ctx.quadraticCurveTo(-55, 45, 0, 45); ctx.quadraticCurveTo(55, 45, 62, -20); S();
+      P(); ctx.ellipse(0, -20, 62, 12, 0, 0, 7); S();
+      P(); ctx.moveTo(-25, 45); ctx.lineTo(-22, 58); ctx.lineTo(22, 58); ctx.lineTo(25, 45); S();
+      P(); ctx.moveTo(-40, 0); ctx.quadraticCurveTo(-20, 12, 0, 2); ctx.quadraticCurveTo(20, -8, 40, 5); S();
+      break;
+  }
+  ctx.restore();
+}
+
+// ---------- 家紋風エンブレム(実在の家紋ではなく、家名の一文字を丸で囲んだ意匠) ----------
+function crest(ch, cx, cy, r, p) {
+  ctx.save(); ctx.translate(cx, cy);
+  const k = easeBack(p); ctx.scale(k, k); ctx.rotate((1 - easeOut(p)) * -0.6);
+  ctx.fillStyle = 'rgba(226,189,99,0.12)'; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+  ctx.strokeStyle = C.gold; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+  ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r - 18, 0, 7); ctx.stroke();
+  txt(ch, 0, 8, { size: r * 1.15, font: MIN, weight: 800, color: C.gold2, align: 'center', base: 'middle' });
+  ctx.restore();
+}
+
+function stampMark(s, cx, cy, p, rot = -0.18) {
+  if (p <= 0) return;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+  const k = 1 + 1.4 * (1 - easeOut(p * 1.6)); ctx.scale(k, k); ctx.globalAlpha = clamp(p * 3);
+  const w = measure(s, 64, MIN, 800) + 60;
+  ctx.strokeStyle = C.ver; ctx.lineWidth = 8; rrect(-w / 2, -55, w, 110, 14); ctx.stroke();
+  ctx.fillStyle = 'rgba(210,72,58,0.12)'; ctx.fill();
+  txt(s, 0, 4, { size: 64, font: MIN, weight: 800, color: C.ver, align: 'center', base: 'middle' });
+  ctx.restore();
+}
+
+// ---------- 字幕 ----------
+function subtitle(t) {
+  let cur = null;
+  for (const sc of TL.scenes) {
+    if (t < sc.start || t >= sc.end) continue;
+    sc.lines.forEach((ln, i) => {
+      const next = sc.lines[i + 1];
+      const until = next ? next.start : Math.min(sc.end - 0.15, ln.end + 1.2);
+      if (t >= ln.start - 0.05 && t < until) cur = ln;
+    });
+  }
+  if (!cur) return;
+  const size = 50, maxW = 1560;
+  const lines = wrap(cur.text, size, maxW);
+  const lh = 66, boxH = lines.length * lh + 44, y0 = H - 40 - boxH;
+  const a = clamp((t - cur.start + 0.05) / 0.12);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(8,10,20,0.72)'; rrect(150, y0, W - 300, boxH, 20); ctx.fill();
+  ctx.strokeStyle = 'rgba(226,70,143,0.9)'; ctx.lineWidth = 3; rrect(150, y0, W - 300, boxH, 20); ctx.stroke();
+  // 話者タグ
+  ctx.fillStyle = C.metan; rrect(170, y0 - 26, 170, 46, 23); ctx.fill();
+  txt('四国めたん', 255, y0 - 3, { size: 26, align: 'center', base: 'middle' });
+  lines.forEach((l, i) => txt(l, W / 2, y0 + 22 + lh * i + lh / 2, { size, align: 'center', base: 'middle', stroke: '#000', sw: 8 }));
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(lt, sc, d) {
+  const L = d.lines;
+  const rows = [['江戸時代の', C.white, 120], ['大名の子孫は', C.gold2, 150], ['今なにしてる？', C.white, 150]];
+  rows.forEach(([s, col, size], i) => {
+    const p = easeOut(seg(lt, 0.15 + i * 0.25, 0.5));
+    txt(s, W / 2 + (1 - p) * 120 * (i % 2 ? 1 : -1), 210 + i * 175, { size, font: MIN, weight: 800, color: col, align: 'center', alpha: p, stroke: '#0b0f1c', sw: 16, shadow: 20 });
+  });
+  const tags = [['元総理大臣', -620, 0], ['大学教授', -300, 0.25], ['宇宙工学者', 0, 0.5], ['美術館長', 300, 0.75], ['写真家', 600, 1.0]];
+  const t1 = L[1].start - d.start;
+  tags.forEach(([s, dx, delay], i) => {
+    const p = seg(lt, t1 + delay * 0.8, 0.35);
+    if (p <= 0) return;
+    ctx.save(); ctx.translate(W / 2 + dx, 735 + (i % 2) * 18); ctx.rotate((i % 2 ? 1 : -1) * 0.05);
+    const k = easeBack(p); ctx.scale(k, k);
+    const w = measure(s, 48) + 60;
+    ctx.fillStyle = C.paper; rrect(-w / 2, -40, w, 80, 40); ctx.fill();
+    txt(s, 0, 2, { size: 48, color: C.ver, align: 'center', base: 'middle' });
+    ctx.restore();
+  });
+}
+
+function sceneTimeline(lt, sc, d) {
+  const L = d.lines.map(l => l.start - d.start);
+  txt('そもそも、大名家はどうなった？', W / 2, 150, { size: 72, font: MIN, weight: 800, align: 'center', color: C.gold2, alpha: easeOut(seg(lt, 0.1, 0.4)), stroke: '#0b0f1c', sw: 12 });
+  const y = 470, x0 = 300, x1 = 1620;
+  const pl = easeOut(seg(lt, 0.3, 1.2));
+  ctx.strokeStyle = C.gold; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + (x1 - x0) * pl, y); ctx.stroke();
+  const nodes = [
+    [x0 + 60, '1869', '明治2年', '大名家が「華族」に', L[0] + 1.2],
+    [W / 2, '1871', '明治4年', '廃藩置県で領地を失う', L[1]],
+    [x1 - 60, '1947', '昭和22年', '華族制度 廃止', L[2]],
+  ];
+  nodes.forEach(([x, yr, jp, desc, ts], i) => {
+    const p = seg(lt, ts, 0.45); if (p <= 0) return;
+    const k = easeBack(p);
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+    ctx.fillStyle = i === 2 ? C.ver : C.gold; ctx.beginPath(); ctx.arc(0, 0, 26, 0, 7); ctx.fill();
+    ctx.restore();
+    txt(yr, x, y - 70, { size: 84, font: MIN, weight: 800, align: 'center', alpha: p, color: C.white });
+    txt(jp, x, y - 160, { size: 34, align: 'center', alpha: p, color: C.gold2 });
+    const w = measure(desc, 42) + 50;
+    ctx.save(); ctx.globalAlpha = p; ctx.fillStyle = i === 2 ? C.ver : 'rgba(246,239,223,0.95)';
+    rrect(x - w / 2, y + 60, w, 76, 14); ctx.fill(); ctx.restore();
+    txt(desc, x, y + 100, { size: 42, align: 'center', base: 'middle', alpha: p, color: i === 2 ? C.white : C.ink });
+  });
+  const p = easeBack(seg(lt, L[3], 0.5));
+  if (p > 0) {
+    ctx.save(); ctx.translate(W / 2, 750); ctx.scale(p, p);
+    txt('いまは みんな「一般市民」', 0, 0, { size: 84, font: MIN, weight: 800, align: 'center', base: 'middle', color: C.gold2, stroke: '#0b0f1c', sw: 14, shadow: 18 });
+    ctx.restore();
+  }
+}
+
+const STAMPS = { shimazu: ['観光!', 3], sanada: ['大学教授!?', 1], uesugi: ['宇宙!?', 1], yoshinobu: ['珈琲!?', 2], arima: ['競馬!?', 1], hosokawa: ['総理大臣!?', 1] };
+const KANSUJI = ['番外編', '其の一', '其の二', '其の三', '其の四', '其の五', '其の六', '其の七', '其の八'];
+
+function sceneFamily(lt, sc, d) {
+  const L = d.lines.map(l => l.start - d.start);
+  // 番号バッジ
+  const pb = easeOut(seg(lt, 0.05, 0.4));
+  ctx.save(); ctx.globalAlpha = pb;
+  ctx.fillStyle = sc.no ? C.ver : C.metan; rrect(70 - (1 - pb) * 200, 60, 250, 84, 10); ctx.fill(); ctx.restore();
+  txt(KANSUJI[sc.no], 195 - (1 - pb) * 200, 104, { size: 50, font: MIN, weight: 800, align: 'center', base: 'middle', alpha: pb });
+  // 左: 江戸時代
+  const pl = seg(lt, 0.15, 0.6);
+  txt('江戸時代', 470, 205, { size: 40, align: 'center', color: C.gold, alpha: easeOut(pl) });
+  crest(sc.crest, 470, 390, 150, pl);
+  const pn = easeOut(seg(lt, 0.45, 0.5));
+  const fsize = sc.family.length >= 5 ? 104 : 120;
+  txt(sc.family, 470, 670 + (1 - pn) * 40, { size: fsize, font: MIN, weight: 800, align: 'center', alpha: pn, stroke: '#0b0f1c', sw: 14, shadow: 16 });
+  const dw = measure(sc.domain, 44) + 60;
+  ctx.save(); ctx.globalAlpha = pn; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; rrect(470 - dw / 2, 710, dw, 72, 36); ctx.stroke(); ctx.restore();
+  txt(sc.domain, 470, 747, { size: 44, align: 'center', base: 'middle', color: C.gold2, alpha: pn });
+  // 矢印
+  const pa = easeOut(seg(lt, L[1] - 0.25, 0.4));
+  if (pa > 0) {
+    ctx.save(); ctx.globalAlpha = pa; ctx.fillStyle = C.gold;
+    const ax = 905 + (1 - pa) * -40;
+    ctx.beginPath(); ctx.moveTo(ax - 40, 370); ctx.lineTo(ax + 10, 370); ctx.lineTo(ax + 10, 340); ctx.lineTo(ax + 60, 400); ctx.lineTo(ax + 10, 460); ctx.lineTo(ax + 10, 430); ctx.lineTo(ax - 40, 430); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // 右: いま
+  const pc = easeOut(seg(lt, L[1] - 0.2, 0.55));
+  if (pc > 0) {
+    const cx = 1010 + (1 - pc) * 120, cy = 150, cw = 830, ch = 640;
+    ctx.save(); ctx.globalAlpha = pc;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+    ctx.fillStyle = C.paper; rrect(cx, cy, cw, ch, 24); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = C.ver; rrect(cx, cy, cw, 70, 24); ctx.fill(); ctx.fillRect(cx, cy + 40, cw, 30);
+    ctx.restore();
+    txt('い ま', cx + cw / 2, cy + 36, { size: 40, font: MIN, weight: 800, align: 'center', base: 'middle', alpha: pc });
+    const pi = easeBack(seg(lt, L[1] + 0.1, 0.45));
+    if (pi > 0) {
+      ctx.save(); ctx.globalAlpha = pc; ctx.translate(cx + 150, cy + 220); ctx.scale(pi, pi);
+      ctx.fillStyle = 'rgba(210,72,58,0.1)'; ctx.beginPath(); ctx.arc(0, 0, 105, 0, 7); ctx.fill();
+      icon(sc.icon, 0, 0, 125, C.ver); ctx.restore();
+    }
+    const nsize = 92;
+    txt(sc.person, cx + 290, cy + 205, { size: nsize, font: MIN, weight: 800, color: C.ink, base: 'middle', alpha: pc });
+    txt('さん', cx + 290 + measure(sc.person, nsize, MIN, 800) + 10, cy + 222, { size: 40, color: C.ink2, base: 'middle', alpha: pc });
+    let rs = 50; while (rs > 40 && measure(sc.role, rs) > cw - 330) rs -= 2;
+    const rlines = wrapWords(sc.role, rs, cw - 330);
+    rlines.forEach((r, i) => txt(r, cx + 290, cy + 290 + i * 60, { size: rs, color: C.ver, base: 'middle', alpha: pc }));
+    // タグ
+    sc.tags.forEach((tg, i) => {
+      const p = easeOut(seg(lt, L[Math.min(2, L.length - 1)] + i * 0.35, 0.4)); if (p <= 0) return;
+      const tl = wrap(tg, 40, cw - 140);
+      const y = cy + 410 + i * 92;
+      ctx.save(); ctx.globalAlpha = p; ctx.fillStyle = 'rgba(29,26,23,0.08)';
+      rrect(cx + 50 + (1 - p) * 30, y, cw - 100, 74, 12); ctx.fill(); ctx.restore();
+      txt('●', cx + 82 + (1 - p) * 30, y + 38, { size: 26, color: C.gold, base: 'middle', alpha: p });
+      txt(tl[0] + (tl.length > 1 ? '…' : ''), cx + 120 + (1 - p) * 30, y + 38, { size: 40, color: C.ink, base: 'middle', alpha: p });
+    });
+    txt('※肩書は公開資料・報道時点のもの', cx + cw - 24, cy + ch - 22, { size: 22, color: C.ink2, align: 'right', alpha: pc });
+  }
+  const st = STAMPS[sc.id];
+  if (st) stampMark(st[0], 860, 560, seg(lt, L[st[1]] + 0.6, 0.5), -0.12);
+}
+
+function sceneOutro(lt, sc, d) {
+  const L = d.lines.map(l => l.start - d.start);
+  txt('まとめ', W / 2, 120, { size: 76, font: MIN, weight: 800, align: 'center', color: C.gold2, alpha: easeOut(seg(lt, 0.05, 0.4)) });
+  const fams = SCRIPT.scenes.filter(s => s.type === 'family');
+  const cols = 3, cw = 520, chh = 100, gx = 30, gy = 16;
+  const x0 = (W - (cols * cw + (cols - 1) * gx)) / 2, y0 = 165;
+  fams.forEach((f, i) => {
+    const p = easeOut(seg(lt, 0.2 + i * 0.12, 0.35)); if (p <= 0) return;
+    const x = x0 + (i % cols) * (cw + gx), y = y0 + Math.floor(i / cols) * (chh + gy) + (1 - p) * 30;
+    ctx.save(); ctx.globalAlpha = p; ctx.fillStyle = 'rgba(246,239,223,0.95)'; rrect(x, y, cw, chh, 14); ctx.fill(); ctx.restore();
+    txt(f.family, x + 24, y + 38, { size: 38, font: MIN, weight: 800, color: C.ink, base: 'middle', alpha: p });
+    txt(f.role.replace('「有馬記念」の名前の由来', '有馬記念の由来'), x + 24, y + 78, { size: 28, color: C.ver, base: 'middle', alpha: p });
+  });
+  const pq = easeBack(seg(lt, L[1], 0.5));
+  if (pq > 0) {
+    ctx.save(); ctx.translate(W / 2, 615); ctx.scale(pq, pq);
+    txt('あなたの街の大名家は？', 0, 0, { size: 80, font: MIN, weight: 800, align: 'center', base: 'middle', color: C.white, stroke: '#0b0f1c', sw: 14, shadow: 18 });
+    ctx.restore();
+  }
+  const ps = seg(lt, L[2] + 1.0, 0.4);
+  if (ps > 0) {
+    const pulse = 1 + 0.04 * Math.sin((lt - L[2]) * 6);
+    ctx.save(); ctx.translate(W / 2, 755); ctx.scale(easeBack(ps) * pulse, easeBack(ps) * pulse);
+    ctx.fillStyle = '#e02a2a'; rrect(-230, -50, 460, 100, 50); ctx.fill();
+    txt('チャンネル登録', 0, 3, { size: 48, align: 'center', base: 'middle' });
+    ctx.restore();
+  }
+  if (lt > L[2] + 0.5) {
+    // 最後の数秒は字幕が消えるので、その位置にクレジットを出す
+    const lastEnd = d.lines[2].end - d.start + 1.2;
+    const pcr = seg(lt, lastEnd, 0.5);
+    txt('ナレーション：VOICEVOX:四国めたん　／　BGM：自作（権利フリー）', W / 2, 900, { size: 32, align: 'center', color: C.gold2, alpha: pcr });
+    txt('出典・参考資料は概要欄に掲載しています', W / 2, 950, { size: 28, align: 'center', color: '#c9c3b6', alpha: pcr });
+  }
+}
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(bgCanvas, 0, 0);
+  const si = TL.scenes.findIndex(s => t >= s.start && t < s.end);
+  const idx = si < 0 ? TL.scenes.length - 1 : si;
+  const d = TL.scenes[idx], sc = SCRIPT.scenes[idx], lt = t - d.start;
+  ctx.save();
+  // シーン末尾 0.25 秒でフェードアウト(最終シーン以外)
+  if (idx < TL.scenes.length - 1) ctx.globalAlpha = clamp((d.end - t) / 0.25);
+  ({ title: sceneTitle, timeline: sceneTimeline, family: sceneFamily, outro: sceneOutro })[sc.type](lt, sc, d);
+  ctx.restore();
+  // シーン切替の金色ワイプ
+  if (idx > 0 && lt < 0.4) {
+    const p = lt / 0.4, x = -400 + p * (W + 800);
+    ctx.save(); ctx.globalAlpha = 0.9 * Math.sin(p * Math.PI);
+    const g = ctx.createLinearGradient(x - 300, 0, x + 300, 0);
+    g.addColorStop(0, 'rgba(226,189,99,0)'); g.addColorStop(0.5, 'rgba(246,220,150,0.55)'); g.addColorStop(1, 'rgba(226,189,99,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+  subtitle(t);
+  // 進捗バー(上端)
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(0, 0, W, 8);
+  ctx.fillStyle = C.gold; ctx.fillRect(0, 0, W * clamp(t / TL.total), 8);
+  // 冒頭/末尾フェード
+  const fade = Math.min(clamp(t / 0.4), clamp((TL.total - t) / 0.8));
+  if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// サムネイル(1280x720 へ縮小して使う)
+function renderThumb() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  ctx.drawImage(bgCanvas, 0, 0);
+  ctx.fillStyle = 'rgba(210,72,58,0.18)'; ctx.fillRect(0, 0, W, H);
+  txt('殿様の子孫', 80, 250, { size: 190, font: MIN, weight: 800, color: C.gold2, stroke: '#0b0f1c', sw: 24, shadow: 30 });
+  txt('いま何してる？', 80, 470, { size: 190, font: MIN, weight: 800, color: C.white, stroke: '#0b0f1c', sw: 24, shadow: 30 });
+  const items = [['元総理大臣', 'bowl'], ['宇宙工学者', 'rocket'], ['大学教授', 'antenna']];
+  items.forEach(([s, ic], i) => {
+    const x = 80 + i * 600, y = 620;
+    ctx.fillStyle = C.paper; rrect(x, y, 560, 300, 26); ctx.fill();
+    ctx.fillStyle = C.ver; rrect(x, y, 560, 64, 26); ctx.fill(); ctx.fillRect(x, y + 34, 560, 30);
+    txt(['細川家', '上杉家', '真田家'][i], x + 280, y + 34, { size: 40, font: MIN, weight: 800, align: 'center', base: 'middle' });
+    icon(ic, x + 280, y + 165, 100, C.ver);
+    txt(s, x + 280, y + 262, { size: 64, font: MIN, weight: 800, color: C.ink, align: 'center', base: 'middle' });
+  });
+  stampMark('まさかの!?', 1620, 180, 1, 0.16);
+}
+window.render = render; window.renderThumb = renderThumb;
+
+// ブラウザで直接開いた場合のプレビュー再生(script.json / output/timeline.json を http 経由で読む)
+if (location.protocol.startsWith('http')) {
+  Promise.all([fetch('script.json').then(r => r.json()), fetch('output/timeline.json').then(r => r.json())]).then(([s, tl]) => {
+    setData(s, tl); document.fonts.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % tl.total); requestAnimationFrame(loop); })(); });
+  });
+}
+</script>
+</body>
+</html>

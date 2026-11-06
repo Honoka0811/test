@@ -1,0 +1,6 @@
+fonts/*.ttf
+output/mix.wav
+output/video_silent.mp4
+output/part*.mp4
+output/parts.txt
+__pycache__/
