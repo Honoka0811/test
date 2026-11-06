@@ -35,7 +35,7 @@ def load_notes():
                 s = on.pop(x.note); notes.append((tr.name, s / tpb, (T - s) / tpb, x.note))
     return notes
 
-BPM = float(os.environ.get('BGM_BPM', '48'))   # 演奏テンポ(4分音符/分)。G線上のアリアらしいゆったりした速さ
+BPM = float(os.environ.get('BGM_BPM', '32'))   # 演奏テンポ(4分音符/分)。8分音符=64 程度の、一般的な演奏に近いゆったりした速さ
 
 def beat_to_sec_fn(total, end_hold=4.6, rit_beats=8, rit_amount=0.72):
     """拍→秒の対応。最終和音(74拍目)が total-end_hold 秒に来るよう基本テンポを決め、最後 rit_beats 拍でリタルダンド"""

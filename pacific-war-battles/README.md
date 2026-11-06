@@ -41,4 +41,4 @@ python3 mix.py              # BGM合成 + ダッキングミックス → output
 
 必要なもの: Node.js + playwright, ffmpeg, IPAゴシック, Python3 + numpy, scipy, mido, voicevox_core 0.16, pyopenjtalk(辞書)。
 VOICEVOX のセットアップは `../pacific-war-analysis/README.md` と同じ(`VOICEVOX_ORT` / `VOICEVOX_VVMS` 環境変数)。
-原稿は `narrate.py` の `SCRIPT`(読み上げ用テキストと字幕テキストを別々に持つ)。尺はナレーションの長さから自動で決まり、BGM は 48 BPM(`BGM_BPM` 環境変数で変更可)。動画に曲全体が収まらない場合は、最後の約5秒でフェードアウトする(現在は76拍中66拍目付近まで)。
+原稿は `narrate.py` の `SCRIPT`(読み上げ用テキストと字幕テキストを別々に持つ)。尺はナレーションの長さから自動で決まり、BGM は 4分音符=32(8分音符=64、一般的な演奏に近い速さ。`BGM_BPM` 環境変数で変更可)。動画に曲全体が収まらない場合は、最後の約5秒でフェードアウトする(現在は76拍中44拍目付近まで)。
