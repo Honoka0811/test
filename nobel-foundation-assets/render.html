@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Nobel Foundation Assets</title>
+<style>
+  html,body{margin:0;background:#0d1016;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/cues.js" onerror="window.CUES=[]"></script>
+<script>
+// ------------------------------------------------------------
+// ノーベル財団の資産の推移 1896→2026  (9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// 字幕は narrate.py が書き出す output/cues.js(window.CUES)を使う
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0d1016', panel: '#171b24', grid: '#2a303c',
+  ink: '#f4f2ec', ink2: '#bcbfc7', ink3: '#7f8592',
+  gold: '#E2B54B', goldSoft: 'rgba(226,181,75,0.20)',
+  up: '#3FBF9F', down: '#E8524F', downSoft: 'rgba(232,82,79,0.20)'
+};
+const FPS = 30;
+const DURATION = 66;
+
+// ---------- データ(概数・名目値) ----------
+// 運用資本(億クローナ)。1900=設立時の基金、2012=期初の運用資本、他=年末の総運用資本(市場価値)
+const CAP = [
+  { y: '1900', v: 0.315, lbl: '0.3億' },
+  { y: '2012', v: 29, lbl: '約30億' },
+  { y: '2017', v: 45, lbl: '45億' },
+  { y: '2022', v: 58, lbl: '58億' },
+  { y: '2024', v: 68, lbl: '68億' },
+  { y: '2025', v: 67.4, lbl: '67億' },
+];
+// 1賞あたりの賞金(万クローナ)
+const PRIZE = [
+  { y: '1901', v: 15 }, { y: '2001', v: 1000 }, { y: '2012', v: 800 },
+  { y: '2017', v: 900 }, { y: '2020', v: 1000 }, { y: '2023', v: 1100 }, { y: '2026', v: 1200 },
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, scale = 1 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (scale !== 1) { ctx.translate(x, y); ctx.scale(scale, scale); ctx.fillText(str, 0, 0); }
+  else ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function header(title, sub, a) {
+  text(title, 80, 300, { size: 68, weight: 'bold', alpha: a });
+  if (sub) text(sub, 80, 368, { size: 34, color: C.ink2, alpha: a });
+}
+function note(str, a, y = 1330) { text(str, W / 2, y, { size: 26, color: C.ink3, align: 'center', alpha: a }); }
+// コイン(装飾用・汎用の記号)
+function coin(x, y, r, a, label = '¤') {
+  circle(x, y, r, '#8a6a22', a);
+  circle(x, y, r * 0.86, C.gold, a);
+  circle(x, y, r * 0.70, '#c99a36', a);
+  text(label, x, y + r * 0.28, { size: r * 0.8, weight: 'bold', color: '#fff3cf', align: 'center', alpha: a });
+}
+
+// ---------- シーン ----------
+function sceneHook(t, a) {
+  // 0〜1秒で強い一言を出す(冒頭の離脱防止)
+  const p = backOut(t / 0.5);
+  text('ノーベル賞の賞金', W / 2, 520, { size: 80, weight: 'bold', align: 'center', alpha: a * easeOut(t / .3) });
+  text('なぜ尽きない?', W / 2, 700, { size: 150, weight: 'bold', color: C.gold, align: 'center', alpha: a * easeOut(t / .3), scale: lerp(0.6, 1, p) });
+  // コインが積み上がる
+  for (let i = 0; i < 9; i++) {
+    const ca = a * easeOut((t - .6 - i * .18) / .3);
+    const drop = (1 - easeOut((t - .6 - i * .18) / .35)) * 120;
+    ctx.save(); ctx.globalAlpha = clamp(ca);
+    ctx.fillStyle = i % 2 ? '#c99a36' : C.gold;
+    ctx.beginPath(); ctx.ellipse(W / 2, 1180 - i * 34 - drop, 170, 40, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  const la = a * easeOut((t - 2.4) / .5);
+  rrect(110, 1260, W - 220, 120, 26, C.panel, la);
+  text('125年払い続けて 資産は約200倍', W / 2, 1340, { size: 50, weight: 'bold', color: C.ink, align: 'center', alpha: la });
+}
+
+function sceneWill(t, a) {
+  header('始まりは1つの遺言', '1895年 アルフレッド・ノーベルの遺言状', a);
+  const p = easeOut((t - .4) / 1.4);
+  // 円グラフ: 全財産の94%
+  const cx = W / 2, cy = 800, r = 260;
+  circle(cx, cy, r, C.grid, a);
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = C.gold;
+  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * 0.94 * p); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  circle(cx, cy, r * 0.62, C.bg, a);
+  text(Math.round(94 * p) + '%', cx, cy + 30, { size: 120, weight: 'bold', color: C.gold, align: 'center', alpha: a });
+  text('全財産のうち', cx, cy - 70, { size: 32, color: C.ink2, align: 'center', alpha: a });
+  const la = a * easeOut((t - 2.2) / .6);
+  rrect(60, 1110, W - 120, 190, 24, C.panel, la);
+  text('賞のための基金へ', 100, 1180, { size: 36, color: C.ink2, alpha: la });
+  text('約3,100万クローナ', 100, 1260, { size: 72, weight: 'bold', color: C.gold, alpha: la });
+  note('ダイナマイトなどの発明で築いた財産 / 1900年 ノーベル財団設立', la);
+}
+
+function sceneSafe(t, a) {
+  header('最初は「守り」の運用', '1900年代前半のルール', a);
+  const items = [
+    ['国債・債券', '値動きの小さい安全資産'],
+    ['不動産・担保付き貸付', '株式への投資はほぼ不可'],
+    ['重い税金', 'スウェーデンでは課税対象'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .4 - i * .9) / .5);
+    const y = 470 + i * 230;
+    rrect(60, y, W - 120, 190, 24, C.panel, la);
+    rrect(60, y, 14, 190, 6, i === 2 ? C.down : C.ink3, la);
+    text(it[0], 110, y + 85, { size: 54, weight: 'bold', alpha: la, color: i === 2 ? C.down : C.ink });
+    text(it[1], 110, y + 145, { size: 32, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 3.4) / .5);
+  text('安全なはずが…', W / 2, 1250, { size: 60, weight: 'bold', color: C.down, align: 'center', alpha: ca });
+}
+
+function sceneDecline(t, a) {
+  header('インフレで価値が目減り', '賞金の「実質的な価値」(1901年=100)', a);
+  const p = easeInOut((t - .6) / 2.4);
+  const v = lerp(100, 30, p);
+  const bx = 160, by = 1190, bw = 300, bh = 540;
+  // 1901
+  rrect(bx, by - bh, bw, bh, 12, C.gold, a);
+  text('100', bx + bw / 2, by - bh - 24, { size: 48, weight: 'bold', align: 'center', alpha: a });
+  text('1901年', bx + bw / 2, by + 56, { size: 38, color: C.ink2, align: 'center', alpha: a });
+  // 1945
+  const x2 = W - 160 - bw;
+  rrect(x2, by - bh, bw, bh, 12, C.downSoft, a);
+  rrect(x2, by - bh * v / 100, bw, bh * v / 100, 12, C.down, a);
+  text((p >= 1 ? '約' : '') + Math.round(v), x2 + bw / 2, by - bh * v / 100 - 24, { size: 48, weight: 'bold', color: C.down, align: 'center', alpha: a });
+  text('1945年ごろ', x2 + bw / 2, by + 56, { size: 38, color: C.ink2, align: 'center', alpha: a });
+  const la = a * easeOut((t - 3.2) / .5);
+  text('1/3以下に', W / 2, 500, { size: 96, weight: 'bold', color: C.down, align: 'center', alpha: la });
+  note('出典: ノーベル財団(nobelprize.org)ほか / 概数', a, 1290);
+}
+
+function sceneTurn(t, a) {
+  header('戦後の大転換', 'ルールを変えて「増やす」運用へ', a);
+  const ev = [
+    ['1946', 'スウェーデンで非課税に', '税金の重荷が消える'],
+    ['1953', '株式・不動産への投資が自由に', '米国でも投資課税が免除'],
+  ];
+  ev.forEach((e, i) => {
+    const la = a * easeOut((t - .4 - i * 3.4) / .5);
+    const y = 480 + i * 360;
+    const s = backOut((t - .4 - i * 3.4) / .5);
+    rrect(60, y, W - 120, 300, 26, C.panel, la);
+    text(e[0], 110, y + 130, { size: 110, weight: 'bold', color: C.gold, alpha: la, scale: lerp(.7, 1, s) });
+    ctx.font = `bold 110px ${FONT}`;
+    text('年', 110 + ctx.measureText(e[0]).width + 10, y + 130, { size: 44, color: C.gold, alpha: la });
+    text(e[1], 110, y + 205, { size: 46, weight: 'bold', alpha: la });
+    text(e[2], 110, y + 260, { size: 32, color: C.ink2, alpha: la });
+  });
+  // 上向き矢印
+  const aa = a * easeOut((t - 6.2) / .5);
+  ctx.save(); ctx.globalAlpha = clamp(aa); ctx.fillStyle = C.up;
+  ctx.beginPath(); ctx.moveTo(W / 2, 1200); ctx.lineTo(W / 2 + 70, 1280); ctx.lineTo(W / 2 - 70, 1280); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function sceneCapital(t, a) {
+  header('ノーベル財団の資産の推移', '運用資本(億クローナ・名目)', a);
+  const px0 = 130, px1 = W - 60, py0 = 520, py1 = 1180, maxV = 75;
+  for (let v = 0; v <= 75; v += 25) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v + '億', px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const n = CAP.length, gw = (px1 - px0) / n, bw = gw * 0.62;
+  CAP.forEach((d, i) => {
+    const st = [0.3, 2.0, 2.8, 3.6, 5.2, 5.8][i];
+    const p = easeOut((t - st) / .9);
+    const cx = px0 + gw * i + gw / 2;
+    const h = Math.max(4, (py1 - py0) * d.v / maxV) * p;
+    const col = i === 0 ? C.ink3 : (i === n - 1 ? C.gold : C.up);
+    rrect(cx - bw / 2, py1 - h, bw, h, 8, col, a);
+    text(d.y, cx, py1 + 44, { size: 32, color: C.ink2, align: 'center', alpha: a });
+    if (p > 0) text(d.lbl, cx, py1 - h - 16, { size: 32, weight: 'bold', color: i === n - 1 ? C.gold : C.ink, align: 'center', alpha: a * p });
+  });
+  // 1900 と 2012 の間は期間が空いていることを示す
+  const bxk = px0 + gw;
+  line(bxk, py1 + 14, bxk, py1 - 30, C.ink3, 3, a, [6, 6]);
+  // 約200倍
+  const ca = a * easeOut((t - 8.0) / .5);
+  const s = backOut((t - 8.0) / .5);
+  rrect(140, 380, W - 280, 110, 28, C.gold, ca);
+  text('設立時の約200倍', W / 2, 458, { size: 64, weight: 'bold', color: '#1b1406', align: 'center', alpha: ca, scale: lerp(.8, 1, s) });
+  note('名目値(インフレ調整なし)/ 2012年は期初、他は年末。出典: ノーベル財団 年次報告書', a, 1290);
+}
+
+function scenePrize(t, a) {
+  header('賞金(1賞あたり)の推移', '万クローナ・名目', a);
+  const px0 = 150, px1 = W - 70, py0 = 520, py1 = 1150, maxV = 1300;
+  for (let v = 0; v <= 1200; v += 400) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v + '万', px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const n = PRIZE.length, gw = (px1 - px0) / n, bw = gw * 0.6;
+  PRIZE.forEach((d, i) => {
+    const p = easeOut((t - .3 - i * .55) / .6);
+    const cx = px0 + gw * i + gw / 2;
+    const h = Math.max(4, (py1 - py0) * d.v / maxV) * p;
+    const col = d.y === '2012' ? C.down : (d.y === '2026' ? C.gold : C.up);
+    rrect(cx - bw / 2, py1 - h, bw, h, 6, col, a);
+    text(d.y, cx, py1 + 42, { size: 28, color: C.ink2, align: 'center', alpha: a });
+    if (p > 0) text(d.v >= 100 ? String(d.v) : d.v + '', cx, py1 - h - 14, { size: 30, weight: 'bold', color: col === C.up ? C.ink : col, align: 'center', alpha: a * p });
+  });
+  const la = a * easeOut((t - 2.4) / .5);
+  const x12 = px0 + gw * 2 + gw / 2;
+  rrect(x12 - 120, 420, 240, 64, 16, C.down, la);
+  text('金融危機で減額', x12, 464, { size: 30, weight: 'bold', color: '#fff', align: 'center', alpha: la });
+  const ga = a * easeOut((t - 6.0) / .5);
+  rrect(W - 380, 420, 320, 64, 16, C.gold, ga);
+  text('2026年 過去最高', W - 220, 464, { size: 30, weight: 'bold', color: '#1b1406', align: 'center', alpha: ga });
+  note('1901年は約15万クローナ / 2012年に1,000万→800万へ減額', a, 1290);
+}
+
+function sceneSummary(t, a) {
+  text('まとめ', W / 2, 330, { size: 84, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['①', '守るだけでは目減りする', '安全資産+税金+インフレで価値は1/3以下に'],
+    ['②', 'ルール変更で攻めの運用へ', '1946年 非課税・1953年 株式投資を解禁'],
+    ['③', '増やした利益で賞金を払う', '資産は約200倍、賞金は過去最高の1,200万'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .3 - i * .8) / .5);
+    const y = 440 + i * 270;
+    rrect(60, y, W - 120, 230, 24, C.panel, la);
+    text(it[0], 100, y + 92, { size: 60, weight: 'bold', color: C.gold, alpha: la });
+    text(it[1], 185, y + 92, { size: 48, weight: 'bold', alpha: la });
+    text(it[2], 185, y + 165, { size: 30, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 3.0) / .5);
+  text('出典: ノーベル財団 年次報告書・nobelprize.org ほか / 数値は概数', W / 2, 1290, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+  text('音声: VOICEVOX:四国めたん / BGM: 自作', W / 2, 1330, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) narrate.py の SCRIPT と対応 ----------
+const SCENES = [
+  { s: 0, d: 6.5, f: sceneHook },
+  { s: 6.5, d: 9, f: sceneWill },
+  { s: 15.5, d: 6.5, f: sceneSafe },
+  { s: 22, d: 7.5, f: sceneDecline },
+  { s: 29.5, d: 8, f: sceneTurn },
+  { s: 37.5, d: 11, f: sceneCapital },
+  { s: 48.5, d: 10, f: scenePrize },
+  { s: 58.5, d: 7.5, f: sceneSummary },
+];
+const XF = 0.3; // クロスフェード秒
+
+// ---------- 焼き込み字幕 ----------
+function wrap(str, maxW) {
+  ctx.font = `bold 50px ${FONT}`;
+  const fits = x => ctx.measureText(x).width <= maxW;
+  if (fits(str)) return [str];
+  // 2 行に収まる改行候補のうち、読点・助詞の直後で、行の長さが均等に近い位置を選ぶ
+  const chars = [...str];
+  let best = -1, bestScore = 1e9;
+  for (let i = 2; i < chars.length - 1; i++) {
+    const a = chars.slice(0, i).join(''), b = chars.slice(i).join('');
+    if (!fits(a) || !fits(b)) continue;
+    if (/^[、。!?」)ーっゃゅょのはがをにで]/.test(b)) continue;
+    const prev = chars[i - 1], next = chars[i];
+    // 単語の途中(カタカナ語・数字+単位・「3分の1」など)では改行しない
+    if (/[ァ-ヴー・]/.test(prev) && /[ァ-ヴー・]/.test(next)) continue;
+    if (/[0-9,.万億千分]/.test(prev) && /[0-9,.%万億千分のァ-ヴ年月]/.test(next)) continue;
+    if (prev === 'の' && /[0-9]/.test(next)) continue;
+    const bonus = prev === '、' ? -400 : (/[はがをにでもとのへ]/.test(prev) && !/[0-9]/.test(chars[i]) ? -150 : 0);
+    const kk = /[一-龥]/.test(prev) && /[一-龥]/.test(next) ? 600 : 0;  // 熟語の途中は避ける
+    const score = Math.abs(ctx.measureText(a).width - ctx.measureText(b).width) + bonus + kk;
+    if (score < bestScore) { bestScore = score; best = i; }
+  }
+  if (best > 0) return [chars.slice(0, best).join(''), chars.slice(best).join('')];
+  const lines = []; let cur = '';
+  for (const ch of chars) { if (!fits(cur + ch) && cur) { lines.push(cur); cur = ch; } else cur += ch; }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function subtitles(t) {
+  const cues = window.CUES || [];
+  const c = cues.find(c => t >= c.a && t < c.b);
+  if (!c) return;
+  const lines = wrap(c.text, 820);
+  const lh = 68, h = lines.length * lh + 36, y0 = 1560 - h;
+  rrect(70, y0, W - 140, h, 22, 'rgba(0,0,0,0.62)', 1);
+  lines.forEach((l, i) => {
+    const y = y0 + 18 + lh * (i + 1) - 16;
+    ctx.save(); ctx.font = `bold 50px ${FONT}`; ctx.textAlign = 'center';
+    ctx.lineWidth = 8; ctx.strokeStyle = '#000'; ctx.lineJoin = 'round';
+    ctx.strokeText(l, W / 2, y); ctx.fillStyle = '#fff'; ctx.fillText(l, W / 2, y); ctx.restore();
+  });
+}
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 背景の淡いグラデーション
+  const g = ctx.createRadialGradient(W / 2, 260, 50, W / 2, 260, 1100);
+  g.addColorStop(0, 'rgba(226,181,75,0.10)'); g.addColorStop(1, 'rgba(226,181,75,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  // 上部ラベル
+  text('ノーベル財団の資産の推移', 80, 170, { size: 32, color: C.gold, weight: 'bold' });
+  subtitles(t);
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.gold, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+// サムネイル(thumbnail.js から呼ぶ)
+function thumbnail() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, 900, 50, W / 2, 900, 1100);
+  g.addColorStop(0, 'rgba(226,181,75,0.22)'); g.addColorStop(1, 'rgba(226,181,75,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  text('ノーベル賞の賞金', W / 2, 420, { size: 96, weight: 'bold', align: 'center' });
+  text('なぜ尽きない?', W / 2, 600, { size: 160, weight: 'bold', color: C.gold, align: 'center' });
+  rrect(170, 1400 - 8, 200, 8, 4, C.ink3);
+  rrect(710, 760, 200, 640, 16, C.gold);
+  text('3,100万', 270, 1360, { size: 54, weight: 'bold', color: C.ink2, align: 'center' });
+  text('67億', 810, 730, { size: 90, weight: 'bold', color: C.gold, align: 'center' });
+  text('1900年', 270, 1470, { size: 44, color: C.ink2, align: 'center' });
+  text('2025年', 810, 1470, { size: 44, color: C.ink2, align: 'center' });
+  text('→', 540, 1200, { size: 140, weight: 'bold', color: C.up, align: 'center' });
+  rrect(120, 1560, W - 240, 150, 30, C.down);
+  text('資産 約200倍', W / 2, 1665, { size: 84, weight: 'bold', color: '#fff', align: 'center' });
+}
+window.thumbnail = thumbnail;
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
