@@ -29,7 +29,7 @@
 
 `air.py` が J.S.バッハ「G線上のアリア」(管弦楽組曲第3番 BWV1068 Air)を楽譜データから合成します。
 - 楽譜: [Mutopia Project](https://www.mutopiaproject.org/) "Air, from Suite No.3 in D"(Ross Keenum 編、**Public Domain**)の MIDI を `assets/air-bwv1068.mid` に同梱
-- 4声を弦楽合奏風の音色(加算合成)で鳴らし、曲の終わりが動画の終わりに来るようテンポを自動調整(約41BPM)
+- 4声を弦楽合奏風の音色(加算合成)で鳴らし、テンポは34BPM(ゆったりめ。`narrate.py` の `BGM_BPM` で変更可)。曲の冒頭から流し、エンドカードで5秒かけてフェードアウト
 - 既存の録音を使っていないので、作曲(パブリックドメイン)・録音とも権利上の問題はありません
 - ナレーション中は BGM を自動で下げています(ダッキング)
 

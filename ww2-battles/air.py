@@ -60,7 +60,7 @@ def reverb(x, mix=0.32):
 def generate(total, bpm=None, seed=3, fade_in=1.5, fade_out=3.0):
     notes, ppq, _ = midi_read.read(MID)
     end_beats = max(s + d for s, d, *_ in notes) / ppq
-    if bpm is None:  # 曲の終わりが動画の終わり(フェードアウト直前)に来るテンポ
+    if bpm is None:  # 指定が無ければ、曲の終わりが動画の終わりに来るテンポ
         bpm = end_beats / (total - 0.6) * 60
     spb = 60.0 / bpm
     rng = np.random.default_rng(seed)
@@ -68,6 +68,7 @@ def generate(total, bpm=None, seed=3, fade_in=1.5, fade_out=3.0):
     buf = np.zeros(n, dtype=np.float32)
     for s, d, p, v, tr in notes:
         st, du = s / ppq * spb, max(d / ppq * spb, 0.12)
+        if st >= total: continue   # 動画より後ろの音符は鳴らさない(曲の途中でフェードアウト)
         layers = [(p + 12, 0.55)]
         if p < 55: layers.append((p, 0.42))           # 低音はチェロ/コントラバスで重ねる
         for q, g in layers:

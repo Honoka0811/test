@@ -153,7 +153,8 @@ with open(os.path.join(OUT, 'engine.txt'), 'w') as f:
 
 # ---------- BGM をダッキングしながらミックス ----------
 import air
-music = air.generate(TOTAL)
+BGM_BPM = 34   # ゆったりめ。曲は終わりまで行かず、エンドカードでフェードアウトする
+music = air.generate(TOTAL, bpm=BGM_BPM, fade_out=5.0)
 music = music[:len(track)] if len(music) >= len(track) else np.pad(music, (0, len(track) - len(music)))
 write_wav(os.path.join(OUT, 'bgm.wav'), music)
 hop = SR // 20
