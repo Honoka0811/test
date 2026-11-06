@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Showa Common Sense</title>
+<style>
+  @font-face { font-family: "Dela Gothic One"; src: url("fonts/DelaGothicOne.ttf"); }
+  @font-face { font-family: "Mochiy Pop One"; src: url("fonts/MochiyPopOne.ttf"); }
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 昭和の当たり前 BEST5 (9:16 ショート / 30fps)
+// window.TL (output/timeline.json) を元に render(t) が時刻 t の 1 フレームを描く
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const HEAVY = '"Dela Gothic One","IPAGothic",sans-serif';
+const POP = '"Mochiy Pop One","IPAGothic",sans-serif';
+const EMOJI = '"Noto Color Emoji"';
+const C = {
+  cream: '#F6EBD0', cream2: '#EAD9B0', brown: '#3A2416', brown2: '#6B4428',
+  red: '#C9302C', gold: '#F2B632', ink: '#2A1A10', white: '#FFFDF5',
+};
+const RANK_COLOR = { 5: '#2E8B83', 4: '#E09A1F', 3: '#D9572B', 2: '#3C6EA6', 1: '#C9302C' };
+const STAMP = { 5: '今ならアウト!', 4: 'うらやましい…', 3: 'なつかしい!', 2: 'ドキドキ…', 1: 'まさかの土曜!' };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+function hash(n) { n = (n << 13) ^ n; return 1 - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824; }
+
+function txt(s, x, y, o = {}) {
+  const { size = 60, font = HEAVY, fill = C.white, stroke = null, sw = 0, align = 'center', base = 'middle',
+          alpha = 1, shadow = null, shOff = 8, ls = 0 } = o;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base; ctx.lineJoin = 'round';
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) {                                   // 昭和ポスター風のずらし影
+    ctx.fillStyle = shadow;
+    if (stroke) { ctx.strokeStyle = shadow; ctx.lineWidth = sw; ctx.strokeText(s, x + shOff, y + shOff); }
+    ctx.fillText(s, x + shOff, y + shOff);
+  }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = fill; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function emoji(e, x, y, size, alpha = 1, rot = 0) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rot);
+  ctx.font = `${size}px ${EMOJI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(e, 0, size * 0.06);
+  ctx.restore();
+}
+function rr(x, y, w, h, r) {
+  ctx.beginPath(); r = Math.min(r, w / 2, h / 2);
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function fillRR(x, y, w, h, r, color) { rr(x, y, w, h, r); ctx.fillStyle = color; ctx.fill(); }
+function withScale(cx, cy, s, fn, rot = 0) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(s, s); ctx.translate(-cx, -cy); fn(); ctx.restore();
+}
+function wrap(s, size, maxW, font = POP) {
+  ctx.font = `${size}px ${font}`;
+  const out = []; let cur = '';
+  for (const ch of s) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      // 句読点・閉じ記号は行頭に来ないよう前の行へ
+      if ('、。!?…」)ー'.includes(ch)) { cur += ch; continue; }
+      out.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) out.push(cur);
+  if (out.length < 2) return out;
+  // 行の長さを均等にして「8割以 / 上!」のような泣き別れを防ぐ
+  const all = [...s], per = Math.ceil(all.length / out.length), res = [];
+  let i = 0;
+  while (i < all.length) {
+    let j = Math.min(all.length, i + per);
+    while (j < all.length && '、。!?…」)ー'.includes(all[j])) j++;
+    res.push(all.slice(i, j).join('')); i = j;
+  }
+  return res;
+}
+
+// ---------- 事前生成テクスチャ ----------
+const grain = [];
+for (let k = 0; k < 6; k++) {
+  const g = document.createElement('canvas'); g.width = 540; g.height = 960;
+  const gx = g.getContext('2d'); const im = gx.createImageData(540, 960);
+  for (let i = 0; i < im.data.length; i += 4) {
+    const v = Math.random() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+  }
+  gx.putImageData(im, 0, 0); grain.push(g);
+}
+const scan = document.createElement('canvas'); scan.width = 4; scan.height = 6;
+{ const s = scan.getContext('2d'); s.fillStyle = 'rgba(0,0,0,0.10)'; s.fillRect(0, 0, 4, 2); }
+const tmp = document.createElement('canvas'); tmp.width = W; tmp.height = H;
+const tctx = tmp.getContext('2d');
+
+// ---------- 背景 ----------
+function rays(cx, cy, color, t, n = 22, alpha = 0.2, base = C.cream) {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 0.12);
+  ctx.fillStyle = color; ctx.globalAlpha = alpha;
+  const R = 2400;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2, b = a + Math.PI / n;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * R, Math.sin(a) * R); ctx.lineTo(Math.cos(b) * R, Math.sin(b) * R); ctx.fill();
+  }
+  ctx.restore();
+}
+function bottomStripes(color) {          // 昭和の看板風ストライプ
+  const y0 = 1745;
+  ctx.fillStyle = C.brown; ctx.fillRect(0, y0, W, H - y0);
+  ctx.fillStyle = color; ctx.fillRect(0, y0 + 14, W, 20);
+  ctx.fillStyle = C.gold; ctx.fillRect(0, y0 + 44, W, 10);
+}
+
+// ---------- ヘッダー & 進行インジケーター ----------
+function header(t, current, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.save(); ctx.translate(0, 0);
+  fillRR(70, 112, 940, 150, 28, C.brown);
+  fillRR(80, 122, 920, 130, 22, C.red);
+  ctx.strokeStyle = C.gold; ctx.lineWidth = 5; rr(92, 134, 896, 106, 16); ctx.stroke();
+  txt('今じゃ考えられない!', 540, 160, { size: 34, font: POP, fill: C.gold });
+  txt('昭和の当たり前 BEST5', 540, 210, { size: 62, fill: C.white, stroke: C.brown, sw: 10 });
+  ctx.restore();
+  // 5 → 1 のドット
+  const ranks = [5, 4, 3, 2, 1];
+  ranks.forEach((r, i) => {
+    const x = 540 + (i - 2) * 92, y = 300;
+    const done = current !== null && r > current, cur = r === current;
+    const s = cur ? 1 + 0.08 * Math.sin(t * 8) : 1;
+    withScale(x, y, s, () => {
+      ctx.beginPath(); ctx.arc(x, y, 30, 0, Math.PI * 2);
+      ctx.fillStyle = cur ? RANK_COLOR[r] : done ? C.brown2 : 'rgba(58,36,22,0.18)'; ctx.fill();
+      ctx.lineWidth = 5; ctx.strokeStyle = cur ? C.white : 'rgba(58,36,22,0.35)'; ctx.stroke();
+      txt(String(r), x, y + 2, { size: 30, fill: cur || done ? C.white : C.brown2 });
+    });
+  });
+  ctx.restore();
+}
+
+// ---------- 昭和のブラウン管テレビ ----------
+function tv(cx, cy, w, h, screenColor, t, drawInside) {
+  const x = cx - w / 2, y = cy - h / 2;
+  // アンテナ
+  ctx.save(); ctx.strokeStyle = C.brown; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  const sway = Math.sin(t * 2.2) * 0.05;
+  for (const d of [-1, 1]) {
+    ctx.beginPath(); ctx.moveTo(cx, y - 6);
+    ctx.lineTo(cx + Math.sin(d * 0.85 + sway) * 105, y - 6 - Math.cos(d * 0.85 + sway) * 105); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + Math.sin(d * 0.85 + sway) * 105, y - 6 - Math.cos(d * 0.85 + sway) * 105, 11, 0, 7);
+    ctx.fillStyle = C.brown; ctx.fill();
+  }
+  ctx.restore();
+  // 脚
+  ctx.fillStyle = C.brown;
+  ctx.fillRect(x + 70, y + h - 10, 26, 50); ctx.fillRect(x + w - 96, y + h - 10, 26, 50);
+  // 木目の筐体
+  fillRR(x + 10, y + 12, w, h, 40, 'rgba(0,0,0,0.25)');
+  fillRR(x, y, w, h, 40, '#8A5A33');
+  fillRR(x + 8, y + 8, w - 16, h - 16, 34, '#A06A3D');
+  ctx.save(); rr(x + 8, y + 8, w - 16, h - 16, 34); ctx.clip();
+  ctx.strokeStyle = 'rgba(70,40,20,0.25)'; ctx.lineWidth = 3;
+  for (let i = 0; i < 9; i++) { ctx.beginPath(); ctx.moveTo(x, y + 20 + i * h / 9); ctx.bezierCurveTo(x + w * .3, y + 30 + i * h / 9, x + w * .6, y + 5 + i * h / 9, x + w, y + 22 + i * h / 9); ctx.stroke(); }
+  ctx.restore();
+  // 画面
+  const sw = w - 190, sh = h - 70, sx = x + 34, sy = y + 35;
+  fillRR(sx - 10, sy - 10, sw + 20, sh + 20, 46, '#2A1A10');
+  ctx.save(); rr(sx, sy, sw, sh, 40); ctx.clip();
+  ctx.fillStyle = screenColor; ctx.fillRect(sx, sy, sw, sh);
+  ctx.save(); ctx.translate(sx + sw / 2, sy + sh / 2); ctx.rotate(-t * 0.25); ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * 900, Math.sin(a) * 900); ctx.lineTo(Math.cos(a + 0.2) * 900, Math.sin(a + 0.2) * 900); ctx.fill(); }
+  ctx.restore();
+  drawInside(sx + sw / 2, sy + sh / 2, sw, sh);
+  // 画面の反射とスキャンライン
+  const g = ctx.createRadialGradient(sx + sw * 0.3, sy + sh * 0.2, 10, sx + sw / 2, sy + sh / 2, sw * 0.8);
+  g.addColorStop(0, 'rgba(255,255,255,0.22)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,0.35)');
+  ctx.fillStyle = g; ctx.fillRect(sx, sy, sw, sh);
+  ctx.fillStyle = ctx.createPattern(scan, 'repeat'); ctx.fillRect(sx, sy, sw, sh);
+  ctx.restore();
+  // ダイヤル
+  const kx = x + w - 78;
+  for (const [ky, r] of [[y + 95, 38], [y + 200, 30]]) {
+    ctx.beginPath(); ctx.arc(kx, ky, r, 0, 7); ctx.fillStyle = '#E7D3A8'; ctx.fill();
+    ctx.lineWidth = 6; ctx.strokeStyle = C.brown; ctx.stroke();
+    ctx.save(); ctx.translate(kx, ky); ctx.rotate(t * 0.3 + ky); ctx.fillStyle = C.brown; ctx.fillRect(-4, -r + 6, 8, r - 6); ctx.restore();
+  }
+  ctx.fillStyle = C.brown;
+  for (let i = 0; i < 5; i++) fillRR(kx - 30, y + 255 + i * 16, 60, 7, 3, C.brown);
+}
+
+// ---------- ハンコ風スタンプ ----------
+function stamp(s, x, y, p, color = C.red, rot = -0.18, size = 54) {
+  if (p <= 0) return;
+  const sc = lerp(2.4, 1, easeBack(seg(p, 0, 1)));
+  ctx.save(); ctx.globalAlpha = clamp(p * 3);
+  withScale(x, y, sc, () => {
+    ctx.font = `${size}px ${HEAVY}`;
+    const w = ctx.measureText(s).width + 60, h = size + 44;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.translate(-x, -y);
+    fillRR(x - w / 2, y - h / 2, w, h, 16, 'rgba(255,253,245,0.92)');
+    ctx.lineWidth = 8; ctx.strokeStyle = color; rr(x - w / 2, y - h / 2, w, h, 16); ctx.stroke();
+    ctx.lineWidth = 3; rr(x - w / 2 + 10, y - h / 2 + 10, w - 20, h - 20, 10); ctx.stroke();
+    txt(s, x, y + 3, { size, fill: color });
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ---------- 字幕 ----------
+function subtitle(sc, t, color = C.white) {
+  const ln = sc.lines.find(l => t >= l.start - 0.05 && t <= l.end + 0.25);
+  if (!ln) return;
+  const p = easeOut(seg(t, ln.start - 0.05, 0.15));
+  const lines = wrap(ln.text, 54, 900);
+  const y0 = 1475 - (lines.length - 1) * 36;
+  lines.forEach((s, i) => txt(s, 540, y0 + i * 72 + (1 - p) * 20, { size: 54, font: POP, fill: color, stroke: '#1A0F08', sw: 14, alpha: p }));
+}
+
+// ---------- シーン: オープニング(フック) ----------
+function sceneHook(sc, t) {
+  const lt = t - sc.start, l1 = sc.lines[0], l2 = sc.lines[1];
+  const p2 = seg(t, l2.start - 0.15, 0.35);
+  rays(540, 760, C.red, t, 24, 0.16);
+  // 序盤: 「昭和」スタンプ + 「令和なら大炎上!?」
+  if (p2 < 1) {
+    ctx.save(); ctx.globalAlpha = 1 - p2;
+    const s1 = easeBack(seg(lt, 0.35, 0.3));
+    withScale(540, 560, lerp(3, 1, s1) * (1 + 0.015 * Math.sin(t * 6)), () => {
+      txt('昭和', 540, 560, { size: 330, fill: C.red, stroke: C.white, sw: 30, shadow: C.brown, shOff: 16 });
+    }, -0.06);
+    txt('では当たり前', 540, 800, { size: 92, fill: C.brown, alpha: easeOut(seg(lt, 0.8, 0.3)) });
+    const pRei = seg(t, lerp(l1.start, l1.end, 0.42), 0.25);
+    if (pRei > 0) {
+      const shake = Math.sin(t * 50) * 6 * (1 - seg(t, lerp(l1.start, l1.end, 0.42) + 0.3, 0.6));
+      withScale(540, 1080, lerp(1.8, 1, easeBack(pRei)), () => {
+        fillRR(110, 950, 860, 260, 30, C.brown);
+        txt('でも令和なら', 540, 1010, { size: 66, font: POP, fill: C.gold });
+        txt('大炎上!?', 540 + shake, 1120, { size: 150, fill: '#FF5A2A', stroke: C.white, sw: 16 });
+      });
+      for (let i = 0; i < 3; i++) emoji('🔥', 170 + i * 370, 1290 + Math.sin(t * 9 + i) * 14, 120 + Math.sin(t * 7 + i * 2) * 10, pRei);
+    }
+    ctx.restore();
+  }
+  // 後半: タイトル + 伏せられた 5 枚のカード
+  if (p2 > 0) {
+    ctx.save(); ctx.globalAlpha = p2;
+    const ty = lerp(480, 420, easeOut(p2));
+    txt('今じゃ考えられない', 540, ty - 120, { size: 70, font: POP, fill: C.brown });
+    withScale(540, ty + 30, lerp(1.6, 1, easeBack(p2)), () => {
+      txt('昭和の常識', 540, ty + 30, { size: 150, fill: C.red, stroke: C.white, sw: 20, shadow: C.brown, shOff: 12 });
+    });
+    txt('BEST 5', 540, ty + 210, { size: 130, fill: C.gold, stroke: C.brown, sw: 18, shadow: C.brown, shOff: 10, alpha: easeOut(seg(t, l2.start + 0.5, 0.3)) });
+    [5, 4, 3, 2, 1].forEach((r, i) => {
+      const pc = easeBack(seg(t, l2.start + 0.7 + i * 0.22, 0.3));
+      if (pc <= 0) return;
+      const x = 540 + (i - 2) * 190, y = 1080 + Math.sin(t * 4 + i) * 8;
+      withScale(x, y, pc, () => {
+        fillRR(x - 80, y - 110, 160, 220, 20, C.brown);
+        fillRR(x - 70, y - 100, 140, 200, 14, RANK_COLOR[r]);
+        txt('?', x, y + 6, { size: 120, fill: C.white, alpha: 0.9 + 0.1 * Math.sin(t * 10 + i) });
+        txt(r + '位', x, y + 150, { size: 46, fill: C.brown });
+      }, (i - 2) * 0.04);
+    });
+    ctx.restore();
+  }
+  // 冒頭 0.35 秒: ブラウン管のスイッチON
+  if (lt < 0.45) {
+    const p = seg(lt, 0.12, 0.3);
+    ctx.save(); ctx.fillStyle = '#000';
+    const hh = lerp(0, H / 2, easeOut(p));
+    ctx.fillRect(0, 0, W, H / 2 - hh); ctx.fillRect(0, H / 2 + hh, W, H / 2 - hh);
+    if (p < 1) { ctx.fillStyle = '#fff'; ctx.globalAlpha = 1 - p; ctx.fillRect(0, H / 2 - hh - 4, W, 2 * hh + 8); }
+    ctx.restore();
+  }
+}
+
+// ---------- シーン: ランキング ----------
+function sceneRank(sc, t) {
+  const lt = t - sc.start, col = RANK_COLOR[sc.rank], l2 = sc.lines[1];
+  const p2 = seg(t, l2.start - 0.1, 0.35);
+  rays(540, 1000, col, t, 22, 0.22);
+  if (sc.rank === 1) confetti(t, lt);
+  bottomStripes(col);
+  header(t, sc.rank);
+  // 順位バッジ: ドーン!と叩きつけ
+  const sb = easeBack(seg(lt, 0, 0.28));
+  withScale(540, 440, lerp(3.2, 1, sb) * (1 + 0.03 * Math.sin(t * 5)), () => {
+    ctx.beginPath(); ctx.arc(546, 448, 112, 0, 7); ctx.fillStyle = C.brown; ctx.fill();
+    ctx.beginPath(); ctx.arc(540, 440, 112, 0, 7); ctx.fillStyle = sc.rank === 1 ? C.gold : col; ctx.fill();
+    ctx.lineWidth = 10; ctx.strokeStyle = C.white; ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = C.brown; ctx.beginPath(); ctx.arc(540, 440, 92, 0, 7); ctx.stroke();
+    txt('第', 455, 440, { size: 44, fill: C.white, stroke: C.brown, sw: 8 });
+    txt(String(sc.rank), 540, 446, { size: 150, fill: C.white, stroke: C.brown, sw: 14 });
+    txt('位', 625, 440, { size: 44, fill: C.white, stroke: C.brown, sw: 8 });
+  }, lerp(-0.6, 0, sb));
+  if (sc.rank === 1) emoji('👑', 640, 350 + Math.sin(t * 4) * 6, 80, easeOut(seg(lt, 0.25, 0.2)));
+  // 見出し 2 行(左右から交互にスライドイン)
+  sc.head.forEach((s, i) => {
+    const p = easeBack(seg(lt, 0.3 + i * 0.16, 0.32));
+    const x = 540 + (1 - p) * (i ? 1 : -1) * 900;
+    txt(s, x, 640 + i * 118, { size: i ? 104 : 80, fill: i ? C.white : C.brown, stroke: i ? C.brown : null, sw: 18,
+                               shadow: i ? col : null, shOff: 10 });
+  });
+  // ブラウン管テレビ + 絵文字
+  const tvIn = easeBack(seg(lt, 0.45, 0.4));
+  withScale(540, 1060, tvIn, () => {
+    tv(540, 1060, 560, 330, col, t, (cx, cy) => {
+      const bob = Math.sin(t * 3.2) * 10;
+      emoji(sc.emoji, cx - (p2 > 0 ? 60 * easeOut(p2) : 0), cy + bob, 190, 1, Math.sin(t * 2.5) * 0.06);
+      if (p2 > 0) emoji(sc.sub, cx + 95, cy - 40 - bob * 0.6, lerp(0, 130, easeBack(p2)), 1, 0.15);
+      if (sc.rank === 3) {                                   // 改札鋏のカチカチ
+        const k = Math.floor((t - l2.start) * 6);
+        if (t > l2.start && t < l2.start + 1.2 && k % 2 === 0) txt('カチッ', cx + 120, cy + 80, { size: 46, fill: C.gold, stroke: C.brown, sw: 8 });
+      }
+      if (sc.rank === 2 && lt > 0.5 && lt < 2.3) {           // 黒電話ジリリリ
+        txt('ジリリリ…', cx + 90, cy - 90, { size: 44, fill: C.white, stroke: C.brown, sw: 8, alpha: 0.6 + 0.4 * Math.sin(t * 30) });
+      }
+    });
+  });
+  // 情報カード(2 文目と同時)
+  if (p2 > 0) {
+    const y = 1290;
+    withScale(540, y, lerp(0.6, 1, easeBack(p2)), () => {
+      ctx.globalAlpha = clamp(p2 * 2);
+      fillRR(112, y - 62, 870, 132, 24, C.brown);
+      fillRR(100, y - 70, 870, 132, 24, C.white);
+      ctx.lineWidth = 6; ctx.strokeStyle = C.brown; rr(100, y - 70, 870, 132, 24); ctx.stroke();
+      fillRR(100, y - 70, 330, 132, 24, col); ctx.fillRect(400, y - 70, 30, 132);
+      txt(sc.stat[0], 265, y - 4, { size: sc.stat[0].length > 6 ? 36 : 44, font: POP, fill: C.white });
+      let v = sc.stat[1];
+      const m = v.match(/^([\d.]+)%$/);
+      if (m) {                                          // 数値はカウントアップ
+        const n = parseFloat(m[1]) * easeOut(seg(t, l2.start, 0.9));
+        v = (m[1].includes('.') ? n.toFixed(1) : Math.round(n)) + '%';
+      }
+      txt(v, 700, y, { size: v.length > 6 ? 64 : 92, fill: C.red });
+    });
+  }
+  // 出典・補足
+  txt(sc.note, 540, 1640, { size: 30, font: POP, fill: C.brown2, alpha: easeOut(p2) });
+  // 反応スタンプ(2 文目の途中で)
+  stamp(STAMP[sc.rank], 790, 905, seg(t, lerp(l2.start, l2.end, 0.55), 0.3), C.red, 0.16, 46);
+  subtitle(sc, t, p2 > 0 ? '#FFE27A' : C.white);
+  // 叩きつけ時のフラッシュ
+  const fl = 1 - seg(lt, 0, 0.18);
+  if (fl > 0) { ctx.fillStyle = `rgba(255,255,240,${fl * 0.7})`; ctx.fillRect(0, 0, W, H); }
+}
+
+function confetti(t, lt) {
+  for (let i = 0; i < 70; i++) {
+    const x = (hash(i * 7 + 1) * 0.5 + 0.5) * W + Math.sin(t * 2 + i) * 30;
+    const y = ((hash(i * 13 + 5) * 0.5 + 0.5) * H + lt * (260 + 140 * hash(i))) % (H + 100) - 50;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * 3 + i);
+    ctx.fillStyle = [C.gold, C.red, '#2E8B83', '#3C6EA6', C.white][i % 5];
+    ctx.globalAlpha = clamp(lt * 2) * 0.9;
+    ctx.fillRect(-10, -5, 20, 10 + 6 * Math.abs(Math.sin(t * 5 + i)));
+    ctx.restore();
+  }
+}
+
+// ---------- シーン: 第1位の前のタメ ----------
+function sceneTease(sc, t) {
+  const lt = t - sc.start;
+  ctx.fillStyle = '#1B120C'; ctx.fillRect(0, 0, W, H);
+  // スポットライト
+  const sx = 540 + Math.sin(t * 1.7) * 160;
+  const g = ctx.createRadialGradient(sx, 1060, 30, sx, 1060, 560);
+  g.addColorStop(0, 'rgba(255,230,160,0.55)'); g.addColorStop(1, 'rgba(255,230,160,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  header(t, 1, 0.5);
+  txt('いよいよ…', 540, 520, { size: 80, font: POP, fill: C.cream, alpha: easeOut(seg(lt, 0.1, 0.3)) });
+  withScale(540, 700, lerp(1.6, 1, easeBack(seg(lt, 0.25, 0.4))), () => {
+    txt('第1位', 540, 700, { size: 190, fill: C.gold, stroke: C.brown, sw: 20, shadow: C.red, shOff: 12 });
+  });
+  const fl = (Math.floor(t * 10) % 3) ? 1 : 0.55;
+  withScale(540, 1080, 1 + 0.05 * Math.sin(t * 9), () => {
+    tv(540, 1080, 560, 330, '#333', t, (cx, cy) => {
+      // 砂嵐
+      ctx.drawImage(grain[Math.floor(t * FPS) % grain.length], 0, 0, 540, 960, cx - 300, cy - 200, 600, 400);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(cx - 300, cy - 200, 600, 400);
+      txt('?', cx, cy + 8, { size: 220, fill: C.gold, stroke: C.brown, sw: 14, alpha: fl });
+    });
+  });
+  txt('今の子は信じられない!?', 540, 1330, { size: 60, font: POP, fill: '#FF8A5A', alpha: easeOut(seg(lt, 1.2, 0.3)) });
+  subtitle(sc, t);
+}
+
+// ---------- シーン: エンディング ----------
+function sceneOutro(sc, t, TLs) {
+  const lt = t - sc.start;
+  rays(540, 900, C.gold, t, 24, 0.25);
+  bottomStripes(C.red);
+  header(t, 0);
+  const pT = easeBack(seg(lt, 0.05, 0.35));
+  withScale(540, 430, lerp(1.8, 1, pT), () => {
+    txt('あなたはいくつ', 540, 400, { size: 82, fill: C.brown });
+    txt('知ってた?', 540, 525, { size: 140, fill: C.red, stroke: C.white, sw: 18, shadow: C.brown, shOff: 10 });
+  });
+  // チェックリスト
+  const items = TLs.filter(s => s.kind === 'rank').sort((a, b) => b.rank - a.rank);
+  items.forEach((it, i) => {
+    const p = easeBack(seg(lt, 0.3 + i * 0.18, 0.3));
+    if (p <= 0) return;
+    const y = 690 + i * 118, x = 540 + (1 - p) * 700;
+    fillRR(x - 430, y - 48, 860, 96, 20, C.white);
+    ctx.lineWidth = 5; ctx.strokeStyle = C.brown; rr(x - 430, y - 48, 860, 96, 20); ctx.stroke();
+    fillRR(x - 430, y - 48, 110, 96, 20, RANK_COLOR[it.rank]); ctx.fillRect(x - 340, y - 48, 20, 96);
+    txt(it.rank + '位', x - 375, y + 2, { size: 40, fill: C.white });
+    emoji(it.emoji, x - 250, y, 62);
+    txt(it.head.join(''), x - 205, y + 2, { size: 36, font: POP, fill: C.brown, align: 'left' });
+    // チェックボックス
+    const bx = x + 370;
+    ctx.lineWidth = 5; ctx.strokeStyle = C.brown; ctx.strokeRect(bx - 24, y - 24, 48, 48);
+    const pc = seg(lt, 1.4 + i * 0.16, 0.15);
+    if (pc > 0) {
+      ctx.save(); ctx.strokeStyle = C.red; ctx.lineWidth = 11; ctx.lineCap = 'round'; ctx.beginPath();
+      ctx.moveTo(bx - 18, y); ctx.lineTo(bx - 4, y + 16 * clamp(pc * 2)); if (pc > 0.5) ctx.lineTo(bx - 4 + 34 * (pc - 0.5) * 2, y + 16 - 44 * (pc - 0.5) * 2); ctx.stroke(); ctx.restore();
+    }
+  });
+  // コメント誘導
+  const l2 = sc.lines[1];
+  const pc = easeBack(seg(t, l2.start - 0.1, 0.35));
+  if (pc > 0) {
+    const y = 1340 + Math.sin(t * 6) * 8;
+    withScale(540, y, pc, () => {
+      fillRR(150, y - 75, 790, 150, 75, C.brown);
+      fillRR(140, y - 85, 790, 150, 75, C.red);
+      txt('コメントで教えてね', 505, y - 8, { size: 66, fill: C.white });
+      emoji('👇', 850, y - 4 + Math.sin(t * 10) * 10, 80);
+    });
+  }
+  txt('高評価・チャンネル登録もよろしくね!', 540, 1640, { size: 36, font: POP, fill: C.brown, alpha: easeOut(seg(lt, 2.8, 0.4)) });
+  subtitle(sc, t);
+}
+
+// ---------- 仕上げ: グレイン / ビネット / VHSグリッチ ----------
+function finish(t, frame, sceneStarts) {
+  ctx.save();
+  ctx.globalAlpha = 0.07; ctx.globalCompositeOperation = 'overlay';
+  ctx.drawImage(grain[frame % grain.length], 0, 0, W, H);
+  ctx.restore();
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.32, W / 2, H / 2, H * 0.72);
+  v.addColorStop(0, 'rgba(40,20,5,0)'); v.addColorStop(1, 'rgba(40,20,5,0.45)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = ctx.createPattern(scan, 'repeat'); ctx.fillRect(0, 0, W, H); ctx.restore();
+  // フィルムのちらつき
+  const fl = hash(frame * 3) * 0.025;
+  ctx.fillStyle = fl > 0 ? `rgba(255,240,200,${fl})` : `rgba(0,0,0,${-fl})`; ctx.fillRect(0, 0, W, H);
+  // シーン切替の VHS グリッチ
+  for (const s of sceneStarts) {
+    const d = t - s;
+    if (d < -0.06 || d > 0.2) continue;
+    const k = 1 - Math.abs(d - 0.05) / 0.17;
+    tctx.clearRect(0, 0, W, H); tctx.drawImage(cv, 0, 0);
+    for (let i = 0; i < 14; i++) {
+      const y = Math.floor((hash(frame * 31 + i) * 0.5 + 0.5) * H), h = 20 + Math.floor((hash(frame * 17 + i) * 0.5 + 0.5) * 120);
+      const off = hash(frame * 7 + i * 3) * 140 * k;
+      ctx.drawImage(tmp, 0, y, W, h, off, y, W, h);
+    }
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.35 * k;
+    ctx.drawImage(tmp, 14 * k, 0); ctx.fillStyle = 'rgba(255,0,80,0.15)'; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = 0.25 * k; ctx.globalCompositeOperation = 'overlay';
+    ctx.drawImage(grain[(frame + 2) % grain.length], 0, 0, W, H); ctx.restore();
+  }
+}
+
+// ---------- メイン ----------
+window.FPS = FPS;
+window.render = function (t) {
+  const TL = window.TL;
+  const scenes = TL.scenes;
+  const sc = scenes.find(s => t >= s.start && t < s.end) || scenes[scenes.length - 1];
+  const frame = Math.round(t * FPS);
+  ctx.save();
+  // ランキングの叩きつけで画面を揺らす
+  if (sc.kind === 'rank') {
+    const lt = t - sc.start, a = (1 - seg(lt, 0.2, 0.35)) * (lt > 0.2 ? 1 : 0) * 18;
+    ctx.translate(hash(frame) * a, hash(frame + 99) * a);
+  }
+  if (sc.kind === 'hook') sceneHook(sc, t);
+  else if (sc.kind === 'rank') sceneRank(sc, t);
+  else if (sc.kind === 'tease') sceneTease(sc, t);
+  else sceneOutro(sc, t, scenes);
+  ctx.restore();
+  finish(t, frame, scenes.slice(1).map(s => s.start));
+};
+window.ready = Promise.all([
+  document.fonts.load('100px "Dela Gothic One"', '昭和の当たり前第位'),
+  document.fonts.load('100px "Mochiy Pop One"', '今じゃ考えられない'),
+  document.fonts.load('100px "Noto Color Emoji"', '🚬'),
+]).then(() => document.fonts.ready);
+</script>
+</body>
+</html>
