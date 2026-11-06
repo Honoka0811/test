@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Worst Accidents</title>
+<style>
+  html,body{margin:0;background:#0b0c10;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 人類史上最悪の事故 7選  (9:16 ショート動画 / 約88秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg0: '#08090c', bg1: '#15171d', panel: 'rgba(255,255,255,0.055)', line: 'rgba(255,255,255,0.14)',
+  ink: '#f2f0ec', ink2: '#bdb8ae', ink3: '#7f7a72',
+  accent: '#d9a441', red: '#d0574b', glow: 'rgba(217,164,65,0.35)'
+};
+const FPS = 30, DURATION = 87.5;
+
+// ---------- データ(数値は諸説あり・概数) ----------
+const ACC = [
+  { year: '1912', name: 'タイタニック号沈没', place: '北大西洋', icon: 'liner',
+    label: '死者', num: '約1,500人', note: '乗員乗客 約2,200人',
+    rows: [['原因', '処女航海中に氷山と衝突'], ['教訓', '救命ボートは乗船者の約半数分 → 1914年 SOLAS条約へ']] },
+  { year: '1917', name: 'ハリファックス大爆発', place: 'カナダ・ハリファックス港', icon: 'burst',
+    label: '死者', num: '約2,000人', note: '負傷者 約9,000人',
+    rows: [['原因', '弾薬を満載した貨物船が衝突・炎上'], ['規模', '核兵器以前で最大級の人為的爆発']] },
+  { year: '1977', name: 'テネリフェ空港事故', place: 'スペイン領カナリア諸島', icon: 'planes',
+    label: '死者', num: '583人', note: '航空事故 史上最悪',
+    rows: [['原因', '濃霧の滑走路で 離陸機とジャンボ機が衝突'], ['教訓', '管制用語の標準化・乗員連携訓練(CRM)']] },
+  { year: '1984', name: 'ボパール化学工場事故', place: 'インド・ボパール', icon: 'factory',
+    label: '死者', num: '1万人超', note: '推計(直後の公式発表は 約3,800人)',
+    rows: [['原因', '農薬工場から猛毒ガス(MIC)約40トンが漏出'], ['被害', '50万人以上に健康被害 / 史上最悪の産業事故']] },
+  { year: '1985', name: '日本航空123便墜落事故', place: '群馬県 御巣鷹の尾根', icon: 'mountain',
+    label: '死者', num: '520人', note: '生存者 4人',
+    rows: [['原因', '過去の修理ミスによる 後部圧力隔壁の破壊'], ['記録', '単独機の航空事故として 史上最悪']] },
+  { year: '1986', name: 'チェルノブイリ原発事故', place: '旧ソ連(現ウクライナ)', icon: 'reactor',
+    label: '避難・移住', num: '約35万人', note: '急性放射線障害などによる死者 約30人',
+    rows: [['原因', '試験中の運転操作と 原子炉の設計上の欠陥'], ['現在', '事故の深刻度 レベル7 / 周辺30km圏は今も立入制限']] },
+  { year: '1987', name: 'ドニャ・パス号沈没', place: 'フィリピン・タブラス海峡', icon: 'ferry',
+    label: '死者', num: '4,000人以上', note: '推計 / 生存者は 26人',
+    rows: [['原因', '定員を大きく超えて航行中 タンカーと衝突・炎上'], ['記録', '平時の海難事故として 史上最悪']] },
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, shadow = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = shadow; }
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, stroke = null) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+// 決定論的な疑似乱数
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+// ---------- 背景 ----------
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(0.55, C.bg0); g.addColorStop(1, '#050608');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 上から差す淡い光
+  const rg = ctx.createRadialGradient(W / 2, 820, 40, W / 2, 820, 760);
+  rg.addColorStop(0, 'rgba(217,164,65,0.10)'); rg.addColorStop(1, 'rgba(217,164,65,0)');
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  // ゆっくり昇る塵(灯明の煤のイメージ)
+  for (let i = 0; i < 70; i++) {
+    const sp = 18 + rnd(i) * 40;
+    const y = H + 40 - ((rnd(i + 100) * H + t * sp) % (H + 80));
+    const x = rnd(i + 200) * W + Math.sin(t * 0.3 + i) * 18;
+    const r = 1 + rnd(i + 300) * 2.4;
+    const a = 0.10 + 0.25 * rnd(i + 400);
+    ctx.fillStyle = `rgba(230,200,150,${a})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  // ビネット
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- アイコン(線画) ----------
+function stroke(color = C.ink2, w = 5) { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; }
+function waves(y, x0, x1, t, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; stroke(C.ink3, 4);
+  for (let k = 0; k < 2; k++) {
+    ctx.beginPath();
+    for (let x = x0; x <= x1; x += 6) {
+      const yy = y + k * 26 + Math.sin(x / 34 + t * 1.6 + k) * 6;
+      x === x0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function flame(x, y, s, t, seed) {
+  for (let k = 0; k < 3; k++) {
+    const h = s * (0.8 + 0.35 * Math.sin(t * 7 + seed + k * 2.1));
+    const xx = x + (k - 1) * s * 0.35;
+    const g = ctx.createLinearGradient(xx, y, xx, y - h);
+    g.addColorStop(0, 'rgba(208,87,75,0.85)'); g.addColorStop(1, 'rgba(217,164,65,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.moveTo(xx - s * 0.22, y);
+    ctx.quadraticCurveTo(xx - s * 0.2, y - h * 0.6, xx, y - h);
+    ctx.quadraticCurveTo(xx + s * 0.2, y - h * 0.6, xx + s * 0.22, y); ctx.closePath(); ctx.fill();
+  }
+}
+function planeTop(x, y, s, rot) { // 上から見た旅客機
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+  ctx.beginPath();
+  ctx.moveTo(60, 0); ctx.quadraticCurveTo(58, -7, 48, -8); ctx.lineTo(10, -8); ctx.lineTo(-12, -52); ctx.lineTo(-24, -52);
+  ctx.lineTo(-12, -8); ctx.lineTo(-44, -8); ctx.lineTo(-56, -24); ctx.lineTo(-64, -24); ctx.lineTo(-58, 0);
+  ctx.lineTo(-64, 24); ctx.lineTo(-56, 24); ctx.lineTo(-44, 8); ctx.lineTo(-12, 8); ctx.lineTo(-24, 52); ctx.lineTo(-12, 52);
+  ctx.lineTo(10, 8); ctx.lineTo(48, 8); ctx.quadraticCurveTo(58, 7, 60, 0); ctx.closePath();
+  ctx.restore();
+}
+function icon(kind, cx, cy, t, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  const z = 1 + 0.03 * t; // ゆっくりズーム
+  ctx.translate(cx, cy); ctx.scale(z, z); ctx.translate(-cx, -cy);
+  stroke();
+  if (kind === 'liner') {
+    const tilt = 0.10 * easeInOut(t / 8);
+    ctx.save(); ctx.translate(cx, cy + 40); ctx.rotate(tilt);
+    ctx.beginPath(); ctx.moveTo(-260, -20); ctx.lineTo(240, -20); ctx.lineTo(205, 50); ctx.lineTo(-235, 50); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-200, -20); ctx.lineTo(-200, -55); ctx.lineTo(180, -55); ctx.lineTo(180, -20); ctx.stroke();
+    for (let i = 0; i < 4; i++) { const x = -150 + i * 85; ctx.beginPath(); ctx.moveTo(x, -55); ctx.lineTo(x + 8, -130); ctx.lineTo(x + 46, -130); ctx.lineTo(x + 38, -55); ctx.stroke(); }
+    for (let i = 0; i < 12; i++) { ctx.beginPath(); ctx.arc(-190 + i * 33, 8, 4, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.restore();
+    // 氷山
+    stroke(C.ink3, 4);
+    ctx.beginPath(); ctx.moveTo(250, 95); ctx.lineTo(300, -10); ctx.lineTo(330, 20); ctx.lineTo(370, -60); ctx.lineTo(420, 95); ctx.stroke();
+    ctx.translate(0, 0); waves(cy + 100, cx - 420, cx + 420, t);
+  } else if (kind === 'burst') {
+    const p = easeOut(t / 1.6);
+    const rays = 22;
+    for (let i = 0; i < rays; i++) {
+      const ang = (i / rays) * Math.PI * 2 + 0.1;
+      const r0 = 60, r1 = (150 + 90 * rnd(i)) * p;
+      line(cx + Math.cos(ang) * r0, cy - 20 + Math.sin(ang) * r0 * 0.8, cx + Math.cos(ang) * r1, cy - 20 + Math.sin(ang) * r1 * 0.8, i % 2 ? C.accent : C.red, 5, a * 0.9);
+    }
+    const rg = ctx.createRadialGradient(cx, cy - 20, 0, cx, cy - 20, 220 * p + 1);
+    rg.addColorStop(0, 'rgba(240,200,120,0.55)'); rg.addColorStop(1, 'rgba(208,87,75,0)');
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(cx, cy - 20, 220 * p + 1, 0, Math.PI * 2); ctx.fill();
+    // 港の街並み
+    stroke(C.ink3, 4);
+    ctx.beginPath(); ctx.moveTo(cx - 420, cy + 110);
+    const bx = [-420, -380, -380, -330, -330, -290, -290, -250, -250, 250, 250, 300, 300, 340, 340, 390, 390, 420];
+    const by = [110, 110, 60, 60, 80, 80, 40, 40, 110, 110, 50, 50, 85, 85, 30, 30, 110, 110];
+    bx.forEach((x, i) => ctx.lineTo(cx + x, cy + by[i])); ctx.stroke();
+    waves(cy + 140, cx - 420, cx + 420, t);
+  } else if (kind === 'planes') {
+    // 霧
+    for (let i = 0; i < 6; i++) {
+      const fx = cx - 400 + ((rnd(i) * 800 + t * 30) % 800), fy = cy - 120 + rnd(i + 9) * 240;
+      const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, 200);
+      fg.addColorStop(0, 'rgba(200,200,200,0.10)'); fg.addColorStop(1, 'rgba(200,200,200,0)');
+      ctx.fillStyle = fg; ctx.fillRect(fx - 200, fy - 200, 400, 400);
+    }
+    // 滑走路
+    stroke(C.ink3, 4);
+    ctx.beginPath(); ctx.moveTo(cx - 440, cy + 70); ctx.lineTo(cx + 440, cy + 70); ctx.moveTo(cx - 440, cy - 70); ctx.lineTo(cx + 440, cy - 70); ctx.stroke();
+    for (let x = -420; x < 420; x += 70) line(cx + x, cy, cx + x + 36, cy, C.ink3, 4, a);
+    const p = easeInOut(t / 4);
+    stroke(C.ink2, 5);
+    planeTop(cx - 300 + 120 * p, cy, 1.6, 0); ctx.stroke();
+    planeTop(cx + 300 - 120 * p, cy, 1.6, Math.PI); ctx.stroke();
+  } else if (kind === 'factory') {
+    stroke(C.ink2, 5);
+    ctx.beginPath(); ctx.moveTo(cx - 300, cy + 120); ctx.lineTo(cx - 300, cy); ctx.lineTo(cx - 200, cy - 60); ctx.lineTo(cx - 200, cy);
+    ctx.lineTo(cx - 100, cy - 60); ctx.lineTo(cx - 100, cy); ctx.lineTo(cx, cy - 60); ctx.lineTo(cx, cy + 120); ctx.closePath(); ctx.stroke();
+    // タンク
+    ctx.beginPath(); ctx.ellipse(cx + 150, cy + 40, 110, 80, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + 40, cy + 120); ctx.lineTo(cx + 260, cy + 120); ctx.stroke();
+    // 煙突
+    ctx.beginPath(); ctx.moveTo(cx - 260, cy - 20); ctx.lineTo(cx - 260, cy - 180); ctx.lineTo(cx - 225, cy - 180); ctx.lineTo(cx - 225, cy - 40); ctx.stroke();
+    // 漏れ出すガス
+    for (let i = 0; i < 9; i++) {
+      const k = (t * 0.25 + i / 9) % 1;
+      const gx = cx + 150 + k * 380 - 120, gy = cy - 40 - Math.sin(k * 3) * 60 + i * 6;
+      const gr = 40 + k * 140;
+      const gg = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+      gg.addColorStop(0, `rgba(190,200,140,${0.22 * (1 - k)})`); gg.addColorStop(1, 'rgba(190,200,140,0)');
+      ctx.fillStyle = gg; ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2);
+    }
+  } else if (kind === 'mountain') {
+    stroke(C.ink3, 4);
+    ctx.beginPath(); ctx.moveTo(cx - 440, cy + 140); ctx.lineTo(cx - 260, cy - 10); ctx.lineTo(cx - 170, cy + 50); ctx.lineTo(cx - 20, cy - 120);
+    ctx.lineTo(cx + 120, cy + 30); ctx.lineTo(cx + 230, cy - 40); ctx.lineTo(cx + 440, cy + 140); ctx.stroke();
+    // 機体(側面)
+    const p = easeInOut(t / 6);
+    ctx.save(); ctx.translate(cx + 260 - 140 * p, cy - 180 + 50 * p); ctx.rotate(-0.12 - 0.08 * p); ctx.scale(-1, 1);
+    stroke(C.ink2, 5);
+    ctx.beginPath();
+    ctx.moveTo(-120, 0); ctx.quadraticCurveTo(-130, -18, -105, -22); ctx.lineTo(90, -22); ctx.lineTo(125, -70); ctx.lineTo(140, -70);
+    ctx.lineTo(132, -16); ctx.quadraticCurveTo(130, 0, 110, 2); ctx.lineTo(-100, 4); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-10, -2); ctx.lineTo(40, 28); ctx.lineTo(60, 28); ctx.lineTo(40, -2); ctx.stroke();
+    ctx.restore();
+  } else if (kind === 'reactor') {
+    stroke(C.ink2, 5);
+    ctx.beginPath(); ctx.moveTo(cx - 300, cy + 120); ctx.lineTo(cx - 300, cy - 40); ctx.lineTo(cx - 60, cy - 40); ctx.lineTo(cx - 60, cy - 110);
+    ctx.lineTo(cx + 40, cy - 110); ctx.lineTo(cx + 40, cy - 40); ctx.lineTo(cx + 200, cy - 40); ctx.lineTo(cx + 200, cy + 120); ctx.stroke();
+    // 排気筒
+    ctx.beginPath(); ctx.moveTo(cx - 25, cy - 110); ctx.lineTo(cx - 15, cy - 260); ctx.lineTo(cx + 5, cy - 260); ctx.lineTo(cx + 15, cy - 110); ctx.stroke();
+    for (let y = -230; y < -110; y += 30) line(cx - 20, cy + y, cx + 10, cy + y, C.ink3, 3, a);
+    // 放射能標識
+    const sx = cx + 330, sy = cy - 40, R = 80;
+    ctx.fillStyle = C.accent; ctx.globalAlpha = a * (0.75 + 0.25 * Math.sin(t * 2));
+    for (let i = 0; i < 3; i++) {
+      const a0 = -Math.PI / 2 + i * 2 * Math.PI / 3 - Math.PI / 6;
+      ctx.beginPath(); ctx.arc(sx, sy, R, a0, a0 + Math.PI / 3); ctx.arc(sx, sy, R * 0.28, a0 + Math.PI / 3, a0, true); ctx.closePath(); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(sx, sy, R * 0.16, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = a; stroke(C.ink3, 4);
+    ctx.beginPath(); ctx.moveTo(cx - 440, cy + 120); ctx.lineTo(cx + 440, cy + 120); ctx.stroke();
+  } else if (kind === 'ferry') {
+    stroke(C.ink2, 5);
+    ctx.beginPath(); ctx.moveTo(cx - 280, cy + 10); ctx.lineTo(cx + 250, cy + 10); ctx.lineTo(cx + 210, cy + 80); ctx.lineTo(cx - 250, cy + 80); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 220, cy + 10); ctx.lineTo(cx - 220, cy - 50); ctx.lineTo(cx + 150, cy - 50); ctx.lineTo(cx + 170, cy + 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 150, cy - 50); ctx.lineTo(cx - 150, cy - 100); ctx.lineTo(cx + 80, cy - 100); ctx.lineTo(cx + 100, cy - 50); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - 20, cy - 100); ctx.lineTo(cx - 10, cy - 150); ctx.lineTo(cx + 30, cy - 150); ctx.lineTo(cx + 40, cy - 100); ctx.stroke();
+    for (let i = 0; i < 14; i++) rrect(cx - 200 + i * 25, cy - 30, 12, 14, 2, C.ink3, a);
+    const fa = easeOut((t - 0.8) / 1.5);
+    ctx.globalAlpha = a * fa;
+    flame(cx + 200, cy + 15, 150, t, 1); flame(cx + 330, cy + 60, 130, t, 3); flame(cx + 60, cy - 40, 100, t, 5);
+    ctx.globalAlpha = a;
+    waves(cy + 110, cx - 420, cx + 420, t);
+  }
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const p = easeOut(t / 1.4);
+  line(W / 2 - 330 * p, 640, W / 2 + 330 * p, 640, C.accent, 3, a);
+  text('人類史上', W / 2, 790, { size: 96, weight: 'bold', align: 'center', color: C.ink2, alpha: a * easeOut(t / .9), ls: 20 });
+  text('最悪の事故', W / 2, 950, { size: 150, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .9), ls: 6, shadow: 30 });
+  const sa = a * easeOut((t - .8) / .9);
+  rrect(W / 2 - 150, 1010, 300, 110, 55, null, sa, C.accent);
+  text('7選', W / 2, 1092, { size: 78, weight: 'bold', align: 'center', color: C.accent, alpha: sa });
+  line(W / 2 - 330 * p, 1190, W / 2 + 330 * p, 1190, C.accent, 3, a);
+  text('1912 → 1987  年代順にたどる', W / 2, 1300, { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.4) / .8) });
+  text('犠牲となられた方々のご冥福をお祈りします', W / 2, 1420, { size: 34, color: C.ink3, align: 'center', alpha: a * easeOut((t - 2.4) / .8) });
+}
+
+function sceneAccident(i) {
+  const d = ACC[i];
+  return (t, a) => {
+    // 進行インジケーター
+    text(String(i + 1).padStart(2, '0'), 80, 290, { size: 56, weight: 'bold', color: C.accent, alpha: a });
+    text('/ 07', 160, 290, { size: 34, color: C.ink3, alpha: a });
+    for (let k = 0; k < 7; k++) rrect(W - 80 - (7 - k) * 46, 262, 34, 8, 4, k <= i ? C.accent : C.line, a * (k === i ? 1 : 0.7));
+    // 年・名称
+    const ya = a * easeOut(t / .7);
+    text(d.year, 80, 470, { size: 170, weight: 'bold', color: C.ink, alpha: ya, ls: 4, shadow: 24 });
+    text('年', 80 + ctxWidth(d.year, 170, 4) + 12, 470, { size: 56, color: C.ink2, alpha: ya });
+    const na = a * easeOut((t - .3) / .7);
+    text(d.name, 80, 580, { size: d.name.length > 10 ? 70 : 78, weight: 'bold', alpha: na });
+    text(d.place, 80, 645, { size: 38, color: C.ink2, alpha: na });
+    // アイコン
+    ctx.save(); ctx.translate(W / 2, 905); ctx.scale(0.82, 0.82); ctx.translate(-W / 2, -905);
+    icon(d.icon, W / 2, 905, t, a * easeOut((t - .4) / 1.0));
+    ctx.restore();
+    // 被害の数字
+    const da = a * easeOut((t - 1.6) / .7);
+    rrect(60, 1075, W - 120, 230, 24, C.panel, da, C.line);
+    text(d.label, 100, 1145, { size: 36, color: C.ink2, alpha: da });
+    text(d.num, W - 100, 1215, { size: 120, weight: 'bold', color: C.red, align: 'right', alpha: da, shadow: 20 });
+    text(d.note, W - 100, 1275, { size: 30, color: C.ink3, align: 'right', alpha: da });
+    // 原因・教訓
+    d.rows.forEach((r, k) => {
+      const ra = a * easeOut((t - 2.8 - k * 1.4) / .7);
+      const y = 1395 + k * 105;
+      rrect(60, y - 48, 120, 64, 12, null, ra, C.accent);
+      text(r[0], 120, y - 3, { size: 32, weight: 'bold', color: C.accent, align: 'center', alpha: ra });
+      fitText(r[1], 205, y, W - 265, 36, { color: C.ink, alpha: ra });
+    });
+    text('数値は資料により諸説あり・概数', W / 2, 1610, { size: 26, color: C.ink3, align: 'center', alpha: a * 0.9 });
+  };
+}
+function ctxWidth(str, size, ls = 0) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`; if (ls) ctx.letterSpacing = ls + 'px';
+  const w = ctx.measureText(str).width; ctx.restore(); return w;
+}
+function fitText(str, x, y, maxW, size, opt) {
+  ctx.save(); ctx.font = `normal ${size}px ${FONT}`;
+  while (ctx.measureText(str).width > maxW && size > 22) { size -= 1; ctx.font = `normal ${size}px ${FONT}`; }
+  ctx.restore();
+  text(str, x, y, Object.assign({ size }, opt));
+}
+
+function sceneOutro(t, a) {
+  text('いまの安全は、', W / 2, 400, { size: 64, weight: 'bold', align: 'center', alpha: a * easeOut(t / .8) });
+  text('多くの犠牲の上にある', W / 2, 490, { size: 64, weight: 'bold', align: 'center', color: C.accent, alpha: a * easeOut((t - .4) / .8) });
+  ACC.forEach((d, k) => {
+    const la = a * easeOut((t - .8 - k * .25) / .6);
+    const y = 640 + k * 100;
+    line(110, y + 26, W - 110, y + 26, C.line, 2, la);
+    text(d.year, 120, y, { size: 40, weight: 'bold', color: C.accent, alpha: la });
+    text(d.name, 260, y, { size: 38, alpha: la });
+    text(d.num, W - 120, y, { size: 36, color: C.ink2, align: 'right', alpha: la });
+  });
+  const ca = a * easeOut((t - 3.0) / .8);
+  text('数値は資料により諸説あり・概数', W / 2, 1420, { size: 28, color: C.ink3, align: 'center', alpha: ca });
+  text('BGM: J.S.バッハ「G線上のアリア」', W / 2, 1490, { size: 30, color: C.ink2, align: 'center', alpha: ca });
+  text('演奏: アメリカ空軍軍楽隊(パブリックドメイン)', W / 2, 1540, { size: 28, color: C.ink3, align: 'center', alpha: ca });
+  text('音声: VOICEVOX:青山龍星', W / 2, 1600, { size: 30, color: C.ink2, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [{ s: 0, d: 6, f: sceneTitle }];
+ACC.forEach((_, i) => SCENES.push({ s: 6 + i * 10.5, d: 10.5, f: sceneAccident(i) }));
+SCENES.push({ s: 79.5, d: 8, f: sceneOutro });
+const XF = 0.4; // クロスフェード秒
+
+function render(t) {
+  background(t);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  // 冒頭・末尾のフェード
+  const fade = Math.min(clamp(t / 0.6), clamp((DURATION - t) / 1.2));
+  if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+  rrect(0, H - 8, W * clamp(t / DURATION), 8, 0, C.accent, 0.8);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+window.SCENES = SCENES.map(s => [s.s, s.d]);
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
