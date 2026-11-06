@@ -47,8 +47,13 @@ with wave.open(mix_path, 'wb') as w:
 
 video = os.path.join(OUT, 'video_silent.mp4')
 dst = os.path.join(OUT, 'daimyo_descendants.mp4' if has_voice else 'preview_no_voice.mp4')
-# 音量を YouTube 基準(-14 LUFS)に合わせ、ステレオ AAC で多重化
+# 音量を YouTube 基準(-14 LUFS)に合わせ(2パスの線形 loudnorm で音質を変えずにゲインだけ調整)、ステレオ AAC で多重化
+r = subprocess.run(['ffmpeg', '-hide_banner', '-i', mix_path, '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json',
+                    '-f', 'null', '-'], capture_output=True, text=True).stderr
+m = json.loads(r[r.rindex('{'):r.rindex('}') + 1])
+af = ('loudnorm=I=-14:TP=-1.5:LRA=11:linear=true:measured_I={input_i}:measured_TP={input_tp}:'
+      'measured_LRA={input_lra}:measured_thresh={input_thresh}:offset={target_offset}').format(**m)
 subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', video, '-i', mix_path, '-map', '0:v', '-map', '1:a',
-                '-c:v', 'copy', '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11', '-ac', '2', '-ar', '48000',
+                '-c:v', 'copy', '-af', af, '-ac', '2', '-ar', '48000',
                 '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', dst], check=True)
 print('wrote', dst, '(with narration)' if has_voice else '(BGM only preview)')

@@ -4,3 +4,4 @@ output/video_silent.mp4
 output/part*.mp4
 output/parts.txt
 __pycache__/
+output/narration.wav
