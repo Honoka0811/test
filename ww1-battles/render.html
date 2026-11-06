@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>第一次世界大戦 激戦の一覧</title>
+<style>
+  @font-face { font-family: 'NSJ'; src: url('assets/NotoSerifJP.ttf') format('truetype'); font-weight: 200 900; }
+  html, body { margin: 0; background: #0d0b09; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+  body.preview canvas { width: auto; height: 100vh; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="scenes.js"></script>
+<script src="assets/land_europe.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描画する。capture.js から1フレームずつ呼ばれる。
+// window.TIMINGS(narrate.py が出力する output/timings.json)があれば、その実測タイミングでシーンと字幕を配置する。
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const C = {
+  bg: '#14110d', panel: '#1b1712', sea: '#1d2226', land: '#3a3226', landEdge: '#7a6a50',
+  ink: '#efe6d2', muted: '#a89c84', faint: '#6b604e', red: '#c8442f', redSoft: '#e0735c', gold: '#d6b56e',
+};
+const F = (w, px) => `${w} ${px}px NSJ, "IPAGothic", serif`;
+const BATTLES = SCENES.filter(s => s.type === 'battle');
+const MAXV = Math.max(...BATTLES.map(b => b.stat.value));
+let LAND = null;
+
+// ---------- タイムライン ----------
+function estimateTimings() {
+  // ナレーション未生成時の目安(1文字 ≈ 0.125 秒)
+  const LEAD = 0.5, GAP = 0.3, TAIL = 0.9;
+  let t = 0; const scenes = [];
+  for (const s of SCENES) {
+    let c = t + LEAD; const lines = [];
+    for (const l of s.lines) { const d = l.read.length * 0.125 + 0.2; lines.push({ a: c, b: c + d }); c += d + GAP; }
+    let dur = c - GAP + TAIL - t;
+    if (s.type === 'summary') dur += 3.0;
+    scenes.push({ start: t, dur, lines }); t += dur;
+  }
+  return { total: t, scenes };
+}
+const TL = window.TIMINGS || estimateTimings();
+const DURATION = Math.ceil(TL.total * FPS) / FPS;
+window.FPS = FPS; window.DURATION = DURATION;
+
+// ---------- 補助 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const easeOut = x => 1 - Math.pow(1 - clamp(x), 3);
+const lerp = (a, b, k) => a + (b - a) * k;
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(str, x, y, font, color, align = 'left', alpha = 1, maxW = 0) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+  let px = parseFloat(font.split(' ')[1]); const w0 = font.split(' ')[0];
+  ctx.font = font;
+  if (maxW) while (ctx.measureText(str).width > maxW && px > 20) { px -= 2; ctx.font = F(w0, px); }
+  ctx.fillText(str, x, y); ctx.restore();
+}
+// 日本語の折り返し(行頭禁則の簡易処理)
+function wrap(str, font, maxW) {
+  ctx.font = font;
+  if (ctx.measureText(str).width <= maxW) return [str];
+  // 2行に収まるなら、句読点の直後で最も左右のバランスが良い位置で改行する
+  const chars = [...str]; let best = -1, bestD = 1e9;
+  // 候補は句読点または助詞の直後
+  for (let i = 2; i < chars.length - 1; i++) {
+    const punct = '、。'.includes(chars[i - 1]);
+    if (!(punct || 'をにでがはともへの'.includes(chars[i - 1])) || '、。'.includes(chars[i])) continue;
+    const a = chars.slice(0, i).join(''), b = chars.slice(i).join('');
+    const wa = ctx.measureText(a).width, wb = ctx.measureText(b).width;
+    const d = Math.abs(wa - wb) + (punct ? 0 : 200);   // 句読点での改行を優先
+    if (wa <= maxW && wb <= maxW && d < bestD) { bestD = d; best = i; }
+  }
+  if (best > 0) return [chars.slice(0, best).join(''), chars.slice(best).join('')];
+  // それ以外は文字単位で折り返す(行頭禁則・数字や英字の途中では切らない)
+  const out = []; let cur = '';
+  const isAN = c => /[0-9A-Za-z.,]/.test(c);
+  chars.forEach((ch, i) => {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !'、。」』)!?・'.includes(ch)) {
+      let cut = cur.length;
+      while (cut > 1 && isAN(ch) && isAN(cur[cut - 1])) { cut--; if (!isAN(cur[cut - 1])) break; }
+      if (isAN(ch) && cut < cur.length) { out.push(cur.slice(0, cut)); cur = cur.slice(cut) + ch; }
+      else { out.push(cur); cur = ch; }
+    } else cur += ch;
+  });
+  if (cur) out.push(cur); return out;
+}
+
+// ---------- 背景・質感 ----------
+const grain = [];
+function makeGrain() {
+  for (let k = 0; k < 4; k++) {
+    const g = document.createElement('canvas'); g.width = g.height = 256; const gx = g.getContext('2d');
+    const im = gx.createImageData(256, 256), r = rng(11 + k);
+    for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+    gx.putImageData(im, 0, 0); grain.push(g);
+  }
+}
+function drawBackground() {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, H * 0.42, 100, W / 2, H * 0.45, H * 0.75);
+  g.addColorStop(0, '#221c15'); g.addColorStop(1, '#0b0907');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function drawGrain(t) {
+  const f = Math.floor(t * FPS);
+  ctx.save(); ctx.globalAlpha = 0.055; ctx.globalCompositeOperation = 'overlay';
+  const g = grain[f % 4], ox = (f * 37) % 256, oy = (f * 91) % 256;
+  ctx.translate(-ox, -oy);
+  for (let y = 0; y < H + 256; y += 256) for (let x = 0; x < W + 256; x += 256) ctx.drawImage(g, x, y);
+  ctx.restore();
+  // 古いフィルム風のごく弱い明滅
+  const fl = 0.025 * Math.sin(f * 1.7) * Math.sin(f * 0.53);
+  ctx.fillStyle = fl > 0 ? `rgba(255,240,210,${fl})` : `rgba(0,0,0,${-fl})`; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- 地図 ----------
+const MAP = { x: 60, y: 210, w: 960, h: 720 };
+const OVER = { lon: 14.5, lat: 48.6, k: 26 };
+function camFor(i) { // i: シーン番号
+  const s = SCENES[i];
+  if (s.type === 'battle') return { lon: s.lon, lat: s.lat, k: OVER.k * s.zoom };
+  return OVER;
+}
+function project(cam, lon, lat) {
+  const cx = MAP.x + MAP.w / 2, cy = MAP.y + MAP.h / 2;
+  return [cx + (lon - cam.lon) * cam.k * Math.cos(cam.lat * Math.PI / 180), cy - (lat - cam.lat) * cam.k];
+}
+function camAt(si, local) {
+  const to = camFor(si), from = si > 0 ? camFor(si - 1) : OVER;
+  const k = ease(local / 1.7);
+  // ズームは対数補間、途中で少し引いて「飛ぶ」動き
+  const lk = lerp(Math.log(from.k), Math.log(to.k), k) - 0.35 * Math.sin(Math.PI * k) * (from === to ? 0 : 1);
+  return { lon: lerp(from.lon, to.lon, k), lat: lerp(from.lat, to.lat, k), k: Math.exp(lk) * (1 + 0.012 * local) };
+}
+function drawMap(t, si, local, dim) {
+  const cam = camAt(si, local);
+  ctx.save();
+  rrect(MAP.x, MAP.y, MAP.w, MAP.h, 22); ctx.fillStyle = C.sea; ctx.fill(); ctx.clip();
+  // 経緯線
+  ctx.strokeStyle = 'rgba(214,181,110,0.07)'; ctx.lineWidth = 1.5;
+  for (let lon = -30; lon <= 60; lon += 5) { const [x1, y1] = project(cam, lon, 25), [x2, y2] = project(cam, lon, 72); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+  for (let lat = 25; lat <= 72; lat += 5) { const [x1, y1] = project(cam, -30, lat), [x2, y2] = project(cam, 60, lat); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+  // 陸地
+  ctx.beginPath();
+  for (const poly of LAND) {
+    let first = true;
+    for (const [lon, lat] of poly) { const [x, y] = project(cam, lon, lat); if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y); }
+    ctx.closePath();
+  }
+  ctx.fillStyle = C.land; ctx.fill(); ctx.strokeStyle = C.landEdge; ctx.lineWidth = 1.6; ctx.lineJoin = 'round'; ctx.stroke();
+  // 戦場マーカー
+  const cur = SCENES[si];
+  BATTLES.forEach((b, j) => {
+    const [x, y] = project(cam, b.lon, b.lat);
+    const isCur = cur === b;
+    let a;
+    if (cur.type === 'title') a = easeOut((local - 1.2 - j * 0.28) / 0.4);
+    else if (cur.type === 'summary') a = 1;
+    else a = b.no < cur.no ? 0.9 : (isCur ? 1 : 0.25);
+    if (a <= 0) return;
+    if (isCur) {
+      const p = clamp((local - 1.4) / 0.5);
+      for (let r = 0; r < 2; r++) {
+        const ph = ((local * 0.8 + r * 0.5) % 1);
+        ctx.beginPath(); ctx.arc(x, y, 14 + ph * 46, 0, 7); ctx.strokeStyle = `rgba(224,115,92,${(1 - ph) * 0.7 * p})`; ctx.lineWidth = 3; ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(x, y, 13 * easeOut(p * 1.4), 0, 7); ctx.fillStyle = C.red; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = C.ink; ctx.stroke();
+    } else {
+      const done = cur.type !== 'title' && (cur.type === 'summary' || b.no < cur.no);
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.beginPath(); ctx.arc(x, y, done ? 7 : 8, 0, 7);
+      ctx.fillStyle = done ? 'rgba(200,68,47,0.75)' : C.red; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(239,230,210,0.6)'; ctx.stroke(); ctx.restore();
+    }
+  });
+  if (dim) { ctx.fillStyle = `rgba(13,11,9,${dim})`; ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h); }
+  // 周辺減光
+  const vg = ctx.createRadialGradient(MAP.x + MAP.w / 2, MAP.y + MAP.h / 2, 200, MAP.x + MAP.w / 2, MAP.y + MAP.h / 2, 640);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(MAP.x, MAP.y, MAP.w, MAP.h);
+  ctx.restore();
+  rrect(MAP.x, MAP.y, MAP.w, MAP.h, 22); ctx.strokeStyle = 'rgba(214,181,110,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+}
+
+// ---------- 共通UI ----------
+function drawHeader(si, a) {
+  text('第一次世界大戦  激戦の一覧', 64, 160, F(600, 36), C.muted, 'left', a);
+  const s = SCENES[si];
+  for (let i = 0; i < 8; i++) {
+    const x = 1016 - (8 - i) * 42 + 6, on = s.type === 'summary' || (s.type === 'battle' && i < s.no);
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = on ? C.red : 'rgba(239,230,210,0.18)';
+    rrect(x, 140, 34, 10, 5); ctx.fill(); ctx.restore();
+  }
+}
+function drawSubtitle(si, t) {
+  const sc = TL.scenes[si], s = SCENES[si];
+  sc.lines.forEach((ln, j) => {
+    const a = clamp((t - ln.a + 0.1) / 0.15) * clamp((Math.min(ln.b + 0.35, j + 1 < sc.lines.length ? sc.lines[j + 1].a - 0.05 : sc.start + sc.dur - 0.05) - t) / 0.15);
+    if (a <= 0) return;
+    const font = F(700, 48), rows = wrap(s.lines[j].sub, font, 884), lh = 70;
+    const top = 1462 - (rows.length * lh) / 2, bh = rows.length * lh + 34;
+    ctx.save(); ctx.globalAlpha = a;
+    rrect(78, top - 17, 924, bh, 18); ctx.fillStyle = 'rgba(8,7,5,0.72)'; ctx.fill();
+    rows.forEach((r, k) => {
+      ctx.font = font; ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+      ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(0,0,0,0.6)'; ctx.strokeText(r, 540, top + 52 + k * lh);
+      ctx.fillStyle = '#fbf6ea'; ctx.fillText(r, 540, top + 52 + k * lh);
+    });
+    ctx.restore();
+  });
+}
+function fmtCount(v, s) {
+  if (v >= s.stat.value) return s.stat.text;
+  if (s.stat.value < 10000) return '約' + Math.round(v).toLocaleString('en-US') + '人';
+  return '約' + Math.max(1, Math.round(v / 10000)) + '万人';
+}
+
+// ---------- シーン ----------
+function drawTitle(local, a) {
+  const k1 = easeOut((local - 0.2) / 0.8), k2 = easeOut((local - 0.6) / 0.8), k3 = easeOut((local - 1.2) / 0.8);
+  text('1914 — 1918', 540, 1035 + 20 * (1 - k1), F(500, 44), C.gold, 'center', a * k1);
+  text('第一次世界大戦', 540, 1165 + 20 * (1 - k1), F(900, 112), C.ink, 'center', a * k1);
+  text('激戦の一覧', 540, 1300 + 24 * (1 - k2), F(900, 136), C.redSoft, 'center', a * k2);
+  ctx.save(); ctx.globalAlpha = a * k3; ctx.fillStyle = C.gold;
+  ctx.fillRect(540 - 180 * k3, 1335, 360 * k3, 3); ctx.restore();
+}
+function drawBattle(s, local, a) {
+  const k0 = easeOut((local - 0.25) / 0.6), k1 = easeOut((local - 0.5) / 0.6), k2 = easeOut((local - 0.8) / 0.6), k3 = easeOut((local - 1.1) / 0.6);
+  // 地図上のラベル
+  ctx.save(); ctx.globalAlpha = a * k0;
+  text(String(s.no).padStart(2, '0'), 96, 340, F(900, 120), 'rgba(239,230,210,0.9)', 'left');
+  text('/ 08', 250, 340, F(500, 40), C.muted, 'left');
+  ctx.font = F(600, 34); const fw = ctx.measureText(s.front).width;
+  rrect(84, 852, fw + 40, 50, 25); ctx.fillStyle = 'rgba(12,10,8,0.75)'; ctx.fill();
+  text(s.front, 104, 889, F(600, 34), C.gold, 'left');
+  ctx.restore();
+  // 名称・日付
+  const dy = 24 * (1 - k1);
+  text(s.name, 64, 1040 + dy, F(900, 92), C.ink, 'left', a * k1, 952);
+  text(`${s.orig}  ·  ${s.date}`, 66, 1094 + dy, F(500, 32), C.muted, 'left', a * k1, 950);
+  // 交戦国と結果
+  ctx.save(); ctx.globalAlpha = a * k2;
+  ctx.font = F(700, 36); let x = 66;
+  const side = (str, col) => { ctx.fillStyle = col; ctx.fillText(str, x, 1152); x += ctx.measureText(str).width; };
+  ctx.textAlign = 'left'; side(s.sides[0], C.ink); ctx.font = F(500, 30); side('  vs  ', C.faint); ctx.font = F(700, 36); side(s.sides[1], C.ink);
+  ctx.restore();
+  text('結果: ' + s.result, 66, 1198, F(600, 32), C.gold, 'left', a * k2, 940);
+  // 数値(カウントアップ)+ 比較バー
+  const cp = ease((local - 1.1) / 1.6), v = s.stat.value * cp;
+  ctx.save(); ctx.globalAlpha = a * k3;
+  rrect(60, 1224, 960, 140, 18); ctx.fillStyle = 'rgba(239,230,210,0.05)'; ctx.fill();
+  ctx.restore();
+  text(s.stat.label, 92, 1268, F(600, 28), C.muted, 'left', a * k3);
+  text(fmtCount(v, s), 92, 1336, F(900, 60), C.redSoft, 'left', a * k3);
+  // 比較バー(最大=ソンム)
+  const bx = 470, bw = 520, by = 1330;
+  ctx.save(); ctx.globalAlpha = a * k3;
+  rrect(bx, by, bw, 16, 8); ctx.fillStyle = 'rgba(239,230,210,0.12)'; ctx.fill();
+  rrect(bx, by, Math.max(6, bw * (v / MAXV)), 16, 8); ctx.fillStyle = C.red; ctx.fill();
+  ctx.restore();
+  s.facts.forEach((f, j) => text('・' + f, bx - 6, 1266 + j * 40, F(600, 28), C.ink, 'left', a * easeOut((local - 1.4 - j * 0.35) / 0.5), bw + 10));
+}
+function drawSummary(local, a, sc) {
+  // 地図を暗くして一覧を重ねる
+  const k = easeOut(local / 0.6);
+  ctx.save(); ctx.globalAlpha = a * k;
+  rrect(MAP.x, MAP.y, MAP.w, MAP.h, 22); ctx.fillStyle = 'rgba(13,11,9,0.8)'; ctx.fill(); ctx.restore();
+  text('主な激戦  一覧', 540, 285, F(900, 52), C.ink, 'center', a * k);
+  const top = 345, rh = 68;
+  BATTLES.forEach((b, j) => {
+    const kk = easeOut((local - 0.3 - j * 0.12) / 0.5), y = top + j * rh + 18 * (1 - kk);
+    ctx.save(); ctx.globalAlpha = a * kk;
+    text(b.date.slice(0, 4), 92, y + 42, F(600, 28), C.gold, 'left');
+    text(b.name.replace('の戦い', '').replace('会戦', '').replace('海戦', ''), 186, y + 42, F(700, 32), C.ink, 'left', 1, 300);
+    const bw = 300 * Math.max(0.012, b.stat.value / MAXV) * ease((local - 0.6 - j * 0.12) / 0.8);
+    rrect(500, y + 22, 300, 16, 8); ctx.fillStyle = 'rgba(239,230,210,0.1)'; ctx.fill();
+    rrect(500, y + 22, Math.max(5, bw), 16, 8); ctx.fillStyle = C.red; ctx.fill();
+    text(b.stat.text.replace('人', ''), 990, y + 42, F(700, 28), C.redSoft, 'right');
+    ctx.restore();
+  });
+  text('死傷者数(双方計・推計)  ※ユトランドは戦死者数', 540, 908, F(500, 22), C.muted, 'center', a * k);
+  const k2 = easeOut((local - 1.6) / 0.8);
+  text('兵士の死者', 540, 1030, F(700, 46), C.muted, 'center', a * k2);
+  text('約900万人', 540, 1170 + 20 * (1 - k2), F(900, 130), C.redSoft, 'center', a * k2);
+  text('1914.7.28 開戦  —  1918.11.11 休戦', 540, 1250, F(600, 34), C.gold, 'center', a * k2);
+  // クレジット(終盤)
+  const k3 = easeOut((local - (sc.dur - 3.6)) / 0.6);
+  text('BGM: J.S.バッハ「G線上のアリア」(管弦楽組曲第3番より)', 540, 1560, F(500, 26), C.muted, 'center', a * k3);
+  text('演奏: アメリカ空軍バンド(パブリックドメイン)', 540, 1600, F(500, 26), C.muted, 'center', a * k3);
+  text('ナレーション: VOICEVOX:青山龍星', 540, 1640, F(500, 26), C.muted, 'center', a * k3);
+  text('数値は概数・推計(資料により幅があります)', 540, 1680, F(500, 24), C.faint, 'center', a * k3);
+}
+
+function sceneAt(t) {
+  let i = TL.scenes.findIndex(s => t < s.start + s.dur);
+  if (i < 0) i = TL.scenes.length - 1;
+  return i;
+}
+function render(t) {
+  const si = sceneAt(t), sc = TL.scenes[si], s = SCENES[si], local = t - sc.start;
+  // シーン内テキストのフェード(入り 0.3 秒・出 0.3 秒)
+  const a = clamp(local / 0.3) * (si === SCENES.length - 1 ? 1 : clamp((sc.dur - local) / 0.3));
+  drawBackground();
+  drawMap(t, si, local, s.type === 'title' ? 0.25 : 0);
+  drawHeader(si, s.type === 'title' ? easeOut((local - 2) / 0.6) : 1);
+  if (s.type === 'title') drawTitle(local, a);
+  else if (s.type === 'battle') drawBattle(s, local, a);
+  else drawSummary(local, a, sc);
+  if (s.type === 'battle') text('※数値は概数・推計', 1016, 1585, F(500, 22), C.faint, 'right', a);
+  if (!window.THUMB) drawSubtitle(si, t);
+  drawGrain(t);
+  // 冒頭と最後のフェード
+  const fade = Math.min(clamp(t / 0.6), clamp((DURATION - t) / 1.2));
+  if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+
+window.ready = (async () => {
+  LAND = window.LAND_DATA;
+  await Promise.all([F(900, 40), F(700, 40), F(600, 40), F(500, 40)].map(f => document.fonts.load(f, 'あ漢A1')));
+  makeGrain();
+  window.render = render;
+  render(0);
+})();
+
+if (!window.CAPTURE) {
+  document.body.classList.add('preview');
+  window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+}
+</script>
+</body>
+</html>

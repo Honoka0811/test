@@ -1,0 +1,7 @@
+assets/NotoSerifJP.ttf
+output/still_*.png
+output/sheet.png
+output/mix.wav
+output/video_silent.mp4
+output/preview_bgm_only.mp4
+__pycache__/
