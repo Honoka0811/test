@@ -52,7 +52,8 @@ def _dict_dir():
     d = os.environ.get('VOICEVOX_DICT')
     if d: return d
     import pyopenjtalk
-    return os.path.join(os.path.dirname(pyopenjtalk.__file__), 'open_jtalk_dic_utf_8-1.11')
+    pyopenjtalk.g2p('あ')  # 辞書が未ダウンロードなら、ここで取得させる
+    return pyopenjtalk.OPEN_JTALK_DICT_DIR.decode() if isinstance(pyopenjtalk.OPEN_JTALK_DICT_DIR, bytes) else str(pyopenjtalk.OPEN_JTALK_DICT_DIR)
 
 class VoicevoxEngine:
     def __init__(self):
@@ -89,6 +90,9 @@ class OpenJtalkEngine:
 try:
     engine = VoicevoxEngine()
 except Exception as e:  # noqa
+    # 青山龍星以外の声で黙って書き出さないよう、フォールバックは明示的に許可したときだけ
+    if os.environ.get('ALLOW_FALLBACK') != '1':
+        sys.exit(f'VOICEVOX を起動できません: {e}\n(Open JTalk で作る場合は ALLOW_FALLBACK=1 を指定)')
     print('VOICEVOX unavailable:', e)
     engine = OpenJtalkEngine()
 
