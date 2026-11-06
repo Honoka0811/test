@@ -1,0 +1,183 @@
+// narrate.py が自動生成。手で編集しない
+window.TOTAL = 36.51;
+window.TIMELINE = [
+ {
+  "name": "hook",
+  "start": 0.0,
+  "dur": 6.037,
+  "cues": [
+   [
+    0.15,
+    2.166,
+    "Octopuses are basically *ALIENS*."
+   ],
+   [
+    2.166,
+    4.16,
+    "Here are *5 facts* that sound *fake*,"
+   ],
+   [
+    4.16,
+    5.373,
+    "but are totally *real!*"
+   ]
+  ]
+ },
+ {
+  "name": "hearts",
+  "start": 6.037,
+  "dur": 5.183,
+  "cues": [
+   [
+    6.187,
+    6.902,
+    "Number *five*."
+   ],
+   [
+    6.902,
+    7.977,
+    "They have *THREE hearts!*"
+   ],
+   [
+    7.977,
+    9.816,
+    "And the main one *stops beating*"
+   ],
+   [
+    9.816,
+    10.592,
+    "when they *swim*."
+   ]
+  ]
+ },
+ {
+  "name": "blood",
+  "start": 11.22,
+  "dur": 4.693,
+  "cues": [
+   [
+    11.37,
+    11.969,
+    "Number *four*."
+   ],
+   [
+    11.969,
+    13.03,
+    "Their blood is *BLUE!*"
+   ],
+   [
+    13.03,
+    14.175,
+    "It uses *copper*"
+   ],
+   [
+    14.175,
+    15.276,
+    "instead of *iron*."
+   ]
+  ]
+ },
+ {
+  "name": "brains",
+  "start": 15.913,
+  "dur": 5.343,
+  "cues": [
+   [
+    16.063,
+    16.769,
+    "Number *three*."
+   ],
+   [
+    16.769,
+    17.948,
+    "They have *NINE brains!*"
+   ],
+   [
+    17.948,
+    18.807,
+    "One big brain,"
+   ],
+   [
+    18.807,
+    20.625,
+    "plus a *mini brain* in every arm."
+   ]
+  ]
+ },
+ {
+  "name": "taste",
+  "start": 21.256,
+  "dur": 4.927,
+  "cues": [
+   [
+    21.406,
+    21.998,
+    "Number *two*."
+   ],
+   [
+    21.998,
+    23.407,
+    "They *TASTE* with their arms!"
+   ],
+   [
+    23.407,
+    24.57,
+    "Every sucker works"
+   ],
+   [
+    24.57,
+    25.534,
+    "like a *tiny tongue*."
+   ]
+  ]
+ },
+ {
+  "name": "color",
+  "start": 26.183,
+  "dur": 5.738,
+  "cues": [
+   [
+    26.333,
+    27.243,
+    "And number *ONE*..."
+   ],
+   [
+    27.243,
+    28.842,
+    "They change color *in a blink*."
+   ],
+   [
+    28.842,
+    30.146,
+    "But scientists think"
+   ],
+   [
+    30.146,
+    31.32,
+    "they're *COLORBLIND!*"
+   ]
+  ]
+ },
+ {
+  "name": "outro",
+  "start": 31.921,
+  "dur": 4.589,
+  "cues": [
+   [
+    32.071,
+    33.645,
+    "Which fact *shocked you* most?"
+   ],
+   [
+    33.645,
+    34.347,
+    "*Comment* below!"
+   ],
+   [
+    34.347,
+    35.351,
+    "Because seriously..."
+   ]
+  ]
+ }
+];
