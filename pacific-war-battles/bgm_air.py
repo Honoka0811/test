@@ -35,13 +35,15 @@ def load_notes():
                 s = on.pop(x.note); notes.append((tr.name, s / tpb, (T - s) / tpb, x.note))
     return notes
 
+BPM = float(os.environ.get('BGM_BPM', '48'))   # 演奏テンポ(4分音符/分)。G線上のアリアらしいゆったりした速さ
+
 def beat_to_sec_fn(total, end_hold=4.6, rit_beats=8, rit_amount=0.72):
     """拍→秒の対応。最終和音(74拍目)が total-end_hold 秒に来るよう基本テンポを決め、最後 rit_beats 拍でリタルダンド"""
     last = 74.0
     rit_start = last - rit_beats
     # リット区間では1拍の長さが 1 → 1/rit_amount 倍まで線形に伸びる
     rit_len = rit_beats * (1 + 1 / rit_amount) / 2
-    spb = (total - end_hold) / (rit_start + rit_len)
+    spb = max(60 / BPM, (total - end_hold) / (rit_start + rit_len))   # 遅くはしても、速くはしない
     def f(b):
         if b <= rit_start: return b * spb
         x = min(b, last) - rit_start
@@ -108,11 +110,18 @@ def reverb(x, delays, mix):
     wet = onepole_lp(wet, 4500)
     return (1 - mix) * x + mix * wet
 
+def beat_at(b2s, sec):
+    b = 0.0
+    while b2s(b) < sec and b < 76: b += 0.25
+    return b
+
 def generate(total, seed=3):
     rng = np.random.default_rng(seed)
     notes = load_notes()
     b2s, bpm = beat_to_sec_fn(total)
-    print(f'BGM: Air BWV1068  base tempo {bpm:.1f} BPM, {len(notes)} notes')
+    fits = b2s(74) <= total - 2.0          # 曲の終わりまで動画に収まるか(収まらなければ途中でフェードアウト)
+    notes = [x for x in notes if b2s(x[1]) < total]
+    print(f'BGM: Air BWV1068  tempo {bpm:.1f} BPM, {len(notes)} notes, ' + ('full piece' if fits else f'fade out at beat {beat_at(b2s, total):.0f}/76'))
     n = int(total * SR) + SR * 3
     L = np.zeros(n); R = np.zeros(n)
     for voice, sb, db, pitch in notes:
@@ -145,7 +154,7 @@ def generate(total, seed=3):
     st = np.stack([L, R], axis=1)[:int(total * SR)]
     # フェードイン/アウト
     fi = int(0.8 * SR); st[:fi] *= np.linspace(0, 1, fi)[:, None]
-    fo = int(1.5 * SR); st[-fo:] *= np.linspace(1, 0, fo)[:, None] ** 1.5
+    fo = int((1.5 if fits else 5.0) * SR); st[-fo:] *= np.linspace(1, 0, fo)[:, None] ** 1.5
     return (st / np.max(np.abs(st)) * 0.9).astype(np.float32)
 
 def write_wav(path, st):
