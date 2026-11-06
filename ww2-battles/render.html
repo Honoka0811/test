@@ -65,7 +65,7 @@ const BATTLES = [
 ];
 
 // ---------- シーン構成(narrate.py と同期) ----------
-const INTRO = 6, CARD = 8, SUMMARY = 8, OUTRO = 5;
+const INTRO = 7, CARD = 10, SUMMARY = 9, OUTRO = 6;
 const SCENES = [{ kind: 'intro', start: 0, dur: INTRO }];
 BATTLES.forEach((b, i) => SCENES.push({ kind: 'battle', i, start: INTRO + i * CARD, dur: CARD }));
 SCENES.push({ kind: 'summary', start: INTRO + BATTLES.length * CARD, dur: SUMMARY });

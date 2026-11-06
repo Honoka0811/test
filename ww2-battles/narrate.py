@@ -16,10 +16,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'output')
 os.makedirs(OUT, exist_ok=True)
 SR = 48000
-LEAD = 0.5  # シーン開始からナレーション開始までの間
+LEAD = 0.7  # シーン開始からナレーション開始までの間
 
 # シーン長(render.html の INTRO / CARD / SUMMARY / OUTRO と一致させる)
-INTRO, CARD, SUMMARY, OUTRO = 6, 8, 8, 5
+INTRO, CARD, SUMMARY, OUTRO = 7, 10, 9, 6
 
 # (読み上げ原稿, 字幕表示)
 INTRO_LINE = ('第二次世界大戦の激戦を、時代順に振り返ります。',
@@ -117,7 +117,7 @@ track = np.zeros(int(TOTAL * SR), dtype=np.float32)
 cues = []
 for start, dur, text, sub in SCRIPT:
     limit = dur - LEAD - 0.4
-    speed = 1.15  # 基準速度(全シーンでペースを揃える)
+    speed = 1.0  # 基準速度(全シーンでペースを揃える)
     for _ in range(6):
         x = synth(text, speed)
         sec = len(x) / SR
