@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>ふわとろ卵かけごはん ショート動画</title>
+<style>
+@font-face{font-family:"Dela Gothic One";src:local("Dela Gothic One"),url("fonts/DelaGothicOne.ttf")}
+@font-face{font-family:"Noto Sans JP Black";src:local("Noto Sans JP Thin Black"),local("Noto Sans JP Black"),url("fonts/NotoSansJP-Black.ttf")}
+@font-face{font-family:"M PLUS 1p Black";src:local("M PLUS 1p Black"),url("fonts/MPLUS1p-Black.ttf")}
+html,body{margin:0;background:#222;height:100%}
+#c{display:block;margin:0 auto;height:100vh;width:auto}
+</style></head><body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timeline.js"></script>
+<script>
+'use strict';
+// ====== 設定 ======
+const W = 1080, H = 1920;
+window.FPS = 30;
+const TL = window.TIMELINE || {total: 40, scenes: []};
+window.DURATION = TL.total;
+const FONT_T = '"Dela Gothic One","M PLUS 1p Black",sans-serif';   // 見出し
+const FONT_B = '"Noto Sans JP Black","M PLUS 1p Black",sans-serif'; // テロップ
+const FONT_E = '"Noto Color Emoji"';
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+
+// ====== ユーティリティ ======
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const eoc = t => 1 - Math.pow(1 - clamp(t), 3);                                  // easeOutCubic
+const eic = t => Math.pow(clamp(t), 3);
+const eiq = t => clamp(t) * clamp(t);
+const eob = (t, s = 1.7) => { t = clamp(t) - 1; return 1 + (s + 1) * t * t * t + s * t * t; }; // easeOutBack
+const eoe = t => { t = clamp(t); return t === 0 || t === 1 ? t : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1; }; // elastic
+const rng = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function emoji(ch, x, y, size, rot = 0, sx = 1, sy = 1, alpha = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sx, sy); ctx.globalAlpha *= alpha;
+  ctx.font = `${size}px ${FONT_E}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(ch, 0, size * 0.04); ctx.restore();
+}
+// 装飾文字(袋文字)。*〜* は黄色ハイライト。lines: 文字列(改行は \n)
+function richText(text, cx, cy, size, {font = FONT_B, fill = '#fff', hl = '#FFD400', stroke = '#3B1A0A', outer = null, sw = 0.16, lineH = 1.25, align = 'center', maxW = 960, shadow = true, rot = 0, scale = 1, alpha = 1} = {}) {
+  const lines = text.split('\n');
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(scale, scale); ctx.globalAlpha *= alpha;
+  ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  // 幅に収まるよう自動縮小
+  ctx.font = `${size}px ${font}`;
+  let fs = size;
+  for (const ln of lines) { const w = ctx.measureText(ln.replace(/\*/g, '')).width; if (w > maxW) fs = Math.min(fs, size * maxW / w); }
+  ctx.font = `${fs}px ${font}`;
+  const totalH = lines.length * fs * lineH;
+  lines.forEach((ln, li) => {
+    const y = -totalH / 2 + fs * lineH * (li + 0.5);
+    const segs = []; let on = false;
+    ln.split('*').forEach((s, i) => { if (s) segs.push({s, hl: on}); on = !on; });
+    const width = segs.reduce((a, s) => a + ctx.measureText(s.s).width, 0);
+    let x = align === 'center' ? -width / 2 : align === 'left' ? 0 : -width;
+    ctx.textAlign = 'left';
+    for (const pass of ['outer', 'stroke', 'fill']) {
+      let xx = x;
+      for (const sg of segs) {
+        if (pass === 'outer' && outer) { ctx.lineWidth = fs * (sw + 0.14); ctx.strokeStyle = outer; ctx.strokeText(sg.s, xx, y); }
+        if (pass === 'stroke') {
+          if (shadow) { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = fs * 0.12; ctx.shadowOffsetY = fs * 0.06; }
+          ctx.lineWidth = fs * sw; ctx.strokeStyle = stroke; ctx.strokeText(sg.s, xx, y);
+          ctx.shadowColor = 'transparent';
+        }
+        if (pass === 'fill') { ctx.fillStyle = sg.hl ? hl : fill; ctx.fillText(sg.s, xx, y); }
+        xx += ctx.measureText(sg.s).width;
+      }
+    }
+  });
+  ctx.restore();
+}
+// 角丸の帯(ステッカー/チップ)
+function pill(text, cx, cy, size, {bg = '#FF6B00', fg = '#fff', font = FONT_T, padX = 44, padY = 22, rot = 0, scale = 1, border = '#fff', bw = 8, alpha = 1} = {}) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(scale, scale); ctx.globalAlpha *= alpha;
+  ctx.font = `${size}px ${font}`; const w = ctx.measureText(text).width + padX * 2, h = size + padY * 2;
+  ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 8;
+  rr(-w / 2, -h / 2, w, h, h / 2); ctx.fillStyle = bg; ctx.fill(); ctx.shadowColor = 'transparent';
+  if (border) { ctx.lineWidth = bw; ctx.strokeStyle = border; ctx.stroke(); }
+  ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, 0, size * 0.06);
+  ctx.restore();
+}
+
+// ====== 背景 ======
+const PAL = {
+  hook:    ['#FF5A36', '#FF9A3C', '#FFE66D'],
+  promise: ['#FFB03B', '#FF7A3D', '#FFF3B0'],
+  step1:   ['#FFE9C9', '#FFC98B', '#FFFFFF'],
+  step2:   ['#FFE3C2', '#FFBE7A', '#FFFFFF'],
+  step3:   ['#FFE0BD', '#FFB46B', '#FFFFFF'],
+  payoff:  ['#FFB300', '#FF6A00', '#FFF6C7'],
+  cta:     ['#FF8A3D', '#FF4F6E', '#FFF1D6'],
+};
+function background(id, t, lt) {
+  const [a, b, c] = PAL[id] || PAL.step1;
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, a); g.addColorStop(1, b);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 放射状の光(サンバースト)。ゆっくり回転
+  const rays = ['hook', 'promise', 'payoff', 'cta'].includes(id);
+  if (rays) {
+    ctx.save(); ctx.translate(W / 2, H * 0.42); ctx.rotate(t * 0.25); ctx.globalAlpha = 0.16;
+    ctx.fillStyle = c;
+    for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 1700, -0.11, 0.11); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+  }
+  // 柔らかい光の玉
+  const rg = ctx.createRadialGradient(W / 2, H * 0.45, 0, W / 2, H * 0.45, 900);
+  rg.addColorStop(0, 'rgba(255,255,255,.35)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  // 浮遊する小さな絵文字(背景の賑やかし)
+  if (['promise', 'payoff', 'cta'].includes(id)) {
+    const r = rng(42); ctx.save(); ctx.globalAlpha = 0.25;
+    for (let i = 0; i < 14; i++) { const x = r() * W, y0 = r() * H, s = 50 + r() * 50, sp = 60 + r() * 60; const y = ((y0 - lt * sp) % (H + 200) + H + 200) % (H + 200) - 100; emoji(['✨', '🥚', '🍚', '⭐'][i % 4], x, y, s, Math.sin(t + i) * 0.3); }
+    ctx.restore();
+  }
+}
+
+// ====== 料理のパーツ ======
+const grains = (() => { const r = rng(7); return Array.from({length: 90}, () => ({x: r() * 2 - 1, y: r(), a: r() * Math.PI, s: 0.6 + r() * 0.6})); })();
+const bubbles = (() => { const r = rng(9); return Array.from({length: 60}, () => ({x: r() * 2 - 1, y: r(), s: 0.3 + r() * 0.7, p: r()})); })();
+// 茶碗。foam: 白身を混ぜてふわふわになった度合い(0..1)
+function drawBowl(cx, cy, w, {foam = 0, dimple = 0, t = 0, glow = 0} = {}) {
+  const h = w * 0.62, rimH = w * 0.11;
+  ctx.save(); ctx.translate(cx, cy);
+  if (glow > 0) { ctx.shadowColor = `rgba(255,220,80,${glow})`; ctx.shadowBlur = 80; }
+  // 器
+  const g = ctx.createLinearGradient(-w / 2, 0, w / 2, 0); g.addColorStop(0, '#2F5D9B'); g.addColorStop(0.5, '#4C86D6'); g.addColorStop(1, '#2F5D9B');
+  ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.bezierCurveTo(-w / 2, h * 0.9, -w * 0.3, h, 0, h); ctx.bezierCurveTo(w * 0.3, h, w / 2, h * 0.9, w / 2, 0); ctx.closePath();
+  ctx.fillStyle = g; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(-w * 0.44, h * 0.15, w * 0.88, h * 0.1, 10); ctx.fill();
+  ctx.fillStyle = '#243F6B'; rr(-w * 0.25, h * 0.86, w * 0.5, h * 0.12, 12); ctx.fill();
+  // ごはん(山)
+  const riceTop = -w * 0.26 - foam * w * 0.08;
+  const rg = ctx.createLinearGradient(0, riceTop, 0, rimH); rg.addColorStop(0, '#FFFFFF'); rg.addColorStop(1, foam > 0.5 ? '#FFF8EC' : '#F1EBE0');
+  ctx.beginPath(); ctx.moveTo(-w * 0.47, 0); ctx.bezierCurveTo(-w * 0.45, riceTop, w * 0.45, riceTop, w * 0.47, 0); ctx.closePath();
+  ctx.fillStyle = rg; ctx.fill();
+  // 米粒
+  ctx.save(); ctx.beginPath(); ctx.moveTo(-w * 0.47, 0); ctx.bezierCurveTo(-w * 0.45, riceTop, w * 0.45, riceTop, w * 0.47, 0); ctx.closePath(); ctx.clip();
+  ctx.fillStyle = `rgba(210,200,185,${0.9 - foam * 0.7})`;
+  for (const gr of grains) { ctx.save(); ctx.translate(gr.x * w * 0.44, riceTop * 0.15 + gr.y * (-riceTop * 0.85)); ctx.rotate(gr.a); ctx.beginPath(); ctx.ellipse(0, 0, 9 * gr.s, 4.5 * gr.s, 0, 0, 7); ctx.fill(); ctx.restore(); }
+  // 泡(ふわふわ感)
+  if (foam > 0) {
+    for (const b of bubbles) {
+      const yy = riceTop * 0.1 + b.y * (-riceTop * 0.95), xx = b.x * w * 0.42;
+      const ph = (t * 0.8 + b.p) % 1; const rad = (6 + b.s * 10) * foam * (0.7 + 0.3 * Math.sin(ph * 6.28));
+      ctx.beginPath(); ctx.arc(xx, yy, rad, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(200,190,170,.45)'; ctx.stroke();
+    }
+  }
+  ctx.restore();
+  // くぼみ
+  if (dimple > 0) { ctx.beginPath(); ctx.ellipse(0, riceTop * 0.55, w * 0.17 * dimple, w * 0.07 * dimple, 0, 0, 7); ctx.fillStyle = 'rgba(205,190,165,.75)'; ctx.fill(); }
+  // 縁
+  ctx.beginPath(); ctx.ellipse(0, 0, w / 2, rimH, 0, Math.PI, 2 * Math.PI, false); ctx.lineTo(w / 2, 0);
+  ctx.lineWidth = 14; ctx.strokeStyle = '#5B93DE'; ctx.beginPath(); ctx.ellipse(0, 0, w / 2, rimH, 0, 0, Math.PI); ctx.stroke();
+  ctx.restore();
+  const rt = cy - w * 0.26 - foam * w * 0.08;
+  const clipRice = () => { ctx.beginPath(); ctx.moveTo(cx - w * 0.47, cy); ctx.bezierCurveTo(cx - w * 0.45, rt, cx + w * 0.45, rt, cx + w * 0.47, cy); ctx.lineTo(cx + w * 0.47, cy + w * 0.3); ctx.lineTo(cx - w * 0.47, cy + w * 0.3); ctx.closePath(); ctx.clip(); };
+  return {riceTop: rt, clipRice};
+}
+function yolk(x, y, r, {sx = 1, sy = 1, alpha = 1, glossy = true} = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(sx, sy); ctx.globalAlpha *= alpha;
+  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r); g.addColorStop(0, '#FFD54A'); g.addColorStop(0.6, '#FFAC12'); g.addColorStop(1, '#F07F00');
+  ctx.shadowColor = 'rgba(120,60,0,.3)'; ctx.shadowBlur = r * 0.3; ctx.shadowOffsetY = r * 0.12;
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.shadowColor = 'transparent';
+  if (glossy) { ctx.beginPath(); ctx.ellipse(-r * 0.35, -r * 0.4, r * 0.28, r * 0.16, -0.5, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.fill(); }
+  ctx.restore();
+}
+function eggWhiteBlob(x, y, r, t, alpha = 1) {
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha *= alpha; ctx.beginPath();
+  for (let i = 0; i <= 24; i++) { const a = i / 24 * 6.283; const rad = r * (1 + 0.12 * Math.sin(a * 3 + t * 4) + 0.06 * Math.sin(a * 5 - t * 3)); ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad * 0.8); }
+  ctx.closePath(); ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(230,225,210,.9)'; ctx.stroke(); ctx.restore();
+}
+function chopsticks(x, y, angle, len = 420) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  for (const off of [-14, 14]) { ctx.save(); ctx.translate(off, 0); ctx.rotate(off * 0.004); const g = ctx.createLinearGradient(0, -len, 0, 0); g.addColorStop(0, '#C98A4B'); g.addColorStop(1, '#8B5A2B'); ctx.fillStyle = g; rr(-9, -len, 18, len, 9); ctx.fill(); ctx.restore(); }
+  ctx.restore();
+}
+function eggShell(cx, cy, w, h, half = null, crackP = 0) {   // half: 'top'|'bottom'|null
+  ctx.save(); ctx.translate(cx, cy);
+  if (half) { ctx.beginPath(); if (half === 'top') ctx.rect(-w, -h, 2 * w, h * 0.98); else ctx.rect(-w, -h * 0.02, 2 * w, h * 2); ctx.clip(); }
+  const g = ctx.createRadialGradient(-w * 0.3, -h * 0.35, 10, 0, 0, h); g.addColorStop(0, '#FFF0D6'); g.addColorStop(1, '#E8B98A');
+  ctx.shadowColor = 'rgba(0,0,0,.2)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 12;
+  ctx.beginPath(); ctx.ellipse(0, 0, w, h, 0, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.shadowColor = 'transparent';
+  const r = rng(3); ctx.fillStyle = 'rgba(190,130,80,.35)';
+  for (let i = 0; i < 18; i++) { const a = r() * 6.28, d = r() * 0.8; ctx.beginPath(); ctx.arc(Math.cos(a) * w * d, Math.sin(a) * h * d, 4 + r() * 5, 0, 7); ctx.fill(); }
+  if (crackP > 0) {  // ジグザグのひび
+    ctx.beginPath(); const pts = [[-w, 0], [-w * 0.7, -22], [-w * 0.45, 14], [-w * 0.2, -18], [0, 12], [w * 0.2, -16], [w * 0.45, 10], [w * 0.7, -20], [w, 0]];
+    const n = Math.floor(crackP * (pts.length - 1)); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i <= n; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.lineWidth = 7; ctx.strokeStyle = '#6B4423'; ctx.lineJoin = 'round'; ctx.stroke();
+  }
+  ctx.restore();
+}
+function smallBowl(cx, cy, w, color = '#F2F2F2') {
+  ctx.save(); ctx.translate(cx, cy);
+  ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.bezierCurveTo(-w / 2, w * 0.5, -w * 0.3, w * 0.55, 0, w * 0.55); ctx.bezierCurveTo(w * 0.3, w * 0.55, w / 2, w * 0.5, w / 2, 0); ctx.closePath();
+  ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 10; ctx.fillStyle = color; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.ellipse(0, 0, w / 2, w * 0.1, 0, 0, 7); ctx.fillStyle = '#FFFFFF'; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = '#D9D9D9'; ctx.stroke();
+  ctx.restore();
+}
+function steam(cx, cy, t, n = 3, alpha = 0.5) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.strokeStyle = '#fff';
+  for (let i = 0; i < n; i++) { const ph = (t * 0.5 + i / n) % 1; const x = cx + (i - (n - 1) / 2) * 90; ctx.globalAlpha = alpha * Math.sin(ph * Math.PI); ctx.beginPath(); for (let k = 0; k <= 10; k++) { const yy = cy - ph * 220 - k * 18; ctx.lineTo(x + Math.sin(k * 0.6 + t * 3 + i) * 18, yy); } ctx.stroke(); }
+  ctx.restore();
+}
+function sparkles(cx, cy, t0, t, count = 18, spread = 360, seed = 5) {
+  const r = rng(seed); if (t < t0) return;
+  for (let i = 0; i < count; i++) {
+    const a = r() * 6.28, d = (0.4 + r() * 0.6) * spread, sp = 0.5 + r() * 0.7, sz = 30 + r() * 40;
+    const p = clamp((t - t0) / (0.9 * sp)); if (p >= 1) continue;
+    const x = cx + Math.cos(a) * d * eoc(p), y = cy + Math.sin(a) * d * eoc(p) - 60 * p;
+    emoji(i % 3 ? '✨' : '⭐', x, y, sz * (1 - p * 0.5), p * 3, 1, 1, 1 - p);
+  }
+}
+function timerRing(cx, cy, r, p, label) {  // p: 残り割合 1→0
+  ctx.save(); ctx.translate(cx, cy);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8; ctx.fill(); ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.arc(0, 0, r - 14, -Math.PI / 2, -Math.PI / 2 + 6.283 * p); ctx.lineWidth = 18; ctx.strokeStyle = p > 0.3 ? '#FF6B00' : '#FF2D55'; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.fillStyle = '#3B1A0A'; ctx.font = `${r * 0.78}px ${FONT_T}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, 0, r * 0.05);
+  ctx.restore();
+}
+
+// ====== テロップ ======
+function captionFor(scene, t) {
+  const caps = scene.captions; let cur = null;
+  for (let i = 0; i < caps.length; i++) { const next = caps[i + 1]; const endHold = next ? next.start : scene.start + scene.dur; if (t >= caps[i].start - 0.05 && t < endHold) cur = {...caps[i], i, age: t - caps[i].start + 0.05}; }
+  return cur;
+}
+function drawCaption(cap, y = 1330, size = 78, opts = {}) {
+  if (!cap) return;
+  const a = eob(cap.age / 0.2);
+  richText(cap.text, W / 2, y, size, {scale: 0.6 + 0.4 * a, alpha: clamp(cap.age / 0.08), outer: '#fff', sw: 0.15, ...opts});
+}
+function stepChip(n, lt) {
+  const a = eob(lt / 0.45); const y = lerp(-80, 250, a);
+  pill(`STEP ${n} / 3`, W / 2, y, 62, {bg: '#FF6B00'});
+}
+
+// ====== 各シーン ======
+const SCENE_FN = {
+  hook(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    // 卵が落ちてごはんの上でバウンド
+    const bx = 540, by = 1150;
+    emoji('🍚', bx, by, 300, 0, 1, 1);
+    const drop = clamp(lt / 0.55); let ey = lerp(-200, by - 150, eiq(drop)); let sx = 1, sy = 1;
+    if (lt > 0.55) { const b = lt - 0.55; const bounce = Math.abs(Math.sin(b * 7.5)) * 90 * Math.exp(-b * 2.4); ey = by - 150 - bounce; const sq = clamp(1 - b * 6); sx = 1 + 0.25 * sq; sy = 1 - 0.25 * sq; }
+    emoji('🥚', bx, ey, 180, Math.sin(lt * 3) * 0.1, sx, sy);
+    // 「？」が揺れる
+    richText('？', 820, 960 + Math.sin(t * 6) * 18, 220, {font: FONT_T, fill: '#FFD400', outer: '#fff', rot: 0.15, scale: 0.8 + 0.2 * eob(lt / 0.5)});
+    if (cap && cap.i === 0) richText(cap.text, W / 2, 560, 118, {font: FONT_T, outer: '#fff', sw: 0.16, scale: 0.7 + 0.3 * eob(cap.age / 0.25), maxW: 980});
+    if (cap && cap.i === 1) {
+      // 赤いフラッシュ + 「損」スタンプ + シェイク
+      const st = cap.age - 0.25;
+      richText(cap.text, W / 2, 520, 96, {font: FONT_T, outer: '#fff', hl: '#FF2D55', maxW: 980, scale: 0.8 + 0.2 * eob(cap.age / 0.2)});
+      if (st > 0) {
+        const s = lerp(3, 1, eoc(st / 0.14));
+        ctx.save(); ctx.globalAlpha = clamp(st / 0.05);
+        richText('損', 540, 980, 420, {font: FONT_T, fill: '#FF2D55', stroke: '#fff', sw: 0.1, outer: 'rgba(120,0,20,.5)', rot: -0.2, scale: s, shadow: true});
+        ctx.restore();
+        ctx.fillStyle = `rgba(255,0,40,${0.35 * Math.exp(-st * 5)})`; ctx.fillRect(0, 0, W, H);
+      }
+    }
+  },
+  promise(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    const a = eob(lt / 0.5);
+    // 中央: 「ふわとろ ×10」
+    emoji('🥚', 330, 780 + Math.sin(t * 4) * 14, 220, -0.2, a, a);
+    emoji('🍚', 740, 800 + Math.cos(t * 4) * 14, 240, 0.15, a, a);
+    richText('ふわとろ', W / 2, 520, 150, {font: FONT_T, fill: '#FFD400', outer: '#fff', scale: a, rot: -0.05});
+    const b = eob((lt - 0.35) / 0.5);
+    if (lt > 0.35) richText('×10倍', W / 2, 1050, 190, {font: FONT_T, fill: '#FF2D55', outer: '#fff', scale: b, rot: 0.06});
+    sparkles(W / 2, 800, 0.3, lt, 20, 420, 12);
+    if (cap && cap.i === 1) { const q = eob(cap.age / 0.4); pill('⏱ 30秒で完成', 540, 1180, 60, {bg: '#2FA84F', scale: q, rot: -0.04}); }
+    drawCaption(cap, 1350, 80);
+  },
+  step1(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    stepChip(1, lt);
+    // ボウル2つ
+    smallBowl(300, 1130, 330); smallBowl(780, 1130, 330);
+    const ex = 540, ey = 760, ew = 150, eh = 200;
+    const crackP = clamp((lt - 0.65) / 0.3);
+    const sep = lt > 1.0 ? eoc((lt - 1.0) / 0.5) : 0;
+    if (sep === 0) { eggShell(ex, ey, ew, eh, null, crackP); }
+    else {
+      // 殻が割れて左右に開く
+      ctx.save(); ctx.translate(ex - 170 * sep, ey - 60 * sep); ctx.rotate(-0.55 * sep); eggShell(0, 0, ew, eh, 'top'); ctx.restore();
+      ctx.save(); ctx.translate(ex + 170 * sep, ey - 40 * sep); ctx.rotate(0.55 * sep); eggShell(0, 0, ew, eh, 'bottom'); ctx.restore();
+    }
+    // 黄身は左へ、白身は右へ落ちる
+    const fall = cap && cap.i >= 1 ? clamp((t - sc.captions[1].start - 0.1) / 0.45) : 0;
+    if (lt > 1.0) {
+      const yx = lerp(ex, 300, eoc(fall)), yy = lerp(ey, 1115, eiq(fall)); const land = cap && cap.i >= 1 ? clamp((t - sc.captions[1].start - 0.55) / 0.3) : 0;
+      yolk(yx, yy, 70, {sx: 1 + 0.25 * Math.sin(land * Math.PI), sy: 1 - 0.2 * Math.sin(land * Math.PI)});
+      const wx = lerp(ex, 780, eoc(fall)), wy = lerp(ey + 30, 1110, eiq(fall));
+      eggWhiteBlob(wx, wy, 95 + 40 * fall, t);
+    }
+    if (fall >= 1) {
+      const q = eob((t - sc.captions[1].start - 0.6) / 0.35);
+      pill('黄身', 300, 920, 56, {bg: '#FFB300', fg: '#3B1A0A', scale: q, rot: -0.06});
+      pill('白身', 780, 920, 56, {bg: '#fff', fg: '#3B1A0A', border: '#DDD', scale: q, rot: 0.06});
+    }
+    drawCaption(cap, 1400, 80);
+  },
+  step2(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    stepChip(2, lt);
+    const c1 = sc.captions[1].start - sc.start, c2 = sc.captions[2].start - sc.start;
+    const stirring = lt > c1 + 0.1 && lt < c2 + 0.6;
+    const stirP = clamp((lt - c1 - 0.1) / (c2 + 0.5 - c1 - 0.1));
+    const foam = eoc(stirP) * (lt > c1 ? 1 : 0);
+    const cx = 540, cy = 1060; const w = 560;
+    const bowlShake = stirring ? Math.sin(lt * 40) * 6 : 0;
+    const {riceTop} = drawBowl(cx + bowlShake, cy, w, {foam, t, glow: lt > c2 + 0.9 ? 0.8 : 0});
+    steam(cx, riceTop - 20, t, 3, 0.55);
+    // 白身を注ぐ
+    const pourP = clamp((lt - 0.6) / 0.6);
+    if (lt > 0.4 && lt < c1 + 0.3) {
+      const fa = clamp((lt - 0.4) / 0.2) * (lt < c1 ? 1 : clamp((c1 + 0.3 - lt) / 0.3));
+      ctx.save(); ctx.translate(760, 560); ctx.rotate(-1.1 * pourP); smallBowl(0, 0, 260 * fa); ctx.restore();
+      if (pourP > 0.1) { ctx.save(); ctx.globalAlpha = fa; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 34 * Math.sin(pourP * Math.PI) + 4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(690, 600); ctx.bezierCurveTo(640, 700, 600, 780, 560, riceTop + 20); ctx.stroke(); ctx.restore(); }
+      eggWhiteBlob(560, riceTop + 10, 60 * pourP, t, fa * pourP);
+    }
+    // 箸でぐるぐる
+    if (stirring) { const ang = lt * 14; chopsticks(cx + Math.cos(ang) * 110, riceTop + 20 + Math.sin(ang) * 40, 0.45 + Math.sin(ang) * 0.25); }
+    // 30秒タイマー(高速カウントダウン)
+    if (lt > c1 && lt < c2 + 0.8) { const p = clamp((lt - c1 - 0.3) / 2.6); const q = eob((lt - c1) / 0.35); ctx.save(); ctx.translate(860, 560); ctx.scale(q, q); timerRing(0, 0, 120, 1 - p, String(Math.ceil(30 * (1 - p)))); ctx.restore(); }
+    // 「ここが最重要！」ステッカー
+    if (lt > c1 + 0.5) { const q = eob((lt - c1 - 0.5) / 0.35); pill('ここが最重要！', 300, 540, 56, {bg: '#FF2D55', rot: -0.14, scale: q}); }
+    // 成功
+    if (lt > c2 + 0.9) { const q = eob((lt - c2 - 0.9) / 0.4); richText('成功！', 540, 700, 130, {font: FONT_T, fill: '#FFD400', outer: '#fff', scale: q, rot: -0.06}); sparkles(540, 900, c2 + 0.9, lt, 20, 400, 21); }
+    drawCaption(cap, 1440, 78);
+  },
+  step3(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    stepChip(3, lt);
+    const c1 = sc.captions[1].start - sc.start, c2 = sc.captions[2].start - sc.start;
+    const cx = 540, cy = 1080, w = 580;
+    const dimple = eoc((lt - 0.4) / 0.4);
+    const {riceTop} = drawBowl(cx, cy, w, {foam: 1, dimple, t});
+    const yx = cx, yyLand = riceTop + 40;
+    // 黄身が落ちる
+    const yt = clamp((lt - 0.8) / 0.45); const landed = lt > 1.25;
+    if (lt > 0.8) {
+      const land = clamp((lt - 1.25) / 0.45); const sq = Math.sin(clamp(land * 2) * Math.PI);
+      const wob = landed ? 1 + 0.06 * Math.sin((lt - 1.25) * 18) * Math.exp(-(lt - 1.25) * 4) : 1;
+      yolk(yx, lerp(-100, yyLand, eiq(yt)), 95, {sx: (1 + 0.3 * sq) * wob, sy: (1 - 0.25 * sq) / wob});
+      if (landed && land < 1) { ctx.save(); ctx.globalAlpha = 1 - land; ctx.beginPath(); ctx.ellipse(yx, yyLand + 40, 120 + 160 * land, 40 + 50 * land, 0, 0, 7); ctx.lineWidth = 10 * (1 - land); ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.restore(); }
+      if (landed && lt < 1.9) richText('ポン', 760, yyLand - 120 - (lt - 1.25) * 80, 96, {font: FONT_T, fill: '#FFD400', outer: '#fff', rot: 0.15, alpha: clamp((1.9 - lt) / 0.3), scale: eob((lt - 1.25) / 0.2)});
+    }
+    // 醤油3滴
+    if (lt > c1 && lt < c2 + 0.2) {
+      const q = eob((lt - c1) / 0.4);
+      ctx.save(); ctx.translate(820, 520); ctx.rotate(-0.75 * q); ctx.scale(q, q);
+      ctx.fillStyle = '#2B1308'; rr(-45, -120, 90, 240, 22); ctx.fill(); ctx.fillStyle = '#D62828'; rr(-28, -165, 56, 55, 10); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.18)'; rr(-30, -100, 18, 180, 8); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = `30px ${FONT_B}`; ctx.textAlign = 'center'; ctx.fillText('醤油', 0, 30); ctx.restore();
+      for (let i = 0; i < 3; i++) {
+        const d0 = c1 + 0.55 + i * 0.3; const p = clamp((lt - d0) / 0.22);
+        if (lt > d0 && p < 1) { ctx.beginPath(); ctx.ellipse(lerp(700, yx + 20 - i * 20, p), lerp(440, yyLand - 40, eiq(p)), 14, 22, 0, 0, 7); ctx.fillStyle = '#2B1308'; ctx.fill(); }
+        if (p >= 1) { ctx.beginPath(); ctx.ellipse(yx + 20 - i * 20, yyLand - 36 + i * 8, 18, 10, 0, 0, 7); ctx.fillStyle = 'rgba(60,25,10,.8)'; ctx.fill(); const q2 = eob((lt - d0 - 0.22) / 0.3); pill(`${i + 1}滴`, 250 + i * 130, 640, 44, {bg: '#5B2E0E', scale: q2}); }
+      }
+    }
+    // バター
+    if (lt > c2) {
+      const bp = clamp((lt - c2 - 0.2) / 0.5); const melt = clamp((lt - c2 - 0.85) / 1.3);
+      const bx = yx + 120, byLand = yyLand + 10;
+      const by = lerp(-60, byLand, eiq(bp));
+      // 溶けた水たまり
+      if (melt > 0) { ctx.save(); const g = ctx.createRadialGradient(bx, byLand + 20, 0, bx, byLand + 20, 160 * melt + 1); g.addColorStop(0, 'rgba(255,214,70,.95)'); g.addColorStop(1, 'rgba(255,214,70,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(bx, byLand + 20, 170 * melt + 1, 70 * melt + 1, 0, 0, 7); ctx.fill(); ctx.restore(); }
+      const hgt = 70 * (1 - melt * 0.85), wd = 90 * (1 + melt * 0.3);
+      ctx.save(); ctx.translate(bx, by); ctx.fillStyle = '#FFE066'; rr(-wd / 2, -hgt, wd, hgt, 10); ctx.fill(); ctx.fillStyle = '#FFF3B0'; rr(-wd / 2, -hgt, wd, hgt * 0.3, 10); ctx.fill(); ctx.fillStyle = '#E6B800'; rr(wd / 2 - 16, -hgt, 16, hgt, 6); ctx.fill(); ctx.restore();
+      if (melt > 0 && melt < 1) richText('じゅわ〜', bx + 60, byLand - 150 - melt * 60, 80, {font: FONT_T, fill: '#FFD400', outer: '#fff', rot: 0.1, alpha: 1 - melt, scale: eob(melt / 0.3)});
+    }
+    drawCaption(cap, 1440, 78);
+  },
+  payoff(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    // ズームインした茶碗。黄身を崩すと黄金色が流れ出す
+    ctx.save(); ctx.translate(540, 960); const z = 1.25 + 0.08 * eoc(lt / 3); ctx.scale(z, z); ctx.translate(-540, -960);
+    const {riceTop, clipRice} = drawBowl(540, 1040, 600, {foam: 1, t, glow: 0.6});
+    const burstT = 1.2; const b = clamp((lt - burstT) / 1.6);
+    const yx = 540, yy = riceTop + 40;
+    // 流れ出す黄身(不規則な広がり)
+    if (b > 0) {
+      const r = rng(77); ctx.save(); clipRice(); ctx.beginPath();
+      for (let i = 0; i <= 40; i++) { const a = i / 40 * 6.283; const down = 1 + 0.5 * Math.max(0, Math.sin(a)); const rad = (80 + 230 * eoc(b)) * down * (1 + 0.15 * Math.sin(a * 4 + 1) * r() + 0.08 * Math.sin(a * 7)); ctx.lineTo(yx + Math.cos(a) * rad, yy + 30 + Math.sin(a) * rad * 0.5); }
+      ctx.closePath(); const g = ctx.createRadialGradient(yx, yy, 20, yx, yy, 320); g.addColorStop(0, '#FFC838'); g.addColorStop(1, '#F58A00'); ctx.fillStyle = g; ctx.globalAlpha = 0.92; ctx.fill(); ctx.restore();
+      // 艶
+      ctx.save(); ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.ellipse(yx - 90, yy - 10, 70 * eoc(b), 18, -0.3, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.restore();
+    }
+    yolk(yx, yy, 95 * (1 - 0.35 * b), {sy: 1 - 0.5 * b, glossy: b < 0.5});
+    // 箸が黄身を崩す
+    const cp = clamp((lt - 0.5) / 0.7);
+    if (lt > 0.5) chopsticks(lerp(820, yx + 40, eoc(cp)), lerp(420, yy - 10, eoc(cp)), 0.6 - 0.25 * cp, 440);
+    ctx.restore();
+    // 「ふわっ」「とろっ」
+    if (cap && cap.i === 1) {
+      const a1 = eoe(cap.age / 0.6), a2 = eoe((cap.age - 0.25) / 0.6);
+      richText('ふわっ', 300, 520, 130, {font: FONT_T, fill: '#fff', outer: '#FFB300', stroke: '#B35900', rot: -0.12, scale: a1});
+      if (cap.age > 0.25) richText('とろっ', 790, 600, 130, {font: FONT_T, fill: '#FFD400', outer: '#fff', rot: 0.1, scale: a2});
+      sparkles(540, 900, sc.captions[1].start - sc.start, lt, 26, 520, 31);
+    }
+    if (lt > burstT) sparkles(540, 1000, burstT, lt, 14, 300, 33);
+    // ビネット
+    const vg = ctx.createRadialGradient(540, 960, 500, 540, 960, 1300); vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(90,30,0,.45)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+    drawCaption(cap, 1420, 86);
+  },
+  cta(lt, sc, t) {
+    const cap = captionFor(sc, t);
+    const a = eob(lt / 0.5);
+    drawBowl(540, 760, 420 * a, {foam: 1, t, glow: 0.5}); yolk(540, 650 - 20 * a, 65 * a); steam(540, 600, t, 3, 0.5);
+    const bob = i => Math.sin(t * 5 + i) * 10;
+    const b1 = eob((lt - 0.3) / 0.5), b2 = eob((lt - 0.5) / 0.5);
+    if (lt > 0.3) { emoji('💬', 330, 1070 + bob(0), 170, -0.1, b1, b1); pill('コメント', 330, 1200, 50, {bg: '#2F80ED', scale: b1}); }
+    if (lt > 0.5) { emoji('🔖', 750, 1070 + bob(2), 170, 0.1, b2, b2); pill('保存', 750, 1200, 50, {bg: '#E63946', scale: b2}); }
+    if (cap && cap.i === 1) { const q = eob(cap.age / 0.4); emoji('👍', 540, 1060 + bob(1), 150, 0, q, q); }
+    richText('今夜のごはんに', W / 2, 420, 84, {font: FONT_T, fill: '#fff', outer: '#FF4F6E', stroke: '#7A1030', scale: a});
+    drawCaption(cap, 1390, 76);
+    // クレジット(安全領域内)
+    ctx.save(); ctx.globalAlpha = clamp((lt - 0.6) / 0.4) * 0.95;
+    ctx.fillStyle = 'rgba(0,0,0,.35)'; rr(140, 1500, 800, 96, 24); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `34px ${FONT_B}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('ナレーション: VOICEVOX:四国めたん', 540, 1532); ctx.fillText('BGM・効果音: 自作(権利フリー)', 540, 1572); ctx.restore();
+  },
+};
+
+// ====== メイン ======
+function sceneAt(t) { let s = TL.scenes[0]; for (const sc of TL.scenes) if (t >= sc.start) s = sc; return s; }
+window.render = function (t) {
+  t = Math.min(t, TL.total - 1 / 60);
+  const sc = sceneAt(t); const lt = t - sc.start;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  background(sc.id, t, lt);
+  // ズームパンチ(シーン頭)+ ゆっくり寄るケンバーンズ + hook のシェイク
+  let zoom = 1 + 0.025 * (lt / sc.dur); if (sc.id !== 'hook' || t > 0.1) zoom *= 1 + 0.10 * (1 - eoc(lt / 0.35));
+  let shx = 0, shy = 0;
+  if (sc.id === 'hook') { const cap = captionFor(sc, t); if (cap && cap.i === 1 && cap.age > 0.25 && cap.age < 0.8) { const k = (cap.age - 0.25); const amp = 16 * Math.exp(-k * 6); shx = Math.sin(k * 90) * amp; shy = Math.cos(k * 70) * amp; } }
+  ctx.save(); ctx.translate(W / 2 + shx, H / 2 + shy); ctx.scale(zoom, zoom); ctx.translate(-W / 2, -H / 2);
+  SCENE_FN[sc.id](lt, sc, t);
+  ctx.restore();
+  // シーン切り替えの白フラッシュ
+  if (lt < 0.18 && t > 0.1) { ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - lt / 0.18)})`; ctx.fillRect(0, 0, W, H); }
+  // 上部プログレスバー
+  ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(0, 0, W, 12); ctx.fillStyle = '#FFD400'; ctx.fillRect(0, 0, W * t / TL.total, 12);
+};
+// サムネイル用の静止画
+window.renderThumbnail = function () {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); background('payoff', 1.3, 1.3);
+  ctx.save(); ctx.translate(540, 1150); ctx.scale(1.25, 1.25); ctx.translate(-540, -1150);
+  const {riceTop} = drawBowl(540, 1200, 620, {foam: 1, t: 0, glow: 0.7});
+  const yx = 540, yy = riceTop + 40; const r = rng(77); ctx.beginPath();
+  for (let i = 0; i <= 40; i++) { const a = i / 40 * 6.283; const rad = 240 * (1 + 0.18 * Math.sin(a * 4 + 1) * r() + 0.1 * Math.sin(a * 7)); ctx.lineTo(yx + Math.cos(a) * rad, yy + 20 + Math.sin(a) * rad * 0.55); }
+  ctx.closePath(); const g = ctx.createRadialGradient(yx, yy, 20, yx, yy, 320); g.addColorStop(0, '#FFC838'); g.addColorStop(1, '#F58A00'); ctx.fillStyle = g; ctx.fill();
+  yolk(yx, yy, 75, {sy: 0.6, glossy: false}); chopsticks(yx + 40, yy - 10, 0.35, 440); ctx.restore();
+  richText('卵かけごはん', 540, 330, 140, {font: FONT_T, outer: '#fff', sw: 0.16});
+  richText('ふわとろ', 540, 560, 190, {font: FONT_T, fill: '#FFD400', outer: '#fff', rot: -0.05});
+  richText('×10倍', 540, 780, 170, {font: FONT_T, fill: '#FF2D55', outer: '#fff', rot: 0.05});
+  pill('白身を先に30秒混ぜるだけ', 540, 1680, 60, {bg: '#2FA84F'});
+};
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) { const t0 = performance.now(); (function loop() { window.render(((performance.now() - t0) / 1000) % TL.total); requestAnimationFrame(loop); })(); }
+</script></body></html>
