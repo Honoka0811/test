@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>複利のチカラ — ショート動画レンダラ</title>
+<style>
+  @font-face { font-family: 'Dela Gothic One'; src: url('fonts/dela-gothic-one-japanese-400-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Dela Gothic One'; src: url('fonts/dela-gothic-one-latin-400-normal.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+  @font-face { font-family: 'Zen Kaku'; font-weight: 700; src: url('fonts/zen-kaku-gothic-new-japanese-700-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Zen Kaku'; font-weight: 700; src: url('fonts/zen-kaku-gothic-new-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+  @font-face { font-family: 'Zen Kaku'; font-weight: 900; src: url('fonts/zen-kaku-gothic-new-japanese-900-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'Zen Kaku'; font-weight: 900; src: url('fonts/zen-kaku-gothic-new-latin-900-normal.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+  @font-face { font-family: 'MPLUS'; font-weight: 900; src: url('fonts/m-plus-1p-japanese-900-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'MPLUS'; font-weight: 900; src: url('fonts/m-plus-1p-latin-900-normal.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+  @font-face { font-family: 'MPLUS'; font-weight: 700; src: url('fonts/m-plus-1p-japanese-700-normal.woff2') format('woff2'); }
+  @font-face { font-family: 'MPLUS'; font-weight: 700; src: url('fonts/m-plus-1p-latin-700-normal.woff2') format('woff2'); unicode-range: U+0000-00FF; }
+  html, body { margin: 0; background: #000; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { height: 100vh; aspect-ratio: 9 / 16; background: #070B1A; }
+  /* フォントを確実にロードさせるためのダミー要素 */
+  .warm { position: absolute; left: -9999px; top: 0; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<div class="warm">
+  <span style="font-family:'Dela Gothic One'">複利万円0123456789</span>
+  <span style="font-family:'Zen Kaku';font-weight:700">複利万円0123456789</span>
+  <span style="font-family:'Zen Kaku';font-weight:900">複利万円0123456789</span>
+  <span style="font-family:'MPLUS';font-weight:900">複利万円0123456789</span>
+  <span style="font-family:'MPLUS';font-weight:700">複利万円0123456789</span>
+</div>
+<script>
+'use strict';
+// ===================== 基本設定 =====================
+const W = 1080, H = 1920;
+window.FPS = 30;
+window.DURATION = 57.5;
+
+// シーン境界(narrate.py の SCRIPT と一致させる)
+const SCENES = [
+  { id: 'hook',    start: 0.0,  end: 5.0 },
+  { id: 'saving',  start: 5.0,  end: 11.5 },
+  { id: 'reveal',  start: 11.5, end: 18.5 },
+  { id: 'curve',   start: 18.5, end: 30.0 },
+  { id: 'late',    start: 30.0, end: 39.5 },
+  { id: 'rule72',  start: 39.5, end: 50.0 },
+  { id: 'cta',     start: 50.0, end: 57.5 },
+];
+
+const C = {
+  bg0: '#070B1A', bg1: '#101A40', gold: '#FFC83D', gold2: '#FF9F1C', green: '#3DF0A6',
+  red: '#FF4D5E', gray: '#5C6E99', grayL: '#8A9BC4', white: '#FFFFFF', ink: '#0A0E20',
+};
+const F = {
+  disp: "'Dela Gothic One', 'IPAGothic', sans-serif",
+  black: "900 1px 'Zen Kaku', 'MPLUS', 'IPAGothic', sans-serif",
+  bold: "700 1px 'Zen Kaku', 'MPLUS', 'IPAGothic', sans-serif",
+  mp: "900 1px 'MPLUS', 'Zen Kaku', 'IPAGothic', sans-serif",
+};
+function font(px, kind) {
+  if (kind === 'disp') return `${px}px ${F.disp}`;
+  const base = kind === 'bold' ? F.bold : kind === 'mp' ? F.mp : F.black;
+  return base.replace('1px', px + 'px');
+}
+
+// ===================== ユーティリティ =====================
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const outExpo = t => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t));
+const outCubic = t => 1 - Math.pow(1 - t, 3);
+const inCubic = t => t * t * t;
+const outBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const outElastic = t => t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
+// 区間 [a, a+d] を 0→1 に正規化
+const seg = (t, a, d) => clamp((t - a) / d);
+// 決定論的乱数
+function mulberry32(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let x = Math.imul(seed ^ seed >>> 15, 1 | seed); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; }; }
+const fmt = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+// 月3万円・年利5%(月複利)・n ヶ月後の評価額(万円)
+function fv(months, annual = 0.05, monthly = 3) {
+  const r = annual / 12;
+  return r === 0 ? monthly * months : monthly * (Math.pow(1 + r, months) - 1) / r;
+}
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+// 縁取り付きテキスト
+function text(str, x, y, px, opt = {}) {
+  ctx.save();
+  ctx.font = font(px, opt.kind || 'black');
+  ctx.textAlign = opt.align || 'center';
+  ctx.textBaseline = opt.baseline || 'middle';
+  if (opt.glow) { ctx.shadowColor = opt.glow; ctx.shadowBlur = opt.glowBlur || px * 0.6; }
+  if (opt.stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = opt.strokeW || px * 0.18; ctx.strokeStyle = opt.stroke; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = opt.color || C.white;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, px, kind) { ctx.font = font(px, kind || 'black'); return ctx.measureText(str).width; }
+// スタンプ風に「ドン」と出る(scale 大→1 + 着地でわずかに戻る)
+function slamScale(p) { return p >= 1 ? 1 : lerp(2.2, 1, outExpo(p)) * (1 + 0.06 * Math.sin(Math.min(1, p) * Math.PI) * (1 - p)); }
+
+// ===================== 背景 =====================
+const rnd = mulberry32(20261106);
+const PARTICLES = Array.from({ length: 70 }, (_, i) => ({
+  x: rnd() * W, y: rnd() * H, r: 2 + rnd() * 5, sp: 18 + rnd() * 40, ph: rnd() * 6.28, coin: rnd() < 0.3, drift: (rnd() - 0.5) * 20,
+}));
+function background(t, scene) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg0);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 動く光のにじみ
+  const blobs = [[0.2, 0.25, C.gold2, 0.10], [0.85, 0.7, '#3F8DE8', 0.10], [0.5, 1.0, C.green, 0.06]];
+  for (const [bx, by, col, a] of blobs) {
+    const cx = W * bx + Math.sin(t * 0.35 + bx * 9) * 90, cy = H * by + Math.cos(t * 0.28 + by * 7) * 110;
+    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 620);
+    rg.addColorStop(0, col); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+  // 細いグリッド
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.045)'; ctx.lineWidth = 1;
+  for (let x = 60; x < W; x += 120) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 60; y < H; y += 120) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  ctx.restore();
+  // 浮遊パーティクル(コイン・光)
+  for (const p of PARTICLES) {
+    const y = ((p.y - t * p.sp) % (H + 60) + H + 60) % (H + 60) - 30;
+    const x = p.x + Math.sin(t * 0.8 + p.ph) * 22 + p.drift * Math.sin(t * 0.2 + p.ph);
+    const tw = 0.5 + 0.5 * Math.sin(t * 2.2 + p.ph);
+    ctx.save();
+    if (p.coin) {
+      ctx.globalAlpha = 0.18 + 0.25 * tw; ctx.fillStyle = C.gold;
+      ctx.beginPath(); ctx.ellipse(x, y, p.r * 2.2 * Math.abs(Math.cos(t * 1.5 + p.ph)) + 1, p.r * 2.2, 0, 0, 6.283); ctx.fill();
+    } else {
+      ctx.globalAlpha = 0.12 + 0.3 * tw; ctx.fillStyle = C.white;
+      ctx.beginPath(); ctx.arc(x, y, p.r * 0.6, 0, 6.283); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // ビネット
+  const vg = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.25, W / 2, H * 0.5, H * 0.8);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+}
+
+// 画面上部のヘッダー(進捗バー + ラベル)
+function header(t) {
+  const p = t / window.DURATION;
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(0, 0, W, 10);
+  const g = ctx.createLinearGradient(0, 0, W * p, 0); g.addColorStop(0, C.gold2); g.addColorStop(1, C.gold);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W * p, 10);
+  ctx.restore();
+  // ラベル
+  ctx.save(); ctx.globalAlpha = 0.9;
+  roundRect(40, 150, 300, 56, 28); ctx.fillStyle = 'rgba(255,200,61,0.14)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(255,200,61,0.6)'; ctx.lineWidth = 2; ctx.stroke();
+  text('💰 複利のチカラ', 190, 179, 30, { kind: 'bold', color: C.gold });
+  ctx.restore();
+  // 右上: 動画内タイマー
+  text(`${Math.floor(t)}s`, W - 60, 179, 28, { kind: 'bold', color: 'rgba(255,255,255,0.5)', align: 'right' });
+}
+
+// ===================== 字幕 =====================
+let CAPTIONS = [];
+window.setCaptions = c => { CAPTIONS = c; };
+fetch('output/captions.json').then(r => r.json()).then(window.setCaptions).catch(() => {});
+
+// 【】で囲んだ部分を黄色にして、文字単位で描画
+function richLine(line, cx, y, px) {
+  const parts = []; let hi = false;
+  for (const ch of line) { if (ch === '【') { hi = true; continue; } if (ch === '】') { hi = false; continue; } parts.push([ch, hi]); }
+  ctx.font = font(px, 'black');
+  const widths = parts.map(([ch]) => ctx.measureText(ch).width);
+  const total = widths.reduce((a, b) => a + b, 0);
+  let x = cx - total / 2;
+  // 影 + 縁取り
+  ctx.save(); ctx.lineJoin = 'round'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+  ctx.lineWidth = px * 0.22; ctx.strokeStyle = C.ink;
+  let xx = x; parts.forEach(([ch], i) => { ctx.strokeText(ch, xx, y); xx += widths[i]; });
+  ctx.shadowColor = 'transparent';
+  xx = x; parts.forEach(([ch, h], i) => { ctx.fillStyle = h ? C.gold : C.white; ctx.fillText(ch, xx, y); xx += widths[i]; });
+  ctx.restore();
+}
+function wrap(str, px, maxW) {
+  const plain = s => s.replace(/[【】]/g, '');
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    const test = cur + ch;
+    if (measure(plain(test), px) > maxW && plain(cur).length > 0) { lines.push(cur); cur = ch; } else cur = test;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function captions(t) {
+  const cap = CAPTIONS.find(c => t >= c.start && t < c.end + 0.08);
+  if (!cap) return;
+  const age = t - cap.start;
+  const pop = outBack(seg(age, 0, 0.18));
+  const px = 64;
+  const lines = wrap(cap.text, px, 920);
+  const y0 = 1420 - (lines.length - 1) * 42;
+  ctx.save();
+  ctx.translate(W / 2, y0); ctx.scale(lerp(0.7, 1, pop), lerp(0.7, 1, pop)); ctx.translate(-W / 2, -y0);
+  ctx.globalAlpha = clamp(age / 0.08);
+  lines.forEach((l, i) => richLine(l, W / 2, y0 + i * 84, px));
+  ctx.restore();
+}
+
+// ===================== 部品 =====================
+function coinIcon(x, y, r, a = 1) {
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.shadowColor = C.gold; ctx.shadowBlur = r * 0.8;
+  ctx.fillStyle = C.gold2; ctx.beginPath(); ctx.arc(x, y + r * 0.12, r, 0, 6.283); ctx.fill();
+  ctx.shadowBlur = 0; ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = r * 0.12; ctx.beginPath(); ctx.arc(x, y, r * 0.72, 0, 6.283); ctx.stroke();
+  text('¥', x, y + r * 0.04, r * 1.1, { kind: 'disp', color: 'rgba(0,0,0,0.55)' });
+  ctx.restore();
+}
+// 画面の一瞬の白フラッシュ
+function flash(t, at, strength = 0.6, dur = 0.25) {
+  const p = seg(t, at, dur); if (p <= 0 || p >= 1) return;
+  ctx.save(); ctx.globalAlpha = strength * (1 - p); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+// 衝撃の揺れ量
+function shakeAmt(t, at, amp = 18, dur = 0.4) {
+  const p = seg(t, at, dur); if (p <= 0 || p >= 1) return [0, 0];
+  const d = amp * (1 - p);
+  return [Math.sin(t * 140) * d, Math.cos(t * 117) * d];
+}
+// コインの噴水(衝撃時)
+function burst(t, at, cx, cy, n = 26, seed = 1) {
+  const p = t - at; if (p < 0 || p > 1.6) return;
+  const r = mulberry32(seed);
+  for (let i = 0; i < n; i++) {
+    const ang = -Math.PI / 2 + (r() - 0.5) * 2.4, sp = 900 + r() * 900, rad = 10 + r() * 16;
+    const x = cx + Math.cos(ang) * sp * p, y = cy + Math.sin(ang) * sp * p + 1400 * p * p;
+    coinIcon(x, y, rad, clamp(1.6 - p));
+  }
+}
+// 縦バー(ラベル・金額カウンター付き)
+function bar(x, baseY, w, h, col, label, value, opt = {}) {
+  ctx.save();
+  if (opt.glow) { ctx.shadowColor = col; ctx.shadowBlur = 40 * opt.glow; }
+  const g = ctx.createLinearGradient(0, baseY - h, 0, baseY);
+  g.addColorStop(0, col); g.addColorStop(1, opt.col2 || col);
+  ctx.fillStyle = g;
+  roundRect(x, baseY - h, w, h, 18); ctx.fill();
+  ctx.restore();
+  // 光沢
+  ctx.save(); ctx.globalAlpha = 0.18; ctx.fillStyle = '#fff'; roundRect(x + 12, baseY - h + 10, w * 0.22, Math.max(0, h - 20), 10); ctx.fill(); ctx.restore();
+  if (label) text(label, x + w / 2, baseY + 54, 40, { kind: 'black', color: opt.labelColor || C.grayL });
+  if (value !== undefined) text(value, x + w / 2, baseY - h - 60, opt.valuePx || 64, { kind: 'disp', color: opt.valueColor || C.white, stroke: C.ink, strokeW: 10 });
+}
+
+// ===================== 各シーン =====================
+// S0: フック「月3万円 × 30年 → ？？？？万円」
+function sceneHook(t) {
+  const u = t;
+  const [sx, sy] = shakeAmt(t, 0.22, 22);
+  ctx.save(); ctx.translate(sx, sy);
+  // 月3万円
+  { const p = seg(u, 0.05, 0.35), s = slamScale(p);
+    if (p > 0) { ctx.save(); ctx.translate(W / 2, 560); ctx.scale(s, s); ctx.globalAlpha = clamp(p * 3);
+      text('月3万円', 0, 0, 190, { kind: 'disp', color: C.white, stroke: C.ink, strokeW: 22, glow: 'rgba(255,255,255,0.35)' });
+      text('の積立を', 0, 150, 56, { kind: 'black', color: C.grayL }); ctx.restore(); } }
+  // × 30年
+  { const p = seg(u, 0.95, 0.4);
+    if (p > 0) { ctx.save(); const s = lerp(0.3, 1, outBack(p)); ctx.translate(W / 2, 860); ctx.scale(s, s); ctx.globalAlpha = p;
+      text('30年', 0, 0, 230, { kind: 'disp', color: C.gold, stroke: C.ink, strokeW: 24, glow: 'rgba(255,200,61,0.5)' });
+      text('続けたら…', 0, 170, 56, { kind: 'black', color: C.grayL }); ctx.restore(); } }
+  // スロット「?,???万円」
+  { const p = seg(u, 1.9, 0.3);
+    if (p > 0) { ctx.save(); ctx.globalAlpha = p; ctx.translate(0, lerp(40, 0, outCubic(p)));
+      roundRect(90, 1060, 900, 230, 30); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+      ctx.strokeStyle = C.gold; ctx.lineWidth = 4; ctx.stroke();
+      const digits = [0, 1, 2, 3].map(i => Math.floor(u * (21 + i * 5) + i * 3) % 10);
+      let s = `${digits[0]},${digits[1]}${digits[2]}${digits[3]}`;
+      // 最後の 0.8 秒は「？」に収束して煽る
+      const q = seg(u, 3.9, 0.5); if (q > 0) s = '？,？？？';
+      text(s, 470, 1175, 150, { kind: 'disp', color: C.gold, glow: 'rgba(255,200,61,0.6)' });
+      text('万円', 860, 1195, 80, { kind: 'disp', color: C.white });
+      ctx.restore(); } }
+  ctx.restore();
+  flash(t, 0.05, 0.5, 0.3);
+}
+
+// S1: 貯金 1,080万 → 年利5% チャージ
+const BAR_BASE = 1240, BAR_W = 300, BAR_LX = 180, BAR_RX = 600, BAR_SCALE = 700 / 2600; // 万円→px
+function sceneSaving(t) {
+  const u = t - 5.0;
+  // 見出し
+  const hp = seg(u, 0.0, 0.3);
+  ctx.save(); ctx.globalAlpha = hp; ctx.translate(0, lerp(-30, 0, outCubic(hp)));
+  text('30年後の資産', W / 2, 330, 72, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 10 });
+  text('月3万円 × 30年 = 元本 1,080万円', W / 2, 420, 40, { kind: 'bold', color: C.grayL });
+  ctx.restore();
+  // 床線
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(120, BAR_BASE); ctx.lineTo(W - 120, BAR_BASE); ctx.stroke(); ctx.restore();
+  // 左: 貯金
+  const gp = outExpo(seg(u, 0.4, 1.6));
+  const val = 1080 * gp;
+  bar(BAR_LX, BAR_BASE, BAR_W, val * BAR_SCALE, C.gray, '貯金だけ', fmt(val) + '万', { col2: '#3A4766', valueColor: C.grayL, valuePx: 60 });
+  // 右: 運用(空の枠 → チャージ)
+  ctx.save(); ctx.setLineDash([14, 12]); ctx.strokeStyle = 'rgba(255,200,61,0.5)'; ctx.lineWidth = 3;
+  roundRect(BAR_RX, BAR_BASE - 1080 * BAR_SCALE, BAR_W, 1080 * BAR_SCALE, 18); ctx.stroke(); ctx.restore();
+  const cp = seg(u, 3.3, 3.2); // チャージ 8.3s〜11.5s
+  if (cp > 0) {
+    const jitter = Math.sin(t * 60) * 6 * cp + Math.sin(t * 23) * 4;
+    const h = lerp(0, 1080 * BAR_SCALE, inCubic(cp)) + jitter * cp;
+    bar(BAR_RX, BAR_BASE, BAR_W, Math.max(0, h), C.gold, '年利5%で運用', undefined, { col2: C.gold2, glow: 0.5 + cp, labelColor: C.gold });
+    // 脈打つ光
+    ctx.save(); ctx.globalAlpha = 0.25 * cp * (0.6 + 0.4 * Math.sin(t * 18)); ctx.fillStyle = C.gold;
+    roundRect(BAR_RX - 20, BAR_BASE - h - 30, BAR_W + 40, h + 40, 26); ctx.fill(); ctx.restore();
+  } else {
+    text('年利5%で運用', BAR_RX + BAR_W / 2, BAR_BASE + 54, 40, { kind: 'black', color: 'rgba(255,200,61,0.5)' });
+  }
+  // 年利5% バッジ
+  const bp = seg(u, 3.25, 0.35);
+  if (bp > 0) { ctx.save(); const s = slamScale(bp); ctx.translate(BAR_RX + BAR_W / 2, 760); ctx.scale(s, s); ctx.rotate(-0.12);
+    roundRect(-200, -70, 400, 140, 24); ctx.fillStyle = C.gold; ctx.fill();
+    text('年利 5%', 0, 2, 84, { kind: 'disp', color: C.ink }); ctx.restore();
+    // ？？？ がせり上がる煽り
+    const q = 0.5 + 0.5 * Math.sin(t * 9);
+    text('？？？', BAR_RX + BAR_W / 2, 560, 110, { kind: 'disp', color: `rgba(255,200,61,${0.5 + 0.5 * q})`, glow: 'rgba(255,200,61,0.6)' });
+  }
+}
+
+// S2: 2,497万 の爆発リビール
+function sceneReveal(t) {
+  const u = t - 11.5;
+  const [sx, sy] = shakeAmt(t, 12.55, 30, 0.5);
+  ctx.save(); ctx.translate(sx, sy);
+  text('30年後の資産', W / 2, 330, 72, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 10 });
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(120, BAR_BASE); ctx.lineTo(W - 120, BAR_BASE); ctx.stroke(); ctx.restore();
+  bar(BAR_LX, BAR_BASE, BAR_W, 1080 * BAR_SCALE, C.gray, '貯金だけ', '1,080万', { col2: '#3A4766', valueColor: C.grayL, valuePx: 56 });
+  const rp = outExpo(seg(u, 0.0, 1.1));
+  const val = lerp(1080, 2497, rp);
+  const h = val * BAR_SCALE;
+  bar(BAR_RX, BAR_BASE, BAR_W, h, C.gold, '年利5%で運用', fmt(val) + '万', { col2: C.gold2, glow: 1.2, labelColor: C.gold, valuePx: 76, valueColor: C.gold });
+  // 差額ブラケット
+  const bp = seg(u, 2.0, 0.5);
+  if (bp > 0) {
+    const top = BAR_BASE - 2497 * BAR_SCALE, mid = BAR_BASE - 1080 * BAR_SCALE;
+    ctx.save(); ctx.globalAlpha = bp;
+    // 元本部分を暗く
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; roundRect(BAR_RX, mid, BAR_W, BAR_BASE - mid, 18); ctx.fill();
+    text('元本', BAR_RX + BAR_W / 2, (mid + BAR_BASE) / 2 - 20, 40, { kind: 'bold', color: C.grayL });
+    text('1,080万', BAR_RX + BAR_W / 2, (mid + BAR_BASE) / 2 + 30, 44, { kind: 'disp', color: C.grayL });
+    // ブラケット線
+    const bx = BAR_RX + BAR_W + 30;
+    ctx.strokeStyle = C.green; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(bx, top); ctx.lineTo(bx + 24, top); ctx.lineTo(bx + 24, mid); ctx.lineTo(bx, mid); ctx.stroke();
+    // 吹き出し
+    const s = lerp(0.6, 1, outBack(bp));
+    ctx.translate(BAR_RX - 70, (top + mid) / 2 - 10); ctx.scale(s, s); ctx.rotate(-0.08);
+    roundRect(-230, -95, 460, 190, 28); ctx.fillStyle = C.green; ctx.fill();
+    text('+1,417万円', 0, -26, 70, { kind: 'disp', color: C.ink });
+    text('複利が増やした分', 0, 48, 36, { kind: 'black', color: C.ink });
+    ctx.restore();
+  }
+  ctx.restore();
+  burst(t, 12.5, BAR_RX + BAR_W / 2, BAR_BASE - 2497 * BAR_SCALE, 30, 7);
+  flash(t, 12.55, 0.7, 0.3);
+}
+
+// S3: 複利カーブ(後半ほど加速)
+function sceneCurve(t) {
+  const u = t - 18.5;
+  text('月3万円を年利5%で運用', W / 2, 330, 60, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 9 });
+  text('複利 = 利益が利益を生む', W / 2, 410, 42, { kind: 'bold', color: C.gold });
+  // グラフ領域
+  const L = 150, R = W - 110, T = 520, B = 1230;
+  const maxY = 2700;
+  const xOf = yr => lerp(L, R, yr / 30), yOf = v => lerp(B, T, v / maxY);
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 2;
+  for (const v of [500, 1000, 1500, 2000, 2500]) { ctx.beginPath(); ctx.moveTo(L, yOf(v)); ctx.lineTo(R, yOf(v)); ctx.stroke();
+    text(fmt(v) + '万', L - 12, yOf(v), 28, { kind: 'bold', color: 'rgba(255,255,255,0.5)', align: 'right' }); }
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.moveTo(L, B); ctx.lineTo(R, B); ctx.stroke();
+  for (const yr of [0, 10, 20, 30]) text(yr + '年', xOf(yr), B + 40, 32, { kind: 'bold', color: 'rgba(255,255,255,0.6)' });
+  ctx.restore();
+  // 描画の進行: 0.5s〜8.1s で 0→30年
+  const yrNow = 30 * clamp((u - 0.5) / 7.6);
+  // 元本(直線)
+  ctx.save(); ctx.strokeStyle = C.grayL; ctx.lineWidth = 6; ctx.setLineDash([16, 12]);
+  ctx.beginPath(); ctx.moveTo(xOf(0), yOf(0)); ctx.lineTo(xOf(yrNow), yOf(36 * yrNow)); ctx.stroke(); ctx.restore();
+  // 複利カーブ + 塗り
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(xOf(0), yOf(0));
+  for (let yr = 0; yr <= yrNow + 1e-6; yr += 0.1) ctx.lineTo(xOf(Math.min(yr, yrNow)), yOf(fv(Math.min(yr, yrNow) * 12)));
+  const tipX = xOf(yrNow), tipY = yOf(fv(yrNow * 12));
+  ctx.lineTo(tipX, tipY);
+  const path = new Path2D(); // 塗り用
+  ctx.lineTo(tipX, B); ctx.lineTo(xOf(0), B); ctx.closePath();
+  const fg = ctx.createLinearGradient(0, T, 0, B); fg.addColorStop(0, 'rgba(255,200,61,0.45)'); fg.addColorStop(1, 'rgba(255,200,61,0.02)');
+  ctx.fillStyle = fg; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(xOf(0), yOf(0));
+  for (let yr = 0; yr <= yrNow + 1e-6; yr += 0.1) ctx.lineTo(xOf(Math.min(yr, yrNow)), yOf(fv(Math.min(yr, yrNow) * 12)));
+  ctx.lineTo(tipX, tipY);
+  ctx.strokeStyle = C.gold; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.shadowColor = C.gold; ctx.shadowBlur = 30; ctx.stroke();
+  // 先端の光点
+  if (yrNow > 0 && yrNow < 30) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(tipX, tipY, 14, 0, 6.283); ctx.fill(); }
+  ctx.restore();
+  // 凡例
+  ctx.save(); ctx.globalAlpha = 0.9;
+  ctx.fillStyle = C.gold; roundRect(L, T - 50, 40, 12, 6); ctx.fill(); text('運用(複利)', L + 56, T - 44, 30, { kind: 'bold', color: C.white, align: 'left' });
+  ctx.fillStyle = C.grayL; roundRect(L + 260, T - 50, 40, 12, 6); ctx.fill(); text('元本', L + 316, T - 44, 30, { kind: 'bold', color: C.grayL, align: 'left' });
+  ctx.restore();
+  // マーカー
+  const marks = [[10, 466, '10年'], [20, 1233, '20年'], [30, 2497, '30年']];
+  for (const [yr, v, lab] of marks) {
+    const reach = 0.5 + yr / 30 * 7.6;
+    const p = seg(u, reach, 0.35); if (p <= 0) continue;
+    const s = slamScale(p), x = xOf(yr), y = yOf(v);
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    ctx.fillStyle = C.white; ctx.beginPath(); ctx.arc(0, 0, 16, 0, 6.283); ctx.fill();
+    ctx.strokeStyle = C.gold; ctx.lineWidth = 6; ctx.stroke();
+    const w = 290, bx = yr === 30 ? -w - 30 : -w / 2 + 20, by = -150;
+    roundRect(bx, by, w, 110, 20); ctx.fillStyle = yr === 30 ? C.gold : 'rgba(10,14,32,0.9)'; ctx.fill();
+    if (yr !== 30) { ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.stroke(); }
+    text(fmt(v) + '万', bx + w / 2, by + 48, 56, { kind: 'disp', color: yr === 30 ? C.ink : C.gold });
+    text(lab, bx + w / 2, by + 92, 26, { kind: 'bold', color: yr === 30 ? C.ink : C.grayL });
+    ctx.restore();
+  }
+  // 「後半ほど一気に加速」スタンプ + 矢印
+  const ap = seg(u, 8.5, 0.4);
+  if (ap > 0) {
+    ctx.save(); const s = slamScale(ap); ctx.translate(W / 2 - 90, 640); ctx.scale(s, s); ctx.rotate(-0.1);
+    roundRect(-330, -80, 660, 160, 28); ctx.fillStyle = C.red; ctx.fill();
+    text('後半ほど一気に加速！', 0, 4, 60, { kind: 'black', color: C.white }); ctx.restore();
+    // 最後の10年のハイライト
+    ctx.save(); ctx.globalAlpha = 0.5 * ap * (0.6 + 0.4 * Math.sin(t * 8)); ctx.fillStyle = C.red;
+    ctx.fillRect(xOf(20), T, xOf(30) - xOf(20), B - T); ctx.restore();
+    text('最後の10年で +1,264万', xOf(25), B - 30 - 0 * ap, 34, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 8 });
+  }
+  flash(t, 18.5 + 0.5 + 7.6, 0.35, 0.25);
+}
+
+// S4: 始めるのが10年遅れると
+function sceneLate(t) {
+  const u = t - 30.0;
+  const [sx, sy] = shakeAmt(t, 37.3, 26, 0.5);
+  ctx.save(); ctx.translate(sx, sy);
+  text('同じ月3万円・年利5%でも…', W / 2, 330, 60, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 9 });
+  const cardY = 460, cardH = 820;
+  // 左カード: 今すぐ
+  const lp = seg(u, 0.2, 0.4);
+  if (lp > 0) {
+    ctx.save(); ctx.globalAlpha = lp; ctx.translate(lerp(-120, 0, outCubic(lp)), 0);
+    roundRect(70, cardY, 460, cardH, 34); ctx.fillStyle = 'rgba(255,200,61,0.10)'; ctx.fill(); ctx.strokeStyle = C.gold; ctx.lineWidth = 4; ctx.stroke();
+    text('今すぐ始める', 300, cardY + 80, 50, { kind: 'black', color: C.gold });
+    text('30年間 運用', 300, cardY + 140, 34, { kind: 'bold', color: C.grayL });
+    const h = 430 * outExpo(seg(u, 0.5, 1.2));
+    bar(150, cardY + cardH - 90, 300, h, C.gold, '', undefined, { col2: C.gold2, glow: 0.6 });
+    text(fmt(2497 * outExpo(seg(u, 0.5, 1.2))) + '万', 300, cardY + cardH - 90 - h - 50, 66, { kind: 'disp', color: C.gold, stroke: C.ink, strokeW: 10 });
+    ctx.restore();
+  }
+  // VS
+  const vp = seg(u, 3.3, 0.3);
+  if (vp > 0) text('VS', W / 2, cardY + cardH / 2, 90 * lerp(2, 1, outExpo(vp)), { kind: 'disp', color: C.white, stroke: C.ink, strokeW: 12 });
+  // 右カード: 10年後に始める
+  const rp = seg(u, 3.5, 0.4);
+  if (rp > 0) {
+    ctx.save(); ctx.globalAlpha = rp; ctx.translate(lerp(120, 0, outCubic(rp)), 0);
+    roundRect(550, cardY, 460, cardH, 34); ctx.fillStyle = 'rgba(255,77,94,0.10)'; ctx.fill(); ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.stroke();
+    text('10年後に始める', 780, cardY + 80, 50, { kind: 'black', color: C.red });
+    text('20年間 運用', 780, cardY + 140, 34, { kind: 'bold', color: C.grayL });
+    const g = outExpo(seg(u, 5.0, 1.4));
+    const h = 430 * (1233 / 2497) * g;
+    bar(630, cardY + cardH - 90, 300, h, C.red, '', undefined, { col2: '#B32A38', glow: 0.5 });
+    text(fmt(1233 * g) + '万', 780, cardY + cardH - 90 - h - 50, 66, { kind: 'disp', color: C.red, stroke: C.ink, strokeW: 10 });
+    // 時計アイコン(待った10年)
+    const cx = 780, cy = cardY + 230, r = 34;
+    ctx.strokeStyle = C.grayL; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.283); ctx.stroke();
+    const ang = t * 6; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(ang) * r * 0.7, cy + Math.sin(ang) * r * 0.7); ctx.stroke();
+    text('10年のロス', cx + 60, cy, 30, { kind: 'bold', color: C.grayL, align: 'left' });
+    ctx.restore();
+  }
+  // 「半分以下」スタンプ
+  const hp = seg(u, 7.3, 0.35);
+  if (hp > 0) {
+    ctx.save(); const s = slamScale(hp); ctx.translate(W / 2, 1000); ctx.scale(s, s); ctx.rotate(-0.18);
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 30;
+    roundRect(-330, -110, 660, 220, 30); ctx.fillStyle = C.red; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.setLineDash([]); roundRect(-310, -90, 620, 180, 22); ctx.stroke();
+    text('半分以下', 0, -10, 110, { kind: 'disp', color: C.white });
+    text('−1,264万円', 0, 70, 40, { kind: 'black', color: C.white });
+    ctx.restore();
+  }
+  ctx.restore();
+  flash(t, 37.3, 0.5, 0.3);
+}
+
+// S5: 72の法則
+function sceneRule72(t) {
+  const u = t - 39.5;
+  text('お金が2倍になる年数は？', W / 2, 330, 64, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 9 });
+  // 数式カード
+  const fp = seg(u, 1.4, 0.4);
+  if (fp > 0) {
+    ctx.save(); ctx.globalAlpha = fp; const s = lerp(0.8, 1, outBack(fp)); ctx.translate(W / 2, 560); ctx.scale(s, s);
+    roundRect(-470, -140, 940, 280, 34); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fill(); ctx.strokeStyle = C.gold; ctx.lineWidth = 4; ctx.stroke();
+    const revealed = seg(u, 3.4, 0.3) > 0;
+    // 「72 ÷ 年利」: 3.4s で数字がドンと出る
+    if (revealed) { const q = slamScale(seg(u, 3.4, 0.35)); ctx.save(); ctx.scale(q, q);
+      text('72 ÷ 年利', 0, -25, 120, { kind: 'disp', color: C.gold, glow: 'rgba(255,200,61,0.6)' }); ctx.restore(); }
+    else text('？ ÷ 年利', 0, -25, 120, { kind: 'disp', color: 'rgba(255,200,61,0.45)' });
+    text('= 2倍になるまでの年数', 0, 85, 42, { kind: 'black', color: C.white });
+    ctx.restore();
+  }
+  // 例の行
+  const rows = [[5, 14.4, '約14年', 4.95], [7, 10.3, '約10年', 6.7]];
+  rows.forEach(([rate, yrs, lab, at], i) => {
+    const p = seg(u, at, 0.4); if (p <= 0) return;
+    const y = 800 + i * 190;
+    ctx.save(); ctx.globalAlpha = p; ctx.translate(lerp(60, 0, outCubic(p)), 0);
+    roundRect(110, y - 75, 860, 150, 28); ctx.fillStyle = i === 0 ? 'rgba(255,255,255,0.08)' : 'rgba(61,240,166,0.10)'; ctx.fill();
+    ctx.strokeStyle = i === 0 ? 'rgba(255,255,255,0.3)' : C.green; ctx.lineWidth = 3; ctx.stroke();
+    text(`年利 ${rate}%`, 300, y, 54, { kind: 'black', color: C.white });
+    text('→', 520, y, 54, { kind: 'black', color: C.grayL });
+    text(lab, 760, y, 76, { kind: 'disp', color: i === 0 ? C.gold : C.green });
+    ctx.restore();
+  });
+  // コインが 1 → 2 に増える演出(行が出るたび)
+  const cp = seg(u, 4.95, 1.2);
+  if (cp > 0) {
+    const cx = W / 2, cy = 1240;
+    coinIcon(cx - 70 * outBack(cp), cy, 60);
+    coinIcon(cx + 70 * outBack(cp), cy, 60, clamp(cp * 2));
+    text('× 2', cx, cy + 110, 44, { kind: 'disp', color: C.gold });
+  }
+  // 「72の法則」バッジ
+  const bp = seg(u, 8.4, 0.4);
+  if (bp > 0) { ctx.save(); const s = slamScale(bp); ctx.translate(W / 2, 1300); ctx.scale(s, s); ctx.rotate(-0.06);
+    roundRect(-280, -70, 560, 140, 26); ctx.fillStyle = C.gold; ctx.fill();
+    text('72の法則', 0, 4, 80, { kind: 'disp', color: C.ink }); ctx.restore(); }
+  flash(t, 39.5 + 3.4, 0.35, 0.25);
+}
+
+// S6: CTA
+function sceneCta(t) {
+  const u = t - 50.0;
+  // 砂時計 → 時間は増やせない
+  const hp = seg(u, 0.3, 0.5);
+  if (hp > 0) {
+    ctx.save(); ctx.globalAlpha = hp; ctx.translate(W / 2, 520);
+    // 砂時計
+    const r = 110;
+    ctx.strokeStyle = C.gold; ctx.lineWidth = 10; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-r, -r * 1.3); ctx.lineTo(r, -r * 1.3); ctx.lineTo(-r, r * 1.3); ctx.lineTo(r, r * 1.3); ctx.closePath(); ctx.stroke();
+    // 砂(上が減り下が増える)
+    const s = clamp(u / 6);
+    ctx.fillStyle = C.gold;
+    ctx.beginPath(); ctx.moveTo(-r * (1 - s) * 0.9, -r * 1.3 + r * 1.3 * s); ctx.lineTo(r * (1 - s) * 0.9, -r * 1.3 + r * 1.3 * s); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-r * s * 0.9, r * 1.3); ctx.lineTo(r * s * 0.9, r * 1.3); ctx.lineTo(0, r * 1.3 - r * 1.3 * s); ctx.closePath(); ctx.fill();
+    ctx.fillRect(-3, 0, 6, r * 1.2); // 落ちる砂
+    ctx.restore();
+  }
+  const tp = seg(u, 2.0, 0.4);
+  if (tp > 0) { ctx.save(); const s = slamScale(tp); ctx.translate(W / 2, 800); ctx.scale(s, s);
+    text('時間は', 0, -60, 90, { kind: 'disp', color: C.white, stroke: C.ink, strokeW: 14 });
+    text('誰にも増やせない', 0, 60, 90, { kind: 'disp', color: C.gold, stroke: C.ink, strokeW: 14, glow: 'rgba(255,200,61,0.5)' }); ctx.restore(); }
+  // 保存 CTA
+  const cp = seg(u, 4.0, 0.4);
+  if (cp > 0) {
+    ctx.save(); ctx.globalAlpha = cp; const s = lerp(0.7, 1, outBack(cp)) * (1 + 0.04 * Math.sin(t * 7)); ctx.translate(W / 2, 1080); ctx.scale(s, s);
+    roundRect(-470, -90, 940, 180, 40); ctx.fillStyle = C.white; ctx.fill();
+    // ブックマークアイコン
+    ctx.fillStyle = C.gold2; ctx.beginPath(); ctx.moveTo(-420, -50); ctx.lineTo(-340, -50); ctx.lineTo(-340, 50); ctx.lineTo(-380, 20); ctx.lineTo(-420, 50); ctx.closePath(); ctx.fill();
+    text('保存して、始める日を決めよう', -300, 4, 46, { kind: 'black', color: C.ink, align: 'left' });
+    ctx.restore();
+  }
+  // 免責・クレジット(常時)
+  ctx.save(); ctx.globalAlpha = 0.85;
+  text('※投資は元本保証ではありません。数値は月3万円・年利5%(月複利)・30年の試算で、', W / 2, 1545, 24, { kind: 'bold', color: 'rgba(255,255,255,0.75)' });
+  text('税金・手数料は考慮していません。過去の利回りは将来を保証しません。', W / 2, 1580, 24, { kind: 'bold', color: 'rgba(255,255,255,0.75)' });
+  text('ナレーション: VOICEVOX:四国めたん ／ BGM・効果音: オリジナル', W / 2, 1625, 24, { kind: 'bold', color: 'rgba(255,255,255,0.75)' });
+  ctx.restore();
+}
+
+// ===================== メイン =====================
+const SCENE_FN = { hook: sceneHook, saving: sceneSaving, reveal: sceneReveal, curve: sceneCurve, late: sceneLate, rule72: sceneRule72, cta: sceneCta };
+window.render = function (t) {
+  t = Math.max(0, Math.min(window.DURATION - 1e-3, t));
+  const scene = SCENES.find(s => t >= s.start && t < s.end) || SCENES[SCENES.length - 1];
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  background(t, scene);
+  // シーン切替時のズームパンチ
+  const age = t - scene.start;
+  const zp = 1 + 0.08 * (1 - outExpo(seg(age, 0, 0.35)));
+  ctx.save();
+  ctx.translate(W / 2, H / 2); ctx.scale(zp, zp); ctx.translate(-W / 2, -H / 2);
+  SCENE_FN[scene.id](t);
+  ctx.restore();
+  header(t);
+  captions(t);
+  // 最後のフェードアウト
+  const fo = seg(t, window.DURATION - 0.6, 0.6);
+  if (fo > 0) { ctx.save(); ctx.globalAlpha = fo; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+};
+
+// サムネイル専用フレーム(capture.js --thumb)
+window.renderThumb = function () {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  background(3.0, SCENES[0]);
+  // 上段: 問いかけ
+  text('月3万円を', W / 2, 330, 110, { kind: 'disp', color: C.white, stroke: C.ink, strokeW: 16 });
+  text('30年積み立てたら', W / 2, 470, 90, { kind: 'disp', color: C.white, stroke: C.ink, strokeW: 14 });
+  // 比較の棒
+  const base = 1300;
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(120, base); ctx.lineTo(W - 120, base); ctx.stroke(); ctx.restore();
+  bar(160, base, 300, 1080 * 0.2, C.gray, '貯金だけ', '1,080万', { col2: '#3A4766', valueColor: C.grayL, valuePx: 64 });
+  bar(620, base, 300, 2497 * 0.25, C.gold, '年利5%で運用', undefined, { col2: C.gold2, glow: 1.4, labelColor: C.gold });
+  // 主役の数字
+  ctx.save(); ctx.translate(W / 2 + 40, 640); ctx.rotate(-0.06);
+  roundRect(-420, -110, 840, 220, 34); ctx.fillStyle = C.gold; ctx.shadowColor = C.gold; ctx.shadowBlur = 60; ctx.fill(); ctx.shadowBlur = 0;
+  text('2,497万円', 0, 6, 150, { kind: 'disp', color: C.ink });
+  ctx.restore();
+  // 差額スタンプ
+  ctx.save(); ctx.translate(320, 830); ctx.rotate(-0.12);
+  roundRect(-230, -70, 460, 140, 26); ctx.fillStyle = C.red; ctx.fill();
+  text('+1,417万円', 0, 4, 76, { kind: 'disp', color: C.white }); ctx.restore();
+  for (const [x, y, r] of [[90, 640, 40], [990, 900, 40], [1000, 330, 30], [90, 1500, 30]]) coinIcon(x, y, r);
+  text('差は「複利」が生んだ', W / 2, 1440, 64, { kind: 'black', color: C.white, stroke: C.ink, strokeW: 12 });
+};
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { window.render(((performance.now() - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
