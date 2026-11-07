@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Semiconductor Shorts</title>
+<style>
+  @font-face { font-family: "NotoBlack"; src: url("vendor/fonts/NotoSansJP-Black.otf"); }
+  @font-face { font-family: "NotoBold"; src: url("vendor/fonts/NotoSansJP-Bold.otf"); }
+  @font-face { font-family: "Dela"; src: url("vendor/fonts/DelaGothicOne-Regular.ttf"); }
+  html, body { margin: 0; background: #05070d; }
+  canvas { display: block; }
+</style>
+<script src="output/timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------------
+// 半導体業界ショート(9:16 / 30fps)
+// render(t) が時刻 t 秒のフレームを決定論的に描画する。
+// シーン尺と字幕タイミングは narrate.py が書き出す output/timeline.js から読む。
+// 効果音のタイミングは window.EVENTS として書き出し、mix.py が同じ時刻に音を置く。
+// ------------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TIMELINE;
+const DURATION = TL.total;
+const SC = Object.fromEntries(TL.scenes.map(s => [s.id, s]));
+const NOTO = '"NotoBlack", sans-serif', BOLD = '"NotoBold", sans-serif', DELA = '"Dela", "NotoBlack", sans-serif';
+const C = {
+  bg: '#05070d', bg2: '#0b1222', ink: '#ffffff', ink2: '#c9d3e6', ink3: '#7f8aa3',
+  cyan: '#22e3ff', mag: '#ff3d8b', yel: '#ffe14d', red: '#ff2a3d', gold: '#e9c27a', purple: '#a66bff', green: '#3dffa8',
+};
+
+const main = document.getElementById('c');
+const mctx = main.getContext('2d');
+const buf = document.createElement('canvas'); buf.width = W; buf.height = H;
+const bctx = buf.getContext('2d');
+let ctx = bctx;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const eOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const eIO = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const eExpo = t => { t = clamp(t); return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); };
+const eBack = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+function rng(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const fmt = n => Math.round(n).toLocaleString('en-US');
+// t に応じた「出現」アルファ(s で出て e で消える)
+const show = (t, s, e = 1e9, fi = .18, fo = .18) => Math.min(eOut((t - s) / fi), e >= 1e8 ? 1 : eOut((e - t) / fo));
+
+function T(str, x, y, o = {}) {
+  const { size = 60, font = NOTO, color = C.ink, align = 'center', base = 'middle', alpha = 1, stroke = 0, sc = '#000',
+    glow = 0, gc = null, ls = 0, rot = 0, scale = 1 } = o;
+  if (alpha <= 0.002 || scale <= 0.001) return;
+  ctx.save(); ctx.globalAlpha *= clamp(alpha); ctx.translate(x, y); if (rot) ctx.rotate(rot); if (scale !== 1) ctx.scale(scale, scale);
+  ctx.font = `${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = base; ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = sc; ctx.strokeText(str, 0, 0); }
+  if (glow) { ctx.shadowColor = gc || color; ctx.shadowBlur = glow; }
+  ctx.fillStyle = color; ctx.fillText(str, 0, 0);
+  ctx.restore();
+}
+function tw(str, size, font = NOTO, ls = 0) { ctx.save(); ctx.font = `${size}px ${font}`; ctx.letterSpacing = ls + 'px'; const w = ctx.measureText(str).width; ctx.restore(); return w; }
+function rr(x, y, w, h, r, fill, alpha = 1, stroke = null, lw = 4) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp(alpha); r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+function ln(x1, y1, x2, y2, color, w = 3, alpha = 1, glow = 0) {
+  ctx.save(); ctx.globalAlpha *= clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
+  if (glow) { ctx.shadowColor = color; ctx.shadowBlur = glow; }
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circ(x, y, r, fill, alpha = 1, stroke = null, lw = 4, glow = 0) {
+  if (r <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp(alpha);
+  if (glow) { ctx.shadowColor = fill || stroke; ctx.shadowBlur = glow; }
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+// 判子風スタンプ
+function stamp(str, x, y, age, { color = C.red, size = 96, rot = -0.12, pad = 34 } = {}) {
+  if (age < 0) return;
+  const p = eBack(age / .22), sc = lerp(2.4, 1, p), a = clamp(age / .08);
+  const w = tw(str, size, DELA) + pad * 2, h = size + pad * 1.2;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc); ctx.globalAlpha *= a;
+  rr(-w / 2, -h / 2, w, h, 18, 'rgba(0,0,0,0.55)', 1, color, 10);
+  T(str, 0, 6, { size, font: DELA, color, glow: 24 });
+  ctx.restore();
+}
+// 角括弧つきラベル
+function tag(str, x, y, color, alpha = 1, size = 40) {
+  const w = tw(str, size, NOTO) + 44;
+  rr(x, y - size / 2 - 14, w, size + 28, 14, color, alpha);
+  T(str, x + 22, y + 2, { size, color: '#06080f', align: 'left', alpha });
+  return w;
+}
+
+// ---------- 背景(回路パターン) ----------
+const bgStatic = document.createElement('canvas'); bgStatic.width = W; bgStatic.height = H;
+const TRACES = [];
+(function buildBg() {
+  const g = bgStatic.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, H); grad.addColorStop(0, '#070b16'); grad.addColorStop(.5, '#0a1020'); grad.addColorStop(1, '#04060c');
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(80,140,255,0.06)'; g.lineWidth = 2;
+  for (let x = 0; x <= W; x += 60) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let y = 0; y <= H; y += 60) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  const r = rng(11);
+  for (let k = 0; k < 34; k++) {
+    let x = Math.round(r() * 18) * 60, y = Math.round(r() * 32) * 60, dir = Math.floor(r() * 4);
+    const pts = [[x, y]]; const n = 6 + Math.floor(r() * 14);
+    for (let i = 0; i < n; i++) {
+      if (r() < .35) dir = (dir + (r() < .5 ? 1 : 3)) % 4;
+      const L = 60 * (1 + Math.floor(r() * 3));
+      x += [L, 0, -L, 0][dir]; y += [0, L, 0, -L][dir];
+      pts.push([x, y]);
+    }
+    let len = 0; for (let i = 1; i < pts.length; i++) len += Math.abs(pts[i][0] - pts[i - 1][0]) + Math.abs(pts[i][1] - pts[i - 1][1]);
+    TRACES.push({ pts, len, sp: 260 + r() * 380, off: r() * 3000 });
+    g.strokeStyle = 'rgba(34,227,255,0.10)'; g.lineWidth = 3; g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+    pts.forEach(p => g.lineTo(p[0], p[1])); g.stroke();
+    g.fillStyle = 'rgba(34,227,255,0.18)';
+    [pts[0], pts[pts.length - 1]].forEach(p => { g.beginPath(); g.arc(p[0], p[1], 7, 0, 7); g.fill(); });
+  }
+})();
+function pointOn(tr, d) {
+  const p = tr.pts;
+  for (let i = 1; i < p.length; i++) {
+    const L = Math.abs(p[i][0] - p[i - 1][0]) + Math.abs(p[i][1] - p[i - 1][1]);
+    if (d <= L) { const f = d / L; return [lerp(p[i - 1][0], p[i][0], f), lerp(p[i - 1][1], p[i][1], f)]; }
+    d -= L;
+  }
+  return p[p.length - 1];
+}
+function background(t, tint, tintA = .22) {
+  ctx.drawImage(bgStatic, 0, 0);
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const tr of TRACES) {
+    const d = (t * tr.sp + tr.off) % (tr.len + 400);
+    if (d > tr.len) continue;
+    const [x, y] = pointOn(tr, d);
+    circ(x, y, 5, tint, .75, null, 0, 18);
+  }
+  ctx.restore();
+  const rg = ctx.createRadialGradient(W / 2, 760, 50, W / 2, 760, 900);
+  rg.addColorStop(0, tint); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.save(); ctx.globalAlpha = tintA; ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+const vignette = document.createElement('canvas'); vignette.width = W; vignette.height = H;
+(function () {
+  const g = vignette.getContext('2d'); const rg = g.createRadialGradient(W / 2, H / 2, 500, W / 2, H / 2, 1250);
+  rg.addColorStop(0, 'rgba(0,0,0,0)'); rg.addColorStop(1, 'rgba(0,0,0,0.75)'); g.fillStyle = rg; g.fillRect(0, 0, W, H);
+})();
+
+// ---------- ドット地図 ----------
+const JAPAN = [
+  [[141.0,41.4],[140.0,42.2],[139.8,42.6],[140.5,43.2],[141.4,43.3],[141.6,44.4],[141.9,45.4],[142.6,45.0],[143.6,44.2],[144.8,43.9],[145.5,43.3],[144.5,42.9],[143.3,41.9],[142.0,42.5],[141.2,41.8]],
+  [[141.4,41.4],[141.5,40.5],[142.0,39.6],[141.6,38.3],[141.0,37.5],[140.9,36.8],[140.6,35.7],[139.8,35.0],[139.0,34.7],[138.2,34.6],[137.0,34.6],[136.8,34.3],[136.0,33.5],[135.1,34.3],[134.0,34.6],[132.0,33.9],[131.0,34.0],[130.9,34.4],[132.5,35.4],[134.0,35.6],[135.5,35.6],[136.5,36.5],[137.3,37.5],[136.9,37.1],[138.5,37.4],[139.5,38.4],[140.0,39.5],[140.0,40.5],[140.3,41.2]],
+  [[132.5,33.0],[133.0,32.7],[134.2,33.3],[134.7,34.2],[133.5,34.3],[132.6,33.9]],
+  [[129.8,33.3],[130.4,33.9],[131.0,33.9],[131.8,33.3],[131.6,32.4],[131.1,31.4],[130.6,31.0],[130.2,31.4],[130.2,32.6],[129.6,32.9]],
+];
+const TAIWAN = [[[121.0,25.3],[121.9,25.0],[121.6,24.0],[121.0,22.6],[120.8,21.9],[120.3,22.5],[120.1,23.0],[120.2,23.8],[120.7,24.6]]];
+function projector(lon0, lat0, k, cx, cy) { return ([lo, la]) => [cx + (lo - lon0) * k, cy - (la - lat0) * k * 1.22]; }
+function makeDots(polys, proj, step) {
+  const c = document.createElement('canvas').getContext('2d');
+  const paths = polys.map(poly => { const p = new Path2D(); poly.forEach((pt, i) => { const [x, y] = proj(pt); i ? p.lineTo(x, y) : p.moveTo(x, y); }); p.closePath(); return p; });
+  const dots = [];
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    if (paths.some(p => c.isPointInPath(p, x, y))) dots.push([x, y]);
+  }
+  return dots;
+}
+const PJ = projector(137.6, 38.2, 45, 540, 770);
+const JP_DOTS = makeDots(JAPAN, PJ, 13);
+const PT = projector(120.95, 23.6, 165, 540, 760);
+const TW_DOTS = makeDots(TAIWAN, PT, 14);
+
+// ---------- 砂粒 → チップの粒子 ----------
+const NP = 1500;
+const PARTS = (() => {
+  const r = rng(5), arr = [];
+  for (let i = 0; i < NP; i++) {
+    const dx = (r() + r() + r() - 1.5) / 1.5 * 380;
+    const hmax = 300 * Math.max(0, 1 - Math.pow(dx / 400, 2));
+    const hx = 540 + dx, hy = 1140 - Math.pow(r(), .7) * hmax;
+    const ang = r() * Math.PI * 2, sp = 300 + r() * 700;
+    // チップ上の目標点(外周・格子・ピン)
+    const k = i % 5, cx = 540, cy = 800, S = 460;
+    let tx, ty;
+    if (k === 0) { const u = r() * 4, f = u % 1, side = Math.floor(u); [tx, ty] = [[cx - S / 2 + f * S, cy - S / 2], [cx + S / 2, cy - S / 2 + f * S], [cx + S / 2 - f * S, cy + S / 2], [cx - S / 2, cy + S / 2 - f * S]][side]; }
+    else if (k === 1) { const side = Math.floor(r() * 4), pin = Math.floor(r() * 9), f = (pin + 1) / 10, e = 30 + r() * 40; [tx, ty] = [[cx - S / 2 + f * S, cy - S / 2 - e], [cx + S / 2 + e, cy - S / 2 + f * S], [cx - S / 2 + f * S, cy + S / 2 + e], [cx - S / 2 - e, cy - S / 2 + f * S]][side]; }
+    else { const g = Math.floor(r() * 7) + 1, f = r(); if (r() < .5) { tx = cx - S / 2 + g * S / 8; ty = cy - S / 2 + f * S; } else { tx = cx - S / 2 + f * S; ty = cy - S / 2 + g * S / 8; } }
+    const shade = r();
+    arr.push({ hx, hy, bx: hx + Math.cos(ang) * sp, by: hy + Math.sin(ang) * sp * .8 - 200, tx, ty, size: 2 + r() * 3.2, shade, d: r() * .35 });
+  }
+  return arr;
+})();
+function sandColor(s) { return `rgb(${Math.round(lerp(170, 245, s))},${Math.round(lerp(125, 205, s))},${Math.round(lerp(70, 140, s))})`; }
+function drawHeap(alpha, t, shimmer = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  for (let i = 0; i < NP; i++) {
+    const p = PARTS[i];
+    ctx.fillStyle = sandColor(clamp(p.shade + .15 * Math.sin(t * 3 + i) * shimmer));
+    ctx.fillRect(p.hx, p.hy, p.size, p.size);
+  }
+  ctx.restore();
+}
+
+// ---------- イベント(効果音・カメラ揺れ) ----------
+const EVENTS = [];
+function ev(t, type, g = 1, extra = {}) { EVENTS.push(Object.assign({ t: +t.toFixed(3), type, g }, extra)); }
+// ルーレットの切り替え時刻(CTA)
+const ROULETTE = (() => { const sc = SC.cta, a = sc.s + sc.phr[1] + .15, b = sc.s + sc.phr[2] - .05; const out = []; let t = a, dt = .07; while (t < b) { out.push(t); t += dt; dt *= 1.13; } return out; })();
+(function buildEvents() {
+  const s = id => SC[id].s, P = id => SC[id].phr.map(x => x + SC[id].s);
+  TL.scenes.forEach((sc, i) => { if (i > 0) { ev(sc.s - .22, 'whoosh', .8); ev(sc.s, 'hit', .55); } });
+  // hook
+  ev(0, 'impact', .7); ev(0.05, 'sand', .7, { dur: P('hook')[1] - .05 });
+  ev(P('hook')[1] - .45, 'uplift', .8, { dur: .45 }); ev(P('hook')[1], 'impact', 1.2); ev(P('hook')[1] + .02, 'cash', .7);
+  ev(P('hook')[2] - .55, 'swoosh', .8); ev(P('hook')[2] + .25, 'shimmer', .9); ev(P('hook')[2] + .25, 'hit', .5);
+  // purity
+  for (let k = 0; k < 13; k++) ev(P('purity')[1] + k * .16, 'tick', k === 12 ? 1 : .7);
+  ev(P('purity')[2], 'stamp', 1);
+  // nano
+  ev(P('nano')[0], 'impact', .8);
+  for (let k = 0; k < 13; k++) ev(P('nano')[1] + .1 + k * .11, 'tick', .55);
+  ev(P('nano')[2] - .1, 'swoosh', .7); ev(P('nano')[2] + .9, 'pop', .8);
+  // transistor
+  ev(P('tr')[0] + .1, 'pop', .6); ev(P('tr')[1], 'roll', .8, { dur: P('tr')[2] - P('tr')[1] - .25 }); ev(P('tr')[2] - .2, 'ding', .9);
+  ev(P('tr')[2], 'roll', .5, { dur: 1.0 }); ev(P('tr')[3], 'pop', .7); ev(P('tr')[3] + 1.1, 'ding', .7);
+  // TSMC
+  ev(P('tsmc')[0] + 1.1, 'pop', .8); ev(P('tsmc')[1], 'whoosh', .7); ev(P('tsmc')[1] + .3, 'shimmer', .6);
+  ev(P('tsmc')[2], 'stamp', 1.1); ev(P('tsmc')[3], 'alarm', .9, { dur: P('tsmc')[4] - P('tsmc')[3] + 1.6 });
+  for (let k = 0; k < 3; k++) { ev(P('tsmc')[4] + .35 + k * .42, 'impact', .9); ev(P('tsmc')[4] + .35 + k * .42, 'glitch', .8); }
+  // ASML
+  ev(P('asml')[0] + .2, 'zap', .8); ev(P('asml')[1] + .3, 'stamp', 1);
+  ev(P('asml')[2], 'roll', .8, { dur: 1.1 }); ev(P('asml')[2] + 1.15, 'cash', 1); ev(P('asml')[2] + 1.15, 'impact', .8);
+  // Japan
+  ev(P('japan')[0], 'pop', .8); for (let k = 0; k < 3; k++) ev(P('japan')[1] + .15 + k * .25, 'pop', .6);
+  ev(P('japan')[2] + .1, 'roll', .6, { dur: .9 }); ev(P('japan')[2] + 1.05, 'ding', .8);
+  ev(P('japan')[3] + .1, 'drop', 1); ev(P('japan')[4] + .1, 'drop', 1);
+  // CTA
+  ev(P('cta')[0], 'swoosh', .7); ROULETTE.forEach(t => ev(t, 'tick', .5)); ev(P('cta')[2], 'pop', 1);
+  ev(DURATION - 1.0, 'sand', .45, { dur: 1.0 });
+  EVENTS.sort((a, b) => a.t - b.t);
+})();
+const SHAKERS = EVENTS.filter(e => ['impact', 'stamp', 'hit', 'drop', 'glitch'].includes(e.type));
+const GLITCHES = EVENTS.filter(e => e.type === 'glitch').map(e => e.t).concat(TL.scenes.slice(1).map(s => s.s));
+
+// ---------- シーン ----------
+function sceneHook(t, sc) {
+  const P = sc.phr;
+  background(t, C.gold, .25);
+  // 砂山(開始時は静止、少し揺らめく)
+  const burst = P[1], conv = P[2] - .5;
+  if (t < burst) {
+    drawHeap(1, t);
+    // 上から砂が流れ落ちる
+    ctx.save();
+    for (let k = 0; k < 120; k++) {
+      const ph = (t * 1.6 + k / 120) % 1, y = 300 + ph * 800, x = 540 + Math.sin(k * 12.9) * 14 * (0.4 + ph);
+      ctx.fillStyle = sandColor((k * 37 % 100) / 100); ctx.fillRect(x, y, 3, 3);
+    }
+    ctx.restore();
+    T('SAND', 540, 1225, { size: 46, font: DELA, color: C.gold, alpha: show(t, .1), ls: 14 });
+    T('ケイ砂(SiO₂)', 540, 1290, { size: 32, font: BOLD, color: C.ink3, alpha: show(t, .2) });
+  } else {
+    // 爆発 → チップへ集合
+    ctx.save();
+    for (let i = 0; i < NP; i++) {
+      const p = PARTS[i];
+      const b = eExpo((t - burst) / .7);
+      let x = lerp(p.hx, p.bx, b), y = lerp(p.hy, p.by, b);
+      const c = eIO((t - conv - p.d) / .75);
+      x = lerp(x, p.tx, c); y = lerp(y, p.ty, c);
+      ctx.fillStyle = c > .98 ? C.cyan : sandColor(p.shade);
+      const s = lerp(p.size, 4, c);
+      ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    }
+    ctx.restore();
+    const ch = eOut((t - P[2] - .2) / .5);
+    if (ch > 0) {
+      ctx.save(); ctx.globalAlpha = ch; ctx.shadowColor = C.cyan; ctx.shadowBlur = 60;
+      rr(310, 570, 460, 460, 16, 'rgba(34,227,255,0.10)', 1, C.cyan, 6); ctx.restore();
+      T('Si', 540, 800, { size: 190, font: DELA, color: C.cyan, alpha: ch, glow: 40 });
+      T('SEMICONDUCTOR', 540, 1120, { size: 46, font: DELA, color: C.ink, alpha: ch, ls: 10 });
+    }
+  }
+  // 100兆円 スラム
+  const a = t - burst;
+  if (a > 0) {
+    const up = eIO((t - P[2] + .45) / .5);
+    const y = lerp(650, 395, up), s = lerp(1, .52, up) * lerp(2.6, 1, eBack(a / .25));
+    T('100兆円', 540, y, { size: 230, font: DELA, color: C.yel, stroke: 18, scale: s, glow: 50, alpha: clamp(a / .06) });
+    T('世界の半導体市場(年間)', 540, lerp(800, 500, up), { size: 46, font: NOTO, color: C.ink, stroke: 10, alpha: show(t, burst + .25) * (1 - up) });
+  }
+  footnote('※2024年 約6,300億ドル(WSTS)。1ドル155円換算で約100兆円', t, burst + .3);
+}
+
+function scenePurity(t, sc) {
+  const P = sc.phr;
+  background(t, C.cyan, .18);
+  // インゴット
+  const rise = eOut(t / .7), dim = lerp(1, .32, eOut((t - P[1] + .1) / .4));
+  const ix = 540, iy = lerp(1500, 560, rise), iw = 300, ih = 620;
+  ctx.save(); ctx.globalAlpha = dim;
+  const g = ctx.createLinearGradient(ix - iw / 2, 0, ix + iw / 2, 0);
+  const sh = (t * .35) % 1;
+  g.addColorStop(0, '#2c3340'); g.addColorStop(clamp(sh - .15), '#5c6678'); g.addColorStop(sh, '#e7edf7'); g.addColorStop(clamp(sh + .15), '#6b7588'); g.addColorStop(1, '#262c38');
+  ctx.fillStyle = g; ctx.beginPath();
+  ctx.moveTo(ix - iw / 2, iy + 70); ctx.quadraticCurveTo(ix, iy - 40, ix + iw / 2, iy + 70);
+  ctx.lineTo(ix + iw / 2, iy + ih); ctx.quadraticCurveTo(ix, iy + ih + 70, ix - iw / 2, iy + ih); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  T('シリコン単結晶インゴット', 540, iy + ih + 110, { size: 40, font: NOTO, color: C.ink2, alpha: show(t, .4, P[1]) });
+  // 純度カウンター
+  const full = '99.999999999%';
+  const n = t < P[1] ? 0 : Math.min(full.length, Math.floor((t - P[1]) / .16) + 1);
+  if (n > 0) {
+    const str = full.slice(0, n), size = 118 * Math.min(1, 940 / tw(full, 118, DELA));
+    const wFull = tw(full, size, DELA);
+    const last = P[1] + (n - 1) * .16, pop = 1 + .12 * (1 - eOut((t - last) / .12));
+    T(str, 540 - wFull / 2, 760, { size: size * pop, font: DELA, color: C.ink, align: 'left', stroke: 14, glow: 30, gc: C.cyan });
+    // 9 × 11 ブラケット
+    const ba = show(t, P[1] + 12 * .16);
+    const x0 = 540 - wFull / 2, x1 = x0 + tw('99.999999999', size, DELA);
+    ln(x0, 850, x1, 850, C.yel, 6, ba); ln(x0, 830, x0, 850, C.yel, 6, ba); ln(x1, 830, x1, 850, C.yel, 6, ba);
+    T('「9」が11個', 540, 920, { size: 58, color: C.yel, stroke: 10, alpha: ba });
+  }
+  stamp('イレブンナイン', 540, 1080, t - P[2], { size: 92 });
+  T('不純物は 1000億個に1個', 540, 1200, { size: 48, color: C.ink, stroke: 10, alpha: show(t, P[2] + .3) });
+  chapter('#1 原料', t, C.cyan);
+  footnote('※半導体用の高純度多結晶シリコンは 11N(99.999999999%)級', t, P[1]);
+}
+
+function sceneNano(t, sc) {
+  const P = sc.phr;
+  background(t, C.cyan, .2);
+  // ズームトンネル(入れ子のチップ枠)
+  ctx.save(); ctx.translate(540, 760);
+  const ph = (t * .9) % 1, ta = t < P[2] ? 1 : 1 - eOut((t - P[2]) / .4) * .7;
+  for (let k = 0; k < 11; k++) {
+    const d = k - ph, s = 1500 * Math.pow(.66, d);
+    if (s < 6) continue;
+    ctx.save(); ctx.rotate((k * 5 + t * 6) * Math.PI / 180);
+    ctx.globalAlpha = ta * clamp(.55 - d * .04) * clamp(s / 60);
+    ctx.strokeStyle = k % 2 ? C.cyan : C.mag; ctx.lineWidth = Math.max(1.5, s / 220);
+    ctx.strokeRect(-s / 2, -s / 2, s, s);
+    for (let q = 1; q < 6; q++) { ctx.beginPath(); ctx.moveTo(-s / 2 + q * s / 6, -s / 2); ctx.lineTo(-s / 2 + q * s / 6, -s / 2 - s * .05); ctx.stroke(); }
+    ctx.restore();
+  }
+  ctx.restore();
+  // A: 2nm
+  const aA = show(t, P[0], P[1], .1, .2);
+  T('2nm', 540, 760, { size: 300, font: DELA, color: C.ink, stroke: 20, glow: 60, gc: C.cyan, alpha: aA, scale: lerp(2.2, 1, eBack((t - P[0]) / .28)) + (t - P[0]) * .03 });
+  T('最先端プロセスの「世代名」', 540, 960, { size: 44, color: C.cyan, stroke: 10, alpha: aA * show(t, P[0] + .4) });
+  // B: 0.000000001 m
+  const aB = show(t, P[1], P[2] - .05, .1, .2);
+  if (aB > 0) {
+    T('1nm =', 540, 620, { size: 110, font: DELA, color: C.cyan, stroke: 14, alpha: aB, glow: 30 });
+    const s = '0.000000001', n = Math.min(s.length, Math.floor((t - P[1] - .1) / .11) + 1);
+    const zs = 104 * Math.min(1, 940 / tw(s + ' m', 104, DELA)), wf = tw(s + ' m', zs, DELA);
+    T(s.slice(0, Math.max(0, n)) + (n >= s.length ? ' m' : ''), 540 - wf / 2, 800, { size: zs, font: DELA, color: C.ink, stroke: 14, align: 'left', alpha: aB });
+    T('10億分の1メートル', 540, 950, { size: 60, color: C.yel, stroke: 12, alpha: aB * show(t, P[1] + 1.3) });
+  }
+  // C: 髪の毛との比較
+  const aC = show(t, P[2] - .05, 1e9, .25);
+  if (aC > 0) {
+    const zx = eOut((t - P[2]) / .5);
+    const hx = lerp(540, 330, zx), hw = lerp(80, 400, zx);
+    ctx.save(); ctx.globalAlpha = aC;
+    const g = ctx.createLinearGradient(hx - hw / 2, 0, hx + hw / 2, 0);
+    g.addColorStop(0, '#2a1708'); g.addColorStop(.35, '#7a4a24'); g.addColorStop(.55, '#a8703c'); g.addColorStop(1, '#2a1708');
+    ctx.fillStyle = g; ctx.fillRect(hx - hw / 2, 480, hw, 700);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 3;
+    for (let k = 0; k < 14; k++) { const yy = 500 + k * 50; ctx.beginPath(); ctx.moveTo(hx - hw / 2, yy); ctx.quadraticCurveTo(hx, yy - 20, hx + hw / 2, yy + 8); ctx.stroke(); }
+    ctx.restore();
+    T('髪の毛', hx, 1240, { size: 46, color: C.ink, stroke: 10, alpha: aC });
+    T('約80,000nm', hx, 440, { size: 46, font: DELA, color: C.gold, stroke: 10, alpha: aC * show(t, P[2] + .3) });
+    // 拡大円
+    const ma = show(t, P[2] + .8);
+    circ(810, 800, 170, 'rgba(34,227,255,0.06)', ma, C.cyan, 6, 30);
+    ln(810, 680, 810, 920, C.cyan, 3, ma, 20);
+    T('2nm', 830, 720, { size: 66, font: DELA, color: C.cyan, stroke: 10, alpha: ma, align: 'left' });
+    T('4万分の1', 810, 1040, { size: 72, font: DELA, color: C.yel, stroke: 14, alpha: ma, glow: 30, scale: lerp(1.8, 1, eBack((t - P[2] - .8) / .25)) });
+  }
+  chapter('#2 微細化', t, C.cyan);
+  footnote('※「2nm」は世代の呼び名で、回路の実寸とは一致しない', t, P[0] + .5);
+}
+
+function sceneTransistor(t, sc) {
+  const P = sc.phr;
+  background(t, C.green, .16);
+  const cx = 540, cy = 760;
+  const zA = eBack(t / .35);
+  // パッケージ+ダイ
+  const showChip = t < P[2] ? 1 : 1 - eOut((t - P[2]) / .3);
+  if (showChip > 0) {
+    ctx.save(); ctx.globalAlpha = showChip; ctx.translate(cx, cy); ctx.scale(lerp(.3, 1, zA), lerp(.3, 1, zA));
+    rr(-310, -310, 620, 620, 26, '#16402f', 1, '#2b7a59', 6);
+    for (let k = 0; k < 18; k++) { const f = -270 + k * 31.7; rr(f, -330, 12, 24, 3, C.gold); rr(f, 306, 12, 24, 3, C.gold); rr(-330, f, 24, 12, 3, C.gold); rr(306, f, 24, 12, 3, C.gold); }
+    rr(-215, -215, 430, 430, 8, '#0c1018', 1, '#8a96aa', 4);
+    // セル点灯
+    const N = 24, cs = 430 / N, lit = t < P[1] ? 0 : eExpo((t - P[1]) / (P[2] - P[1] - .25)) * N * N;
+    for (let i = 0; i < N * N; i++) {
+      const order = (i * 337) % (N * N);
+      if (order >= lit) continue;
+      const gx = i % N, gy = Math.floor(i / N);
+      ctx.fillStyle = (order % 7 === 0) ? C.mag : C.cyan;
+      ctx.globalAlpha = showChip * (.55 + .45 * ((order * 13) % 10) / 10);
+      ctx.fillRect(-215 + gx * cs + 1.5, -215 + gy * cs + 1.5, cs - 3, cs - 3);
+    }
+    ctx.restore();
+    T('手のひらサイズ', cx, cy + 400, { size: 44, color: C.ink2, stroke: 8, alpha: show(t, .3, P[1]) * showChip });
+  }
+  // 2,000億 カウンター
+  const aB = show(t, P[1], P[2] + .2, .1, .25);
+  if (aB > 0) {
+    const v = 2000 * eExpo((t - P[1]) / (P[2] - P[1] - .25));
+    rr(120, 1010, 840, 230, 26, 'rgba(0,0,0,0.6)', aB, C.cyan, 4);
+    T(fmt(v) + '億', 540, 1110, { size: 150, font: DELA, color: C.yel, stroke: 14, glow: 30, alpha: aB });
+    T('個のトランジスタ', 540, 1205, { size: 44, color: C.ink, alpha: aB });
+  }
+  // 1,000工程: 層が積み上がる
+  const aC = show(t, P[2], P[3], .15, .25);
+  if (aC > 0) {
+    const n = Math.floor(eOut((t - P[2]) / 1.0) * 46);
+    for (let k = 0; k < n; k++) {
+      const y = 1080 - k * 13, hue = 180 + k * 4;
+      ctx.save(); ctx.globalAlpha = aC; ctx.fillStyle = `hsl(${hue},80%,${45 + (k % 3) * 8}%)`;
+      ctx.beginPath(); ctx.moveTo(540, y - 70); ctx.lineTo(820, y); ctx.lineTo(540, y + 70); ctx.lineTo(260, y); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    T('1,000+', 540, 470, { size: 170, font: DELA, color: C.ink, stroke: 16, glow: 30, gc: C.cyan, alpha: aC, scale: lerp(1.8, 1, eBack((t - P[2]) / .25)) });
+    T('の製造工程', 540, 590, { size: 50, color: C.cyan, stroke: 10, alpha: aC });
+  }
+  // 3か月
+  const aD = show(t, P[3], 1e9, .15);
+  if (aD > 0) {
+    const p = eIO((t - P[3] - .1) / 1.0);
+    T('完成まで', 540, 600, { size: 54, color: C.ink2, alpha: aD });
+    T('約3か月', 540, 760, { size: 180, font: DELA, color: C.yel, stroke: 16, glow: 40, alpha: aD, scale: lerp(1.6, 1, eBack((t - P[3]) / .25)) });
+    rr(140, 930, 800, 60, 30, 'rgba(255,255,255,0.08)', aD, C.ink3, 3);
+    rr(146, 936, 788 * p, 48, 24, C.green, aD);
+    T('DAY ' + Math.max(1, Math.round(90 * p)), 540, 1060, { size: 60, font: DELA, color: C.green, alpha: aD });
+  }
+  chapter('#3 集積', t, C.green);
+  footnote('※トランジスタ数はNVIDIA Blackwell(2ダイ構成)で約2,080億個', t, P[1]);
+}
+
+function chipIcon(x, y, s, color, alpha, lit) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y);
+  if (lit) { ctx.shadowColor = color; ctx.shadowBlur = 30; }
+  rr(-s / 2, -s / 2, s, s, 10, lit ? color : '#2a3242');
+  ctx.shadowBlur = 0;
+  rr(-s * .3, -s * .3, s * .6, s * .6, 6, lit ? 'rgba(0,0,0,0.35)' : '#1b2130');
+  for (let k = 0; k < 4; k++) { const f = -s / 2 + (k + 1) * s / 5 - 4; rr(f, -s / 2 - 14, 8, 14, 2, lit ? color : '#2a3242'); rr(f, s / 2, 8, 14, 2, lit ? color : '#2a3242'); }
+  ctx.restore();
+}
+function iconPhone(x, y, s, c) { rr(x - s * .28, y - s * .5, s * .56, s, 26, null, 1, c, 10); rr(x - s * .2, y - s * .4, s * .4, s * .72, 8, c, .25); circ(x, y + s * .41, 7, c); }
+function iconCar(x, y, s, c) {
+  ctx.save(); ctx.strokeStyle = c; ctx.lineWidth = 10; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(x - s * .5, y + s * .15); ctx.lineTo(x - s * .5, y - s * .05); ctx.lineTo(x - s * .32, y - s * .08); ctx.lineTo(x - s * .18, y - s * .3);
+  ctx.lineTo(x + s * .2, y - s * .3); ctx.lineTo(x + s * .34, y - s * .08); ctx.lineTo(x + s * .5, y - s * .02); ctx.lineTo(x + s * .5, y + s * .15); ctx.closePath(); ctx.stroke(); ctx.restore();
+  circ(x - s * .27, y + s * .17, s * .1, '#05070d', 1, c, 10); circ(x + s * .27, y + s * .17, s * .1, '#05070d', 1, c, 10);
+}
+function iconAI(x, y, s, c) { rr(x - s * .4, y - s * .4, s * .8, s * .8, 18, null, 1, c, 10); T('AI', x, y + 6, { size: s * .42, font: DELA, color: c }); for (let k = 0; k < 3; k++) { const f = -s * .2 + k * s * .2; ln(x + f, y - s * .4, x + f, y - s * .55, c, 8); ln(x + f, y + s * .4, x + f, y + s * .55, c, 8); } }
+
+function sceneTSMC(t, sc) {
+  const P = sc.phr;
+  const alert = t >= P[3];
+  background(t, alert ? C.red : C.mag, alert ? .35 + .15 * Math.sin(t * 14) : .2);
+  // A: 10個中9個
+  const aA = show(t, P[0], P[1], .15, .25);
+  if (aA > 0) {
+    T('最先端半導体の生産', 540, 470, { size: 50, color: C.ink2, alpha: aA });
+    for (let i = 0; i < 10; i++) {
+      const x = 180 + (i % 5) * 180, y = 640 + Math.floor(i / 5) * 210;
+      const ap = eBack((t - P[0] - i * .05) / .3), lit = i < 9 && t > P[0] + .9 + i * .02;
+      chipIcon(x, y, 120 * ap, C.mag, aA, lit);
+    }
+    T('約90%', 540, 1110, { size: 190, font: DELA, color: C.mag, stroke: 16, glow: 40, alpha: aA * show(t, P[0] + 1.1), scale: lerp(1.8, 1, eBack((t - P[0] - 1.1) / .25)) });
+  }
+  // B/C: 台湾の地図
+  const aM = show(t, P[1] - .05, P[4], .2, .25);
+  if (aM > 0) {
+    const z = lerp(1.6, 1, eOut((t - P[1]) / .7));
+    ctx.save(); ctx.translate(540, 760); ctx.scale(z, z); ctx.translate(-540, -760);
+    const r = rng(3);
+    TW_DOTS.forEach(([x, y], i) => {
+      const on = (t - P[1]) * 900 > (y - 380);
+      const flick = alert ? (r() < clamp((t - P[3]) / 1.0) ? .08 : (Math.sin(t * 40 + i) > 0 ? 1 : .5)) : 1;
+      if (on) circ(x, y, 5, alert ? C.red : C.mag, aM * flick);
+    });
+    const [hx, hy] = PT([120.97, 24.8]);
+    for (let k = 0; k < 3; k++) { const ph = ((t * .9) + k / 3) % 1; circ(hx, hy, 20 + ph * 110, null, aM * (1 - ph) * (alert ? .3 : 1), C.yel, 4); }
+    circ(hx, hy, 14, C.yel, aM, null, 0, 30);
+    ctx.restore();
+    const la = aM * show(t, P[1] + .3) * (alert ? .4 : 1);
+    ln(hx + 20, hy - 10, 690, 470, C.yel, 4, la);
+    T('TSMC', 705, 455, { size: 76, font: DELA, color: C.yel, align: 'left', stroke: 12, alpha: la });
+    T('新竹(台湾)', 707, 520, { size: 38, color: C.ink, align: 'left', stroke: 8, alpha: la });
+    if (t < P[3]) stamp('たった1社', 300, 1070, t - P[2], { size: 88, color: C.yel });
+  }
+  // 警告ストライプ
+  if (alert) {
+    const aa = show(t, P[3], 1e9, .1);
+    ctx.save(); ctx.globalAlpha = aa;
+    for (const yy of [330, 1220]) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, yy, W, 56); ctx.clip(); ctx.fillStyle = C.yel; ctx.fillRect(0, yy, W, 56);
+      ctx.fillStyle = '#111'; const off = (t * 160) % 80;
+      for (let x = -120; x < W + 120; x += 80) { ctx.beginPath(); ctx.moveTo(x + off, yy); ctx.lineTo(x + off + 40, yy); ctx.lineTo(x + off, yy + 56); ctx.lineTo(x + off - 40, yy + 56); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    }
+    ctx.restore();
+    if (t < P[4]) T('WARNING', 540, 1060, { size: 120, font: DELA, color: C.red, stroke: 14, glow: 40, alpha: aa * (Math.sin(t * 16) > -.3 ? 1 : .35) });
+  }
+  // D: スマホ・車・AI が止まる
+  const aD = show(t, P[4] - .05, 1e9, .15);
+  if (aD > 0) {
+    const icons = [iconPhone, iconCar, iconAI], names = ['スマホ', '車', 'AI'];
+    icons.forEach((fn, i) => {
+      const x = 200 + i * 340, y = 780, hitT = P[4] + .35 + i * .42, dead = t >= hitT;
+      const ap = eBack((t - P[4] - i * .06) / .3);
+      ctx.save(); ctx.globalAlpha = aD; ctx.translate(x, y); ctx.scale(ap, ap); ctx.translate(-x, -y);
+      if (!dead) { ctx.shadowColor = C.cyan; ctx.shadowBlur = 30; }
+      fn(x, y, 230, dead ? '#4a5263' : C.cyan);
+      ctx.restore();
+      T(names[i], x, 960, { size: 52, color: dead ? C.ink3 : C.ink, stroke: 10, alpha: aD });
+      if (dead) {
+        const k = eOut((t - hitT) / .15);
+        ln(x - 120, y - 120, x - 120 + 240 * k, y - 120 + 240 * k, C.red, 22, aD, 20);
+        ln(x + 120, y - 120, x + 120 - 240 * k, y - 120 + 240 * k, C.red, 22, aD, 20);
+      }
+    });
+    T('STOP', 540, 1100, { size: 150, font: DELA, color: C.red, stroke: 16, glow: 40, alpha: show(t, P[4] + 1.2), scale: lerp(2, 1, eBack((t - P[4] - 1.2) / .25)) });
+  }
+  chapter('#4 一極集中', t, alert ? C.red : C.mag);
+  footnote('※10nm未満の先端ロジック半導体の約9割を台湾で生産(各種調査の概数)', t, P[0] + 1);
+}
+
+function sceneASML(t, sc) {
+  const P = sc.phr;
+  background(t, C.purple, .25);
+  // A: EUV露光装置
+  const aA = show(t, P[0] - .1, P[1], .2, .25);
+  if (aA > 0) {
+    ctx.save(); ctx.globalAlpha = aA;
+    const s = eBack((t - P[0] + .1) / .4); ctx.translate(540, 780); ctx.scale(s, s); ctx.translate(-540, -780);
+    // 筐体(アイソメ風)
+    ctx.fillStyle = '#d9dee8'; ctx.beginPath(); ctx.moveTo(160, 600); ctx.lineTo(820, 600); ctx.lineTo(920, 520); ctx.lineTo(260, 520); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#9aa3b5'; ctx.beginPath(); ctx.moveTo(820, 600); ctx.lineTo(920, 520); ctx.lineTo(920, 900); ctx.lineTo(820, 980); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#eef1f6'; ctx.fillRect(160, 600, 660, 380);
+    ctx.fillStyle = '#0d1020'; ctx.fillRect(200, 640, 580, 290);
+    ctx.restore();
+    // EUV光路
+    const path = [[230, 900], [330, 680], [520, 860], [640, 670], [740, 890]];
+    ctx.save(); ctx.globalAlpha = aA; ctx.strokeStyle = C.purple; ctx.lineWidth = 10; ctx.shadowColor = C.purple; ctx.shadowBlur = 30;
+    ctx.setLineDash([40, 22]); ctx.lineDashOffset = -t * 260;
+    ctx.beginPath(); path.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke(); ctx.restore();
+    path.slice(1, 4).forEach(p => rr(p[0] - 36, p[1] - 8, 72, 16, 6, '#c8b6ff', aA));
+    rr(690, 900, 110, 18, 4, '#7ad7ff', aA);
+    circ(230, 900, 26, C.purple, aA, null, 0, 50);
+    T('EUV露光装置', 540, 450, { size: 86, font: DELA, color: C.ink, stroke: 14, glow: 30, gc: C.purple, alpha: aA });
+    T('波長13.5nmの光で回路を焼き付ける', 540, 1070, { size: 42, color: C.ink2, stroke: 8, alpha: aA * show(t, P[0] + .8) });
+  }
+  // B: ランキング
+  const aB = show(t, P[1], P[2], .15, .2);
+  if (aB > 0) {
+    T('EUV露光装置メーカー', 540, 440, { size: 54, color: C.ink2, alpha: aB });
+    const rows = [['1', 'ASML', 'オランダ'], ['2', '―――', ''], ['3', '―――', '']];
+    rows.forEach((r, i) => {
+      const y = 560 + i * 170, a = aB * eOut((t - P[1] - i * .12) / .25), first = i === 0;
+      rr(110, y, 860, 140, 22, first ? 'rgba(166,107,255,0.22)' : 'rgba(255,255,255,0.05)', a, first ? C.purple : '#2c3446', 4);
+      T(r[0], 175, y + 74, { size: 74, font: DELA, color: first ? C.yel : C.ink3, alpha: a });
+      T(r[1], 260, y + 74, { size: first ? 80 : 60, font: DELA, color: first ? C.ink : C.ink3, align: 'left', alpha: a });
+      if (r[2]) {
+        [['#ae1c28', 0], ['#ffffff', 1], ['#21468b', 2]].forEach(([c, k]) => rr(700, y + 38 + k * 22, 90, 22, 0, c, a));
+        T(r[2], 900, y + 74, { size: 40, color: C.ink, alpha: a });
+      } else T('なし', 860, y + 74, { size: 44, color: C.ink3, alpha: a });
+    });
+    T('シェア100%', 540, 1130, { size: 130, font: DELA, color: C.purple, stroke: 14, glow: 40, alpha: show(t, P[1] + .6) * aB, scale: lerp(1.8, 1, eBack((t - P[1] - .6) / .25)) });
+  }
+  // C: 価格
+  const aC = show(t, P[2], 1e9, .15);
+  if (aC > 0) {
+    const v = 300 * eExpo((t - P[2]) / 1.1), done = t > P[2] + 1.15;
+    T('1台', 540, 520, { size: 70, color: C.ink2, alpha: aC });
+    const ps = 150 * Math.min(1, 860 / tw('約300億円〜', 150, DELA));
+    T('約' + fmt(v) + '億円〜', 540, 720, { size: ps, font: DELA, color: C.yel, stroke: 16, glow: 40, alpha: aC, scale: done ? lerp(1.12, 1, eOut((t - P[2] - 1.15) / .2)) : 1 });
+    T('最新機は500億円超とも', 540, 880, { size: 52, color: C.ink, stroke: 10, alpha: show(t, P[2] + 1.3) });
+    // 舞い上がる「¥」
+    const r = rng(9);
+    for (let k = 0; k < 26; k++) {
+      const st = P[2] + 1.15 + r() * .3, age = t - st; if (age < 0) { r(); r(); continue; }
+      const x = 540 + (r() - .5) * 900, vy = 600 + r() * 600;
+      T('¥', x, 760 - vy * age + 900 * age * age, { size: 60 + k % 3 * 20, font: DELA, color: C.yel, alpha: aC * clamp(1.6 - age), rot: age * (k % 2 ? 3 : -3) });
+    }
+  }
+  chapter('#5 独占装置', t, C.purple);
+  footnote('※EUV露光装置を量産しているのは世界でASMLのみ。価格は報道ベースの概数', t, P[1]);
+}
+
+function pin(x, y, age, color, label1, label2, cardX, cardY, align) {
+  if (age < 0) return;
+  const drop = eBack(age / .35), yy = lerp(y - 260, y, drop);
+  for (let k = 0; k < 2; k++) { const ph = ((age * .8) + k / 2) % 1; if (age > .3) circ(x, y, 14 + ph * 80, null, 1 - ph, color, 4); }
+  ctx.save(); ctx.shadowColor = color; ctx.shadowBlur = 30;
+  ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(x, yy); ctx.bezierCurveTo(x - 40, yy - 50, x - 34, yy - 92, x, yy - 92); ctx.bezierCurveTo(x + 34, yy - 92, x + 40, yy - 50, x, yy); ctx.fill();
+  ctx.restore(); circ(x, yy - 62, 13, '#fff');
+  const ca = eOut((age - .25) / .25);
+  if (ca <= 0) return;
+  const w = 580, h = 150, cx = align === 'right' ? cardX : cardX - w;
+  ln(x, yy - 60, align === 'right' ? cx : cx + w, cardY + h / 2, color, 4, ca);
+  rr(cx, cardY, w, h, 22, 'rgba(5,7,13,0.85)', ca, color, 5);
+  T(label1, cx + 28, cardY + 52, { size: 50, font: DELA, color, align: 'left', alpha: ca });
+  T(label2, cx + 28, cardY + 112, { size: 34, color: C.ink, align: 'left', alpha: ca });
+}
+
+function sceneJapan(t, sc) {
+  const P = sc.phr;
+  background(t, C.red, .18);
+  const dimMap = t >= P[1] && t < P[3] ? lerp(1, .18, eOut((t - P[1]) / .3)) : (t >= P[3] ? lerp(.18, 1, eOut((t - P[3]) / .3)) : 1);
+  // 地図
+  const r = rng(21);
+  JP_DOTS.forEach(([x, y]) => {
+    const d = r();
+    const ap = eBack((t - P[0] - d * .5) / .3);
+    if (ap <= 0) return;
+    circ(x, y, 4.6 * ap, d < .12 ? C.red : '#f2f4f8', dimMap * (d < .12 ? 1 : .85));
+  });
+  T('？', 880, 520, { size: 260, font: DELA, color: C.yel, stroke: 16, glow: 40, alpha: show(t, P[0] + .15, P[1], .1, .2), rot: .15 * Math.sin(t * 4), scale: lerp(2, 1, eBack((t - P[0] - .15) / .3)) });
+  // B: 材料カード
+  const aB = show(t, P[1], P[2], .15, .2);
+  if (aB > 0) {
+    T('材料で世界トップクラス', 540, 470, { size: 64, color: C.yel, stroke: 12, alpha: aB });
+    const cards = [['ウェーハ', 'wafer'], ['レジスト', 'bottle'], ['高純度薬品', 'flask']];
+    cards.forEach(([name, kind], i) => {
+      const x = 200 + i * 340, y = 780, ap = eBack((t - P[1] - .15 - i * .25) / .3);
+      if (ap <= 0) return;
+      ctx.save(); ctx.globalAlpha = aB; ctx.translate(x, y); ctx.scale(ap, ap); ctx.translate(-x, -y);
+      rr(x - 150, y - 190, 300, 380, 26, 'rgba(255,255,255,0.06)', 1, C.red, 5);
+      if (kind === 'wafer') { const g = ctx.createRadialGradient(x - 30, y - 70, 10, x, y - 40, 110); g.addColorStop(0, '#e9f0ff'); g.addColorStop(.5, '#8f8fff'); g.addColorStop(1, '#3a2f6a'); circ(x, y - 40, 100, g); }
+      if (kind === 'bottle') { rr(x - 55, y - 120, 110, 160, 20, '#c9772b'); rr(x - 28, y - 150, 56, 36, 6, '#eee'); rr(x - 40, y - 70, 80, 60, 6, '#fff', .85); }
+      if (kind === 'flask') { ctx.fillStyle = C.cyan; ctx.beginPath(); ctx.moveTo(x - 22, y - 150); ctx.lineTo(x + 22, y - 150); ctx.lineTo(x + 22, y - 90); ctx.lineTo(x + 80, y + 30); ctx.lineTo(x - 80, y + 30); ctx.lineTo(x - 22, y - 90); ctx.closePath(); ctx.globalAlpha *= .85; ctx.fill(); }
+      ctx.restore();
+      T(name, x, y + 130, { size: 44, color: C.ink, alpha: aB * clamp(ap) });
+    });
+  }
+  // C: シェアのバー
+  const aC = show(t, P[2], P[3], .15, .2);
+  if (aC > 0) {
+    T('日本企業の世界シェア', 540, 470, { size: 56, color: C.ink2, alpha: aC });
+    const bars = [['フォトレジスト', 90, '約9割'], ['シリコンウェーハ', 55, '約5割超']];
+    bars.forEach(([name, v, lab], i) => {
+      const y = 600 + i * 300, p = eOut((t - P[2] - .1 - i * .2) / .9);
+      T(name, 110, y, { size: 52, color: C.ink, align: 'left', alpha: aC });
+      rr(110, y + 50, 860, 90, 16, 'rgba(255,255,255,0.08)', aC);
+      rr(110, y + 50, 860 * v / 100 * p, 90, 16, i === 0 ? C.red : '#c4495a', aC);
+      T(lab, 960, y, { size: 64, font: DELA, color: i === 0 ? C.yel : C.ink, align: 'right', alpha: aC * clamp(p * 2 - 1) });
+    });
+  }
+  // D, E: 拠点ピン
+  const [kx, ky] = PJ([130.75, 32.85]), [hx, hy] = PJ([141.65, 42.8]);
+  pin(kx, ky, t - P[3] - .1, C.cyan, '熊本', 'TSMC(JASM) 2024年量産', kx + 80, ky - 30, 'right');
+  pin(hx, hy, t - P[4] - .1, C.yel, '北海道 千歳', 'Rapidus 2nm・27年量産目標', hx - 40, hy + 80, 'left');
+  chapter('#6 日本の強み', t, C.red);
+  footnote('※シェアは経済産業省資料などによる概数', t, P[2]);
+}
+
+function sceneCTA(t, sc) {
+  const P = sc.phr;
+  background(t, C.gold, .22);
+  // A: 地球(ワイヤーフレーム)と砂の軌道
+  const aA = show(t, P[0] - .1, P[1], .2, .25);
+  if (aA > 0) {
+    const R = 290, cx = 540, cy = 770, rot = t * .6;
+    ctx.save(); ctx.globalAlpha = aA; ctx.strokeStyle = C.cyan; ctx.lineWidth = 3; ctx.shadowColor = C.cyan; ctx.shadowBlur = 16;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
+    for (let k = 0; k < 6; k++) { const ph = (k / 6 * Math.PI + rot) % Math.PI; const rx = Math.abs(Math.cos(ph)) * R; ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(rx, 1), R, 0, 0, 7); ctx.stroke(); }
+    for (let k = 1; k < 5; k++) { const yy = -R + k * 2 * R / 5, rx = Math.sqrt(R * R - yy * yy); ctx.beginPath(); ctx.ellipse(cx, cy + yy, rx, rx * .18, 0, 0, 7); ctx.stroke(); }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = aA;
+    for (let i = 0; i < 400; i++) {
+      const p = PARTS[i], a = i / 400 * Math.PI * 2 + t * (1 + p.shade), rr2 = R + 40 + p.shade * 90;
+      ctx.fillStyle = sandColor(p.shade); ctx.fillRect(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2 * .35 - Math.cos(a) * 40, 4, 4);
+    }
+    ctx.restore();
+    T('砂 → 世界', 540, 440, { size: 90, font: DELA, color: C.gold, stroke: 14, glow: 30, alpha: aA });
+  }
+  // B: 投票カード
+  const aB = show(t, P[1], P[2], .15, .2);
+  if (aB > 0) {
+    T('次に勝つのは？', 540, 440, { size: 90, font: DELA, color: C.ink, stroke: 14, glow: 30, gc: C.yel, alpha: aB });
+    const opts = [['アメリカ', '#3c6cf0'], ['台湾', C.mag], ['日本', C.red], ['韓国', C.cyan], ['中国', '#ffb020']];
+    let hi = -1; ROULETTE.forEach((rt, k) => { if (sc.s + t >= rt) hi = k % 5; });
+    opts.forEach(([name, col], i) => {
+      const y = 540 + i * 135, ap = eOut((t - P[1] - i * .07) / .25), on = i === hi;
+      rr(170, y, 740, 112, 24, on ? col : 'rgba(255,255,255,0.06)', aB * ap, col, 5);
+      T(String.fromCharCode(65 + i), 230, y + 60, { size: 56, font: DELA, color: on ? '#05070d' : col, alpha: aB * ap });
+      T(name, 540, y + 60, { size: 60, color: on ? '#05070d' : C.ink, alpha: aB * ap });
+    });
+  }
+  // C: コメント誘導
+  const aC = show(t, P[2], DURATION - SC.cta.s - .9, .15, .4);
+  if (aC > 0) {
+    const b = 1 + .06 * Math.sin((t - P[2]) * 9) * Math.exp(-(t - P[2]) * 1.2), ap = eBack((t - P[2]) / .3);
+    ctx.save(); ctx.globalAlpha = aC; ctx.translate(540, 760); ctx.scale(ap * b, ap * b);
+    ctx.shadowColor = C.yel; ctx.shadowBlur = 40; ctx.fillStyle = C.yel;
+    ctx.beginPath(); ctx.roundRect(-260, -170, 520, 300, 60); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-90, 120); ctx.lineTo(-170, 230); ctx.lineTo(10, 125); ctx.fill();
+    ctx.shadowBlur = 0;
+    [-130, 0, 130].forEach((x, k) => circ(x, -20, 34, '#05070d', .5 + .5 * (Math.sin(t * 8 - k) > 0)));
+    ctx.restore();
+    T('A〜Eで答えてね', 540, 1080, { size: 64, color: C.ink, stroke: 12, alpha: aC * show(t, P[2] + .4) });
+    // コメントボタン(画面右)を指す矢印
+    const k = (Math.sin(t * 7) + 1) / 2, ax = 900 + k * 25, ay = 1130 + k * 25;
+    ctx.save(); ctx.globalAlpha = aC * show(t, P[2] + .6); ctx.strokeStyle = C.yel; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.shadowColor = C.yel; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.moveTo(ax - 120, ay - 120); ctx.lineTo(ax, ay); ctx.moveTo(ax, ay); ctx.lineTo(ax - 70, ay - 6); ctx.moveTo(ax, ay); ctx.lineTo(ax - 6, ay - 70); ctx.stroke(); ctx.restore();
+  }
+  // 最後: 砂山に戻る(冒頭へループ)
+  const lp = eIO((t - (sc.d - 1.0)) / .8);
+  if (lp > 0) drawHeap(lp, t);
+  chapter('', t, C.gold);
+}
+
+// ---------- 共通オーバーレイ ----------
+let CUR = null;
+function chapter(label, t, color) { CUR = { label, t, color }; }
+let FOOT = null;
+function footnote(str, t, from) { FOOT = { str, a: show(t, from, 1e9, .3) }; }
+
+function overlay(t) {
+  // 上部タイトル帯
+  const ta = eOut(t / .25);
+  ctx.save(); ctx.globalAlpha = ta;
+  const g = ctx.createLinearGradient(0, 0, 0, 280); g.addColorStop(0, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 280);
+  ctx.restore();
+  T('【知らないとヤバい】', 540, 108, { size: 44, color: C.yel, stroke: 8, alpha: ta });
+  T('半導体のウラ側', 540, 186, { size: 84, font: DELA, color: C.ink, stroke: 12, glow: 24, gc: C.cyan, alpha: ta });
+  // 章ごとの進捗
+  const chs = TL.scenes.filter(s => !['hook', 'cta'].includes(s.id));
+  const x0 = 120, x1 = 960, gap = 10, w = (x1 - x0 - gap * (chs.length - 1)) / chs.length;
+  chs.forEach((s, i) => {
+    const p = clamp((t - s.s) / s.d), x = x0 + i * (w + gap);
+    rr(x, 246, w, 10, 5, 'rgba(255,255,255,0.18)', ta);
+    rr(x, 246, w * p, 10, 5, CUR && p > 0 && p < 1 ? CUR.color : C.ink, ta);
+  });
+  // 章タグ
+  if (CUR && CUR.label) {
+    const a = eOut(CUR.t / .3), x = lerp(-300, 60, eOut(CUR.t / .35));
+    tag(CUR.label, x, 330, CUR.color, a, 42);
+  }
+  // 字幕
+  const subs = TL.subtitles;
+  for (let i = 0; i < subs.length; i++) {
+    const c = subs[i], next = subs[i + 1];
+    const end = Math.min(c.e + .25, next ? next.s : 1e9);
+    if (t < c.s - .02 || t >= end) continue;
+    caption(c.text, t - c.s, end - t);
+  }
+  if (FOOT && FOOT.a > 0) T(FOOT.str, 540, 1490, { size: 28, font: BOLD, color: C.ink3, alpha: FOOT.a * .95, stroke: 6 });
+}
+function parseCaption(str) {
+  return str.split('/').map(line => {
+    const segs = []; let hl = false, cur = '';
+    for (const ch of line) { if (ch === '[' || ch === ']') { if (cur) segs.push([cur, hl]); cur = ''; hl = ch === '['; } else cur += ch; }
+    if (cur) segs.push([cur, hl]); return segs;
+  });
+}
+function caption(str, age, left) {
+  const lines = parseCaption(str), base = 96, HL = 1.14, maxW = 900, cx = 520;
+  const pop = lerp(1.3, 1, eBack(age / .2)), a = Math.min(clamp(age / .07), clamp(left / .1));
+  const widths = lines.map(segs => segs.reduce((s, [txt, hl]) => s + tw(txt, base * (hl ? HL : 1), NOTO), 0));
+  const fit = Math.min(1, maxW / Math.max(...widths));
+  const lh = base * 1.22 * fit, y0 = 1330 - (lines.length - 1) * lh / 2;
+  ctx.save(); ctx.translate(cx, 1330); ctx.scale(pop, pop); ctx.translate(-cx, -1330);
+  lines.forEach((segs, li) => {
+    let x = cx - widths[li] * fit / 2; const y = y0 + li * lh;
+    for (const [txt, hl] of segs) {
+      const size = base * fit * (hl ? HL : 1);
+      T(txt, x, y, { size, color: hl ? C.yel : C.ink, align: 'left', stroke: 18 * fit, alpha: a, glow: hl ? 18 : 0, gc: C.yel });
+      x += tw(txt, size, NOTO);
+    }
+  });
+  ctx.restore();
+}
+
+// ---------- メイン ----------
+const FNS = { hook: sceneHook, purity: scenePurity, nano: sceneNano, tr: sceneTransistor, tsmc: sceneTSMC, asml: sceneASML, japan: sceneJapan, cta: sceneCTA };
+function render(t) {
+  t = Math.min(t, DURATION - 1e-3);
+  ctx = bctx; CUR = null; FOOT = null;
+  const sc = TL.scenes.find(s => t >= s.s && t < s.s + s.d) || TL.scenes[TL.scenes.length - 1];
+  const lt = t - sc.s;
+  bctx.save(); FNS[sc.id](lt, sc); bctx.restore();
+  // カメラ: 揺れ + ズームパンチ + ゆっくりズーム
+  let sx = 0, sy = 0, zoom = 1 + .025 * clamp(lt / sc.d);
+  for (const e of SHAKERS) {
+    const d = t - e.t; if (d < 0 || d > .6) continue;
+    const k = e.g * Math.exp(-d * 10);
+    sx += Math.sin(d * 90 + e.t * 7) * 26 * k; sy += Math.cos(d * 77 + e.t * 3) * 22 * k; zoom += .05 * k;
+  }
+  const entry = 1 - eOut(lt / .25); zoom += .1 * entry;
+  ctx = mctx;
+  mctx.fillStyle = C.bg; mctx.fillRect(0, 0, W, H);
+  mctx.save(); mctx.translate(W / 2 + sx, H / 2 + sy); mctx.scale(zoom, zoom); mctx.translate(-W / 2, -H / 2);
+  mctx.drawImage(buf, 0, 0); mctx.restore();
+  // グリッチ(横方向のずれ)
+  let gl = 0; for (const g of GLITCHES) { const d = t - g; if (d >= -.03 && d < .16) gl = Math.max(gl, 1 - d / .16); }
+  if (gl > 0) {
+    const r = rng(Math.floor(t * FPS) + 1);
+    for (let k = 0; k < 9; k++) {
+      const y = r() * H, h = 20 + r() * 140, off = (r() - .5) * 120 * gl;
+      mctx.drawImage(main, 0, y, W, h, off, y, W, h);
+      mctx.save(); mctx.globalAlpha = .25 * gl; mctx.fillStyle = r() < .5 ? C.cyan : C.mag; mctx.fillRect(0, y, W, 4 + r() * 8); mctx.restore();
+    }
+  }
+  mctx.drawImage(vignette, 0, 0);
+  overlay(t);
+  // フラッシュ
+  let fl = 0;
+  for (const e of EVENTS) { if (!['impact', 'stamp'].includes(e.type) || e.g < .75) continue; const d = t - e.t; if (d >= 0 && d < .18) fl = Math.max(fl, .55 * (1 - d / .18)); }
+  for (const s of TL.scenes.slice(1)) { const d = t - s.s; if (d >= 0 && d < .12) fl = Math.max(fl, .35 * (1 - d / .12)); }
+  if (fl > 0) { mctx.save(); mctx.globalAlpha = fl; mctx.fillStyle = '#fff'; mctx.fillRect(0, 0, W, H); mctx.restore(); }
+}
+window.render = render; window.FPS = FPS; window.DURATION = DURATION; window.EVENTS = EVENTS;
+if (!navigator.webdriver) {
+  document.fonts.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+vendor/
+__pycache__/
+output/mix.wav
+output/sfx.wav
+output/video_silent.mp4
+output/semiconductor_short.mp4
