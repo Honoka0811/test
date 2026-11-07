@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>日本の絶景5選 — ショート動画レンダラー</title>
+<style>
+  html, body { margin: 0; background: #111; }
+  #c { display: block; margin: 0 auto; width: 405px; height: 720px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ===== 設定 =====
+window.FPS = 30;
+// capture.js が window.TIMELINE (narrate.py の output/timeline.json) を注入する。ブラウザで直接開いた場合は fetch する。
+const W = 1080, H = 1920;
+const BPM = 122, BEAT = 60 / BPM;
+const JP = "'IPAPGothic', 'IPAGothic', sans-serif";
+const NUM = "'Inter Display', 'Inter', 'DejaVu Sans', sans-serif";
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+// ===== ユーティリティ =====
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOut = u => 1 - Math.pow(1 - clamp(u), 3);
+const easeIn = u => Math.pow(clamp(u), 3);
+const easeInOut = u => { u = clamp(u); return u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; };
+const back = u => { u = clamp(u); const c = 1.70158 * 1.3; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2); };
+const elastic = u => { u = clamp(u); return u === 0 ? 0 : u === 1 ? 1 : Math.pow(2, -9 * u) * Math.sin((u * 10 - .75) * (2 * Math.PI / 3)) + 1; };
+function hash(n) { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function rnd(seed) { let s = seed * 9301 + 49297; return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; }; }
+function noise1(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u); }
+function fbm(x, oct = 4) { let v = 0, a = .5, f = 1; for (let i = 0; i < oct; i++) { v += a * noise1(x * f + i * 17.3); a *= .5; f *= 2.1; } return v; }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function grad(x0, y0, x1, y1, stops) { const g = ctx.createLinearGradient(x0, y0, x1, y1); stops.forEach(([o, c]) => g.addColorStop(o, c)); return g; }
+function rgrad(x, y, r0, r1, stops) { const g = ctx.createRadialGradient(x, y, r0, x, y, r1); stops.forEach(([o, c]) => g.addColorStop(o, c)); return g; }
+function text(s, x, y, size, opt = {}) {
+  ctx.save();
+  ctx.font = `${opt.weight || 'bold'} ${size}px ${opt.font || JP}`;
+  ctx.textAlign = opt.align || 'center'; ctx.textBaseline = opt.base || 'middle';
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if (opt.shadow) { ctx.shadowColor = opt.shadow; ctx.shadowBlur = opt.blur || 24; ctx.shadowOffsetY = opt.offY || 6; }
+  if (opt.stroke) { ctx.lineWidth = opt.lw || size * .22; ctx.strokeStyle = opt.stroke; ctx.strokeText(s, x, y); }
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = opt.fill || '#fff'; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function measure(s, size, font = JP, weight = 'bold') { ctx.font = `${weight} ${size}px ${font}`; return ctx.measureText(s).width; }
+
+// ===== 共通パーツ =====
+function sky(stops) { ctx.fillStyle = grad(0, 0, 0, H, stops); ctx.fillRect(0, 0, W, H); }
+function sun(x, y, r, c1, c2, glow = 2.6) {
+  ctx.fillStyle = rgrad(x, y, r * .6, r * glow, [[0, c2], [1, 'rgba(255,255,255,0)']]); ctx.fillRect(x - r * glow, y - r * glow, r * glow * 2, r * glow * 2);
+  ctx.fillStyle = c1; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+}
+function cloud(x, y, s, alpha = .95, color = '#fff') {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  const parts = [[0, 0, 60], [55, -18, 48], [-55, -10, 44], [100, 8, 36], [-100, 12, 32], [30, 14, 50], [-25, 18, 46]];
+  parts.forEach(([dx, dy, r]) => { ctx.beginPath(); ctx.arc(x + dx * s, y + dy * s, r * s, 0, 7); ctx.fill(); });
+  ctx.restore();
+}
+function bird(x, y, s, ph) {
+  ctx.save(); ctx.strokeStyle = 'rgba(20,30,50,.85)'; ctx.lineWidth = 3 * s; ctx.lineCap = 'round';
+  const f = Math.sin(ph) * 10 * s;
+  ctx.beginPath(); ctx.moveTo(x - 18 * s, y + f); ctx.quadraticCurveTo(x - 8 * s, y - 6 * s, x, y); ctx.quadraticCurveTo(x + 8 * s, y - 6 * s, x + 18 * s, y + f); ctx.stroke(); ctx.restore();
+}
+function sparkles(seed, n, x0, y0, x1, y1, t, size = 3, color = '255,255,255') {
+  const r = rnd(seed);
+  for (let i = 0; i < n; i++) {
+    const x = lerp(x0, x1, r()), y = lerp(y0, y1, r()), ph = r() * 6.28, sp = 2 + r() * 4;
+    const a = Math.max(0, Math.sin(t * sp + ph)) ** 6;
+    if (a < .05) continue;
+    ctx.fillStyle = `rgba(${color},${a})`; ctx.beginPath(); ctx.arc(x, y, size * (0.5 + a), 0, 7); ctx.fill();
+  }
+}
+let grainCv = null;
+function grain(alpha, t) {
+  if (!grainCv) { grainCv = document.createElement('canvas'); grainCv.width = grainCv.height = 256; const g = grainCv.getContext('2d'); const im = g.createImageData(256, 256); for (let i = 0; i < im.data.length; i += 4) { const v = 128 + (Math.random() - .5) * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; } g.putImageData(im, 0, 0); }
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = 'overlay';
+  const ox = Math.floor(hash(Math.floor(t * 30)) * 256), oy = Math.floor(hash(Math.floor(t * 30) + 99) * 256);
+  for (let y = -oy; y < H; y += 256) for (let x = -ox; x < W; x += 256) ctx.drawImage(grainCv, x, y);
+  ctx.restore();
+}
+function vignette(a = .45) { ctx.fillStyle = rgrad(W / 2, H / 2, H * .35, H * .78, [[0, 'rgba(0,0,0,0)'], [1, `rgba(0,0,0,${a})`]]); ctx.fillRect(0, 0, W, H); }
+
+// ===== フック =====
+function sceneHook(tl, dur, sc) {
+  // 背景: 夜明け前の紺→ティールのアニメーショングラデーション + スピードライン
+  const a = tl / dur;
+  sky([[0, '#0b1230'], [.5, '#10305a'], [1, '#0d6a6e']]);
+  ctx.save(); ctx.translate(W / 2, H / 2);
+  for (let i = 0; i < 60; i++) {
+    const ang = i / 60 * Math.PI * 2 + tl * .25, len = 500 + hash(i) * 900, sp = 900 + hash(i + 5) * 1400;
+    const d = (hash(i + 9) * 2000 + tl * sp) % 2200 + 200;
+    ctx.strokeStyle = `rgba(255,255,255,${.06 + hash(i + 2) * .12})`; ctx.lineWidth = 2 + hash(i + 3) * 3;
+    ctx.beginPath(); ctx.moveTo(Math.cos(ang) * d, Math.sin(ang) * d); ctx.lineTo(Math.cos(ang) * (d + len * .3), Math.sin(ang) * (d + len * .3)); ctx.stroke();
+  }
+  ctx.restore();
+  // 浮遊する光
+  sparkles(3, 70, 0, 0, W, H, tl, 4, '255,230,160');
+  const s2 = sc.sentences[1].start;  // 2文目開始
+  const shake = tl < .45 ? (1 - tl / .45) * 14 : 0;
+  ctx.save(); ctx.translate((hash(Math.floor(tl * 60)) - .5) * shake, (hash(Math.floor(tl * 60) + 7) - .5) * shake);
+  if (tl < s2 - .05) {
+    // 「海外、」「行かなくて」「よくない？」を順にパンチイン
+    const words = [['海外、', 0.0, 150, '#fff'], ['行かなくて', 0.14, 150, '#fff'], ['よくない？', 0.28, 170, '#FFE14D']];
+    words.forEach(([w, t0, sz, col], i) => {
+      const u = (tl - t0) / .22; if (u < 0) return;
+      const k = back(u); ctx.save(); ctx.translate(W / 2, 640 + i * 230); ctx.scale(k, k);
+      text(w, 0, 0, sz, { fill: col, stroke: '#000', lw: sz * .2, shadow: 'rgba(0,0,0,.5)' }); ctx.restore();
+    });
+    // パスポートのスタンプ風リング
+    const u = easeOut((tl - .5) / .4); if (u > 0) {
+      ctx.save(); ctx.translate(W / 2, 1330); ctx.rotate(-.18 + tl * .15); ctx.globalAlpha = u * .9; ctx.scale(lerp(1.8, 1, u), lerp(1.8, 1, u));
+      ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(0, 0, 150, 0, 7); ctx.stroke(); ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 128, 0, 7); ctx.stroke();
+      text('JAPAN', 0, -6, 64, { font: NUM, weight: '900', fill: '#ff6b6b' }); text('TRAVEL ✈', 0, 52, 30, { font: NUM, weight: '800', fill: '#ff6b6b' });
+      ctx.restore();
+    }
+  } else {
+    const u = tl - s2;
+    // 背景: 5スポットの高速ティザーカット(0.28秒ごと) + 暗幕
+    ctx.restore(); ctx.save();
+    const uu = Math.max(0, u), cutLen = .28, ci = Math.floor(uu / cutLen), ids = ['r5', 'r4', 'r3', 'r2', 'r1'], cid = ids[ci % 5], cu = (uu % cutLen) / cutLen;
+    const sc2 = TL.scenes.find(x => x.id === cid);
+    ctx.save(); const pz = lerp(1.1, 1.02, easeOut(cu)); ctx.translate(W / 2, H / 2); ctx.scale(pz, pz); ctx.translate(-W / 2, -H / 2);
+    SCENE_FN[cid](1.5 + ci * .7, sc2.end - sc2.start, sc2); ctx.restore();
+    ctx.fillStyle = 'rgba(5,10,30,.55)'; ctx.fillRect(0, 0, W, H);
+    if (cu < .12) { ctx.fillStyle = `rgba(255,255,255,${(1 - cu / .12) * .5})`; ctx.fillRect(0, 0, W, H); }
+    // 「日本の "世界レベル" 絶景」→ 大きな「5」バースト →「選」
+    ctx.save(); ctx.translate(W / 2, 520); const k = back(u / .25); ctx.scale(k, k);
+    text('日本の', 0, -90, 92, { stroke: '#000', lw: 20, shadow: 'rgba(0,0,0,.5)' });
+    text('"世界レベル"絶景', 0, 50, 100, { fill: '#FFE14D', stroke: '#000', lw: 22, shadow: 'rgba(0,0,0,.5)' });
+    ctx.restore();
+    const p2 = sc.sentences[1].phrases[1].start - sc.start;  // 「5つ、いくよ」
+    const v = (tl - p2 + .15) / .35;
+    if (v > 0) {
+      ctx.save(); ctx.translate(W / 2, 1120);
+      // 放射バースト
+      ctx.rotate(tl * .6); for (let i = 0; i < 24; i++) { ctx.fillStyle = i % 2 ? 'rgba(255,225,77,.35)' : 'rgba(255,120,80,.25)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 900 * easeOut(v), i / 24 * 6.283, (i + .5) / 24 * 6.283); ctx.fill(); }
+      ctx.rotate(-tl * .6);
+      const kk = elastic(v); ctx.scale(kk, kk);
+      text('5', -40, 10, 420, { font: NUM, weight: '900', fill: '#fff', stroke: '#000', lw: 44, shadow: 'rgba(0,0,0,.6)', blur: 40 });
+      text('選', 200, 60, 170, { fill: '#FFE14D', stroke: '#000', lw: 34, shadow: 'rgba(0,0,0,.6)' });
+      ctx.restore();
+    }
+    const w = easeOut((tl - p2 - .25) / .3); if (w > 0) { ctx.save(); ctx.globalAlpha = w; text('▼ 知らないと損 ▼', W / 2, 1520 - 30 * (1 - w), 60, { fill: '#fff', stroke: '#000', lw: 14 }); ctx.restore(); }
+  }
+  ctx.restore();
+}
+
+// ===== 5位 角島大橋 =====
+function sceneTsunoshima(tl, dur) {
+  const HZ = 820;
+  sky([[0, '#1e73d2'], [.35, '#4ea4ee'], [1, '#bfe6ff']]);
+  sun(830, 230, 70, '#fff8e0', 'rgba(255,250,220,.75)', 3.5);
+  for (let i = 0; i < 6; i++) cloud(((i * 330 + tl * (18 + i * 6)) % (W + 500)) - 250, 200 + hash(i) * 420, .9 + hash(i + 1) * .9, .85);
+  // 海: 水平線は濃紺、手前はエメラルド
+  ctx.fillStyle = grad(0, HZ, 0, H, [[0, '#0f4f9c'], [.12, '#1177b8'], [.35, '#17b4c9'], [.7, '#2fe0cf'], [1, '#8ff2e4']]); ctx.fillRect(0, HZ, W, H - HZ);
+  // 波の筋
+  ctx.save(); ctx.globalAlpha = .18; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  for (let i = 0; i < 40; i++) { const y = HZ + 20 + i * i * .7 + ((tl * 25 * (1 + i / 10)) % 30); ctx.beginPath(); for (let x = 0; x <= W; x += 20) ctx.lineTo(x, y + Math.sin(x * .02 + i + tl * 2) * (2 + i * .3)); ctx.stroke(); }
+  ctx.restore();
+  sparkles(11, 120, 0, HZ + 10, W, HZ + 500, tl, 2.5);
+  // 橋: 左下から水平線へ消える
+  const P0 = [-80, 1930], P1 = [120, 1250], P2 = [690, HZ + 6];
+  const bz = u => [(1 - u) ** 2 * P0[0] + 2 * (1 - u) * u * P1[0] + u * u * P2[0], (1 - u) ** 2 * P0[1] + 2 * (1 - u) * u * P1[1] + u * u * P2[1]];
+  const wd = u => lerp(560, 4, Math.pow(u, .8));
+  // 橋脚
+  ctx.strokeStyle = '#c9ced6';
+  for (let u = .02; u < .95; u += .035) { const [x, y] = bz(u); const w = wd(u); ctx.lineWidth = Math.max(1, w * .035); ctx.beginPath(); ctx.moveTo(x - w * .3, y + 4); ctx.lineTo(x - w * .3, y + w * .25); ctx.moveTo(x + w * .3, y + 4); ctx.lineTo(x + w * .3, y + w * .25); ctx.stroke(); }
+  // 影
+  ctx.fillStyle = 'rgba(0,40,80,.25)'; ctx.beginPath(); for (let u = 0; u <= 1; u += .02) { const [x, y] = bz(u); ctx.lineTo(x - wd(u) * .55 + 14, y + 18 + wd(u) * .05); } for (let u = 1; u >= 0; u -= .02) { const [x, y] = bz(u); ctx.lineTo(x + wd(u) * .55 + 14, y + 18 + wd(u) * .05); } ctx.fill();
+  // デッキ
+  ctx.fillStyle = '#e4e8ee'; ctx.beginPath(); for (let u = 0; u <= 1; u += .02) { const [x, y] = bz(u); ctx.lineTo(x - wd(u) * .5, y); } for (let u = 1; u >= 0; u -= .02) { const [x, y] = bz(u); ctx.lineTo(x + wd(u) * .5, y); } ctx.fill();
+  ctx.fillStyle = '#9aa3b0'; ctx.beginPath(); for (let u = 0; u <= 1; u += .02) { const [x, y] = bz(u); ctx.lineTo(x - wd(u) * .5, y); } for (let u = 1; u >= 0; u -= .02) { const [x, y] = bz(u); ctx.lineTo(x - wd(u) * .5 + Math.max(2, wd(u) * .06), y + Math.max(2, wd(u) * .07)); } ctx.fill();
+  // 欄干 + センターライン
+  ctx.strokeStyle = '#fff'; for (const side of [-.47, .47]) { ctx.beginPath(); for (let u = 0; u <= 1; u += .02) { const [x, y] = bz(u); ctx.lineWidth = Math.max(1, wd(u) * .02); ctx.lineTo(x + wd(u) * side, y - wd(u) * .03); } ctx.lineWidth = 4; ctx.stroke(); }
+  ctx.setLineDash([26, 26]); ctx.lineDashOffset = -tl * 300; ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 5; ctx.beginPath(); for (let u = 0; u <= .9; u += .02) { const [x, y] = bz(u); ctx.lineTo(x, y); } ctx.stroke(); ctx.setLineDash([]);
+  // 車
+  const cars = [[.08, '#e53935', 0], [.37, '#1e88e5', 1], [.66, '#fff', 0], [.2, '#43a047', 1]];
+  cars.forEach(([ph, col, lane]) => { const u = (ph + tl * .07) % 1; const [x, y] = bz(u); const w = wd(u) * .13; if (w < 2) return; ctx.fillStyle = col; rr(x + (lane ? 1 : -1) * wd(u) * .2 - w / 2, y - w * .9, w, w * 1.6, w * .2); ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.25)'; rr(x + (lane ? 1 : -1) * wd(u) * .2 - w / 2 + 4, y - w * .3, w, w * .6, w * .2); ctx.fill(); });
+  for (let i = 0; i < 4; i++) bird(200 + i * 70 + Math.sin(tl + i) * 20 + tl * 12, 420 + i * 25 + Math.cos(tl * .7 + i) * 10, 1.1, tl * 9 + i);
+}
+
+// ===== 4位 与那覇前浜 =====
+function sceneMaehama(tl, dur) {
+  const HZ = 880;
+  sky([[0, '#1b8be8'], [.5, '#79c6f7'], [1, '#e9f7ff']]);
+  sun(900, 180, 80, '#fffbe8', 'rgba(255,255,230,.8)', 4);
+  // レンズフレア
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; for (let i = 1; i <= 4; i++) { const x = lerp(900, W / 2, i * .35), y = lerp(180, H / 2, i * .35); ctx.fillStyle = `rgba(255,220,160,${.12 - i * .02})`; ctx.beginPath(); ctx.arc(x, y, 30 + i * 28, 0, 7); ctx.fill(); } ctx.restore();
+  for (let i = 0; i < 4; i++) cloud(((i * 420 + tl * 20) % (W + 500)) - 250, 300 + hash(i + 3) * 300, 1.1 + hash(i + 4) * .7, .9);
+  // 海
+  ctx.fillStyle = grad(0, HZ, 0, 1500, [[0, '#0e6fc0'], [.25, '#16b2d8'], [.6, '#3fe5e0'], [1, '#b5f7ef']]); ctx.fillRect(0, HZ, W, 700);
+  sparkles(21, 90, 0, HZ + 5, W, HZ + 360, tl, 2.5);
+  // 砂浜(斜めの汀線) + 波打ち際のアニメーション
+  const shore = x => 1330 + x * .16 + Math.sin(x * .006 + tl * 1.4) * 26 + 24 * Math.sin(tl * 1.1);
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.moveTo(0, shore(0) - 80); for (let x = 0; x <= W; x += 12) ctx.lineTo(x, shore(x) - 34 + Math.sin(x * .03 + tl * 3) * 6); ctx.lineTo(W, shore(W)); ctx.lineTo(0, shore(0)); ctx.fill();
+  ctx.fillStyle = '#d9eef3'; ctx.beginPath(); ctx.moveTo(0, shore(0) - 10); for (let x = 0; x <= W; x += 12) ctx.lineTo(x, shore(x) + fbm(x * .01 + tl) * 10); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();  // 濡れた砂
+  ctx.fillStyle = grad(0, 1400, 0, H, [[0, '#fff7e6'], [1, '#f2dfb8']]); ctx.beginPath(); ctx.moveTo(0, shore(0) + 60); for (let x = 0; x <= W; x += 12) ctx.lineTo(x, shore(x) + 70 + fbm(x * .02) * 14); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
+  // 遠くのヨット
+  const bx = 180 + ((tl * 14) % 900); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(bx, HZ + 50); ctx.lineTo(bx, HZ + 10); ctx.lineTo(bx + 22, HZ + 50); ctx.fill(); ctx.fillRect(bx - 12, HZ + 50, 40, 5);
+  // ヤシの木(左)
+  const palm = (x, y, s, dir, ph) => {
+    ctx.save(); ctx.translate(x, y); ctx.scale(dir * s, s);
+    ctx.strokeStyle = '#6b4a2b'; ctx.lineWidth = 26; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(60, -300, 180 + Math.sin(ph) * 6, -560); ctx.stroke();
+    ctx.strokeStyle = '#8a6239'; ctx.lineWidth = 6; for (let i = 0; i < 14; i++) { const u = i / 14; const px = 2 * (1 - u) * u * 60 + u * u * 180, py = 2 * (1 - u) * u * -300 + u * u * -560; ctx.beginPath(); ctx.moveTo(px - 12, py); ctx.lineTo(px + 12, py); ctx.stroke(); }
+    ctx.translate(180, -560);
+    for (let i = 0; i < 9; i++) { const a = -2.6 + i * .62 + Math.sin(ph + i) * .06; ctx.fillStyle = i % 2 ? '#2f8f3a' : '#3fae48'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(Math.cos(a) * 160, Math.sin(a) * 160 - 60, Math.cos(a) * 300, Math.sin(a) * 300 + 40); ctx.quadraticCurveTo(Math.cos(a) * 150, Math.sin(a) * 150 + 30, 0, 0); ctx.fill(); }
+    ctx.fillStyle = '#5a3d1f'; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(-10 + i * 12, 10 + (i % 2) * 10, 11, 0, 7); ctx.fill(); }
+    ctx.restore();
+  };
+  palm(-40, 1500, 1.25, 1, tl * 1.3); palm(1120, 1560, 1.0, -1, tl * 1.1 + 2);
+  for (let i = 0; i < 3; i++) bird(640 + i * 60 + tl * 10, 500 + i * 22, 1, tl * 8 + i);
+}
+
+// ===== 3位 竹田城跡 =====
+function sceneTakeda(tl, dur) {
+  sky([[0, '#060c24'], [.35, '#1b2a5c'], [.62, '#8b5f8f'], [.8, '#f0a04c'], [1, '#ffd58a']]);
+  // 星(上部、ゆっくり消える)
+  const r = rnd(5); for (let i = 0; i < 90; i++) { const x = r() * W, y = r() * 900, a = (.3 + .7 * Math.abs(Math.sin(tl * 2 + i))) * clamp(1 - tl / dur * .8) * (1 - y / 900); ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.beginPath(); ctx.arc(x, y, 1.6 + r() * 1.4, 0, 7); ctx.fill(); }
+  // 朝日のグロー(稜線の下から昇る)
+  const sunY = 1300 - easeInOut(tl / dur) * 160; sun(760, sunY, 90, '#fff2c0', 'rgba(255,200,120,.9)', 4.5);
+  // 遠景の山脈(奥→手前) + 雲海
+  const ridge = (seed, base, amp, color, speed) => { ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(0, H); for (let x = 0; x <= W; x += 10) ctx.lineTo(x, base - fbm((x + tl * speed) * .0025 + seed, 5) * amp); ctx.lineTo(W, H); ctx.fill(); };
+  ridge(3, 1180, 240, '#7b6fa0', 0); ridge(7, 1300, 200, '#5a4f82', 6);
+  const cloudSea = (y0, alpha, s, speed, seed) => { const q = rnd(seed); ctx.save(); ctx.globalAlpha = alpha; for (let i = 0; i < 22; i++) { const x = ((q() * (W + 600) + tl * speed) % (W + 600)) - 300, y = y0 + q() * 90, rad = (70 + q() * 110) * s; ctx.fillStyle = rgrad(x, y, 0, rad, [[0, '#fff4e6'], [.6, 'rgba(255,240,225,.85)'], [1, 'rgba(255,235,220,0)']]); ctx.beginPath(); ctx.arc(x, y, rad, 0, 7); ctx.fill(); } ctx.restore(); };
+  cloudSea(1330, .9, 1.1, 10, 31);
+  ridge(11, 1420, 260, '#3b3566', 10);
+  cloudSea(1480, .95, 1.4, 16, 41);
+  // 竹田城跡(手前の山頂)
+  const peakX = 420, peakY = 1240;
+  ctx.fillStyle = '#1e1b36'; ctx.beginPath(); ctx.moveTo(-50, 1900); ctx.quadraticCurveTo(200, 1500, peakX - 120, peakY + 60); ctx.lineTo(peakX + 140, peakY + 60); ctx.quadraticCurveTo(700, 1500, 1000, 1900); ctx.fill();
+  // 石垣の段(シルエット + 朝日に照らされた縁)
+  const tiers = [[-230, 0, 470, 54], [-170, -54, 330, 54], [-105, -108, 190, 50], [-55, -150, 100, 42]];
+  tiers.forEach(([dx, dy, w, h]) => { ctx.fillStyle = '#2a2748'; ctx.beginPath(); ctx.moveTo(peakX + dx, peakY + dy + h); ctx.lineTo(peakX + dx + 12, peakY + dy); ctx.lineTo(peakX + dx + w - 12, peakY + dy); ctx.lineTo(peakX + dx + w, peakY + dy + h); ctx.fill(); ctx.fillStyle = 'rgba(255,190,120,.9)'; ctx.fillRect(peakX + dx + 12, peakY + dy, w - 24, 5); ctx.strokeStyle = 'rgba(255,200,140,.25)'; ctx.lineWidth = 2; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(peakX + dx + 8 + i * 3, peakY + dy + i * h / 4); ctx.lineTo(peakX + dx + w - 8 - i * 3, peakY + dy + i * h / 4); ctx.stroke(); } });
+  // 天守台の櫓(シルエット)
+  ctx.fillStyle = '#1a1830'; ctx.fillRect(peakX - 30, peakY - 196, 50, 46); ctx.beginPath(); ctx.moveTo(peakX - 42, peakY - 196); ctx.lineTo(peakX - 5, peakY - 226); ctx.lineTo(peakX + 32, peakY - 196); ctx.fill();
+  // 松の木
+  for (let i = 0; i < 7; i++) { const x = peakX - 300 + i * 95 + hash(i) * 30, y = peakY + 54 - [0, 0, 54, 108, 54, 0, 0][i]; ctx.fillStyle = '#15132a'; ctx.beginPath(); ctx.moveTo(x, y - 60 - hash(i + 1) * 30); ctx.lineTo(x - 22, y); ctx.lineTo(x + 22, y); ctx.fill(); }
+  cloudSea(1620, .9, 1.7, 22, 51);
+  for (let i = 0; i < 3; i++) bird(300 + i * 90 + tl * 20, 980 + i * 30 + Math.sin(tl + i) * 12, 1.1, tl * 7 + i);
+  // 朝もや
+  ctx.fillStyle = grad(0, 1200, 0, H, [[0, 'rgba(255,230,210,0)'], [1, 'rgba(255,225,205,.35)']]); ctx.fillRect(0, 1200, W, 720);
+}
+
+// ===== 2位 青ヶ島 =====
+function sceneAogashima(tl, dur) {
+  // 空撮: 深い海
+  ctx.fillStyle = grad(0, 0, 0, H, [[0, '#06264f'], [.5, '#0b4a8e'], [1, '#0a6fb8']]); ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.globalAlpha = .13; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+  for (let i = 0; i < 60; i++) { const y = i * 34 + ((tl * 30) % 34); ctx.beginPath(); for (let x = 0; x <= W; x += 16) ctx.lineTo(x, y + Math.sin(x * .013 + i * .8 + tl * 1.6) * 9); ctx.stroke(); }
+  ctx.restore();
+  sparkles(61, 140, 0, 0, W, H, tl, 2.2, '200,235,255');
+  // 島(ゆっくり回転・ズーム)
+  ctx.save(); ctx.translate(540, 1010); ctx.rotate(Math.sin(tl * .25) * .04); const z = 1 + tl / dur * .12; ctx.scale(z, z);
+  // 白波のリング
+  ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.ellipse(0, 0, 420 + Math.sin(tl * 2) * 6, 330 + Math.cos(tl * 2.3) * 6, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(190,235,255,.6)'; ctx.beginPath(); ctx.ellipse(0, 0, 405, 318, 0, 0, 7); ctx.fill();
+  // 断崖(外輪山の外側)
+  ctx.fillStyle = '#4a4336'; ctx.beginPath(); ctx.ellipse(0, 0, 390, 300, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#5f5443'; ctx.beginPath(); ctx.ellipse(-8, -8, 370, 282, 0, 0, 7); ctx.fill();
+  // 外輪山の緑
+  ctx.fillStyle = rgrad(-60, -80, 40, 380, [[0, '#4fa84a'], [.6, '#2f7a3d'], [1, '#245f31']]); ctx.beginPath(); ctx.ellipse(0, 0, 350, 262, 0, 0, 7); ctx.fill();
+  // 外輪山の内側(カルデラ床)
+  ctx.fillStyle = '#1d4a2b'; ctx.beginPath(); ctx.ellipse(20, 30, 235, 160, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3f8f45'; ctx.beginPath(); ctx.ellipse(20, 30, 215, 142, 0, 0, 7); ctx.fill();
+  // 内輪山(丸山)
+  ctx.fillStyle = rgrad(40, 20, 10, 120, [[0, '#86c75a'], [.7, '#4d9a46'], [1, '#2f6f36']]); ctx.beginPath(); ctx.ellipse(60, 40, 110, 80, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2b5a30'; ctx.beginPath(); ctx.ellipse(60, 36, 38, 26, 0, 0, 7); ctx.fill();
+  // 段々畑風の筋 + 集落
+  ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 2; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.ellipse(60, 40, 40 + i * 12, 30 + i * 9, 0, 0, 7); ctx.stroke(); }
+  ctx.fillStyle = '#e8e0d0'; for (let i = 0; i < 9; i++) ctx.fillRect(-240 + hash(i) * 120, -200 + hash(i + 3) * 60, 8, 6);
+  ctx.restore();
+  // 船(航跡)
+  const sx = 120 + ((tl * 22) % 300), sy = 1560; ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx - 120, sy + 8); ctx.lineTo(sx, sy + 2); ctx.moveTo(sx - 120, sy - 8); ctx.lineTo(sx, sy - 2); ctx.stroke(); ctx.fillStyle = '#fff'; rr(sx, sy - 6, 26, 12, 4); ctx.fill();
+  // ヘリコプター
+  const hx = 150 + ((tl * 55) % 1000), hy = 560 + Math.sin(tl * 2) * 10; ctx.save(); ctx.translate(hx, hy); ctx.fillStyle = '#f4f4f4'; rr(-30, -10, 60, 22, 8); ctx.fill(); ctx.fillRect(-70, -4, 45, 6); ctx.fillStyle = '#dcdcdc'; ctx.fillRect(-2, -16, 4, 8); ctx.save(); ctx.rotate(tl * 40); ctx.fillStyle = 'rgba(80,80,80,.7)'; ctx.fillRect(-52, -17, 104, 3); ctx.rotate(Math.PI / 2); ctx.fillRect(-52, -17, 104, 3); ctx.restore(); ctx.restore();
+  // 手前を流れる雲(影つき)
+  for (let i = 0; i < 4; i++) { const x = ((i * 420 + tl * 48) % (W + 700)) - 350, y = 240 + i * 420; ctx.save(); ctx.globalAlpha = .10; cloud(x + 30, y + 60, 1.5, 1, '#000'); ctx.restore(); cloud(x, y, 1.5, .8); }
+}
+
+// ===== 1位 父母ヶ浜 =====
+let skyCv = null;
+function sceneChichibu(tl, dur, sc) {
+  const HZ = 1010;
+  if (!skyCv) { skyCv = document.createElement('canvas'); skyCv.width = W; skyCv.height = HZ; }
+  const g = skyCv.getContext('2d');
+  // 空(オフスクリーンに描いて反射に使う)
+  const gg = g.createLinearGradient(0, 0, 0, HZ); [[0, '#2a1a5e'], [.3, '#7a3a8a'], [.55, '#e6557a'], [.78, '#ff8f4d'], [1, '#ffd27a']].forEach(([o, c]) => gg.addColorStop(o, c)); g.fillStyle = gg; g.fillRect(0, 0, W, HZ);
+  const sx = 560, sy = HZ - 40 + easeInOut(tl / dur) * 40;
+  const rg = g.createRadialGradient(sx, sy, 60, sx, sy, 520); rg.addColorStop(0, 'rgba(255,230,170,.95)'); rg.addColorStop(.4, 'rgba(255,170,110,.5)'); rg.addColorStop(1, 'rgba(255,150,120,0)'); g.fillStyle = rg; g.fillRect(0, 0, W, HZ);
+  g.fillStyle = '#fff1c4'; g.beginPath(); g.arc(sx, sy, 125, 0, 7); g.fill();
+  // 横に伸びる夕雲
+  for (let i = 0; i < 7; i++) { const y = 240 + i * 95 + hash(i) * 40, x = ((hash(i + 2) * W + tl * (6 + i * 3)) % (W + 800)) - 400, w = 300 + hash(i + 4) * 500; g.fillStyle = i % 2 ? 'rgba(255,170,120,.55)' : 'rgba(120,60,120,.5)'; g.beginPath(); g.ellipse(x, y, w, 14 + hash(i + 6) * 14, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(255,220,160,.5)'; g.beginPath(); g.ellipse(x + 20, y - 8, w * .8, 5, 0, 0, 7); g.fill(); }
+  g.fillStyle = '#5a2a3a'; g.beginPath(); g.moveTo(0, HZ); g.lineTo(0, HZ - 30); for (let x = 0; x <= W; x += 10) g.lineTo(x, HZ - 20 - fbm(x * .003 + 9, 4) * 70 * (x < 300 || x > 800 ? 1 : .35)); g.lineTo(W, HZ); g.fill();  // 遠景の島影
+  ctx.drawImage(skyCv, 0, 0);
+  // 鏡面の砂浜: 空を上下反転し、さざ波で少し歪ませる
+  const mirrorIn = clamp((tl - (sc.sentences[1].phrases[1].start - sc.start) + .1) / .9);  // 「浜が、鏡になる」で鏡が完成
+  ctx.fillStyle = grad(0, HZ, 0, H, [[0, '#d8a07a'], [1, '#6a4a55']]); ctx.fillRect(0, HZ, W, H - HZ);
+  ctx.save();
+  for (let y = HZ; y < H; y += 6) {
+    const d = (y - HZ) / (H - HZ);
+    const srcY = HZ - (y - HZ) * .78;  // 反射は少し圧縮
+    if (srcY < 0) break;
+    const dx = Math.sin(y * .05 + tl * 2.2) * 6 * d * (1 - mirrorIn * .5) + Math.sin(y * .013 - tl * 1.1) * 10 * d;
+    ctx.globalAlpha = lerp(.0, .9 - d * .35, mirrorIn * (d < .04 ? d / .04 : 1));
+    ctx.drawImage(skyCv, 0, Math.max(0, srcY - 6), W, 6, dx, y, W, 6);
+  }
+  ctx.restore();
+  // 浅い水たまりのハイライト・小さな波紋
+  ctx.save(); ctx.globalAlpha = .25 * mirrorIn; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; for (let i = 0; i < 18; i++) { const y = HZ + 40 + i * 48; ctx.beginPath(); for (let x = 0; x <= W; x += 16) ctx.lineTo(x, y + Math.sin(x * .02 + i + tl * 1.5) * 3); ctx.stroke(); } ctx.restore();
+  sparkles(71, 100, 0, HZ, W, H, tl, 2.4, '255,240,200');
+  // 人物のシルエット(ジャンプ) + 反射
+  const jumpT = sc.sentences[1].phrases[1].start - sc.start + .25;
+  const person = (x, baseY, s, jump, flip) => {
+    const jy = jump > 0 && jump < 1 ? -Math.sin(jump * Math.PI) * 150 : 0;
+    const legs = jump > 0 && jump < 1 ? Math.sin(jump * Math.PI) : 0;
+    ctx.save(); ctx.translate(x, baseY); ctx.scale(s, flip ? -s : s); ctx.translate(0, jy);
+    ctx.fillStyle = '#1a0f22'; ctx.strokeStyle = '#1a0f22'; ctx.lineCap = 'round'; ctx.lineWidth = 16;
+    ctx.beginPath(); ctx.arc(0, -150, 22, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, -125); ctx.lineTo(0, -40); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -110); ctx.lineTo(-40 - legs * 30, -150 - legs * 40); ctx.moveTo(0, -110); ctx.lineTo(40 + legs * 30, -150 - legs * 40); ctx.stroke();  // 腕(バンザイ)
+    ctx.beginPath(); ctx.moveTo(0, -40); ctx.lineTo(-22 - legs * 30, 0 - legs * 20); ctx.moveTo(0, -40); ctx.lineTo(22 + legs * 30, 0 + legs * 10); ctx.stroke();
+    ctx.restore();
+  };
+  const jump = (tl - jumpT) / .8;
+  person(430, HZ - 2, 1.0, jump, false); person(640, HZ - 2, .9, jump - .15, false);
+  ctx.save(); ctx.globalAlpha = .75 * mirrorIn; person(430, HZ + 2, 1.0, jump, true); person(640, HZ + 2, .9, jump - .15, true); ctx.restore();
+  for (let i = 0; i < 5; i++) bird(700 + i * 55 + tl * 12, 380 + i * 20 + Math.sin(tl * 1.3 + i) * 12, 1.0, tl * 8 + i);
+}
+
+// ===== CTA =====
+function sceneCta(tl, dur, sc) {
+  sky([[0, '#0f1630'], [1, '#1b2d5a']]);
+  // 浮遊するアイコン
+  const r = rnd(77); for (let i = 0; i < 26; i++) { const x = r() * W, sp = 40 + r() * 60, y = H - ((r() * H + tl * sp) % (H + 200)) + 100, s = 24 + r() * 26, ic = ['✈', '📍', '❤', '🔖', '🌴', '⛰'][i % 6]; ctx.save(); ctx.globalAlpha = .18 + r() * .2; text(ic, x, y, s, { font: NUM, fill: '#fff' }); ctx.restore(); }
+  sparkles(81, 60, 0, 0, W, H, tl, 3);
+  // ランキングのおさらい(左から順に)
+  const ranks = [[5, '角島大橋', '山口'], [4, '与那覇前浜', '宮古島'], [3, '竹田城跡', '兵庫'], [2, '青ヶ島', '東京'], [1, '父母ヶ浜', '香川']];
+  ranks.forEach(([n, name, pref], i) => {
+    const u = easeOut((tl - .15 - i * .12) / .35); if (u <= 0) return;
+    const y = 300 + i * 118; ctx.save(); ctx.translate(lerp(-500, 0, u), 0); ctx.globalAlpha = u;
+    ctx.fillStyle = n === 1 ? 'rgba(255,225,77,.18)' : 'rgba(255,255,255,.08)'; rr(90, y - 46, 900, 92, 24); ctx.fill();
+    ctx.fillStyle = n === 1 ? '#FFE14D' : '#fff'; ctx.beginPath(); ctx.arc(150, y, 34, 0, 7); ctx.fill();
+    text(String(n), 150, y + 2, 44, { font: NUM, weight: '900', fill: '#15203f' });
+    text(name, 215, y, 58, { align: 'left', fill: '#fff' }); text(pref, 960, y, 34, { align: 'right', fill: 'rgba(255,255,255,.7)' });
+    ctx.restore();
+  });
+  // 「次の休み、どこ行く？」
+  const u2 = back((tl - sc.sentences[0].start + sc.start) / .3 + .0); if (tl >= sc.sentences[0].start - sc.start - .1) { ctx.save(); ctx.translate(W / 2, 1060); const k = back((tl - (sc.sentences[0].start - sc.start) + .1) / .3); ctx.scale(k, k); text('次の休み、', 0, -60, 90, { stroke: '#000', lw: 18 }); text('どこ行く？', 0, 60, 110, { fill: '#FFE14D', stroke: '#000', lw: 22 }); ctx.restore(); }
+  // アクションボタン(コメント・保存・いいね)
+  const btns = [['💬', 'コメント', sc.sentences[1].start - sc.start + .3], ['🔖', '保存', sc.sentences[2].start - sc.start], ['❤', 'いいね', sc.sentences[2].start - sc.start + .6]];
+  btns.forEach(([ic, label, t0], i) => {
+    const u = elastic((tl - t0) / .6); if (tl < t0) return;
+    const x = 230 + i * 310, y = 1470, beat = 1 + .06 * Math.exp(-((tl / BEAT) % 1) * 6);
+    ctx.save(); ctx.translate(x, y); ctx.scale(u * beat, u * beat);
+    ctx.fillStyle = i === 2 ? '#ff4d6d' : i === 1 ? '#FFE14D' : '#4dc3ff'; ctx.beginPath(); ctx.arc(0, 0, 92, 0, 7); ctx.fill();
+    text(ic, 0, 4, 84, { font: NUM, fill: i === 1 ? '#15203f' : '#fff' }); text(label, 0, 140, 44, { fill: '#fff', stroke: '#000', lw: 10 });
+    ctx.restore();
+  });
+  // クレジット
+  ctx.save(); ctx.globalAlpha = .8; text('ナレーション: VOICEVOX:四国めたん', W / 2, 1760, 34, { fill: '#cfd8ff' }); text('BGM・映像: オリジナル制作', W / 2, 1808, 30, { fill: '#9fb0e8' }); ctx.restore();
+}
+
+// ===== オーバーレイ: 順位バッジ・地名・コールアウト・字幕・進捗 =====
+function badgeAndTitle(sc, tl, t) {
+  if (!sc.rank) return;
+  const beat = 1 + .05 * Math.exp(-((t / BEAT) % 1) * 7);
+  const u = elastic(tl / .7);
+  ctx.save(); ctx.translate(150, 250); ctx.scale(u * beat, u * beat); ctx.rotate(-.08);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(8, 12, 112, 0, 7); ctx.fill();
+  ctx.fillStyle = sc.rank === 1 ? '#FFE14D' : '#fff'; ctx.beginPath(); ctx.arc(0, 0, 112, 0, 7); ctx.fill();
+  ctx.strokeStyle = sc.rank === 1 ? '#c98f00' : '#15203f'; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, 0, 100, 0, 7); ctx.stroke();
+  text('第', -62, -28, 34, { fill: '#15203f' }); text(String(sc.rank), 4, 2, 124, { font: NUM, weight: '900', fill: '#15203f' }); text('位', 66, 30, 40, { fill: '#15203f' });
+  if (sc.rank === 1) { ctx.fillStyle = '#c98f00'; text('👑', 0, -118, 60, { font: NUM, fill: '#fff' }); }
+  ctx.restore();
+  // 都道府県ピル + 地名
+  const v = easeOut((tl - .15) / .4); if (v <= 0) return;
+  ctx.save(); ctx.translate(lerp(-300, 0, back(v)), 0);
+  const pw = measure(sc.pref, 40) + 60; ctx.fillStyle = '#ff5a5f'; rr(290, 158, pw, 64, 32); ctx.fill(); text(sc.pref, 290 + pw / 2, 191, 40, { fill: '#fff' });
+  text(sc.place, 290, 290, 108, { align: 'left', stroke: '#000', lw: 24, shadow: 'rgba(0,0,0,.55)', blur: 20 });
+  ctx.restore();
+}
+// コールアウト(フレーズ開始と同期して出す)
+const CALLOUTS = {
+  r5: [{ s: 1, p: 1, type: 'counter', to: 1780, unit: 'm', label: '全長', x: 540, y: 1280 }, { s: 2, p: 0, type: 'pill', txt: '通行無料', x: 540, y: 1430, col: '#2ecc71' }],
+  r4: [{ s: 1, p: 0, type: 'counter', to: 7, unit: 'km', label: '白砂のビーチ', x: 540, y: 560 }, { s: 2, p: 0, type: 'pill', txt: '"東洋一"のビーチ', x: 540, y: 700, col: '#1e88e5' }],
+  r3: [{ s: 1, p: 1, type: 'pill', txt: '雲海シーズン 9月下旬〜12月上旬', x: 540, y: 1700, col: '#e67e22', size: 44 }, { s: 2, p: 1, type: 'pill', txt: '狙い目: 晴れた日の夜明け前', x: 540, y: 1790, col: '#8e44ad', size: 44 }],
+  r2: [{ s: 2, p: 0, type: 'counter', to: 170, unit: '人', label: '人口 約', x: 540, y: 1620 }, { s: 2, p: 1, type: 'pill', txt: '🚢 船 or 🚁 ヘリ のみ', x: 540, y: 1790, col: '#2980b9', size: 44 }],
+  r1: [{ s: 1, p: 0, type: 'pill', txt: '干潮 × 夕暮れ × 無風', x: 540, y: 560, col: '#e74c3c', size: 50 }, { s: 2, p: 0, type: 'pill', txt: '"日本のウユニ塩湖"', x: 540, y: 680, col: '#f39c12', size: 56 }],
+};
+function callouts(sc, t) {
+  (CALLOUTS[sc.id] || []).forEach(c => {
+    const at = sc.sentences[c.s].phrases[c.p].start - .05; const u = (t - at) / .45; if (u < 0) return;
+    const k = elastic(u); ctx.save(); ctx.translate(c.x, c.y); ctx.scale(k, k);
+    if (c.type === 'counter') {
+      const val = Math.round(c.to * easeOut((t - at) / .9)); const s = val.toLocaleString('en-US');
+      ctx.fillStyle = 'rgba(0,0,0,.45)'; const w = measure(s, 150, NUM, '900') + measure(c.unit, 70) + measure(c.label, 44) + 110; rr(-w / 2, -95, w, 190, 40); ctx.fill();
+      let x = -w / 2 + 40; text(c.label, x, 10, 44, { align: 'left', fill: '#fff' }); x += measure(c.label, 44) + 16;
+      text(s, x, 6, 150, { align: 'left', font: NUM, weight: '900', fill: '#FFE14D', stroke: '#000', lw: 14 }); x += measure(s, 150, NUM, '900') + 12;
+      text(c.unit, x, 30, 70, { align: 'left', fill: '#fff', stroke: '#000', lw: 10 });
+    } else {
+      const sz = c.size || 52; const w = measure(c.txt, sz) + 80;
+      ctx.fillStyle = c.col; rr(-w / 2, -sz * .85, w, sz * 1.7, sz * .85); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.25)'; rr(-w / 2 + 10, -sz * .78, w - 20, sz * .5, sz * .4); ctx.fill();
+      text(c.txt, 0, 2, sz, { fill: '#fff', stroke: 'rgba(0,0,0,.35)', lw: 6 });
+    }
+    ctx.restore();
+  });
+}
+// 字幕: 現在のフレーズのみ、大きく。数字と "…" は黄色
+function caption(t) {
+  let cur = null, next = null;
+  for (const sc of TL.scenes) for (const se of sc.sentences) for (const p of se.phrases) { if (t >= p.start - .08 && t < p.end + .25) cur = p; }
+  if (!cur || t < TL.scenes[0].end) return;
+  const u = elastic(clamp((t - cur.start + .08) / .3));
+  let s = cur.text; const segs = []; const re = /("[^"]+"|[0-9][0-9,.]*(?:m|km|人)?)/g; let m, last = 0;
+  while ((m = re.exec(s))) { if (m.index > last) segs.push([s.slice(last, m.index), false]); segs.push([m[0].replace(/"/g, ''), true]); last = m.index + m[0].length; }
+  if (last < s.length) segs.push([s.slice(last), false]);
+  const size = s.replace(/"/g, '').length > 12 ? 66 : 76;
+  // 1行に収める(長ければ2行に分割)
+  const plain = segs.map(x => x[0]).join(''); const lines = [];
+  if (measure(plain, size) > 940) { const half = Math.ceil(plain.length / 2); let cut = half; for (const d of ['、', 'と', 'が', 'の', 'に', 'は']) { const i = plain.indexOf(d, Math.max(3, half - 4)); if (i > 2 && i < plain.length - 2) { cut = i + 1; break; } } lines.push(plain.slice(0, cut), plain.slice(cut)); } else lines.push(plain);
+  const y0 = TL.scenes.find(x => x.id === 'cta').start <= t ? 1275 : 1440; ctx.save(); ctx.translate(W / 2, y0 + (lines.length - 1) * 45); ctx.scale(u, u);
+  lines.forEach((line, li) => {
+    // セグメント色付け: line 内の各文字がどのセグメントに属するか
+    let x = -measure(line, size) / 2, offset = lines.slice(0, li).reduce((a, l) => a + l.length, 0);
+    for (let i = 0; i < line.length; i++) {
+      const gi = offset + i; let acc = 0, hl = false; for (const [txt, h] of segs) { if (gi < acc + txt.length) { hl = h; break; } acc += txt.length; }
+      const ch = line[i], w = measure(ch, size);
+      text(ch, x + w / 2, (li - (lines.length - 1) / 2) * (size * 1.25), size, { fill: hl ? '#FFE14D' : '#fff', stroke: '#000', lw: size * .24, shadow: 'rgba(0,0,0,.6)', blur: 16, offY: 8 });
+      x += w;
+    }
+  });
+  ctx.restore();
+}
+function progress(t) {
+  ctx.fillStyle = 'rgba(255,255,255,.25)'; rr(40, 60, W - 80, 10, 5); ctx.fill();
+  ctx.fillStyle = '#FFE14D'; rr(40, 60, (W - 80) * clamp(t / TL.total), 10, 5); ctx.fill();
+  TL.scenes.forEach(sc => { if (!sc.rank) return; const x = 40 + (W - 80) * sc.start / TL.total; ctx.fillStyle = t >= sc.start ? '#FFE14D' : 'rgba(255,255,255,.6)'; ctx.beginPath(); ctx.arc(x, 65, 9, 0, 7); ctx.fill(); });
+  ctx.save(); ctx.globalAlpha = .9; text('日本の絶景 5選', W - 44, 112, 32, { align: 'right', fill: '#fff', stroke: 'rgba(0,0,0,.5)', lw: 6 }); ctx.restore();
+}
+
+// ===== メイン =====
+const SCENE_FN = { hook: sceneHook, r5: sceneTsunoshima, r4: sceneMaehama, r3: sceneTakeda, r2: sceneAogashima, r1: sceneChichibu, cta: sceneCta };
+let TL = null;
+function setTimeline(tl) { TL = tl; window.DURATION = tl.total; }
+window.setTimeline = setTimeline;
+window.render = function (t) {
+  if (!TL) return;
+  const sc = TL.scenes.find(s => t >= s.start && t < s.end) || TL.scenes[TL.scenes.length - 1];
+  const tl = t - sc.start, dur = sc.end - sc.start;
+  ctx.save();
+  // カメラ: パンチイン + ゆっくりズーム + 横スライド
+  const punch = lerp(1.14, 1, easeOut(tl / .35)); const drift = 1 + .06 * (tl / dur); const slide = lerp(90, 0, easeOut(tl / .4));
+  ctx.translate(W / 2 + slide, H / 2); ctx.scale(punch * drift, punch * drift); ctx.translate(-W / 2, -H / 2);
+  SCENE_FN[sc.id](tl, dur, sc);
+  ctx.restore();
+  vignette(.42); grain(.045, t);
+  badgeAndTitle(sc, tl, t); callouts(sc, t); caption(t); progress(t);
+  // シーン切替のホワイトフラッシュ
+  if (sc.id !== 'hook' && tl < .18) { ctx.fillStyle = `rgba(255,255,255,${(1 - tl / .18) * .9})`; ctx.fillRect(0, 0, W, H); }
+  // 冒頭: 黒からのフェードイン(0.15秒)
+  if (t < .12) { ctx.fillStyle = `rgba(0,0,0,${1 - t / .12})`; ctx.fillRect(0, 0, W, H); }
+};
+
+// サムネイル(1位の鏡面シーン + 大見出し)
+window.renderThumb = function () {
+  const sc = TL.scenes.find(x => x.id === 'r1');
+  sceneChichibu(sc.end - sc.start - .3, sc.end - sc.start, sc);
+  vignette(.5);
+  ctx.fillStyle = grad(0, 0, 0, 760, [[0, 'rgba(10,5,30,.75)'], [1, 'rgba(10,5,30,0)']]); ctx.fillRect(0, 0, W, 760);
+  text('海外より凄い', W / 2, 200, 120, { stroke: '#000', lw: 26, shadow: 'rgba(0,0,0,.6)', blur: 30 });
+  text('日本の絶景', W / 2, 380, 170, { fill: '#FFE14D', stroke: '#000', lw: 36, shadow: 'rgba(0,0,0,.6)', blur: 30 });
+  ctx.save(); ctx.translate(W / 2, 1560); ctx.rotate(-.05);
+  ctx.fillStyle = '#ff4d6d'; rr(-300, -110, 600, 220, 110); ctx.fill();
+  text('5', -120, 0, 200, { font: NUM, weight: '900', fill: '#fff', stroke: '#000', lw: 20 }); text('選', 90, 10, 140, { fill: '#fff', stroke: '#000', lw: 20 });
+  ctx.restore();
+  text('1位は"日本のウユニ塩湖"', W / 2, 1790, 64, { stroke: '#000', lw: 16 });
+};
+// ブラウザで直接開いたときのプレビュー再生
+if (!window.__capture) {
+  fetch('output/timeline.json').then(r => r.json()).then(tl => { setTimeline(tl); const t0 = performance.now(); (function loop() { window.render(((performance.now() - t0) / 1000) % tl.total); requestAnimationFrame(loop); })(); }).catch(() => {});
+}
+</script>
+</body>
+</html>

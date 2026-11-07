@@ -1,0 +1,4 @@
+__pycache__/
+output/*.wav
+output/video_silent.mp4
+output/video_narrated.mp4
