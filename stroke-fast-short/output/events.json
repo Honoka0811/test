@@ -1,0 +1,181 @@
+[
+{
+"kind": "heartbeat",
+"t": 0.3
+},
+{
+"kind": "heartbeat",
+"t": 1.25
+},
+{
+"kind": "heartbeat",
+"t": 2.2
+},
+{
+"kind": "choices",
+"t": 3.099
+},
+{
+"kind": "heartbeat",
+"t": 3.15
+},
+{
+"kind": "heartbeat",
+"t": 4.1
+},
+{
+"kind": "timer",
+"t": 4.607,
+"end": 7.307
+},
+{
+"kind": "tick",
+"t": 4.607,
+"n": 3
+},
+{
+"kind": "tick",
+"t": 5.507,
+"n": 2
+},
+{
+"kind": "tick",
+"t": 6.407,
+"n": 1
+},
+{
+"kind": "flash",
+"t": 7.357
+},
+{
+"kind": "correct",
+"t": 7.457
+},
+{
+"kind": "wrong",
+"t": 7.857
+},
+{
+"kind": "stamp",
+"t": 10.462,
+"label": "最悪の選択"
+},
+{
+"kind": "counter",
+"t": 16.944,
+"end": 20.218
+},
+{
+"kind": "riser",
+"t": 21.748,
+"end": 23.148
+},
+{
+"kind": "slam",
+"t": 23.198,
+"i": 0
+},
+{
+"kind": "slam",
+"t": 23.338,
+"i": 1
+},
+{
+"kind": "slam",
+"t": 23.478,
+"i": 2
+},
+{
+"kind": "slam",
+"t": 23.618,
+"i": 3
+},
+{
+"kind": "flash",
+"t": 23.618
+},
+{
+"kind": "whoosh",
+"t": 24.847
+},
+{
+"kind": "alert",
+"t": 27.628
+},
+{
+"kind": "whoosh",
+"t": 30.357
+},
+{
+"kind": "alert",
+"t": 32.939
+},
+{
+"kind": "whoosh",
+"t": 34.958
+},
+{
+"kind": "alert",
+"t": 37.547
+},
+{
+"kind": "whoosh",
+"t": 40.936
+},
+{
+"kind": "alarm",
+"t": 43.218
+},
+{
+"kind": "pop",
+"t": 45.345
+},
+{
+"kind": "whoosh",
+"t": 47.954
+},
+{
+"kind": "ring",
+"t": 48.254,
+"end": 54.622
+},
+{
+"kind": "whoosh",
+"t": 54.622
+},
+{
+"kind": "stamp",
+"t": 57.072,
+"label": "様子を見る",
+"i": 0
+},
+{
+"kind": "stamp",
+"t": 58.038,
+"label": "自分で運転",
+"i": 1
+},
+{
+"kind": "stamp",
+"t": 59.005,
+"label": "水を飲ませる",
+"i": 2
+},
+{
+"kind": "riser",
+"t": 59.421,
+"end": 60.621
+},
+{
+"kind": "flash",
+"t": 60.621
+},
+{
+"kind": "ding",
+"t": 60.671
+},
+{
+"kind": "pop",
+"t": 61.521
+}
+]

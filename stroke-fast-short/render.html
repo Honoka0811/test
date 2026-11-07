@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Stroke FAST Short</title>
+<style>html,body{margin:0;background:#070A14;}canvas{display:block;}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 脳卒中の見分け方 FAST(9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// タイムラインと演出イベントは capture.js が window.setData(timeline, events) で渡す。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"Noto Sans CJK JP","IPAPGothic",sans-serif';
+const C = {
+  bg: '#070A14', bg2: '#101830', panel: '#161F3A', panel2: '#1E2A4D', grid: '#2A3454',
+  ink: '#FFFFFF', ink2: '#B9C2D6', ink3: '#7A849C',
+  red: '#FF3355', yellow: '#FFD60A', cyan: '#2DD4FF', green: '#3DDC84', orange: '#FF8A3D',
+};
+const TILE = [
+  { ch: 'F', en: 'Face', ja: '顔', color: C.red },
+  { ch: 'A', en: 'Arm', ja: '腕', color: C.yellow },
+  { ch: 'S', en: 'Speech', ja: '言葉', color: C.cyan },
+  { ch: 'T', en: 'Time', ja: '時間', color: C.green },
+];
+let TL = null, EV = [], FPS = 30, DURATION = 60;
+window.setData = (tl, ev) => { TL = tl; EV = ev; FPS = tl.fps; DURATION = tl.duration; window.FPS = FPS; window.DURATION = DURATION; };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeIn = t => { t = clamp(t); return t * t * t; };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const easeBack = t => { t = clamp(t); const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const hash = (i, j = 0) => { let x = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return x - Math.floor(x); };
+const ev = (kind, i) => { const a = EV.filter(e => e.kind === kind); return i === undefined ? a : a[i]; };
+const decay = (T, t0, tau) => T < t0 ? 0 : Math.exp(-(T - t0) / tau);
+
+function text(str, x, y, { size = 48, weight = 'bold', color = C.ink, align = 'center', base = 'middle', alpha = 1, ls = 0, stroke = 0, strokeColor = '#000', glow = 0, glowColor = null } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (glow) { ctx.shadowColor = glowColor || color; ctx.shadowBlur = glow; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function measure(str, size, weight = 'bold') { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(str).width; }
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, { stroke = 0, strokeColor = null, glow = 0 } = {}) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (glow) { ctx.shadowColor = strokeColor || color; ctx.shadowBlur = glow; }
+  rrectPath(x, y, w, h, r);
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor || color; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, { dash = null, glow = 0, cap = 'round' } = {}) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = cap;
+  if (dash) ctx.setLineDash(dash);
+  if (glow) { ctx.shadowColor = color; ctx.shadowBlur = glow; }
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1, { stroke = 0, strokeColor = null, glow = 0 } = {}) {
+  if (r <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (glow) { ctx.shadowColor = strokeColor || color; ctx.shadowBlur = glow; }
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor || color; ctx.stroke(); }
+  ctx.restore();
+}
+function arrowDown(x, y, len, color, alpha = 1, width = 14) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.shadowColor = color; ctx.shadowBlur = 18;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + len); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 34, y + len - 30); ctx.lineTo(x, y + len + 8); ctx.lineTo(x + 34, y + len - 30); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function cross(x, y, s, color, alpha = 1, width = 22) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.shadowColor = color; ctx.shadowBlur = 20;
+  ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s); ctx.moveTo(x + s, y - s); ctx.lineTo(x - s, y + s); ctx.stroke();
+  ctx.restore();
+}
+function check(x, y, s, color, p, alpha = 1, width = 22) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.shadowColor = color; ctx.shadowBlur = 20;
+  const a = [x - s, y], b = [x - s * 0.3, y + s * 0.7], c = [x + s, y - s * 0.7];
+  ctx.beginPath(); ctx.moveTo(...a);
+  if (p < 0.4) ctx.lineTo(lerp(a[0], b[0], p / 0.4), lerp(a[1], b[1], p / 0.4));
+  else { ctx.lineTo(...b); const q = (p - 0.4) / 0.6; ctx.lineTo(lerp(b[0], c[0], q), lerp(b[1], c[1], q)); }
+  ctx.stroke(); ctx.restore();
+}
+// スタンプ(回転した枠+文字)が叩き込まれる
+function stamp(str, x, y, T, t0, color = C.red, size = 64, rot = -0.14) {
+  if (T < t0) return;
+  const p = seg(T, t0, 0.16);
+  const s = lerp(2.6, 1, easeOut(p));
+  const w = measure(str, size) + 70, h = size + 50;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s); ctx.globalAlpha = 0.92 * p;
+  rrect(-w / 2, -h / 2, w, h, 16, 'rgba(255,51,85,0.14)', 1, { stroke: 9, strokeColor: color, glow: 14 });
+  text(str, 0, 4, { size, color, glow: 10 });
+  ctx.restore();
+}
+function shakeAmt(T) {
+  let a = 0;
+  for (const e of EV) {
+    if (e.kind === 'stamp' || e.kind === 'slam') a += 16 * decay(T, e.t, 0.12);
+    if (e.kind === 'flash') a += 8 * decay(T, e.t, 0.1);
+    if (e.kind === 'tick') a += 4 * decay(T, e.t, 0.08);
+  }
+  return Math.min(a, 26);
+}
+
+// ---------- 字幕 ----------
+const KEYWORDS = ['119番', '190万個', '最悪の選択', 'FAST', '危険', '4.5時間', '命を救う', '保存', '1分', '迷わず', '必ずメモ', '片側が下がる', '片方だけ落ちる',
+  'ろれつが回らない', '言葉が出ない', '脳を救う', 'たった4文字', 'どうする?', '血栓を溶かす薬', '3つ', '家族に共有', 'Face', 'Arm', 'Speech', 'Time'];
+function splitHighlight(word) {
+  const out = []; let rest = word;
+  while (rest.length) {
+    let best = null;
+    for (const k of KEYWORDS) { const i = rest.indexOf(k); if (i >= 0 && (best === null || i < best[0])) best = [i, k]; }
+    if (!best) { out.push([rest, false]); break; }
+    if (best[0] > 0) out.push([rest.slice(0, best[0]), false]);
+    out.push([best[1], true]); rest = rest.slice(best[0] + best[1].length);
+  }
+  return out;
+}
+function subtitle(str, y, alpha, scale, { size = 72, maxW = 930, hl = C.yellow } = {}) {
+  const words = str.split(' ');
+  const lines = [[]]; let cur = 0;
+  const sp = measure(' ', size);
+  for (const w of words) {
+    const ww = measure(w, size);
+    if (cur > 0 && cur + sp + ww > maxW) { lines.push([]); cur = 0; }
+    lines[lines.length - 1].push(w); cur += (cur ? sp : 0) + ww;
+  }
+  const lh = size * 1.3;
+  ctx.save(); ctx.translate(W / 2, y); ctx.scale(scale, scale); ctx.globalAlpha = alpha;
+  lines.forEach((ws, li) => {
+    const ly = (li - (lines.length - 1) / 2) * lh;
+    const total = ws.reduce((a, w) => a + measure(w, size), 0) + sp * (ws.length - 1);
+    let x = -total / 2;
+    for (const w of ws) {
+      for (const [sg, isHl] of splitHighlight(w)) {
+        const sw = measure(sg, size);
+        text(sg, x, ly, { size, color: isHl ? hl : C.ink, align: 'left', stroke: 14, strokeColor: 'rgba(0,0,0,0.95)' });
+        x += sw;
+      }
+      x += sp;
+    }
+  });
+  ctx.restore();
+}
+function drawSubtitle(T, sc) {
+  let cur = null;
+  for (const ln of sc.lines) if (T >= ln.start - 0.08) cur = ln;
+  if (!cur) return;
+  const p = seg(T, cur.start - 0.08, 0.2);
+  subtitle(cur.text, 1400, p, lerp(0.86, 1, easeBack(p)));
+}
+
+// ---------- 背景・共通 ----------
+function background(T, tint = 0) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0B1226'); g.addColorStop(0.55, C.bg); g.addColorStop(1, '#05070E');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ゆっくり上昇する粒子
+  for (let i = 0; i < 40; i++) {
+    const sp = 18 + 30 * hash(i, 1);
+    const x = hash(i, 2) * W + Math.sin(T * 0.5 + i) * 20;
+    const y = ((hash(i, 3) * H - T * sp) % H + H) % H;
+    circle(x, y, 2 + 3 * hash(i, 4), C.cyan, 0.08 + 0.12 * hash(i, 5));
+  }
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.25, W / 2, H * 0.45, H * 0.85);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  if (tint > 0) { ctx.fillStyle = `rgba(255,51,85,${0.16 * tint})`; ctx.fillRect(0, 0, W, H); }
+}
+function chrome(T) {
+  // 進行バー
+  const g = ctx.createLinearGradient(0, 0, W, 0); g.addColorStop(0, C.red); g.addColorStop(1, C.yellow);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(0, 0, W, 10);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W * clamp(T / DURATION), 10);
+  // 上部ピル
+  const label = '救急のきほん  |  脳卒中';
+  const w = measure(label, 32) + 70;
+  rrect(W / 2 - w / 2, 150, w, 64, 32, 'rgba(255,255,255,0.07)', 1, { stroke: 2, strokeColor: 'rgba(255,255,255,0.18)' });
+  circle(W / 2 - w / 2 + 34, 182, 9, C.red, 1, { glow: 12 });
+  text(label, W / 2 + 10, 183, { size: 32, color: C.ink2, weight: 'normal' });
+}
+function tilesRow(y, active, size, alpha = 1, gap = 36) {
+  const total = 4 * size + 3 * gap, x0 = W / 2 - total / 2 + size / 2;
+  TILE.forEach((t, i) => {
+    const on = active === i, s = on ? 1.28 : 1, a = alpha * (active === -1 || on ? 1 : 0.32);
+    const x = x0 + i * (size + gap);
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+    rrect(-size / 2, -size / 2, size, size, size * 0.18, t.color, a, { glow: on ? 30 : 0 });
+    text(t.ch, 0, 4, { size: size * 0.66, color: '#0B1020', alpha: a, weight: '900' });
+    ctx.restore();
+  });
+}
+function choiceCards(T, slideP = 1, states = [0, 0, 0], checkP = 0, xP = 0) {
+  const items = [['A', '様子を見る'], ['B', '水を飲ませる'], ['C', 'すぐに119番']];
+  items.forEach(([k, s], i) => {
+    const p = easeOut(seg(slideP, i * 0.12, 0.5));
+    if (p <= 0) return;
+    const y = 690 + i * 150, x = 90 + (1 - p) * 220;
+    const st = states[i];
+    const bg = st === 1 ? 'rgba(61,220,132,0.22)' : (st === 2 ? 'rgba(255,51,85,0.10)' : C.panel);
+    const bd = st === 1 ? C.green : (st === 2 ? 'rgba(255,51,85,0.6)' : C.grid);
+    rrect(x, y, 900, 125, 26, bg, p, { stroke: 3, strokeColor: bd, glow: st === 1 ? 26 : 0 });
+    circle(x + 80, y + 62, 42, st === 1 ? C.green : C.panel2, p, { stroke: 3, strokeColor: st === 1 ? C.green : C.grid });
+    text(k, x + 80, y + 65, { size: 46, color: st === 1 ? '#0B1020' : C.ink2, alpha: p });
+    text(s, x + 150, y + 65, { size: 56, color: st === 2 ? C.ink3 : C.ink, align: 'left', alpha: p });
+    if (st === 1 && checkP > 0) check(x + 800, y + 62, 36, C.green, checkP, p);
+    if (st === 2 && xP > 0) cross(x + 800, y + 62, 30 * easeBack(xP), C.red, p);
+  });
+}
+function ecgValue(T) {
+  let v = 0;
+  for (const e of ev('heartbeat')) {
+    const d = T - e.t; if (d < -0.1 || d > 0.7) continue;
+    v += 0.12 * Math.exp(-Math.pow((d - 0.0) / 0.03, 2));          // P
+    v += -0.25 * Math.exp(-Math.pow((d - 0.085) / 0.012, 2));      // Q
+    v += 1.0 * Math.exp(-Math.pow((d - 0.1) / 0.014, 2));          // R
+    v += -0.35 * Math.exp(-Math.pow((d - 0.115) / 0.012, 2));      // S
+    v += 0.28 * Math.exp(-Math.pow((d - 0.32) / 0.06, 2));         // T
+  }
+  return v;
+}
+function ecg(T, y, alpha = 1) {
+  const x0 = 70, x1 = W - 70, speed = 420;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = C.red; ctx.lineWidth = 6; ctx.lineJoin = 'round';
+  ctx.shadowColor = C.red; ctx.shadowBlur = 22;
+  ctx.beginPath();
+  for (let x = x0; x <= x1; x += 3) {
+    const tt = T - (x1 - x) / speed;
+    const yy = y - ecgValue(tt) * 150;
+    if (x === x0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+  }
+  ctx.stroke(); ctx.restore();
+  circle(x1, y - ecgValue(T) * 150, 9, '#fff', alpha, { glow: 20 });
+}
+function faceShape(cx, cy, r, droop, { eyeOpen = 1, confused = false } = {}) {
+  circle(cx, cy, r, C.panel2, 1, { stroke: 9, strokeColor: '#fff' });
+  // 眉と目(右側が下がる)
+  const dy = droop * 26;
+  for (const sgn of [-1, 1]) {
+    const ex = cx + sgn * r * 0.4, dd = sgn > 0 ? dy : 0;
+    line(ex - 40, cy - r * 0.42 + dd + (sgn > 0 ? droop * 10 : 0), ex + 40, cy - r * 0.42 + dd - (sgn > 0 ? droop * 6 : 0), '#fff', 9);
+    ctx.save(); ctx.fillStyle = '#fff'; ctx.beginPath();
+    ctx.ellipse(ex, cy - r * 0.2 + dd, 24, 30 * (sgn > 0 ? lerp(1, 0.55, droop) : 1) * eyeOpen, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+  // 口: 左は笑顔、右は垂れ下がる
+  ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 11; ctx.lineCap = 'round'; ctx.beginPath();
+  const my = cy + r * 0.3;
+  if (confused) {
+    ctx.moveTo(cx - r * 0.45, my);
+    for (let i = 1; i <= 6; i++) ctx.lineTo(cx - r * 0.45 + i * r * 0.15, my + (i % 2 ? -14 : 14));
+  } else {
+    ctx.moveTo(cx - r * 0.5, my - 10);
+    ctx.quadraticCurveTo(cx - r * 0.2, my + r * 0.3, cx, my + r * 0.12);
+    ctx.quadraticCurveTo(cx + r * 0.25, my + r * 0.3 * (1 - droop) + droop * r * 0.4, cx + r * 0.5, my - 10 + droop * r * 0.45);
+  }
+  ctx.stroke(); ctx.restore();
+}
+function bubble(x, y, w, h, str, alpha = 1, { size = 46, color = C.ink, tail = 'left', fill = '#fff', ink = '#0B1020' } = {}) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  rrectPath(x, y, w, h, 28); ctx.fillStyle = fill; ctx.fill();
+  ctx.beginPath();
+  if (tail === 'left') { ctx.moveTo(x + 40, y + h - 2); ctx.lineTo(x + 10, y + h + 40); ctx.lineTo(x + 90, y + h - 2); }
+  else { ctx.moveTo(x + w - 90, y + h - 2); ctx.lineTo(x + w - 10, y + h + 40); ctx.lineTo(x + w - 40, y + h - 2); }
+  ctx.fill();
+  text(str, x + w / 2, y + h / 2 + 3, { size, color: ink });
+  ctx.restore();
+}
+function clockIcon(x, y, r, color, T, alpha = 1) {
+  circle(x, y, r, 'rgba(255,255,255,0.04)', alpha, { stroke: 8, strokeColor: color });
+  const a = T * 2 * Math.PI / 4 - Math.PI / 2;  // 4 秒で 1 周
+  line(x, y, x + Math.cos(a) * r * 0.7, y + Math.sin(a) * r * 0.7, color, 8, alpha);
+  line(x, y, x, y - r * 0.45, color, 8, alpha);
+  circle(x, y, 8, color, alpha);
+}
+
+// ---------- シーン ----------
+function sceneQuiz(T, sc, t) {
+  const hb = ev('heartbeat').filter(e => e.t <= T); const last = hb.length ? hb[hb.length - 1].t : -9;
+  const pulse = 1 + 0.16 * decay(T, last, 0.18);
+  const a0 = easeOut(t / 0.3);
+  ctx.save(); ctx.translate(W / 2, 400); ctx.scale(pulse, pulse);
+  circle(0, 0, 86, 'rgba(255,51,85,0.18)', a0 * 0.8 * decay(T, last, 0.5) + 0.2);
+  circle(0, 0, 70, C.red, a0, { glow: 30 });
+  text('Q', 0, 6, { size: 92, color: '#fff', weight: '900' });
+  ctx.restore();
+  ecg(T, 580, a0);
+  const ch = ev('choices', 0);
+  // フック: 選択肢が出るまで「緊急クイズ」を大きく
+  const hookA = easeOut(seg(t, 0.15, 0.3)) * (ch ? 1 - seg(T, ch.t - 0.25, 0.25) : 1);
+  if (hookA > 0) {
+    const ps = 1 + 0.03 * Math.sin(T * 8);
+    ctx.save(); ctx.translate(W / 2, 860); ctx.scale(ps, ps); ctx.globalAlpha = hookA;
+    rrect(-300, -60, 600, 120, 60, 'rgba(255,51,85,0.15)', 1, { stroke: 4, strokeColor: C.red, glow: 20 });
+    text('緊急クイズ', 0, 4, { size: 62, color: C.red, glow: 12 });
+    text('3秒で判断できる?', 0, 130, { size: 46, color: C.ink2, weight: 'normal' });
+    ctx.restore();
+  }
+  if (ch && T >= ch.t) choiceCards(T, (T - ch.t) / 0.9);
+  const tm = ev('timer', 0);
+  if (tm && T >= tm.t) {
+    const p = 1 - clamp((T - tm.t) / (tm.end - tm.t));
+    const ticks = ev('tick').filter(e => e.t <= T); const n = ticks.length ? ticks[ticks.length - 1].n : 3;
+    const tk = ticks.length ? ticks[ticks.length - 1].t : tm.t;
+    rrect(90, 1225, 900, 26, 13, 'rgba(255,255,255,0.08)');
+    rrect(90, 1225, 900 * p, 26, 13, p > 0.4 ? C.yellow : C.red, 1, { glow: 14 });
+    const s = 1 + 0.35 * decay(T, tk, 0.15);
+    ctx.save(); ctx.translate(W / 2 + 40, 1170); ctx.scale(s, s);
+    text(String(n), 0, 0, { size: 76, color: p > 0.4 ? C.yellow : C.red, glow: 18 });
+    ctx.restore();
+    text('制限時間', W / 2 - 90, 1172, { size: 34, color: C.ink3, weight: 'normal' });
+  }
+}
+function sceneAnswer(T, sc, t) {
+  const cr = ev('correct', 0), wr = ev('wrong', 0), st = ev('stamp', 0);
+  const checkP = cr ? easeOut((T - cr.t) / 0.4) : 0, xP = wr ? seg(T, wr.t, 0.25) : 0;
+  const states = [T >= (wr ? wr.t : 1e9) ? 2 : 0, T >= (wr ? wr.t : 1e9) ? 2 : 0, T >= (cr ? cr.t : 1e9) ? 1 : 0];
+  // 「正解!」バースト
+  const p = easeBack(seg(t, 0.05, 0.35));
+  ctx.save(); ctx.translate(W / 2, 430);
+  for (let i = 0; i < 16; i++) {
+    const a = i / 16 * Math.PI * 2 + t * 0.6;
+    line(Math.cos(a) * 120, Math.sin(a) * 120, Math.cos(a) * (170 + 40 * p), Math.sin(a) * (170 + 40 * p), C.yellow, 6, 0.5 * p);
+  }
+  ctx.scale(p, p); text('正解!', 0, 0, { size: 120, color: C.yellow, weight: '900', glow: 30, stroke: 10, strokeColor: 'rgba(0,0,0,0.6)' });
+  ctx.restore();
+  choiceCards(T, 1, states, checkP, xP);
+  if (st) stamp(st.label, 640, 752, T, st.t, C.red, 70, -0.12);
+}
+function sceneWhy(T, sc, t) {
+  const cnt = ev('counter', 0);
+  const q = cnt ? clamp((T - cnt.t) / (cnt.end - cnt.t)) : 0;
+  const dead = easeInOut(q);
+  const cx = W / 2, cy = 640;
+  // 脳のシルエット(重ねた楕円)+ 神経細胞のドット
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(cx - 60, cy, 300, 215, -0.15, 0, Math.PI * 2);
+  ctx.ellipse(cx + 110, cy - 20, 240, 190, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(cx + 150, cy + 120, 120, 90, 0.4, 0, Math.PI * 2);
+  ctx.shadowColor = C.cyan; ctx.shadowBlur = 50; ctx.fillStyle = 'rgba(45,212,255,0.13)'; ctx.fill(); ctx.fill();
+  ctx.restore();
+  for (let i = 0; i < 520; i++) {
+    const ang = hash(i, 7) * Math.PI * 2, rad = Math.sqrt(hash(i, 8));
+    const x = cx + Math.cos(ang) * rad * 360 + 20, y = cy + Math.sin(ang) * rad * 215;
+    if (Math.hypot((x - cx) / 380, (y - cy) / 235) > 1) continue;
+    const order = hash(i, 9);
+    const isDead = order < dead, fresh = isDead && dead - order < 0.1;
+    const flick = isDead ? 0 : 0.5 + 0.5 * Math.sin(T * 6 + i);
+    circle(x, y, fresh ? 8 : (isDead ? 4 : 5 + 2 * flick), fresh ? C.red : (isDead ? '#3A1F2A' : C.cyan), isDead ? 0.9 : 0.55 + 0.45 * flick, { glow: fresh ? 16 : (isDead ? 0 : 8) });
+  }
+  // 1 分バッジ(前半)
+  const l0 = sc.lines[0];
+  const b = easeBack(seg(T, l0.start + 0.6, 0.3));
+  ctx.save(); ctx.translate(W / 2 + 330, 380); ctx.scale(b, b);
+  clockIcon(-70, 0, 44, C.red, T);
+  text('+1分', 40, 4, { size: 60, color: C.red, glow: 14 });
+  ctx.restore();
+  // カウンター
+  const n = Math.round(1900000 * easeOut(q));
+  if (cnt && T >= cnt.t - 0.2) {
+    const a = seg(T, cnt.t - 0.2, 0.2);
+    text('1分で失われる脳細胞', W / 2, 915, { size: 40, color: C.ink2, alpha: a, weight: 'normal' });
+    const s = 1 + 0.06 * Math.sin(T * 24) * q * (1 - q) * 4;
+    ctx.save(); ctx.translate(W / 2 - 60, 1035); ctx.scale(s, s);
+    text(n.toLocaleString('en-US'), 0, 0, { size: 140, color: q >= 1 ? C.red : C.yellow, alpha: a, glow: 30, weight: '900' });
+    ctx.restore();
+    text('個', W / 2 + 390, 1050, { size: 64, color: C.ink, alpha: a });
+    if (q >= 1) text('※ Saver JL, Stroke 2006', W / 2, 1150, { size: 26, color: C.ink3, weight: 'normal', alpha: seg(T, cnt.end, 0.3) });
+  }
+}
+function sceneFast(T, sc, t) {
+  const slams = ev('slam');
+  const size = 210, gap = 38, total = 4 * size + 3 * gap, x0 = W / 2 - total / 2 + size / 2, y = 700;
+  TILE.forEach((tl, i) => {
+    const x = x0 + i * (size + gap), s = slams[i];
+    if (!s || T < s.t) {
+      const pl = 0.6 + 0.4 * Math.sin(T * 5 + i);
+      rrect(x - size / 2, y - size / 2, size, size, 36, 'rgba(255,255,255,0.03)', 1, { stroke: 4, strokeColor: `rgba(255,255,255,${0.25 * pl})` });
+      text('?', x, y + 6, { size: 110, color: `rgba(255,255,255,${0.35 * pl})` });
+      ctx.save(); ctx.setLineDash([14, 12]); ctx.restore();
+    } else {
+      const p = seg(T, s.t, 0.17), sc2 = lerp(2.8, 1, easeOut(p));
+      ctx.save(); ctx.translate(x, y); ctx.scale(sc2, sc2); ctx.globalAlpha = Math.min(1, p * 2);
+      rrect(-size / 2, -size / 2, size, size, 36, tl.color, 1, { glow: 40 });
+      text(tl.ch, 0, 8, { size: 150, color: '#0B1020', weight: '900' });
+      ctx.restore();
+      // 衝撃波リング
+      const r = 110 + 110 * seg(T, s.t, 0.4);
+      circle(x, y, r, null, 0.5 * (1 - seg(T, s.t, 0.4)), { stroke: 5, strokeColor: tl.color });
+      const w = seg(T, s.t + 0.25, 0.25);
+      text(tl.en, x, y + 180, { size: 40, color: tl.color, alpha: w });
+      text(tl.ja, x, y + 232, { size: 36, color: C.ink2, alpha: w, weight: 'normal' });
+    }
+  });
+  const l0 = sc.lines[0];
+  text('脳卒中の見分け方', W / 2, 430, { size: 64, color: C.ink, alpha: easeOut(seg(T, l0.start, 0.3)) });
+  if (slams[3] && T >= slams[3].t + 0.5) {
+    const a = seg(T, slams[3].t + 0.5, 0.3);
+    text('1つでも当てはまれば 脳卒中を疑う', W / 2, 1060, { size: 44, color: C.yellow, alpha: a, stroke: 8, strokeColor: 'rgba(0,0,0,0.7)' });
+  }
+}
+function sceneLetter(T, sc, t, idx) {
+  tilesRow(400, idx, 130, easeOut(t / 0.3));
+  const tl = TILE[idx];
+  text(`${tl.en}  =  ${tl.ja}`, W / 2, 530, { size: 48, color: tl.color, alpha: easeOut(seg(t, 0.1, 0.3)) });
+  const al = ev('alert').filter(e => T >= e.t - 0.7 && sc.start <= e.t && e.t < sc.end)[0];
+  const droop = al ? easeInOut((T - (al.t - 0.7)) / 1.0) : 0;
+  const warn = al ? seg(T, al.t, 0.25) : 0;
+  const l1 = sc.lines[1];
+  const vis = easeOut(seg(T, sc.lines[0].start + 0.3, 0.35));
+  if (idx === 0) {
+    ctx.save(); ctx.globalAlpha = vis;
+    faceShape(W / 2, 830, 230, droop);
+    ctx.restore();
+    if (T >= l1.start) bubble(110, 560, 230, 110, 'イー!', easeBack(seg(T, l1.start, 0.3)), { size: 54, tail: 'right' });
+    if (warn > 0) {
+      arrowDown(W / 2 + 310, 760, 150 * easeBack(warn), C.red, warn);
+      text('片側が下がる', W / 2 + 345, 1000, { size: 42, color: C.red, alpha: warn, glow: 10 });
+    }
+  } else if (idx === 1) {
+    ctx.save(); ctx.globalAlpha = vis;
+    const hx = 330, hy = 650;
+    circle(hx, hy, 72, C.panel2, 1, { stroke: 9, strokeColor: '#fff' });
+    circle(hx + 30, hy - 10, 8, '#fff');
+    line(hx, hy + 72, hx, hy + 330, '#fff', 42);
+    line(hx, hy + 320, hx - 60, hy + 520, '#fff', 34); line(hx, hy + 320, hx + 60, hy + 520, '#fff', 34);
+    const sx = hx + 10, sy = hy + 130, L = 330;
+    // 健側の腕(前方・水平)
+    line(sx, sy, sx + L, sy, '#fff', 30); circle(sx + L + 10, sy, 24, '#fff');
+    // 患側の腕: 徐々に落ちる
+    const ang = droop * 0.75;
+    const ex = sx + Math.cos(ang) * L, ey = sy + 14 + Math.sin(ang) * L;
+    line(sx, sy + 14, sx + L, sy + 14, 'rgba(255,255,255,0.25)', 30, 1, { dash: [18, 16] });
+    line(sx, sy + 14, ex, ey, C.yellow, 30); circle(ex + 8, ey, 24, C.yellow);
+    ctx.restore();
+    if (warn > 0) {
+      arrowDown(sx + L + 110, sy - 10, 140 * easeBack(warn), C.red, warn);
+      text('片方だけ落ちる', W / 2 + 120, 1080, { size: 42, color: C.red, alpha: warn, glow: 10 });
+    }
+  } else if (idx === 2) {
+    ctx.save(); ctx.globalAlpha = vis;
+    faceShape(300, 820, 160, 0, { confused: droop > 0.5 });
+    ctx.restore();
+    const txt = '今日は いい天気ですね';
+    if (droop < 0.5) bubble(520, 640, 480, 150, txt, vis * easeBack(seg(T, sc.lines[0].start + 0.5, 0.3)), { size: 44, tail: 'left' });
+    else {
+      // 言葉がもつれる: 文字が揺れ、一部が欠ける
+      ctx.save(); ctx.globalAlpha = vis;
+      rrectPath(520, 640, 480, 150, 28); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.beginPath(); ctx.moveTo(560, 788); ctx.lineTo(530, 830); ctx.lineTo(610, 788); ctx.fill();
+      const g = 'きょ…は…い…て…き…';
+      let x = 560;
+      for (let i = 0; i < g.length; i++) {
+        const j = Math.sin(T * 37 + i * 3) * 9 * warn, rot = Math.sin(T * 23 + i) * 0.25 * warn;
+        ctx.save(); ctx.translate(x + 22, 715 + j); ctx.rotate(rot);
+        text(g[i], 0, 0, { size: 44, color: i % 3 === 1 ? C.red : '#0B1020' });
+        ctx.restore(); x += 44;
+      }
+      ctx.restore();
+      text('??', 940, 600, { size: 70, color: C.red, alpha: warn, glow: 14 });
+      text('ろれつが回らない', W / 2 + 160, 900, { size: 42, color: C.red, alpha: warn, glow: 10 });
+      text('言葉が出てこない', W / 2 + 160, 960, { size: 42, color: C.red, alpha: warn, glow: 10 });
+    }
+  } else {
+    const alarm = ev('alarm', 0);
+    const ring = alarm ? decay(T, alarm.t, 0.6) : 0;
+    const ps = 1 + 0.05 * Math.sin(T * 9) + 0.1 * ring;
+    ctx.save(); ctx.globalAlpha = vis; ctx.translate(W / 2, 760); ctx.scale(ps, ps);
+    for (let k = 0; k < 3; k++) {
+      const q = ((T * 0.8 + k / 3) % 1);
+      circle(0, 0, 195 + q * 110, null, (1 - q) * 0.45, { stroke: 6, strokeColor: C.red });
+    }
+    circle(0, 0, 190, 'rgba(255,51,85,0.12)', 1, { stroke: 10, strokeColor: C.red, glow: 40 });
+    text('119', 0, -22, { size: 165, color: '#fff', weight: '900', glow: 24, glowColor: C.red });
+    text('ためらわず通報', 0, 100, { size: 38, color: C.red });
+    ctx.restore();
+    const l2 = sc.lines[2];
+    if (T >= l2.start - 0.1) {
+      const p = easeBack(seg(T, l2.start - 0.1, 0.35));
+      ctx.save(); ctx.globalAlpha = p; ctx.translate(0, (1 - p) * 60);
+      rrect(140, 990, 800, 170, 26, '#FFF6D5', 1, { glow: 10 });
+      for (let i = 0; i < 3; i++) line(180, 1035 + i * 42, 900, 1035 + i * 42, 'rgba(0,0,0,0.08)', 2);
+      clockIcon(230, 1075, 46, '#0B1020', T);
+      text('発症時刻', 330, 1046, { size: 34, color: '#555', align: 'left', weight: 'normal' });
+      text('14:32', 330, 1105, { size: 72, color: '#0B1020', align: 'left', weight: '900' });
+      text('✎ メモ', 860, 1075, { size: 40, color: C.red, align: 'right' });
+      ctx.restore();
+    }
+  }
+}
+function sceneTpa(T, sc, t) {
+  const rg = ev('ring', 0);
+  const q = rg ? clamp((T - rg.t) / (rg.end - rg.t)) : 0;
+  const cx = W / 2, cy = 700, r = 260;
+  const vis = easeOut(t / 0.35);
+  ctx.save(); ctx.globalAlpha = vis;
+  circle(cx, cy, r, 'rgba(45,212,255,0.05)', 1, { stroke: 26, strokeColor: 'rgba(255,255,255,0.08)' });
+  ctx.strokeStyle = C.cyan; ctx.lineWidth = 26; ctx.lineCap = 'round'; ctx.shadowColor = C.cyan; ctx.shadowBlur = 30;
+  ctx.beginPath(); ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - 0.45 * q)); ctx.stroke();
+  ctx.shadowBlur = 0;
+  text('4.5', cx, cy - 30, { size: 200, color: '#fff', weight: '900' });
+  text('時間以内', cx, cy + 110, { size: 60, color: C.cyan });
+  ctx.restore();
+  const l0 = sc.lines[0];
+  const p1 = easeBack(seg(T, l0.start + 1.6, 0.35));
+  ctx.save(); ctx.translate(W / 2, 1040); ctx.scale(p1, p1);
+  const lbl = '血栓を溶かす薬(t-PA)が使える';
+  const w = measure(lbl, 44) + 80;
+  rrect(-w / 2, -45, w, 90, 45, C.cyan, 1, { glow: 20 });
+  text(lbl, 0, 3, { size: 44, color: '#0B1020' });
+  ctx.restore();
+  const l1 = sc.lines[1];
+  if (T >= l1.start) text('TIME IS BRAIN', W / 2, 1160, { size: 54, color: C.yellow, ls: 10, alpha: easeOut(seg(T, l1.start, 0.3)), glow: 14 });
+}
+function sceneNg(T, sc, t) {
+  const rows = [['様子を見る', 'eye'], ['自分で運転して病院へ', 'car'], ['水を飲ませる', 'cup']];
+  const vis = easeOut(t / 0.3);
+  const b = easeBack(seg(t, 0.05, 0.3));
+  ctx.save(); ctx.translate(W / 2, 420); ctx.scale(b, b);
+  rrect(-170, -50, 340, 100, 20, C.red, 1, { glow: 26 }); text('やってはいけない', 0, 4, { size: 40, color: '#fff' });
+  ctx.restore();
+  const stamps = ev('stamp').filter(e => e.i !== undefined);
+  rows.forEach(([s, ic], i) => {
+    const y = 540 + i * 215;
+    const p = easeOut(seg(t, 0.1 + i * 0.1, 0.35));
+    const st = stamps[i], hit = st && T >= st.t;
+    ctx.save(); ctx.globalAlpha = p; ctx.translate((1 - p) * 120, 0);
+    rrect(90, y, 900, 175, 26, hit ? 'rgba(255,51,85,0.12)' : C.panel, 1, { stroke: 3, strokeColor: hit ? C.red : C.grid });
+    // アイコン
+    const ix = 190, iy = y + 87;
+    if (ic === 'eye') { ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.beginPath(); ctx.ellipse(ix, iy, 58, 34, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); circle(ix, iy, 18, '#fff'); }
+    else if (ic === 'car') { rrect(ix - 70, iy - 10, 140, 50, 12, '#fff'); rrect(ix - 45, iy - 45, 90, 45, 12, '#fff'); circle(ix - 40, iy + 42, 16, C.panel, 1, { stroke: 6, strokeColor: '#fff' }); circle(ix + 40, iy + 42, 16, C.panel, 1, { stroke: 6, strokeColor: '#fff' }); }
+    else { ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(ix - 45, iy - 50); ctx.lineTo(ix - 32, iy + 55); ctx.lineTo(ix + 32, iy + 55); ctx.lineTo(ix + 45, iy - 50); ctx.closePath(); ctx.stroke(); ctx.restore(); rrect(ix - 36, iy - 5, 72, 55, 6, C.cyan); }
+    text(s, 290, y + 90, { size: 54, color: hit ? C.ink3 : C.ink, align: 'left' });
+    ctx.restore();
+    if (hit) { const q = easeBack(seg(T, st.t, 0.18)); cross(880, y + 87, 48 * q, C.red, p, 24); }
+  });
+}
+function sceneCta(T, sc, t) {
+  const pop = ev('pop').filter(e => e.t >= sc.start)[0];
+  const bounce = pop ? Math.abs(Math.sin(Math.max(0, T - pop.t) * 7)) * Math.exp(-Math.max(0, T - pop.t) * 1.6) : 0;
+  const s = easeBack(seg(t, 0.05, 0.4)) * (1 + 0.18 * bounce);
+  // ブックマーク(保存)アイコン
+  ctx.save(); ctx.translate(W / 2, 640); ctx.scale(s, s);
+  ctx.shadowColor = C.yellow; ctx.shadowBlur = 40; ctx.fillStyle = C.yellow;
+  ctx.beginPath(); ctx.moveTo(-110, -150); ctx.lineTo(110, -150); ctx.lineTo(110, 150); ctx.lineTo(0, 70); ctx.lineTo(-110, 150); ctx.closePath(); ctx.fill();
+  ctx.shadowBlur = 0; text('保存', 0, -20, { size: 64, color: '#0B1020', weight: '900' });
+  ctx.restore();
+  const l0 = sc.lines[0];
+  const a1 = easeOut(seg(T, l0.start + 0.8, 0.3));
+  text('家族・大切な人に共有', W / 2, 870, { size: 56, color: C.ink, alpha: a1, stroke: 8, strokeColor: 'rgba(0,0,0,0.6)' });
+  tilesRow(1010, -1, 110, easeOut(seg(T, l0.start + 1.2, 0.3)), 30);
+  const l1 = sc.lines[1];
+  const a2 = easeOut(seg(T, l1.start, 0.3));
+  text('Face  ·  Arm  ·  Speech  ·  Time', W / 2, 1110, { size: 34, color: C.ink2, alpha: a2, weight: 'normal', ls: 2 });
+  // クレジット・注記
+  const a3 = easeOut(seg(t, 0.4, 0.4));
+  text('ナレーション: VOICEVOX:四国めたん', W / 2, 1560, { size: 30, color: C.ink2, alpha: a3, weight: 'normal' });
+  text('参考: 日本脳卒中協会「ACT FAST」/ Saver JL. Stroke. 2006', W / 2, 1605, { size: 24, color: C.ink3, alpha: a3, weight: 'normal' });
+  text('※一般的な情報です。症状があれば迷わず119番・医療機関へ', W / 2, 1645, { size: 24, color: C.ink3, alpha: a3, weight: 'normal' });
+}
+const SCENE_FN = { quiz: sceneQuiz, answer: sceneAnswer, why: sceneWhy, fast: sceneFast, F: (T, s, t) => sceneLetter(T, s, t, 0), A: (T, s, t) => sceneLetter(T, s, t, 1),
+  S: (T, s, t) => sceneLetter(T, s, t, 2), T: (T, s, t) => sceneLetter(T, s, t, 3), tpa: sceneTpa, ng: sceneNg, cta: sceneCta };
+const TINT = { why: 1, ng: 0.8, answer: 0.3, T: 0.4 };
+
+window.render = function (T) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (!TL) { ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H); text('timeline not loaded', W / 2, H / 2, { size: 40 }); return; }
+  const sc = TL.scenes.find(s => T >= s.start && T < s.end) || TL.scenes[TL.scenes.length - 1];
+  const t = T - sc.start;
+  const tint = (TINT[sc.id] || 0) * (sc.id === 'why' ? easeOut(seg(t, 2.5, 2)) : easeOut(t / 0.5));
+  background(T, tint);
+  // 画面揺れ
+  const sh = shakeAmt(T);
+  ctx.save();
+  if (sh > 0) ctx.translate((hash(Math.floor(T * 60), 21) - 0.5) * 2 * sh, (hash(Math.floor(T * 60), 22) - 0.5) * 2 * sh);
+  chrome(T);
+  // シーン切替: 0.22 秒のフェード+スライド
+  const inP = easeOut(t / 0.22);
+  ctx.save(); ctx.globalAlpha = inP; ctx.translate(0, (1 - inP) * 40);
+  SCENE_FN[sc.id](T, sc, t);
+  ctx.restore();
+  drawSubtitle(T, sc);
+  ctx.restore();
+  // フラッシュ
+  let fl = 0; for (const e of ev('flash')) fl += decay(T, e.t, 0.09);
+  if (fl > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.75, fl * 0.75)})`; ctx.fillRect(0, 0, W, H); }
+  // ループ用: 最後の 0.4 秒でフェードアウト
+  const fo = seg(T, DURATION - 0.4, 0.4);
+  if (fo > 0) { ctx.fillStyle = `rgba(7,10,20,${fo})`; ctx.fillRect(0, 0, W, H); }
+};
+
+// サムネイル(縦 1080×1920)
+window.renderThumb = function () {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  background(3.0, 0.5);
+  text('家族が急に', W / 2, 420, { size: 110, color: '#fff', weight: '900', stroke: 16, strokeColor: '#000' });
+  text('ろれつが回らない', W / 2, 560, { size: 110, color: C.yellow, weight: '900', stroke: 16, strokeColor: '#000' });
+  ecg(3.0, 760, 1);
+  text('どうする?', W / 2, 960, { size: 150, color: C.red, weight: '900', stroke: 18, strokeColor: '#000', glow: 30 });
+  tilesRow(1240, -1, 170, 1, 40);
+  text('脳卒中のサイン、3秒で見抜く', W / 2, 1460, { size: 60, color: '#fff', stroke: 10, strokeColor: '#000' });
+};
+
+// ブラウザで開いたときのプレビュー再生(timeline.json / events.json を同じ階層の output/ から取得)
+if (location.protocol !== 'file:' || true) {
+  Promise.all([fetch('output/timeline.json').then(r => r.json()), fetch('output/events.json').then(r => r.json())])
+    .then(([tl, e]) => { window.setData(tl, e); const t0 = performance.now(); (function loop() { window.render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); })
+    .catch(() => {});
+}
+</script>
+</body>
+</html>
