@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>逆境 ショート動画 レンダラ</title>
+<style>
+@font-face{font-family:'ZenBlack';src:url('fonts/ZenKakuGothicNew-Black.ttf')}
+@font-face{font-family:'MPlusBlack';src:url('fonts/MPLUS1p-Black.ttf')}
+html,body{margin:0;background:#111;height:100%}
+#c{display:block;margin:0 auto;height:100vh;width:auto;background:#000}
+#warm{position:absolute;left:-9999px;font-family:'ZenBlack','MPlusBlack'}
+</style></head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<span id="warm">逆境<b style="font-family:'MPlusBlack'">逆境</b></span>
+<script src="output/timeline.js"></script>
+<script>
+'use strict';
+const W = 1080, H = 1920;
+const FPS = 30;
+const TL = window.TIMELINE;
+const DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const SCENE = Object.fromEntries(TL.scenes.map(s => [s.id, s]));
+const LINES = TL.scenes.flatMap(s => s.lines.map(l => ({...l, scene: s.id})));
+const F1 = 'ZenBlack', F2 = 'MPlusBlack';
+
+// ---------- 決定論的乱数・イージング ----------
+function rnd(i, j = 0) { let x = Math.sin(i * 127.1 + j * 311.7 + 1.37) * 43758.5453; return x - Math.floor(x); }
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const eOutCubic = t => 1 - Math.pow(1 - clamp(t), 3);
+const eOutExpo = t => t >= 1 ? 1 : 1 - Math.pow(2, -10 * clamp(t));
+const eInOut = t => { t = clamp(t); return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+const eOutBack = t => { t = clamp(t); const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const eInCubic = t => Math.pow(clamp(t), 3);
+function shake(u, amp, dur) { if (u < 0 || u > dur) return [0, 0]; const k = amp * (1 - u / dur); return [k * Math.sin(u * 97), k * Math.cos(u * 73 + 1)]; }
+function pulse(u, period, width = 0.12) { const p = ((u % period) + period) % period; return p < width ? 1 - p / width : 0; }
+
+// ---------- テキスト ----------
+function text(s, x, y, size, o = {}) {
+  ctx.save();
+  ctx.translate(x, y); if (o.rot) ctx.rotate(o.rot); if (o.scale) ctx.scale(o.scale, o.scale);
+  ctx.font = `${size}px '${o.font || F1}'`;
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = o.base || 'middle';
+  ctx.globalAlpha = o.alpha == null ? 1 : o.alpha;
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.glowBlur || 30; }
+  if (o.stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = o.strokeW || size * 0.16; ctx.strokeStyle = o.stroke; ctx.strokeText(s, 0, 0); }
+  if (o.shadow) { ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = size * 0.06; }
+  ctx.fillStyle = o.color || '#fff'; ctx.fillText(s, 0, 0);
+  ctx.restore();
+}
+function measure(s, size, font = F1) { ctx.font = `${size}px '${font}'`; return ctx.measureText(s).width; }
+
+// ---------- 共通エフェクト ----------
+const grainCv = document.createElement('canvas'); grainCv.width = 360; grainCv.height = 640;
+(function () { const g = grainCv.getContext('2d'); const im = g.createImageData(360, 640); for (let i = 0; i < im.data.length; i += 4) { const v = 128 + (rnd(i, 3) - .5) * 180; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; } g.putImageData(im, 0, 0); })();
+function grain(t, a = 0.07) {
+  ctx.save(); ctx.globalAlpha = a; ctx.globalCompositeOperation = 'overlay';
+  const ox = Math.floor(rnd(Math.floor(t * FPS), 9) * 120), oy = Math.floor(rnd(Math.floor(t * FPS), 10) * 120);
+  ctx.drawImage(grainCv, -ox, -oy, W + 240, H + 240); ctx.restore();
+}
+function vignette(a = 0.75, r = 0.35) {
+  const g = ctx.createRadialGradient(W / 2, H / 2, H * r, W / 2, H / 2, H * 0.85);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function flash(a, color = '#fff') { if (a <= 0) return; ctx.save(); ctx.globalAlpha = clamp(a); ctx.fillStyle = color; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+function bg(c0, c1, c2) { const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, c0); g.addColorStop(c2 ? .55 : 1, c1); if (c2) g.addColorStop(1, c2); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+function embers(t, n, color, seed, speed = 1, size = 4) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < n; i++) {
+    const life = 6 + rnd(i, seed) * 6, ph = rnd(i, seed + 1) * life;
+    const u = ((t * speed + ph) % life) / life;
+    const x = rnd(i, seed + 2) * W + Math.sin(t * 0.6 + i) * 40;
+    const y = H + 60 - u * (H + 200);
+    const a = Math.sin(u * Math.PI) * (0.35 + rnd(i, seed + 3) * 0.5);
+    const r = size * (0.5 + rnd(i, seed + 4));
+    ctx.globalAlpha = a; ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.fill();
+  }
+  ctx.restore();
+}
+function rays(x, y, t, n, color, len, a) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.translate(x, y);
+  for (let i = 0; i < n; i++) {
+    const ang = i / n * 6.283 + t * 0.15; const w = 0.06 + rnd(i, 21) * 0.08;
+    const g = ctx.createLinearGradient(0, 0, Math.cos(ang) * len, Math.sin(ang) * len);
+    g.addColorStop(0, color); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalAlpha = a * (0.5 + 0.5 * Math.sin(t * 2 + i * 1.7));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(ang - w) * len, Math.sin(ang - w) * len); ctx.lineTo(Math.cos(ang + w) * len, Math.sin(ang + w) * len); ctx.fill();
+  }
+  ctx.restore();
+}
+function ring(x, y, r, w, color, a) { if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = color; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.stroke(); ctx.restore(); }
+function speedLines(t, a, cx = W / 2, cy = H / 2) {
+  if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = '#fff'; ctx.lineCap = 'round';
+  for (let i = 0; i < 60; i++) {
+    const ang = rnd(i, 33) * 6.283; const r0 = 300 + rnd(i, 34) * 400 + ((t * 2200 + i * 97) % 500);
+    const len = 120 + rnd(i, 35) * 300; ctx.lineWidth = 2 + rnd(i, 36) * 4;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); ctx.lineTo(cx + Math.cos(ang) * (r0 + len), cy + Math.sin(ang) * (r0 + len)); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------- 字幕(発話中のパートを強調) ----------
+function currentLine(t) {
+  let cur = null;
+  for (let i = 0; i < LINES.length; i++) { const l = LINES[i]; const nxt = LINES[i + 1]; const hold = nxt ? Math.min(nxt.start - 0.05, l.end + 0.9) : l.end + 1.2; if (t >= l.start - 0.12 && t < hold) cur = l; }
+  return cur;
+}
+function captions(t, opt = {}) {
+  const l = currentLine(t); if (!l) return;
+  const size = opt.size || 76, cy = opt.y || 1290, maxW = 960, gap = 10;
+  // パートを行に折り返す
+  const rows = [[]]; let wsum = 0;
+  for (const p of l.parts) { const w = measure(p.text, size); if (wsum + w > maxW && rows[rows.length - 1].length) { rows.push([]); wsum = 0; } rows[rows.length - 1].push({ ...p, w }); wsum += w + gap; }
+  const lh = size * 1.28; const y0 = cy - (rows.length - 1) * lh / 2;
+  const ain = eOutCubic((t - (l.start - 0.12)) / 0.22);
+  ctx.save(); ctx.globalAlpha = ain; ctx.translate(0, (1 - ain) * 30);
+  rows.forEach((row, ri) => {
+    const tot = row.reduce((s, p) => s + p.w, 0) + gap * (row.length - 1);
+    let x = W / 2 - tot / 2;
+    for (const p of row) {
+      const i = l.parts.indexOf(l.parts.find(q => q.start === p.start && q.text === p.text));
+      const nxt = l.parts[i + 1]; const pend = nxt ? nxt.start : l.end;
+      const state = t < p.start ? 'next' : (t < pend ? 'now' : 'done');
+      const pop = state === 'now' ? 1 + 0.10 * Math.sin(clamp((t - p.start) / 0.22) * Math.PI) : 1;
+      const col = state === 'now' ? (opt.hi || '#FFD84D') : state === 'done' ? '#ffffff' : 'rgba(255,255,255,0.42)';
+      text(p.text, x + p.w / 2, y0 + ri * lh, size, { color: col, stroke: 'rgba(0,0,0,0.9)', strokeW: size * 0.18, scale: pop, shadow: true });
+      x += p.w + gap;
+    }
+  });
+  ctx.restore();
+}
+function partStart(sceneId, li, pi) { return SCENE[sceneId].lines[li].parts[pi].start; }
+function lineOf(sceneId, li) { return SCENE[sceneId].lines[li]; }
+
+// ---------- 各シーン ----------
+function drawHook(t) {
+  const s = SCENE.hook, u = t - s.start;
+  bg('#07070a', '#140508', '#000');
+  // 心拍で赤く明滅
+  const hb = pulse(u, 1.0, 0.25) * 0.6 + pulse(u - 0.18, 1.0, 0.2) * 0.4;
+  const g = ctx.createRadialGradient(W / 2, 760, 0, W / 2, 760, 900); g.addColorStop(0, `rgba(150,10,20,${0.35 + hb * 0.3})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 大見出し「逆境」
+  const k = eOutExpo(u / 0.45); const [sx, sy] = shake(u, 22, 0.5);
+  const t1 = partStart('hook', 1, 1); const v = t - t1;
+  const fadeK = v > 0 ? 1 - clamp(v / 0.2) : 1;
+  text('逆境', W / 2 + sx, 700 + sy, 340, { font: F2, color: '#e3142a', scale: lerp(1.6, 1, k) * (v > 0 ? 1 + v * 0.4 : 1), alpha: k * fadeK, glow: 'rgba(255,40,60,.8)', glowBlur: 60, stroke: '#2a0005', strokeW: 24 });
+  // 折れる / 強くなる の左右分割
+  const tL = partStart('hook', 0, 1), tR = partStart('hook', 0, 2);
+  const aL = eOutExpo((t - tL) / 0.35), aR = eOutExpo((t - tR) / 0.35);
+  if (aL > 0) { ctx.save(); ctx.globalAlpha = 0.9 * aL; ctx.fillStyle = '#153a7a'; ctx.beginPath(); ctx.moveTo(0, 920); ctx.lineTo(0, 920 + 420 * aL); ctx.lineTo(W / 2 * aL + 80, 920 + 420 * aL); ctx.lineTo(W / 2 * aL - 80, 920); ctx.fill(); ctx.restore(); text('折れる', 270, 1130, 120, { alpha: aL, color: '#9fc4ff', stroke: '#061531', scale: lerp(1.5, 1, aL), rot: -0.05 }); }
+  if (aR > 0) { ctx.save(); ctx.globalAlpha = 0.9 * aR; ctx.fillStyle = '#b4471a'; ctx.beginPath(); ctx.moveTo(W, 920); ctx.lineTo(W, 920 + 420 * aR); ctx.lineTo(W - W / 2 * aR - 80, 920 + 420 * aR); ctx.lineTo(W - W / 2 * aR + 80, 920); ctx.fill(); ctx.restore(); text('強くなる', 810, 1130, 120, { alpha: aR, color: '#ffd9a8', stroke: '#2b0f00', scale: lerp(1.5, 1, aR), rot: 0.05 }); }
+  // 「たった一つ」で巨大な 1
+  if (v > 0) {
+    const kk = eOutExpo(v / 0.4); const [ax, ay] = shake(v, 30, 0.45);
+    flash(0.8 - v * 2.5);
+    ring(W / 2, 680, 200 + v * 1600, 30 * (1 - clamp(v / 0.7)), '#fff', 0.8 * (1 - clamp(v / 0.7)));
+    text('1', W / 2 - 60 + ax, 660 + ay, 560, { font: F2, color: '#fff', scale: lerp(3, 1, kk), alpha: kk, glow: 'rgba(255,220,120,1)', glowBlur: 80, stroke: '#000', strokeW: 30 });
+    text('つ', W / 2 + 200 + ax, 760 + ay, 150, { color: '#FFD84D', alpha: kk, stroke: '#000', strokeW: 22 });
+  }
+  if (u < 0.15) flash(1 - u / 0.15);
+  captions(t, { y: 1480 });
+}
+
+function drawPain(t) {
+  const s = SCENE.pain, u = t - s.start;
+  bg('#05070e', '#0a1224', '#02030a');
+  const zoom = 1 + u * 0.012; ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(zoom, zoom); ctx.translate(-W / 2, -H / 2);
+  // 稲光
+  const tL = partStart('pain', 1, 1); const lv = t - tL;
+  const light = lv > 0 && lv < 0.5 ? (pulse(lv, 10, 0.08) + 0.6 * pulse(lv - 0.14, 10, 0.12)) : 0;
+  if (light > 0) { ctx.fillStyle = `rgba(200,215,255,${light * 0.55})`; ctx.fillRect(0, 0, W, H); }
+  // 窓の明かり(弱い) と 人影
+  const wg = ctx.createRadialGradient(W / 2, 560, 0, W / 2, 560, 700); wg.addColorStop(0, 'rgba(60,80,130,.35)'); wg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = wg; ctx.fillRect(0, 0, W, H);
+  // 雨
+  ctx.save(); ctx.strokeStyle = 'rgba(180,200,240,0.35)'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+  for (let i = 0; i < 160; i++) { const sp = 1400 + rnd(i, 50) * 900; const x = rnd(i, 51) * (W + 300) - 150 + ((u * 120) % 60); const y = ((u * sp + rnd(i, 52) * H) % (H + 300)) - 150; const len = 40 + rnd(i, 53) * 90; ctx.globalAlpha = 0.25 + rnd(i, 54) * 0.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - len * 0.18, y + len); ctx.stroke(); }
+  ctx.restore();
+  // 「なんで自分だけ」
+  const tN = partStart('pain', 2, 1); const w = t - tN;
+  if (w > 0) {
+    const k = eOutBack(w / 0.35); const jx = (rnd(Math.floor(t * 12), 61) - .5) * 6, jy = (rnd(Math.floor(t * 12), 62) - .5) * 6;
+    for (let e = 3; e >= 1; e--) text('なんで自分だけ', W / 2 + e * 14 + jx, 760 + e * 10 + jy, 128, { color: `rgba(120,150,230,${0.14 * k})`, rot: -0.09, scale: k, font: F2 });
+    text('なんで自分だけ', W / 2 + jx, 760 + jy, 128, { color: '#dbe6ff', rot: -0.09, scale: k, alpha: clamp(k), font: F2, stroke: 'rgba(0,10,40,.9)', strokeW: 22, glow: 'rgba(120,160,255,.6)', glowBlur: 40 });
+  }
+  ctx.restore();
+  vignette(0.85, 0.25);
+  captions(t);
+}
+
+// 根のツリー(決定論的に生成)
+const ROOTS = (function () {
+  const segs = [];
+  function grow(x, y, ang, len, depth, g0, g1, w) {
+    const x2 = x + Math.cos(ang) * len, y2 = y + Math.sin(ang) * len;
+    segs.push({ x, y, x2, y2, g0, g1, w });
+    if (depth === 0) return;
+    const n = depth > 3 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const id = segs.length * 7 + i;
+      const na = ang + (rnd(id, 70) - .5) * 1.5 + (i - (n - 1) / 2) * 0.5;
+      const nl = len * (0.62 + rnd(id, 71) * 0.28);
+      grow(x2, y2, clamp(na, 0.25, 2.9), nl, depth - 1, g1, g1 + (g1 - g0) * (0.75 + rnd(id, 72) * 0.5), w * 0.68);
+    }
+  }
+  for (let i = 0; i < 5; i++) grow(W / 2 + (i - 2) * 28, 1005, Math.PI / 2 + (i - 2) * 0.35, 120 + rnd(i, 73) * 40, 6, 0, 0.14, 11);
+  const gmax = Math.max(...segs.map(s => s.g1)); segs.forEach(s => { s.g0 /= gmax; s.g1 /= gmax; });
+  return segs;
+})();
+function drawRoots(p, glowA, color = '#d9b16a') {
+  ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 18 * glowA;
+  for (const s of ROOTS) { if (p <= s.g0) continue; const f = clamp((p - s.g0) / (s.g1 - s.g0)); ctx.lineWidth = s.w; ctx.globalAlpha = 0.9; ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(lerp(s.x, s.x2, f), lerp(s.y, s.y2, f)); ctx.stroke(); }
+  ctx.restore();
+}
+function drawBambooStalk(x, top, bottom, w, color, dark, ringsFrom = 0) {
+  ctx.save();
+  ctx.fillStyle = color; ctx.fillRect(x - w / 2, top, w, bottom - top);
+  ctx.fillStyle = dark; ctx.fillRect(x + w * 0.22, top, w * 0.28, bottom - top);
+  ctx.strokeStyle = dark; ctx.lineWidth = 6;
+  for (let y = bottom - 90; y > top + 20; y -= 120) { ctx.beginPath(); ctx.moveTo(x - w / 2 - 4, y); ctx.lineTo(x + w / 2 + 4, y); ctx.stroke(); }
+  ctx.restore();
+}
+function leaf(x, y, ang, len, color) { ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(len * 0.5, -len * 0.22, len, 0); ctx.quadraticCurveTo(len * 0.5, len * 0.22, 0, 0); ctx.fill(); ctx.restore(); }
+
+function drawBamboo(t) {
+  const s = SCENE.bamboo, u = t - s.start;
+  const L1 = lineOf('bamboo', 1), L2 = lineOf('bamboo', 2);
+  const tShoot = L2.parts[2].start - 0.15;     // 「1日で1メートル」の直前で発芽
+  const sh = t - tShoot;
+  const zoom = sh > 0 ? 1 - 0.06 * eOutCubic(sh / 0.8) : 1;
+  bg('#0a1a2e', '#102a3a', '#13100a');
+  ctx.save(); ctx.translate(W / 2, 1000); ctx.scale(zoom, zoom); ctx.translate(-W / 2, -1000);
+  // 地面と土
+  const soil = ctx.createLinearGradient(0, 1000, 0, H); soil.addColorStop(0, '#2b1d10'); soil.addColorStop(1, '#0d0906'); ctx.fillStyle = soil; ctx.fillRect(0, 1000, W, H - 1000);
+  ctx.fillStyle = '#3a5a2a'; ctx.fillRect(0, 992, W, 14);
+  // 根の成長(2行目の発話に合わせて)
+  const gp = clamp((t - L1.parts[1].start) / (L1.end - L1.parts[1].start + 0.3));
+  const rootP = eInOut(gp) * 0.85 + (sh > 0 ? 0.15 * eOutCubic(sh / 0.6) : 0);
+  drawRoots(rootP, sh > 0 ? 1 : 0.5, sh > 0 ? '#ffd27a' : '#c99a55');
+  // 年カウンタ
+  if (t > L1.parts[1].start && sh < 0) {
+    const yr = 1 + Math.min(4, Math.floor(gp * 5)); const yk = eOutBack(((gp * 5) % 1) / 0.3);
+    text(`${yr}年目`, W / 2, 300, 150, { font: F2, color: '#f4e4c1', stroke: '#1a1208', scale: 0.85 + 0.15 * clamp(yk), glow: 'rgba(255,220,150,.5)' });
+    text('地上には、まだ何も出ない', W / 2, 430, 50, { color: 'rgba(255,255,255,.75)', stroke: '#000', strokeW: 8 });
+  }
+  // 発芽〜急成長
+  if (sh > 0) {
+    const grow = eOutExpo(sh / 1.1);
+    const top = 1000 - grow * 1250;
+    drawBambooStalk(W / 2, top, 1000, 58, '#4fae4a', '#2f7a2b');
+    // 葉
+    for (let i = 0; i < 7; i++) { const yy = 1000 - (i + 1) * 170; if (yy < top + 40) continue; const side = i % 2 ? 1 : -1; const lk = eOutBack(clamp((sh - 0.25 - i * 0.07) / 0.3)); ctx.save(); ctx.globalAlpha = clamp(lk); leaf(W / 2 + side * 26, yy, side > 0 ? -0.6 : Math.PI + 0.6, 150 * lk, '#6cc865'); leaf(W / 2 + side * 26, yy + 30, side > 0 ? -0.25 : Math.PI + 0.25, 120 * lk, '#59b454'); ctx.restore(); }
+    speedLines(t, 0.9 * (1 - clamp(sh / 1.0)), W / 2, 500);
+    const [ax, ay] = shake(sh, 26, 0.5);
+    const m = Math.min(1, sh / 1.0);
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.roundRect(W / 2 - 330 + ax, 220 + ay, 660, 280, 40); ctx.fill(); ctx.restore();
+    text(`+${(m * 100).toFixed(0)}cm`, W / 2 + ax, 330 + ay, 160, { font: F2, color: '#c8ff9a', stroke: '#06250a', strokeW: 26, glow: 'rgba(120,255,120,.8)', glowBlur: 40, scale: 1 + 0.25 * (1 - m) });
+    text('たった1日で', W / 2 + ax, 450 + ay, 56, { color: '#fff', stroke: '#000', strokeW: 10 });
+    flash((0.6 - sh * 1.6), '#dfffd0');
+  }
+  ctx.restore();
+  vignette(0.6, 0.35);
+  captions(t);
+}
+
+function drawReject(t) {
+  const s = SCENE.reject, u = t - s.start;
+  const L0 = lineOf('reject', 0), L1 = lineOf('reject', 1);
+  const tS = L0.parts[1].start, tE = L0.end + 0.1; const dt = (tE - tS) / 12;
+  const tGold = L1.parts[2].start; const gv = t - tGold;
+  bg('#0c0b12', '#15121c', '#07060a');
+  const [sx, sy] = (function () { let best = [0, 0]; for (let i = 0; i < 12; i++) { const v = t - (tS + i * dt); if (v >= 0 && v < 0.25) best = shake(v, 18, 0.25); } return best; })();
+  ctx.save(); ctx.translate(sx, sy);
+  // 原稿
+  const pa = eOutCubic(u / 0.5); const dim = gv > 0 ? 1 - 0.5 * clamp(gv / 0.6) : 1;
+  ctx.save(); ctx.globalAlpha = pa * dim; ctx.translate(W / 2, 760); ctx.rotate(-0.04);
+  ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 60; ctx.shadowOffsetY = 30;
+  ctx.fillStyle = '#efe6d2'; ctx.fillRect(-330, -470, 660, 900); ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = '#5a4a3a'; ctx.font = `44px '${F1}'`; ctx.textAlign = 'center'; ctx.fillText('原稿', 0, -390);
+  ctx.strokeStyle = 'rgba(80,60,40,.35)'; ctx.lineWidth = 3;
+  for (let i = 0; i < 16; i++) { ctx.beginPath(); ctx.moveTo(-270, -330 + i * 48); ctx.lineTo(-270 + 540 * (0.55 + rnd(i, 80) * 0.45), -330 + i * 48); ctx.stroke(); }
+  ctx.restore();
+  // スタンプ 12 連
+  let count = 0;
+  for (let i = 0; i < 12; i++) {
+    const v = t - (tS + i * dt); if (v < 0) continue; count++;
+    const k = eOutExpo(v / 0.14); const x = W / 2 + (rnd(i, 81) - .5) * 520, y = 760 + (rnd(i, 82) - .5) * 760; const rot = (rnd(i, 83) - .5) * 1.2;
+    const fade = gv > 0 ? 1 - clamp(gv / 0.5) : 1; if (fade <= 0) continue;
+    ctx.save(); ctx.globalAlpha = clamp(k) * fade; ctx.translate(x, y); ctx.rotate(rot); ctx.scale(lerp(2.6, 1, k), lerp(2.6, 1, k));
+    ctx.strokeStyle = '#d61e2b'; ctx.lineWidth = 10; ctx.strokeRect(-150, -62, 300, 124);
+    ctx.font = `82px '${F2}'`; ctx.fillStyle = '#d61e2b'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('不採用', 0, 4);
+    ctx.restore();
+  }
+  ctx.restore();
+  if (count > 0 && gv < 0.3) { const k = eOutBack(((t - (tS + (count - 1) * dt)) / 0.2)); text(`${count}`, W / 2 - 40, 190, 190, { font: F2, color: '#ff4d5a', stroke: '#2a0004', strokeW: 24, scale: 0.9 + 0.1 * clamp(k), glow: 'rgba(255,60,80,.6)', align: 'right' }); text('/ 12社', W / 2 - 20, 225, 72, { color: '#fff', stroke: '#000', align: 'left', strokeW: 12 }); }
+  // 黄金の光(あの物語は)
+  if (gv > 0) {
+    const k = eOutCubic(gv / 0.6);
+    rays(W / 2, 760, t, 14, 'rgba(255,215,120,0.9)', 1100, 0.6 * k);
+    const g = ctx.createRadialGradient(W / 2, 760, 0, W / 2, 760, 700); g.addColorStop(0, `rgba(255,230,160,${0.7 * k})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+    embers(t, 60, '#ffe08a', 90, 1.6, 5);
+    text('シリーズ累計', W / 2, 560, 54, { color: '#fff', stroke: '#000', strokeW: 10, alpha: k });
+    text('5億部超', W / 2, 720, 190, { font: F2, color: '#ffd166', stroke: '#3a2200', strokeW: 28, glow: 'rgba(255,200,80,.9)', glowBlur: 60, scale: lerp(1.6, 1, k), alpha: k });
+    flash(0.7 - gv * 1.8, '#fff3d0');
+  }
+  vignette(0.7, 0.3);
+  captions(t);
+}
+
+function drawCore(t) {
+  const s = SCENE.core, u = t - s.start;
+  const L2 = lineOf('core', 2), L3 = lineOf('core', 3);
+  bg('#120806', '#1b0c08', '#050302');
+  const hb = pulse(u, 1.3, 0.3);
+  const g = ctx.createRadialGradient(W / 2, 1100, 0, W / 2, 1100, 1000); g.addColorStop(0, `rgba(200,90,30,${0.22 + hb * 0.08})`); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  embers(t, 90, '#ff9a3c', 100, 0.8, 4);
+  // 「逆境は…壊すためじゃない」: 壊れるガラス風のひび → 消える
+  if (t < L2.start) {
+    const k = clamp((t - s.start) / 0.6);
+    text('逆境', W / 2, 640, 300, { font: F2, color: 'rgba(255,120,60,0.18)', alpha: k, scale: 1 + u * 0.01 });
+    const tN = SCENE.core.lines[0].parts[2].start; const nv = t - tN;
+    if (nv > 0) { const kk = eOutBack(nv / 0.3); text('壊すためじゃない', W / 2, 640, 96, { color: '#ffd9b8', stroke: '#2a0a00', strokeW: 18, scale: kk, alpha: clamp(kk), rot: -0.03, glow: 'rgba(255,150,80,.6)' }); }
+    const tW = SCENE.core.lines[1].parts[1].start; const wv = t - tW;
+    if (wv > 0 && t < L2.start) { const kk = eOutBack(wv / 0.3); text('教えるためにある', W / 2, 820, 92, { color: '#fff', stroke: '#2a0a00', strokeW: 18, scale: kk, alpha: clamp(kk), rot: 0.03 }); }
+  } else if (t < L3.start) {
+    // 差はたった一つ: 大きな「1」再登場(小さめ)
+    const v = t - L2.parts[2].start; const k = eOutExpo(v / 0.35);
+    text('差は', W / 2, 560, 90, { color: '#fff', stroke: '#000', strokeW: 16, alpha: clamp((t - L2.start) / 0.3) });
+    if (v > 0) { const [ax, ay] = shake(v, 16, 0.35); ring(W / 2, 760, 120 + v * 1200, 18 * (1 - clamp(v / 0.6)), '#ffd166', 0.7 * (1 - clamp(v / 0.6))); text('1つ', W / 2 + ax, 780 + ay, 300, { font: F2, color: '#ffd166', stroke: '#3a2200', strokeW: 30, scale: lerp(2.4, 1, k), alpha: k, glow: 'rgba(255,200,80,.9)', glowBlur: 60 }); }
+  } else {
+    // 「終わり」 vs 「根を張る時間」
+    const tA = L3.parts[1].start, tB = L3.parts[2].start; const av = t - tA, bv = t - tB;
+    if (av > 0) {
+      const k = eOutExpo(av / 0.3); const dimA = bv > 0 ? 1 - 0.6 * clamp(bv / 0.4) : 1;
+      text('終わり', W / 2, 520, 150, { font: F2, color: '#9aa4b8', stroke: '#000', strokeW: 22, scale: lerp(1.5, 1, k), alpha: k * dimA });
+      if (bv > 0) { const xk = eOutCubic(bv / 0.25); ctx.save(); ctx.strokeStyle = '#ff3b4b'; ctx.lineWidth = 22; ctx.lineCap = 'round'; ctx.shadowColor = '#ff3b4b'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.moveTo(W / 2 - 260, 440); ctx.lineTo(W / 2 - 260 + 520 * xk, 440 + 170 * xk); ctx.stroke(); if (xk >= 1) { const k2 = eOutCubic((bv - 0.25) / 0.2); ctx.beginPath(); ctx.moveTo(W / 2 + 260, 440); ctx.lineTo(W / 2 + 260 - 520 * k2, 440 + 170 * k2); ctx.stroke(); } ctx.restore(); }
+    }
+    if (bv > 0) {
+      const k = eOutExpo(bv / 0.4); const [ax, ay] = shake(bv, 14, 0.4);
+      rays(W / 2, 800, t, 12, 'rgba(255,200,110,0.8)', 900, 0.5 * k);
+      drawRoots(clamp(bv / 1.2) * 0.9, 1, '#ffd27a');
+      ctx.save(); ctx.globalAlpha = 0.9; ctx.fillStyle = '#3a5a2a'; ctx.fillRect(0, 992, W, 12); ctx.restore();
+      text('根を張る時間', W / 2 + ax, 800 + ay, 150, { font: F2, color: '#ffd166', stroke: '#3a2200', strokeW: 26, scale: lerp(2, 1, k), alpha: k, glow: 'rgba(255,200,80,1)', glowBlur: 70 });
+      flash(0.5 - bv * 1.6, '#fff0d0');
+    }
+  }
+  vignette(0.7, 0.3);
+  captions(t, { y: 1380 });
+}
+
+function drawClose(t) {
+  const s = SCENE.close, u = t - s.start, d = s.end - s.start + 0.6;
+  const p = clamp(u / d);
+  // 夜明けの空
+  const sky = ctx.createLinearGradient(0, 0, 0, 1150);
+  sky.addColorStop(0, `rgb(${lerp(8, 40, p)},${lerp(12, 60, p)},${lerp(40, 110, p)})`); sky.addColorStop(0.65, `rgb(${lerp(40, 190, p)},${lerp(30, 110, p)},${lerp(60, 70, p)})`); sky.addColorStop(1, `rgb(${lerp(90, 255, p)},${lerp(50, 170, p)},${lerp(40, 80, p)})`);
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, 1150);
+  // 太陽
+  const sunY = 1150 - eOutCubic(p) * 330;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; const sg = ctx.createRadialGradient(W / 2, sunY, 0, W / 2, sunY, 700); sg.addColorStop(0, 'rgba(255,230,170,.9)'); sg.addColorStop(0.18, 'rgba(255,170,90,.55)'); sg.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H); ctx.restore();
+  ctx.fillStyle = '#fff2cc'; ctx.beginPath(); ctx.arc(W / 2, sunY, 120, 0, 6.283); ctx.fill();
+  rays(W / 2, sunY, t, 16, 'rgba(255,220,150,.7)', 1200, 0.35 * p);
+  // 地面
+  const gr = ctx.createLinearGradient(0, 1100, 0, H); gr.addColorStop(0, '#1b2a14'); gr.addColorStop(1, '#070a05'); ctx.fillStyle = gr; ctx.fillRect(0, 1100, W, H - 1100);
+  ctx.fillStyle = '#0b1408'; ctx.beginPath(); ctx.moveTo(0, 1150); for (let x = 0; x <= W; x += 60) ctx.lineTo(x, 1130 + Math.sin(x * 0.013) * 24); ctx.lineTo(W, 1200); ctx.lineTo(0, 1200); ctx.fill();
+  // 竹林シルエット
+  ctx.save(); ctx.globalAlpha = 0.92;
+  for (let i = 0; i < 9; i++) { const x = 60 + i * 120 + (rnd(i, 110) - .5) * 60; const w = 22 + rnd(i, 111) * 22; const top = 100 + rnd(i, 112) * 300; drawBambooStalk(x, top, 1160, w, '#0a1a0c', '#06100a'); for (let k = 0; k < 4; k++) { const yy = top + 60 + k * 170; leaf(x, yy, -0.7 + rnd(i * 9 + k, 113) * 0.4, 110, '#0a1a0c'); leaf(x, yy + 20, Math.PI + 0.5, 100, '#0a1a0c'); } }
+  ctx.restore();
+  // 新芽(芽が出る日は)
+  const tS = SCENE.close.lines[1].start; const sv = t - tS;
+  if (sv > 0) { const k = eOutBack(sv / 0.6); ctx.save(); ctx.translate(W / 2, 1120); ctx.scale(k, k); ctx.strokeStyle = '#7fdc6a'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.shadowColor = '#9dff80'; ctx.shadowBlur = 25; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(10, -60, 0, -120); ctx.stroke(); leaf(0, -100, -2.4, 90, '#8ff07a'); leaf(0, -80, -0.7, 90, '#8ff07a'); ctx.restore(); embers(t, 40, '#c8ffb0', 120, 1.2, 3); }
+  vignette(0.5, 0.4);
+  captions(t);
+}
+
+function drawCta(t) {
+  const s = SCENE.cta, u = t - s.start;
+  const L0 = lineOf('cta', 0), L1 = lineOf('cta', 1);
+  bg('#0b0f1a', '#121a2c', '#05070d');
+  embers(t, 50, '#7fb3ff', 130, 0.6, 3);
+  // 見出し
+  const k0 = eOutCubic(u / 0.4);
+  text('今、逆境の中にいる人へ', W / 2, 360, 76, { color: '#fff', stroke: '#000', strokeW: 14, alpha: k0 });
+  // コメント入力欄のモック
+  const tBox = L0.parts[2].start; const bv = t - tBox;
+  if (bv > 0) {
+    const k = eOutBack(bv / 0.4);
+    ctx.save(); ctx.globalAlpha = clamp(k); ctx.translate(W / 2, 640); ctx.scale(k, k);
+    ctx.fillStyle = '#1e2740'; ctx.strokeStyle = '#3a4a78'; ctx.lineWidth = 4; ctx.beginPath(); ctx.roundRect(-440, -80, 880, 160, 80); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(-350, 0, 50, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#1e2740'; ctx.beginPath(); ctx.arc(-350, -12, 20, 0, 6.283); ctx.fill(); ctx.beginPath(); ctx.arc(-350, 38, 34, Math.PI, 0); ctx.fill();
+    ctx.restore();
+    // 入力テキスト(タイピング)
+    const tType = L0.parts[3].start; const tv = t - tType; const full = '根を張る';
+    const n = clamp(Math.floor(tv / 0.14), 0, full.length); const typed = tv > 0 ? full.slice(0, n) : '';
+    const cursorOn = Math.floor(t * 2.5) % 2 === 0;
+    text(typed + (cursorOn && tv > -0.6 ? '|' : ' '), W / 2 - 250, 640, 76, { color: typed ? '#fff' : '#8a94b0', align: 'left', alpha: clamp(k) });
+    if (!typed) text('コメントを追加…', W / 2 - 250, 640, 56, { color: '#6c7694', align: 'left', alpha: clamp(k) * 0.9 });
+    const tSend = L0.parts[4].start; const sv = t - tSend;
+    const sk = sv > 0 ? eOutBack(sv / 0.3) : 0;
+    if (sk > 0) { ctx.save(); ctx.translate(W / 2 + 350, 640); ctx.scale(sk, sk); ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.moveTo(-26, -26); ctx.lineTo(30, 0); ctx.lineTo(-26, 26); ctx.lineTo(-12, 0); ctx.fill(); ctx.restore(); }
+  }
+  // 1年後
+  const yv = t - L1.start;
+  if (yv > 0) {
+    const k = eOutBack(yv / 0.4);
+    text('1年後、', W / 2, 900, 110, { font: F2, color: '#ffd166', stroke: '#2a1a00', strokeW: 20, scale: k, alpha: clamp(k), glow: 'rgba(255,200,80,.7)' });
+    text('ここに報告しに来て', W / 2, 1030, 80, { color: '#fff', stroke: '#000', strokeW: 14, alpha: clamp((yv - 0.3) / 0.3) });
+    const bk = eOutBack((yv - 0.8) / 0.4);
+    if (bk > 0) { ctx.save(); ctx.globalAlpha = clamp(bk); ctx.translate(W / 2 - 330, 1140); ctx.scale(bk, bk); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(-40, -34); ctx.lineTo(40, -34); ctx.lineTo(40, 34); ctx.lineTo(0, 10); ctx.lineTo(-40, 34); ctx.fill(); ctx.restore(); text('保存して、1年後に見返す', W / 2 - 260, 1140, 48, { color: '#cfd8f0', alpha: clamp(bk), align: 'left' }); }
+  }
+  // クレジット
+  text('ナレーション VOICEVOX:四国めたん  /  BGM:自作', W / 2, 1760, 30, { color: 'rgba(255,255,255,.55)' });
+  vignette(0.6, 0.35);
+  captions(t);
+  // 最後はフェードアウト(ループで冒頭のフラッシュにつながる)
+  flash(clamp((t - (DURATION - 0.6)) / 0.6), '#000');
+}
+
+// ---------- サムネイル ----------
+function renderThumb() {
+  bg('#07070a', '#140508', '#000');
+  const g = ctx.createRadialGradient(W / 2, 760, 0, W / 2, 760, 900); g.addColorStop(0, 'rgba(150,10,20,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  text('逆境', W / 2, 560, 360, { font: F2, color: '#e3142a', glow: 'rgba(255,40,60,.8)', glowBlur: 60, stroke: '#2a0005', strokeW: 24 });
+  ctx.save(); ctx.globalAlpha = 0.9; ctx.fillStyle = '#153a7a'; ctx.beginPath(); ctx.moveTo(0, 860); ctx.lineTo(0, 1240); ctx.lineTo(W / 2 + 80, 1240); ctx.lineTo(W / 2 - 80, 860); ctx.fill(); ctx.fillStyle = '#b4471a'; ctx.beginPath(); ctx.moveTo(W, 860); ctx.lineTo(W, 1240); ctx.lineTo(W / 2 - 80, 1240); ctx.lineTo(W / 2 + 80, 860); ctx.fill(); ctx.restore();
+  text('折れる人', 270, 1050, 110, { color: '#9fc4ff', stroke: '#061531', rot: -0.05 });
+  text('強くなる人', 810, 1050, 110, { color: '#ffd9a8', stroke: '#2b0f00', rot: 0.05 });
+  text('差は', W / 2, 1400, 100, { color: '#fff', stroke: '#000', strokeW: 18 });
+  text('たった1つ', W / 2, 1560, 170, { font: F2, color: '#ffd166', stroke: '#3a2200', strokeW: 28, glow: 'rgba(255,200,80,.9)', glowBlur: 60 });
+  vignette(0.6, 0.35); grain(0, 0.05);
+}
+window.renderThumb = renderThumb;
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const sc = TL.scenes.filter(s => t >= s.start).pop() || TL.scenes[0];
+  const fn = { hook: drawHook, pain: drawPain, bamboo: drawBamboo, reject: drawReject, core: drawCore, close: drawClose, cta: drawCta }[sc.id];
+  fn(t);
+  // シーン切り替え: 短いフラッシュ/ディップ
+  const since = t - sc.start;
+  if (sc.id !== 'hook' && since < 0.18) flash((1 - since / 0.18) * 0.9, sc.id === 'close' ? '#fff' : '#000');
+  grain(t, 0.07);
+  // 上部プログレスバー
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(0, 0, W, 8); ctx.fillStyle = '#ffd166'; ctx.fillRect(0, 0, W * (t / DURATION), 8);
+}
+window.render = render;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { const t = ((performance.now() - t0) / 1000) % DURATION; render(t); requestAnimationFrame(loop); })();
+}
+</script>
+</body></html>
