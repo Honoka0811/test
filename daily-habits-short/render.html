@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>毎日の習慣 ショート</title>
+<link rel="stylesheet" href="fonts/noto-sans-jp/900.css">
+<link rel="stylesheet" href="fonts/noto-sans-jp/700.css">
+<link rel="stylesheet" href="fonts/dela-gothic-one/index.css">
+<style>
+  html,body{margin:0;background:#000;overflow:hidden}
+  canvas{display:block;width:1080px;height:1920px}
+  body.preview canvas{width:auto;height:100vh;margin:0 auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timing.js"></script>
+<script>
+'use strict';
+// =====================================================================
+//  毎日の習慣が続く5つのコツ — 縦型ショート(1080x1920 / 30fps)
+//  render(t) は時刻 t 秒のフレームを決定論的に描画する。
+//  タイミングは narrate.py が書き出す output/timing.js(ナレーション実測)に従う。
+// =====================================================================
+const W = 1080, H = 1920;
+const T = window.TIMING, S = T.scenes;
+window.FPS = 30;
+window.DURATION = Math.ceil(T.total * 30) / 30;
+const BPM = 124, BEAT = 60 / BPM;          // bgm.py と同じテンポ(背景の脈動を拍に合わせる)
+const DROP = S.find(s => s.id === 'tip1').start;
+
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const JP = '"Noto Sans JP"', DELA = '"Dela Gothic One", "Noto Sans JP"', EMO = '"Noto Color Emoji"';
+const ACCENT = { hook:'#FF4D6D', promise:'#FFD23F', tip1:'#3DDCFF', tip2:'#7CFF6B', tip3:'#FF9F1C',
+                 tip4:'#FF5CA8', tip5:'#B388FF', cta:'#FFD23F' };
+const TIP_EMOJI = ['⏱️', '🔗', '🏠', '📅', '🛟'];
+const YELLOW = '#FFE14D', RED = '#FF3B5C', GREEN = '#43E97B';
+
+// ---------- 数学ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const eOut = k => 1 - Math.pow(1 - clamp(k), 3);
+const eInOut = k => { k = clamp(k); return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const eBack = k => { k = clamp(k); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+const rnd = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const prog = (t, a, d) => clamp((t - a) / d);
+
+// ---------- テキスト / 絵文字 ----------
+function txt(s, x, y, size, o = {}) {
+  ctx.save();
+  ctx.font = `${o.weight || 900} ${size}px ${o.font || JP}`;
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle';
+  ctx.globalAlpha *= (o.alpha ?? 1);
+  if (o.shadow !== false) { ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = size * .18; ctx.shadowOffsetY = size * .06; }
+  if (o.stroke !== false) {
+    ctx.lineJoin = 'round'; ctx.lineWidth = o.sw ?? size * .16; ctx.strokeStyle = o.stroke || '#0B0D1A';
+    ctx.strokeText(s, x, y); ctx.shadowColor = 'transparent';
+  }
+  ctx.fillStyle = o.color || '#fff'; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function emo(ch, x, y, size, o = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(o.rot || 0); ctx.scale(o.scale ?? 1, o.scale ?? 1);
+  ctx.globalAlpha *= (o.alpha ?? 1);
+  ctx.fillStyle = '#000'; ctx.font = `${size}px ${EMO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = size * .12; ctx.shadowOffsetY = size * .05;
+  ctx.fillText(ch, 0, size * .04);
+  ctx.restore();
+}
+function popScale(lt, d = .22) { return lt < 0 ? 0 : eBack(lt / d); }
+function withXf(x, y, sc, rot, fn) { ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0); ctx.scale(sc, sc); fn(); ctx.restore(); }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// 放射状のパーティクル
+function burst(x, y, lt, color, seed = 1, n = 16, R = 260) {
+  if (lt < 0 || lt > .7) return;
+  const k = eOut(lt / .7);
+  ctx.save(); ctx.globalAlpha = 1 - k;
+  for (let i = 0; i < n; i++) {
+    const a = i / n * Math.PI * 2 + rnd(seed + i) * .4, r = R * k * (.6 + .5 * rnd(seed * 7 + i));
+    ctx.fillStyle = i % 3 ? color : '#fff';
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, 10 * (1 - k) + 4, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+function ring(x, y, lt, color, R = 300) {
+  if (lt < 0 || lt > .5) return;
+  const k = eOut(lt / .5);
+  ctx.save(); ctx.globalAlpha = 1 - k; ctx.strokeStyle = color; ctx.lineWidth = 26 * (1 - k) + 2;
+  ctx.beginPath(); ctx.arc(x, y, R * (.3 + .7 * k), 0, 7); ctx.stroke(); ctx.restore();
+}
+// 判子風のスタンプ
+function stamp(s, x, y, lt, size, color, rot = -.12) {
+  if (lt < 0) return;
+  const sc = lt < .14 ? lerp(2.4, .92, eOut(lt / .14)) : lerp(.92, 1, eOut((lt - .14) / .12));
+  withXf(x, y, sc, rot, () => {
+    ctx.font = `400 ${size}px ${DELA}`;
+    const w = ctx.measureText(s).width + size * .7, h = size * 1.35;
+    ctx.globalAlpha = clamp(lt / .06);
+    ctx.lineWidth = size * .09; ctx.strokeStyle = color; rrect(-w / 2, -h / 2, w, h, size * .2); ctx.stroke();
+    txt(s, 0, size * .02, size, { font: DELA, weight: 400, color, stroke: '#fff', sw: size * .1 });
+  });
+}
+// 線を引くアニメーション(打ち消し線・バツ)
+function strike(x1, y1, x2, y2, k, color = RED, w = 22) {
+  if (k <= 0) return;
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 10;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(lerp(x1, x2, eOut(k)), lerp(y1, y2, eOut(k))); ctx.stroke(); ctx.restore();
+}
+function cross(x, y, r, k, color = RED, w = 26) {
+  strike(x - r, y - r, x + r, y + r, k * 2, color, w);
+  strike(x + r, y - r, x - r, y + r, k * 2 - 1, color, w);
+}
+function circleMark(x, y, r, k, color = GREEN, w = 16) {
+  if (k <= 0) return;
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(x, y, r, -Math.PI / 2 - .3, -Math.PI / 2 - .3 + Math.PI * 2.1 * eOut(k)); ctx.stroke(); ctx.restore();
+}
+
+// ---------- 字幕(テロップ) ----------
+// 【】で囲んだ語をキーワードとして強調。句読点で終わる場合は表示から外す
+function parseChunk(s) {
+  s = s.replace(/[、。]+$/, '');
+  const out = []; let hi = false;
+  for (const ch of s) { if (ch === '【') hi = true; else if (ch === '】') hi = false; else out.push({ ch, hi }); }
+  return out;
+}
+function kwTime(c) {   // キーワードが読み上げられるおおよその時刻(チャンク内の文字位置で按分)
+  const plain = c.text.replace(/[【】]/g, ''), i = c.text.indexOf('【');
+  if (i < 0) return null;
+  return c.start + (c.end - c.start) * (i / plain.length) * .92;
+}
+const NO_HEAD = '、。ー・っゃゅょぁぃぅぇぉッャュョ）」';
+function charW(ch, hi, size) { ctx.font = `900 ${hi ? size * 1.12 : size}px ${JP}`; return ctx.measureText(ch).width; }
+const layoutCache = new Map();
+function layoutCaption(text, size, maxW) {
+  const key = text + '|' + size; if (layoutCache.has(key)) return layoutCache.get(key);
+  const cs = parseChunk(text).map(c => ({ ...c, w: charW(c.ch, c.hi, size) }));
+  const width = a => a.reduce((s, c) => s + c.w, 0);
+  let lines = [cs], best = null;
+  if (width(cs) > maxW) {
+    for (let i = 2; i < cs.length - 1; i++) {
+      const a = cs.slice(0, i), b = cs.slice(i), wa = width(a), wb = width(b);
+      const prev = cs[i - 1], next = cs[i];
+      let score = Math.max(0, wa - maxW) * 20 + Math.max(0, wb - maxW) * 20;
+      if (prev.ch === '、') score += Math.abs(wa - wb) * .3;
+      else if (prev.hi !== next.hi) score += Math.abs(wa - wb) * .6 + 120;
+      else score += Math.abs(wa - wb) + 700;
+      if (prev.hi && next.hi) score += 900;
+      if (NO_HEAD.includes(next.ch)) score += 3000;
+      if (!best || score < best.score) best = { score, lines: [a, b], natural: (prev.ch === '、' || prev.hi !== next.hi) && wa <= maxW && wb <= maxW };
+    }
+    lines = best.lines;
+  }
+  const res = lines.map(l => ({ cs: l, w: width(l) }));
+  res.natural = lines.length === 1 || best.natural;
+  layoutCache.set(key, res); return res;
+}
+function drawCaption(c, t, accent) {
+  const lt = t - c.start, maxW = 910, first = c === S[0].chunks[0];
+  // 読点やキーワードの境目で改行できるよう、必要なら文字を少し小さくする
+  let size = 84, lines = layoutCaption(c.text, size, maxW);
+  for (const s2 of [80, 76, 72]) { if (lines.natural) break; const l2 = layoutCaption(c.text, s2, maxW); if (l2.natural) { size = s2; lines = l2; } }
+  const kt = kwTime(c), kl = kt == null ? -1 : t - kt;
+  const sc = first ? 1 : lt < 0 ? .7 : lerp(.7, 1, eBack(lt / .2));
+  const lh = size * 1.32, y0 = 1330 - (lines.length - 1) * lh / 2;
+    ctx.save(); ctx.globalAlpha = first ? 1 : clamp((lt + .05) / .08);
+  ctx.translate(W / 2, 1330); ctx.scale(sc, sc); ctx.translate(-W / 2, -1330);
+  lines.forEach((ln, li) => {
+    let x = W / 2 - ln.w / 2; const y = y0 + li * lh;
+    // キーワードの背景マーカー
+    let hx = null, hw = 0;
+    ln.cs.forEach(c => { if (c.hi) { if (hx == null) hx = x; hw += c.w; } x += c.w; });
+    if (hx != null && kl > -0.05) {
+      const k = eOut((kl + .05) / .18);
+      ctx.save(); ctx.fillStyle = accent; ctx.globalAlpha = .95;
+      ctx.translate(hx - 14, y); ctx.rotate(-.025);
+      rrect(0, -size * .62, (hw + 28) * k, size * 1.22, 18); ctx.fill(); ctx.restore();
+    }
+    x = W / 2 - ln.w / 2;
+    ln.cs.forEach(c => {
+      const on = c.hi && kl > -0.05;
+      const s = c.hi ? size * 1.12 * (on ? lerp(1.35, 1, eBack((kl + .05) / .2)) : 1) : size;
+      txt(c.ch, x + c.w / 2, y + (c.hi ? -2 : 0), s, { color: on ? '#14111F' : '#fff', stroke: on ? '#fff' : '#0B0D1A', sw: s * (on ? .1 : .17) });
+      x += c.w;
+    });
+  });
+  ctx.restore();
+}
+
+// ---------- 背景 ----------
+function beatPulse(t) { if (t < DROP) return 0; const b = ((t - DROP) % BEAT) / BEAT; return Math.exp(-b * 6); }
+function drawBG(t, sc, prevAccent) {
+  const accent = ACCENT[sc.id];
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0B0D1A'); g.addColorStop(.55, '#151135'); g.addColorStop(1, '#090A14');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 斜めストライプ(ゆっくり流れる)
+  ctx.save(); ctx.globalAlpha = .05 + .03 * beatPulse(t); ctx.fillStyle = accent;
+  ctx.translate(W / 2, H / 2); ctx.rotate(-.5);
+  const off = (t * 40) % 160;
+  for (let i = -16; i < 16; i++) ctx.fillRect(i * 160 + off, -1600, 60, 3200);
+  ctx.restore();
+  // アクセント色のグロー(拍で脈動)
+  const p = beatPulse(t);
+  const rg = ctx.createRadialGradient(W / 2, 840, 40, W / 2, 840, 720 + 60 * p);
+  rg.addColorStop(0, hexA(accent, .30 + .14 * p)); rg.addColorStop(1, hexA(accent, 0));
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  // ボケ玉
+  for (let i = 0; i < 18; i++) {
+    const sp = 30 + 50 * rnd(i), x = rnd(i * 3 + 1) * W + Math.sin(t * .6 + i) * 30;
+    const y = H - ((t * sp + rnd(i * 5) * H) % (H + 200)) + 100, r = 8 + 26 * rnd(i * 9);
+    ctx.fillStyle = hexA(i % 2 ? accent : '#ffffff', .07 + .05 * rnd(i * 11)); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+}
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${a})`; }
+
+// ---------- ヘッダー(5つのコツの進捗) ----------
+function drawHeader(t, sc) {
+  const pr = S.find(s => s.id === 'promise');
+  if (t < pr.start) return;
+  const k = eOut((t - pr.start) / .4);
+  const cur = sc.n || (sc.id === 'cta' ? 6 : 0);
+  ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * -60);
+  txt('毎日が続く人の 5つのコツ', W / 2, 205, 46, { weight: 900, sw: 9 });
+  for (let i = 1; i <= 5; i++) {
+    const x = W / 2 + (i - 3) * 150, y = 282, done = i < cur, on = i === cur;
+    const p = on ? 1 + .12 * beatPulse(t) : 1;
+    ctx.save(); ctx.translate(x, y); ctx.scale(p, p);
+    ctx.fillStyle = on ? ACCENT['tip' + i] : done ? hexA(ACCENT['tip' + i], .85) : 'rgba(255,255,255,.12)';
+    ctx.strokeStyle = on ? '#fff' : 'rgba(255,255,255,.25)'; ctx.lineWidth = on ? 6 : 3;
+    rrect(-58, -34, 116, 68, 34); ctx.fill(); ctx.stroke();
+    if (done) txt('✓', 0, 2, 40, { color: '#14111F', stroke: false, shadow: false });
+    else emo(TIP_EMOJI[i - 1], 0, 0, 40, { alpha: on ? 1 : .55 });
+    ctx.restore();
+  }
+  ctx.restore();
+}
+// コツのタイトル(番号バッジ+見出し)
+function drawTipTitle(t, sc) {
+  const lt = t - sc.start, accent = ACCENT[sc.id];
+  const k = eBack((lt - .25) / .35);
+  if (lt < .25) return;
+  ctx.save(); ctx.translate((1 - clamp(k, 0, 1.2)) * -W, 0);
+  ctx.font = `900 64px ${JP}`;
+  const tw = ctx.measureText(sc.title).width, bw = 120, gap = 22, total = bw + gap + tw, x0 = W / 2 - total / 2, y = 420;
+  ctx.fillStyle = accent; rrect(x0, y - 60, bw, 120, 28); ctx.fill();
+  txt(String(sc.n), x0 + bw / 2, y + 4, 84, { font: DELA, weight: 400, color: '#14111F', stroke: false, shadow: false });
+  txt(sc.title, x0 + bw + gap + tw / 2, y, 64, { sw: 12 });
+  ctx.restore();
+}
+
+// ---------- 共通パーツ ----------
+const CY = 840;
+function giantNumber(n, lt, accent) {   // 「その1」で番号をドンと出す
+  const sc = lt < .18 ? lerp(2.6, .94, eOut(lt / .18)) : lerp(.94, 1, eOut((lt - .18) / .15));
+  ring(W / 2, CY, lt, accent, 420); burst(W / 2, CY, lt, accent, n * 13, 22, 460);
+  withXf(W / 2, CY, sc, -.04, () => {
+    txt('その', -170, -190, 84, { color: '#fff', sw: 14 });
+    txt(String(n), 0, 30, 560, { font: DELA, weight: 400, color: accent, sw: 40 });
+  });
+  emo(TIP_EMOJI[n - 1], W / 2 + 260, CY + 170, 170, { scale: popScale(lt - .25), rot: Math.sin(lt * 4) * .12 });
+}
+function days(marks, times, lt, y, labels = '月火水木金土日') {   // 1週間のマス
+  const cw = 118, gap = 14, x0 = (W - (7 * cw + 6 * gap)) / 2;
+  for (let i = 0; i < 7; i++) {
+    const x = x0 + i * (cw + gap);
+    ctx.fillStyle = 'rgba(255,255,255,.92)'; rrect(x, y - cw / 2, cw, cw, 20); ctx.fill();
+    txt(labels[i], x + cw / 2, y - cw / 2 - 40, 34, { weight: 700, sw: 7 });
+    const m = marks[i], k = (lt - times[i]) / .22;
+    if (m === 'o') circleMark(x + cw / 2, y, 36, k, '#18B868', 15);
+    if (m === 'x') cross(x + cw / 2, y, 30, k, RED, 15);
+  }
+  return { x0, cw, gap };
+}
+function swap(e, before, after, c, t, accent) {      // 「30回じゃなくて、1回」
+  const lt = t - c.start, kt = kwTime(c) - c.start;
+  emo(e, 300, CY, 250, { scale: popScale(lt), rot: Math.sin(t * 3) * .06 });
+  const bx = 740;
+  withXf(bx, CY - 130, popScale(lt - .08), 0, () => txt(before, 0, 0, 130, { font: DELA, weight: 400, sw: 20 }));
+  ctx.save(); ctx.font = `400 130px ${DELA}`; const bw = ctx.measureText(before).width / 2 + 20; ctx.restore();
+  strike(bx - bw, CY - 120, bx + bw, CY - 140, (lt - kt * .55) / .2, RED, 20);
+  const ak = lt - kt;
+  txt('↓', bx, CY + 10, 80, { color: accent, alpha: clamp((lt - kt * .7) / .15), sw: 12 });
+  withXf(bx, CY + 150, popScale(ak, .25), -.05, () => txt(after, 0, 0, after.length > 2 ? 140 : 190, { font: DELA, weight: 400, color: accent, sw: 26 }));
+  burst(bx, CY + 150, ak, accent, 31, 14, 240);
+}
+function combo(e1, l1, e2, l2, c, t, accent) {      // 「歯みがき」+「スクワット」
+  const lt = t - c.start, kt = kwTime(c) - c.start, ak = lt - kt;
+  const y = CY - 30;
+  emo(e1, 290, y, 220, { scale: popScale(lt) });
+  txt(l1, 290, y + 170, 54, { sw: 11 });
+  // つなぐ鎖(破線が流れる)
+  const k = clamp((lt - .15) / .4);
+  ctx.save(); ctx.strokeStyle = accent; ctx.lineWidth = 12; ctx.setLineDash([26, 18]); ctx.lineDashOffset = -t * 120; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(400, y); ctx.lineTo(lerp(400, 680, k), y); ctx.stroke(); ctx.restore();
+  withXf(W / 2, y, popScale(ak + .1) * (1 + .1 * Math.sin(t * 8)), 0, () => txt('＋', 0, 0, 110, { color: accent, sw: 16 }));
+  emo(e2, 790, y, 220, { scale: popScale(ak) });
+  withXf(790, y + 170, popScale(ak - .05), 0, () => txt(l2, 0, 0, l2.length > 5 ? 50 : 58, { color: accent, sw: 11 }));
+  burst(790, y, ak, accent, 7, 14, 220);
+}
+
+// ---------- シーンごとの演出 ----------
+const DRAW = {
+  hook(t, sc, ci, c) {
+    const lt = t - sc.start;
+    if (ci === 0) {
+      // いきなり三日坊主のカレンダー(0フレーム目から絵がある)
+      const marks = 'oooxxxx', times = [-1, .15, .32, .9, 1.05, 1.2, 1.35];
+      withXf(W / 2, CY - 40, 1 + .02 * Math.sin(t * 5), 0, () => { ctx.translate(-W / 2, -(CY - 40)); days(marks, times, lt, CY - 40); });
+      withXf(W / 2, CY + 190, popScale(lt - 1.45), -.05, () => txt('また三日坊主…', 0, 0, 80, { font: DELA, weight: 400, color: '#fff', sw: 16 }));
+      emo('😩', W / 2 + 330, CY + 170, 130, { scale: popScale(lt - 1.55) });
+    } else {
+      const ct = t - c.start, kt = kwTime(c) - c.start;
+      emo('💪', W / 2, CY - 40, 330, { scale: popScale(ct) * (1 - .04 * Math.sin(t * 20) * clamp(1 - ct)) });
+      txt('意志の力？', W / 2, CY + 190, 70, { alpha: clamp(ct / .15), sw: 14 });
+      cross(W / 2, CY - 40, 190, (ct - kt - .25) / .3, RED, 38);
+      stamp('関係ない', W / 2 + 120, CY + 70, ct - kt - .5, 96, RED, -.14);
+    }
+  },
+  promise(t, sc, ci, c) {
+    const ct = t - c.start;
+    if (ci === 0) {
+      emo('🤫', W / 2, CY, 330, { scale: popScale(ct), rot: Math.sin(t * 3) * .08 });
+      for (let i = 0; i < 5; i++) emo('✨', W / 2 + Math.cos(i * 1.3 + t) * 280, CY + Math.sin(i * 1.7 + t * 1.3) * 240, 70, { alpha: .5 + .5 * Math.sin(t * 6 + i) });
+    } else if (ci === 1) {
+      ring(W / 2, CY, ct, ACCENT.promise, 460); burst(W / 2, CY, ct, ACCENT.promise, 5, 24, 480);
+      const s = ct < .18 ? lerp(2.4, .95, eOut(ct / .18)) : 1;
+      withXf(W / 2, CY, s, -.05, () => txt('5', 0, 20, 560, { font: DELA, weight: 400, color: ACCENT.promise, sw: 40 }));
+      for (let i = 0; i < 5; i++) {
+        const a = -Math.PI / 2 + i / 5 * Math.PI * 2 + t * .8, r = 360 * eOut((ct - .1 - i * .05) / .3);
+        emo(TIP_EMOJI[i], W / 2 + Math.cos(a) * r, CY + Math.sin(a) * r * .8, 110, { scale: popScale(ct - .1 - i * .05) });
+      }
+    } else {
+      for (let i = 0; i < 5; i++) {
+        const x = W / 2 + (i - 2) * 190, p = popScale(ct - i * .08);
+        ctx.save(); ctx.globalAlpha = clamp(p);
+        ctx.fillStyle = ACCENT['tip' + (i + 1)]; rrect(x - 82, CY - 82, 164, 164, 36); ctx.fill(); ctx.restore();
+        emo(TIP_EMOJI[i], x, CY, 110, { scale: p });
+        txt(String(i + 1), x + 62, CY - 66, 46, { font: DELA, weight: 400, alpha: clamp(p), sw: 9 });
+      }
+      emo('👀', W / 2, CY - 230, 170, { scale: popScale(ct - .45) });
+    }
+  },
+  tip1(t, sc, ci, c) {
+    if (ci === 0) return giantNumber(1, t - sc.start, ACCENT.tip1);
+    if (ci === 1) return swap('💪', '30回', '1回', c, t, ACCENT.tip1);
+    if (ci === 2) return swap('📖', '30分', '1ページ', c, t, ACCENT.tip1);
+    // ハードルが地面まで下がり、走って越える
+    const ct = t - c.start, kt = kwTime(c) - c.start, k = eInOut((ct - kt) / .6);
+    const ground = CY + 200, by = lerp(CY - 220, ground - 26, k);
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(110, ground, 860, 10);
+    ctx.fillStyle = '#fff'; ctx.fillRect(330, by, 16, ground - by); ctx.fillRect(734, by, 16, ground - by);
+    ctx.fillStyle = ACCENT.tip1; rrect(300, by - 22, 480, 44, 14); ctx.fill();
+    txt('ハードル', W / 2, by - 2, 40, { color: '#14111F', stroke: false, shadow: false });
+    const rk = clamp((ct - kt - .55) / 1.1);
+    emo('🏃', lerp(160, 940, rk), ground - 100 - Math.abs(Math.sin(rk * 9)) * 40, 170, { alpha: clamp((ct - .1) / .2) });
+    if (rk >= 1) emo('🎉', 900, ground - 260, 140, { scale: popScale(ct - kt - 1.65) });
+  },
+  tip2(t, sc, ci, c) {
+    if (ci === 0) return giantNumber(2, t - sc.start, ACCENT.tip2);
+    if (ci === 1) return combo('🪥', '歯みがき', '🏋️', 'スクワット10回', c, t, ACCENT.tip2);
+    if (ci === 2) return combo('☕', 'コーヒー', '📝', '英単語3つ', c, t, ACCENT.tip2);
+    const ct = t - c.start, kt = kwTime(c) - c.start;
+    emo('🔗', W / 2, CY - 40, 300, { scale: popScale(ct), rot: Math.sin(t * 2) * .1 });
+    stamp('忘れない', W / 2, CY + 200, ct - kt, 100, ACCENT.tip2, -.08);
+    burst(W / 2, CY + 200, ct - kt, ACCENT.tip2, 19);
+  },
+  tip3(t, sc, ci, c) {
+    if (ci === 0) return giantNumber(3, t - sc.start, ACCENT.tip3);
+    const ct = t - c.start, kt = kwTime(c) - c.start;
+    if (ci === 1) {   // スマホを別の部屋へ
+      emo('🚪', 800, CY, 300, { scale: popScale(ct) });
+      const k = eInOut((ct - kt + .1) / .55);
+      emo('📱', lerp(260, 790, k), CY + 20 - Math.sin(k * Math.PI) * 120, 190, { scale: lerp(1, .35, clamp((k - .7) / .3)), alpha: 1 - clamp((k - .85) / .15), rot: k * 1.2 });
+      withXf(800, CY + 220, popScale(ct - kt - .5), -.04, () => txt('別の部屋へ', 0, 0, 72, { font: DELA, weight: 400, color: ACCENT.tip3, sw: 14 }));
+    } else if (ci === 2) {   // 本を枕の上に
+      emo('🛏️', W / 2, CY + 80, 360, { scale: popScale(ct) });
+      const k = clamp((ct - kt + .15) / .4), y = lerp(CY - 520, CY - 20, k * k);
+      const bounce = k >= 1 ? Math.sin(clamp((ct - kt + .15 - .4) / .3) * Math.PI) * -30 : 0;
+      emo('📚', W / 2 - 40, y + bounce, 170);
+      burst(W / 2 - 40, CY - 20, ct - kt + .15 - .4, ACCENT.tip3, 23, 12, 200);
+    } else {   // やる気メーターが尽きる → 負け
+      const lvl = 1 - eInOut(ct / Math.max(.5, kt));
+      const bx = W / 2 - 230, by = CY - 120, bw = 440, bh = 190;
+      txt('やる気', W / 2, by - 70, 64, { sw: 12 });
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 14; rrect(bx, by, bw, bh, 26); ctx.stroke();
+      ctx.fillStyle = '#fff'; rrect(bx + bw + 6, by + 60, 26, 70, 8); ctx.fill();
+      ctx.fillStyle = lvl > .5 ? GREEN : lvl > .2 ? YELLOW : RED;
+      if (lvl > .01) { rrect(bx + 16, by + 16, (bw - 32) * Math.max(.04, lvl), bh - 32, 14); ctx.fill(); }
+      txt(Math.round(lvl * 100) + '%', W / 2, by + bh + 70, 60, { color: lvl > .2 ? '#fff' : RED, sw: 12 });
+      stamp('負け', W / 2, CY + 20, ct - kt, 200, RED, -.15);
+    }
+  },
+  tip4(t, sc, ci, c) {
+    if (ci === 0) return giantNumber(4, t - sc.start, ACCENT.tip4);
+    // カレンダーにマルが増えていく
+    const a = sc.chunks[1].start, b = sc.end - .2, k = clamp((t - a) / (b - a));
+    const cols = 7, rows = 4, cw = 104, gap = 12, x0 = (W - (cols * cw + (cols - 1) * gap)) / 2, y0 = 560;
+    const n = Math.floor(eInOut(k) * 26);
+    ctx.save(); ctx.globalAlpha = clamp((t - a + .05) / .2);
+    ctx.fillStyle = 'rgba(255,255,255,.95)'; rrect(x0 - 24, y0 - 90, cols * cw + (cols - 1) * gap + 48, rows * (cw + gap) + 110, 30); ctx.fill();
+    ctx.fillStyle = ACCENT.tip4; rrect(x0 - 24, y0 - 90, cols * cw + (cols - 1) * gap + 48, 70, [30, 30, 0, 0]); ctx.fill();
+    txt('HABIT TRACKER', W / 2, y0 - 55, 38, { font: DELA, weight: 400, color: '#fff', stroke: false, shadow: false });
+    for (let i = 0; i < cols * rows; i++) {
+      const x = x0 + (i % cols) * (cw + gap) + cw / 2, y = y0 + Math.floor(i / cols) * (cw + gap) + cw / 2;
+      ctx.fillStyle = '#EEEAF6'; rrect(x - cw / 2, y - cw / 2, cw, cw, 14); ctx.fill();
+      txt(String(i + 1), x - 30, y - 30, 22, { weight: 700, color: '#8C86A3', stroke: false, shadow: false });
+      if (i < n) circleMark(x, y, 34, (eInOut(k) * 26 - i) / .9, ACCENT.tip4, 12);
+    }
+    ctx.restore();
+    const fy = y0 + rows * (cw + gap) + 120;
+    emo('🔥', W / 2 - 200, fy, 110 + n * 2.4, { rot: Math.sin(t * 9) * .06 });
+    txt(`${n}日連続`, W / 2 + 70, fy, 92, { font: DELA, weight: 400, color: n > 20 ? YELLOW : '#fff', sw: 16 });
+  },
+  tip5(t, sc, ci, c) {
+    if (ci === 0) return giantNumber(5, t - sc.start, ACCENT.tip5);
+    const ct = t - c.start, kt = kwTime(c) - c.start;
+    if (ci === 1) {   // 1回休むのは事故 → 次の日から元通り
+      const L = days('oooxooo', [-1, -1, -1, kt - .1, kt + .35, kt + .5, kt + .65], ct, CY - 80);
+      const x = L.x0 + 3 * (L.cw + L.gap) + L.cw / 2;
+      ctx.save(); ctx.globalAlpha = clamp((ct - kt) / .15); ctx.strokeStyle = YELLOW; ctx.lineWidth = 8;
+      rrect(x - L.cw / 2 - 10, CY - 80 - L.cw / 2 - 10, L.cw + 20, L.cw + 20, 24); ctx.stroke(); ctx.restore();
+      withXf(x, CY + 110, popScale(ct - kt), 0, () => txt('事故 = セーフ', 0, 0, 66, { font: DELA, weight: 400, color: YELLOW, sw: 14 }));
+      emo('👌', W / 2 + 330, CY + 240, 130, { scale: popScale(ct - kt - .3) });
+    } else {          // 2回続いたら → サボりが新しい習慣に
+      const L = days('oooxxxx', [-1, -1, -1, -1, .35, kt + .15, kt + .35], ct, CY - 80);
+      const warn = ct > kt - .1 ? .5 + .5 * Math.sin(t * 16) : 0;
+      ctx.save(); ctx.globalAlpha = .18 * warn; ctx.fillStyle = RED; ctx.fillRect(0, 0, W, H); ctx.restore();
+      const x = L.x0 + 4 * (L.cw + L.gap) + L.cw / 2;
+      txt('2回連続', x, CY - 80 - L.cw / 2 - 100, 56, { color: RED, alpha: clamp((ct - .4) / .15), sw: 12 });
+      emo('⚠️', W / 2, CY + 120, 150, { scale: popScale(ct - kt + .1) * (1 + .08 * warn) });
+      withXf(W / 2, CY + 270, popScale(ct - kt), -.04, () => txt('サボりが習慣に', 0, 0, 78, { font: DELA, weight: 400, color: RED, stroke: '#fff', sw: 12 }));
+    }
+  },
+  cta(t, sc, ci, c) {
+    const ct = t - c.start;
+    if (t > sc.speech_end + .1) return outro(t - sc.speech_end - .1);
+    if (ci === 0) {
+      for (let i = 0; i < 5; i++) {
+        const x = W / 2 + (i - 2) * 190;
+        ctx.save(); ctx.globalAlpha = .9; ctx.fillStyle = ACCENT['tip' + (i + 1)]; rrect(x - 82, CY - 82, 164, 164, 36); ctx.fill(); ctx.restore();
+        emo(TIP_EMOJI[i], x, CY, 110, { scale: popScale(ct - i * .05) });
+      }
+      withXf(W / 2, CY + 220, popScale(ct - .4), -.04, () => txt('全部じゃなくてOK', 0, 0, 76, { font: DELA, weight: 400, sw: 14 }));
+    } else if (ci === 1) {
+      // ルーレットのように1つを選ぶ
+      const kt = kwTime(c) - c.start, stopAt = kt + .1;
+      let sel = ct < stopAt ? Math.floor(ct * 12) % 5 : Math.floor(stopAt * 12) % 5;
+      for (let i = 0; i < 5; i++) {
+        const x = W / 2 + (i - 2) * 190, on = i === sel, done = ct >= stopAt;
+        const s = on ? (done ? lerp(1.5, 1.3, eOut((ct - stopAt) / .3)) : 1.12) : (done ? .8 : 1);
+        withXf(x, CY, s, 0, () => {
+          ctx.save(); ctx.globalAlpha = on ? 1 : done ? .3 : .6; ctx.fillStyle = ACCENT['tip' + (i + 1)];
+          rrect(-82, -82, 164, 164, 36); ctx.fill();
+          if (on) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.stroke(); }
+          ctx.restore(); emo(TIP_EMOJI[i], 0, 0, 110, { alpha: on || !done ? 1 : .4 });
+        });
+      }
+      const x = W / 2 + (sel - 2) * 190;
+      emo('☝️', x, CY - 250 + Math.sin(t * 10) * 12, 150, { scale: popScale(ct) });
+      burst(x, CY, ct - stopAt, YELLOW, 41, 18, 260);
+      withXf(W / 2, CY + 230, popScale(ct - stopAt), -.04, () => txt('明日の朝 1つだけ', 0, 0, 76, { font: DELA, weight: 400, color: YELLOW, sw: 14 }));
+    } else {
+      const kt = kwTime(c) - c.start;
+      withXf(W / 2, CY - 40, popScale(ct), 0, () => {
+        ctx.fillStyle = '#fff'; rrect(-300, -170, 600, 300, 60); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-120, 120); ctx.lineTo(-200, 230); ctx.lineTo(-20, 126); ctx.fill();
+        for (let i = 0; i < 3; i++) {
+          ctx.fillStyle = ACCENT.cta; ctx.beginPath(); ctx.arc(-120 + i * 120, -20 - Math.max(0, Math.sin(t * 9 - i * .9)) * 30, 34, 0, 7); ctx.fill();
+        }
+      });
+      withXf(W / 2, CY + 260, popScale(ct - kt), -.04, () => txt('コメント待ってます', 0, 0, 74, { font: DELA, weight: 400, color: YELLOW, sw: 14 }));
+      emo('👇', W / 2 + 360, CY + 160 + Math.sin(t * 8) * 20, 120, { scale: popScale(ct - kt - .2) });
+    }
+  },
+};
+function outro(lt) {
+  const k = popScale(lt, .3);
+  emo('🔖', W / 2, CY - 120, 260, { scale: k, rot: Math.sin(lt * 4) * .1 });
+  withXf(W / 2, CY + 120, k, -.03, () => txt('保存して', 0, 0, 96, { font: DELA, weight: 400, sw: 16 }));
+  withXf(W / 2, CY + 250, popScale(lt - .15, .3), -.03, () => txt('明日の朝に見返そう', 0, 0, 80, { font: DELA, weight: 400, color: YELLOW, sw: 14 }));
+}
+
+// ---------- シーン切り替え ----------
+function drawTransition(t, si) {
+  if (si === 0) return;
+  const lt = t - S[si].start, accent = ACCENT[S[si].id];
+  if (lt < .32) {   // 斜めのカラーワイプ
+    const k = eInOut(lt / .32), x = lerp(-W * 1.6, W * 1.6, k);
+    ctx.save(); ctx.translate(W / 2 + x, H / 2); ctx.rotate(.22);
+    ctx.fillStyle = accent; ctx.fillRect(-300, -H, 600, H * 2);
+    ctx.fillStyle = '#fff'; ctx.fillRect(320, -H, 60, H * 2);
+    ctx.restore();
+  }
+  if (lt < .14) { ctx.fillStyle = `rgba(255,255,255,${.5 * (1 - lt / .14)})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- フレーム描画 ----------
+function sceneIndex(t) { let i = 0; S.forEach((s, k) => { if (t >= s.start) i = k; }); return i; }
+function chunkIndex(sc, t) { let i = 0; sc.chunks.forEach((c, k) => { if (t >= c.start - .05) i = k; }); return i; }
+function shakeAt(t) {
+  let a = 0;
+  for (const sc of S) for (const c of sc.chunks) {
+    const kt = kwTime(c); if (kt == null) continue;
+    const d = t - kt; if (d >= 0 && d < .22) a = Math.max(a, 14 * (1 - d / .22));
+  }
+  for (const sc of S) if (sc.n) { const d = t - sc.start; if (d >= 0 && d < .3) a = Math.max(a, 22 * (1 - d / .3)); }
+  return a;
+}
+
+window.render = function (t) {
+  const si = sceneIndex(t), sc = S[si], ci = chunkIndex(sc, t), c = sc.chunks[ci];
+  ctx.save();
+  drawBG(t, sc);
+  // カメラ: 切り替え直後のズームパンチ+キーワードでの揺れ
+  const lt = t - sc.start, zoom = si ? 1 + .07 * (1 - eOut(lt / .35)) : 1 + .03 * (1 - eOut(t / .5));
+  const sh = shakeAt(t);
+  ctx.translate(W / 2 + (rnd(Math.floor(t * 60)) - .5) * sh * 2, H / 2 + (rnd(Math.floor(t * 60) + 99) - .5) * sh * 2);
+  ctx.scale(zoom, zoom); ctx.translate(-W / 2, -H / 2);
+  drawHeader(t, sc);
+  if (sc.n) drawTipTitle(t, sc);
+  DRAW[sc.id](t, sc, ci, c);
+  if (!(sc.id === 'cta' && t > sc.speech_end + .1)) drawCaption(c, t, ACCENT[sc.id]);
+  ctx.restore();
+  drawTransition(t, si);
+  // クレジット(VOICEVOX 利用規約による表記)
+  txt('VOICEVOX:四国めたん', W - 40, 1545, 30, { weight: 700, align: 'right', alpha: .75, sw: 6 });
+};
+
+// サムネイル(1080x1920)
+window.renderThumb = function () {
+  const sc = S[0];
+  drawBG(DROP + .01, { id: 'hook' });
+  txt('習慣が', W / 2, 360, 150, { font: DELA, weight: 400, sw: 26 });
+  txt('続かないのは', W / 2, 540, 150, { font: DELA, weight: 400, sw: 26 });
+  emo('💪', W / 2, 860, 300);
+  cross(W / 2, 860, 170, 1, RED, 40);
+  txt('意志が弱い', W / 2, 1110, 140, { font: DELA, weight: 400, color: YELLOW, sw: 24 });
+  stamp('からじゃない', W / 2, 1310, 1, 110, RED, -.08);
+  ctx.save(); ctx.fillStyle = ACCENT.tip1; rrect(140, 1480, 800, 130, 65); ctx.fill(); ctx.restore();
+  txt('続く人の5つのコツ', W / 2, 1546, 72, { color: '#14111F', stroke: false, shadow: false });
+};
+
+// フォントを確実に読み込んでから描画開始(サブセットフォントは使う文字を指定して読み込む)
+const ALL_TEXT = S.flatMap(s => [...s.chunks.map(c => c.text), s.title || '']).join('') +
+  '毎日が続く人の5つのコツその0123456789意志の力？関係ないまた三日坊主…月火水木金土日回分ページ↓ハードル＋歯みがきスクワット英単語コーヒー忘れない別の部屋へやる気%負けHABITTRACKER日連続事故=セーフ2回連続サボりが習慣に全部じゃなくてOK明日の朝1つだけコメント待ってます保存して明日の朝に見返そうVOICEVOX:四国めたん習慣が続かないのは意志が弱いからじゃない✓';
+window.READY = Promise.all([
+  document.fonts.load(`900 80px ${JP}`, ALL_TEXT), document.fonts.load(`700 80px ${JP}`, ALL_TEXT),
+  document.fonts.load(`400 80px ${DELA}`, ALL_TEXT), document.fonts.load(`80px ${EMO}`, TIP_EMOJI.join('') + '😩💪🤫✨👀📖🏃🎉🪥🏋️☕📝🔗🚪📱🛏️📚🔥👌⚠️☝️👇🔖'),
+]).then(() => document.fonts.ready);
+
+// ブラウザで開いたときはプレビュー再生(?t=秒 で静止)
+if (!navigator.webdriver) {
+  document.body.classList.add('preview');
+  const q = new URLSearchParams(location.search);
+  window.READY.then(() => {
+    if (q.has('t')) return render(+q.get('t'));
+    const audio = new Audio('output/mix.wav'); let t0 = null;
+    const loop = now => { if (t0 == null) t0 = now; const t = ((now - t0) / 1000) % T.total; render(t); requestAnimationFrame(loop); };
+    document.body.onclick = () => { audio.currentTime = 0; audio.play(); t0 = null; };
+    requestAnimationFrame(loop);
+  });
+}
+</script>
+</body>
+</html>
