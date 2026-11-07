@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Sleep Short</title>
+<style>
+  @font-face { font-family: 'Mincho'; src: url(fonts/ShipporiMinchoB1-ExtraBold.ttf); font-weight: 800; }
+  @font-face { font-family: 'Goth'; src: url(fonts/ZenKakuGothicNew-Bold.ttf); font-weight: 700; }
+  html,body{margin:0;background:#0b1030;}
+  canvas{display:block;max-height:100vh;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 睡眠ショート (9:16 / 1080x1920)。render(t) は時刻 t のフレームを決定論的に描画する。
+// タイミングは narrate.py の timeline.json を setData() で受け取る。
+// ショートの UI が重なる領域(下部 約 380px・右端 約 140px)には重要な要素を置かない。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const GOT = '"Goth","IPAPGothic",sans-serif', MIN = '"Mincho","IPAPGothic",serif';
+const C = { yel: '#ffd84d', red: '#ff5a6e', blue: '#4da3ff', white: '#ffffff', ink: '#1c1f3a', card: 'rgba(255,255,255,0.10)', metan: '#e2468f' };
+let SCRIPT, TL, SC = {};
+window.setData = (s, tl) => { SCRIPT = s; TL = tl; tl.scenes.forEach((d, i) => SC[d.id] = { d, s: s.scenes[i] }); window.DURATION = tl.total; };
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c = 2.2; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const seg = (t, s, d) => clamp((t - s) / d);
+const lerp = (a, b, t) => a + (b - a) * t;
+const mix = (c1, c2, t) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const a = p(c1), b = p(c2); return `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], t))).join(',')})`; };
+
+function font(size, f = GOT, w = 700) { ctx.font = `${w} ${size}px ${f}`; }
+function txt(s, x, y, o = {}) {
+  const { size = 60, f = GOT, w = 700, color = C.white, align = 'center', base = 'middle', alpha = 1, stroke = null, sw = 0, shadow = 0 } = o;
+  ctx.save(); ctx.globalAlpha *= alpha; font(size, f, w); ctx.textAlign = align; ctx.textBaseline = base; ctx.lineJoin = 'round';
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = shadow / 3; }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(s, x, y); ctx.shadowColor = 'transparent'; }
+  ctx.fillStyle = color; ctx.fillText(s, x, y); ctx.restore();
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function pop(x, y, p, fn) { if (p <= 0) return; ctx.save(); ctx.translate(x, y); const k = easeBack(p); ctx.scale(k, k); ctx.globalAlpha *= clamp(p * 3); fn(); ctx.restore(); }
+
+// 三日月(オフスクリーンで一度だけ作る)
+const MOON = document.createElement('canvas'); MOON.width = MOON.height = 200;
+(() => { const g = MOON.getContext('2d'); g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(100, 100, 82, 0, 7); g.fill();
+  g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(138, 78, 72, 0, 7); g.fill(); })();
+
+// ---------- 背景: 夜空(星がまたたく) → 朝焼け ----------
+const STARS = Array.from({ length: 110 }, (_, i) => { const r = Math.sin(i * 12.9898) * 43758.5453; const f = r - Math.floor(r); const r2 = Math.sin(i * 78.233) * 12345.678; const g = r2 - Math.floor(r2); return [f * W, g * H * 0.75, 1 + (i % 3), i * 0.7]; });
+function background(t) {
+  const m = SC.morning.d;
+  const dawn = easeOut(seg(t, m.start - 0.2, 1.6)) * (1 - seg(t, SC.outro.d.start, 1.0));
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, mix('#070b26', '#5fa8ff', dawn)); g.addColorStop(0.55, mix('#16224f', '#ffb48a', dawn)); g.addColorStop(1, mix('#2a2160', '#ffd9a0', dawn));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  STARS.forEach(([x, y, r, ph]) => { const a = (0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.2 + ph))) * (1 - dawn); if (a < 0.02) return; ctx.globalAlpha = a; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); });
+  ctx.globalAlpha = 1;
+  // 月(ねむそうな顔) — 夜のあいだだけ
+  if (dawn < 1) {
+    ctx.save(); ctx.globalAlpha = 1 - dawn; ctx.translate(150, 205 + Math.sin(t * 1.5) * 8); ctx.scale(0.62, 0.62);
+    ctx.fillStyle = 'rgba(255,230,150,0.16)'; ctx.beginPath(); ctx.arc(0, 0, 120, 0, 7); ctx.fill();
+    ctx.drawImage(MOON, -100, -100);
+    ctx.strokeStyle = '#8a6a2a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(-40, -8, 10, 0.2, Math.PI - 0.2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-30, 30, 8, 0.3, Math.PI - 0.3); ctx.stroke();
+    ['z', 'Z', 'z'].forEach((z, i) => { const ph = (t * 0.6 + i / 3) % 1; txt(z, 70 + ph * 60, -60 - ph * 120, { size: 34 + i * 10, color: '#fff', alpha: Math.sin(ph * Math.PI) * 0.8 }); });
+    ctx.restore();
+  }
+  // 太陽(朝のシーン)
+  if (dawn > 0) {
+    const sy = lerp(900, 230, easeOut(seg(t, m.start, 2.2))), sx = 880;
+    ctx.save(); ctx.globalAlpha = dawn;
+    const sg = ctx.createRadialGradient(sx, sy, 30, sx, sy, 300); sg.addColorStop(0, 'rgba(255,240,180,0.9)'); sg.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = sg; ctx.fillRect(0, sy - 300, W, 600);
+    ctx.fillStyle = '#fff3c4'; ctx.beginPath(); ctx.arc(sx, sy, 90, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------- アイコン ----------
+function icon(name, s, color = '#fff', t = 0) {
+  ctx.save(); ctx.scale(s / 100, s / 100); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const P = () => ctx.beginPath(), S = () => ctx.stroke();
+  if (name === 'bed') {
+    P(); ctx.moveTo(-80, 40); ctx.lineTo(-80, -40); S(); P(); ctx.moveTo(-80, 10); ctx.lineTo(80, 10); ctx.lineTo(80, 40); S();
+    P(); ctx.moveTo(-80, 40); ctx.lineTo(80, 40); S(); P(); ctx.ellipse(-48, -8, 20, 14, 0, 0, 7); S();
+    P(); ctx.moveTo(-20, -10); ctx.quadraticCurveTo(30, -30, 80, -8); ctx.lineTo(80, 10); S();
+  } else if (name === 'bath') {
+    P(); ctx.moveTo(-85, -5); ctx.lineTo(85, -5); ctx.lineTo(70, 50); ctx.quadraticCurveTo(0, 62, -70, 50); ctx.closePath(); S();
+    P(); ctx.moveTo(-55, 55); ctx.lineTo(-62, 72); S(); P(); ctx.moveTo(55, 55); ctx.lineTo(62, 72); S();
+    for (const x of [-40, 0, 40]) { P(); const o = Math.sin(t * 3 + x) * 6; ctx.moveTo(x, -20); ctx.bezierCurveTo(x - 14 + o, -40, x + 14 + o, -55, x + o, -78); S(); }
+  } else if (name === 'wave') {
+    for (const [y, a] of [[-20, 1], [15, 0.7], [50, 0.45]]) { ctx.globalAlpha = a; P(); for (let x = -90; x <= 90; x += 4) { const yy = y + Math.sin(x / 18 + t * 2 + y) * 10; x === -90 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy); } S(); }
+    ctx.globalAlpha = 1; P(); ctx.moveTo(-60, -50); ctx.lineTo(-45, -85); ctx.lineTo(-30, -50); ctx.closePath(); S(); P(); ctx.moveTo(-45, -50); ctx.lineTo(-45, -38); S();
+    P(); ctx.moveTo(30, -50); ctx.lineTo(50, -95); ctx.lineTo(70, -50); ctx.closePath(); S(); P(); ctx.moveTo(50, -50); ctx.lineTo(50, -38); S();
+  } else if (name === 'sun') {
+    P(); ctx.moveTo(-90, -80); ctx.lineTo(90, -80); S();
+    P(); ctx.moveTo(-85, -80); ctx.quadraticCurveTo(-75, 0, -88, 75); S(); P(); ctx.moveTo(85, -80); ctx.quadraticCurveTo(75, 0, 88, 75); S();
+    P(); ctx.arc(0, 10, 30, 0, 7); ctx.fill();
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + t; P(); ctx.moveTo(Math.cos(a) * 42, 10 + Math.sin(a) * 42); ctx.lineTo(Math.cos(a) * 58, 10 + Math.sin(a) * 58); S(); }
+  } else if (name === 'exit') {
+    icon('bed', 70, color); P(); ctx.moveTo(30, -60); ctx.lineTo(90, -60); S(); P(); ctx.moveTo(72, -78); ctx.lineTo(92, -60); ctx.lineTo(72, -42); S();
+  } else if (name === 'save') {
+    P(); ctx.moveTo(-40, -60); ctx.lineTo(40, -60); ctx.lineTo(40, 60); ctx.lineTo(0, 30); ctx.lineTo(-40, 60); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- 字幕(【】は黄色で強調、行の頭でポップ) ----------
+function parseRich(s) { const out = []; let hi = false, cur = ''; for (const ch of s) { if (ch === '【' || ch === '】') { if (cur) out.push([cur, hi]); cur = ''; hi = ch === '【'; } else cur += ch; } if (cur) out.push([cur, hi]); return out; }
+function layoutRich(s, size, maxW) {
+  font(size); const lines = [[]]; let w = 0;
+  for (const [seg_, hi] of parseRich(s)) for (const ch of seg_) {
+    const cw = ctx.measureText(ch).width;
+    if (w + cw > maxW && !'、。！？…」'.includes(ch)) { lines.push([]); w = 0; }
+    const L = lines[lines.length - 1]; if (L.length && L[L.length - 1][1] === hi) L[L.length - 1][0] += ch; else L.push([ch, hi]); w += cw;
+  }
+  return lines;
+}
+function caption(t) {
+  let cur = null;
+  for (const d of TL.scenes) { if (t < d.start || t >= d.end) continue; d.lines.forEach((ln, i) => { const nx = d.lines[i + 1]; const until = nx ? nx.start : d.end; if (t >= ln.start - 0.05 && t < until) cur = ln; }); }
+  if (!cur) return;
+  const size = 68, lh = 92, maxW = 880;
+  const lines = layoutRich(cur.text, size, maxW);
+  const y0 = 1300 - (lines.length - 1) * lh / 2;
+  const p = seg(t, cur.start - 0.05, 0.18); const k = 1 + 0.12 * (1 - easeOut(p));
+  ctx.save(); ctx.translate(520, y0); ctx.scale(k, k); ctx.globalAlpha = clamp(p * 2);
+  lines.forEach((L, i) => {
+    font(size); const tw = L.reduce((a, [s]) => a + ctx.measureText(s).width, 0); let x = -tw / 2;
+    L.forEach(([s, hi]) => {
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 16; ctx.strokeText(s, x, i * lh);
+      ctx.fillStyle = hi ? C.yel : '#fff'; ctx.fillText(s, x, i * lh); x += ctx.measureText(s).width;
+    });
+  });
+  ctx.restore();
+}
+
+// ---------- 各シーン ----------
+function sceneQuiz(lt, d, t) {
+  const L = d.lines.map(l => l.start - d.start);
+  pop(520, 330, seg(lt, 0, 0.35), () => { ctx.fillStyle = C.red; rrect(-300, -55, 600, 110, 55); ctx.fill(); txt('睡眠クイズ', 0, 4, { size: 60 }); });
+  pop(520, 640, seg(lt, 0.15, 0.4), () => {
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; rrect(-430, -230, 860, 460, 40); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 4; rrect(-430, -230, 860, 460, 40); ctx.stroke();
+    ctx.save(); ctx.translate(0, -80); icon('bed', 150); ctx.restore();
+    txt('眠れない夜、ベッドで', 0, 70, { size: 56 });
+    txt('がんばって目を閉じ続ける', 0, 150, { size: 62, color: C.yel });
+  });
+  const pb = seg(lt, L[1] + 0.1, 0.35);
+  pop(330, 1020, pb, () => { ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(0, 0, 110, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 18; ctx.beginPath(); ctx.arc(0, 0, 55, 0, 7); ctx.stroke(); });
+  pop(710, 1020, seg(lt, L[1] + 0.35, 0.35), () => { ctx.fillStyle = C.blue; ctx.beginPath(); ctx.arc(0, 0, 110, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 18; ctx.beginPath(); ctx.moveTo(-45, -45); ctx.lineTo(45, 45); ctx.moveTo(45, -45); ctx.lineTo(-45, 45); ctx.stroke(); });
+  // カウントダウン
+  const cd0 = d.lines[1].end - d.start + 0.1;
+  if (lt >= cd0) {
+    const i = Math.min(2, Math.floor((lt - cd0) / 0.62)); const f = (lt - cd0 - i * 0.62) / 0.62;
+    ctx.fillStyle = `rgba(0,0,0,${0.45})`; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.translate(520, 640);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 22; ctx.beginPath(); ctx.arc(0, 0, 190, 0, 7); ctx.stroke();
+    ctx.strokeStyle = C.yel; ctx.beginPath(); ctx.arc(0, 0, 190, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp((lt - cd0) / 1.86)); ctx.stroke();
+    const k = 1 + 0.5 * (1 - easeOut(f * 2.5)); ctx.scale(k, k);
+    txt(String(3 - i), 0, 10, { size: 260, f: MIN, w: 800, stroke: '#000', sw: 14 });
+    ctx.restore();
+    txt('考えてみて！', 520, 880, { size: 64, color: C.yel, stroke: '#000', sw: 12 });
+  }
+}
+
+function sceneAnswer(lt, d) {
+  const L = d.lines.map(l => l.start - d.start);
+  const rev = d.lines[0].end - d.start - 0.15;
+  // × が中央に拡大
+  const p = easeOut(seg(lt, rev, 0.35));
+  ctx.save(); ctx.globalAlpha = 1 - seg(lt, L[1] - 0.2, 0.3) * 0.0;
+  const x = lerp(710, 520, p), y = lerp(1020, 560, p), r = lerp(110, 210, p);
+  ctx.translate(x, y); ctx.rotate(p * Math.PI * 2 * 0.0 + (1 - p) * 0);
+  ctx.fillStyle = C.blue; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = r * 0.16; ctx.beginPath(); ctx.moveTo(-r * .4, -r * .4); ctx.lineTo(r * .4, r * .4); ctx.moveTo(r * .4, -r * .4); ctx.lineTo(-r * .4, r * .4); ctx.stroke();
+  ctx.restore();
+  pop(520, 270, seg(lt, rev + 0.1, 0.35), () => txt('正解は ×！', 0, 0, { size: 110, f: MIN, w: 800, color: C.yel, stroke: '#000', sw: 16 }));
+  if (lt < rev) { // 発表前は 〇 × を並べたまま(ドキドキ)
+    const sh = Math.sin(lt * 40) * 4;
+    ctx.save(); ctx.translate(330 + sh, 1020); ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(0, 0, 110, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 18; ctx.beginPath(); ctx.arc(0, 0, 55, 0, 7); ctx.stroke(); ctx.restore();
+  }
+  // 解説カード
+  pop(520, 930, seg(lt, L[1], 0.4), () => {
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; rrect(-420, -120, 840, 240, 36); ctx.fill();
+    ctx.save(); ctx.translate(-270, 10); icon('exit', 110, C.ink); ctx.restore();
+    txt('眠れなければ', 90, -40, { size: 50, color: C.ink });
+    txt('一度ベッドを出る', 90, 40, { size: 60, color: '#e0405a' });
+  });
+  pop(520, 1090, seg(lt, L[2], 0.4), () => txt('出典：厚生労働省「健康づくりのための睡眠ガイド2023」', 0, 0, { size: 28, color: '#cfd6ff' }));
+}
+
+const SLEEP = [['南アフリカ', 553], ['中国', 542], ['…', 0], ['日本', 442]];  // 出典で確認できた値のみ
+function sceneStat(lt, d) {
+  const L = d.lines.map(l => l.start - d.start);
+  pop(520, 290, seg(lt, 0, 0.35), () => txt('平均睡眠時間', 0, 0, { size: 84, f: MIN, w: 800, stroke: '#000', sw: 14 }));
+  const x0 = 250, maxW = 640, max = 553;
+  SLEEP.forEach(([name, min], i) => {
+    const y = 470 + i * 140, p = easeOut(seg(lt, 0.3 + i * 0.15, 0.6));
+    if (!min) { txt('︙  (33か国)', 520, y, { size: 44, alpha: p, color: '#cfd6ff' }); return; }
+    const jp = name === '日本'; const w = maxW * (min / max) * p;
+    txt(name, x0 - 20, y, { size: 44, align: 'right', alpha: p, color: jp ? C.yel : '#fff' });
+    ctx.fillStyle = jp ? C.red : 'rgba(255,255,255,0.55)'; rrect(x0, y - 44, Math.max(w, 1), 88, 14); ctx.fill();
+    const hm = `${Math.floor(min / 60)}時間${min % 60}分`;
+    txt(hm, x0 + w - 18, y + 2, { size: 42, align: 'right', alpha: seg(lt, 0.8 + i * 0.15, 0.3), color: jp ? '#fff' : C.ink });
+  });
+  pop(560, 1080, seg(lt, L[1] + 0.6, 0.4), () => { ctx.rotate(-0.06); ctx.strokeStyle = C.red; ctx.lineWidth = 10; rrect(-300, -60, 600, 120, 16); ctx.stroke(); ctx.fillStyle = 'rgba(255,90,110,0.18)'; ctx.fill(); txt('33か国中 最下位', 0, 4, { size: 66, f: MIN, w: 800, color: '#fff', stroke: C.red, sw: 6 }); });
+  txt('出典：OECD「Time use across the world」(日本は2016年の値)', 520, 1180, { size: 26, color: '#cfd6ff', alpha: seg(lt, 0.8, 0.4) });
+}
+
+function slots(lt, reveal3, glow) {
+  ['お風呂のタイミング', '眠れないときの想像', '???'].forEach((s, i) => {
+    const p = seg(lt, 0.2 + i * 0.18, 0.35);
+    pop(520, 560 + i * 170, p, () => {
+      const hot = i === 2;
+      ctx.fillStyle = hot ? 'rgba(255,216,77,0.18)' : 'rgba(255,255,255,0.12)'; rrect(-420, -65, 840, 130, 30); ctx.fill();
+      if (hot) { ctx.strokeStyle = C.yel; ctx.lineWidth = 5 + 3 * Math.sin(lt * 8) * glow; rrect(-420, -65, 840, 130, 30); ctx.stroke(); }
+      ctx.fillStyle = hot ? C.yel : '#fff'; ctx.beginPath(); ctx.arc(-340, 0, 46, 0, 7); ctx.fill();
+      txt(String(i + 1), -340, 4, { size: 56, color: C.ink });
+      txt(s, 40, 4, { size: hot ? 70 : 54, color: hot ? C.yel : '#fff' });
+    });
+  });
+}
+function sceneIntro(lt, d) {
+  const L = d.lines.map(l => l.start - d.start);
+  pop(520, 330, seg(lt, 0, 0.35), () => txt('ぐっすりのコツ 3選', 0, 0, { size: 92, f: MIN, w: 800, color: C.yel, stroke: '#000', sw: 16 }));
+  slots(lt, false, seg(lt, L[1], 0.2));
+  if (lt > L[1]) pop(850, 950, seg(lt, L[1], 0.3), () => { ctx.rotate(0.15); txt('一番大事!', 0, 0, { size: 52, color: C.red, stroke: '#fff', sw: 10 }); });
+}
+
+function sceneTip(lt, d, sc, t) {
+  const L = d.lines.map(l => l.start - d.start);
+  // 進捗ドット
+  [1, 2, 3].forEach(i => { ctx.fillStyle = i <= sc.no ? C.yel : 'rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.arc(440 + (i - 1) * 80, 250, i === sc.no ? 18 : 12, 0, 7); ctx.fill(); });
+  pop(520, 380, seg(lt, 0, 0.35), () => {
+    ctx.fillStyle = sc.no === 3 ? C.red : C.yel; rrect(-170, -55, 340, 110, 55); ctx.fill();
+    txt(`コツ ${sc.no}`, 0, 4, { size: 64, color: sc.no === 3 ? '#fff' : C.ink });
+  });
+  const reveal = sc.no === 3 ? d.lines[0].end - d.start - 0.3 : 0.1;
+  pop(520, 640, seg(lt, reveal, 0.45), () => {
+    ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.arc(0, 0, 175, 0, 7); ctx.fill();
+    icon(sc.icon, 230, '#fff', t);
+  });
+  if (sc.no === 3 && lt < reveal) txt('？', 520, 650, { size: 260, f: MIN, w: 800, color: C.yel, stroke: '#000', sw: 14, alpha: 0.9 + 0.1 * Math.sin(lt * 10) });
+  const [h1, h2] = sc.head.split(' ');
+  pop(520, 900, seg(lt, reveal + 0.15, 0.4), () => { txt(h1, 0, -45, { size: 66, stroke: '#000', sw: 12 }); txt(h2, 0, 45, { size: 80, color: C.yel, stroke: '#000', sw: 14 }); });
+  sc.sub.forEach((s, i) => pop(300 + i * 440, 1075, seg(lt, L[1] + i * 0.3, 0.35), () => {
+    font(42); const w = ctx.measureText(s).width + 60;
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; rrect(-w / 2, -40, w, 80, 40); ctx.fill(); txt(s, 0, 3, { size: 42, color: C.ink });
+  }));
+}
+
+function sceneOutro(lt, d, t) {
+  const L = d.lines.map(l => l.start - d.start);
+  pop(520, 300, seg(lt, 0, 0.35), () => txt('今夜のまとめ', 0, 0, { size: 84, f: MIN, w: 800, stroke: '#000', sw: 14 }));
+  ['寝る1〜2時間前に お風呂', '眠れなければ 景色を想像', '朝いちばんに 光を浴びる'].forEach((s, i) => pop(520, 470 + i * 130, seg(lt, 0.15 + i * 0.12, 0.35), () => {
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; rrect(-410, -52, 820, 104, 26); ctx.fill();
+    ctx.fillStyle = i === 2 ? C.red : '#ffb020'; ctx.beginPath(); ctx.arc(-350, 0, 34, 0, 7); ctx.fill();
+    txt(String(i + 1), -350, 3, { size: 44 }); txt(s, 30, 3, { size: 48, color: C.ink });
+  }));
+  const ps = seg(lt, L[0] + 0.2, 0.35);
+  pop(520, 950, ps, () => {
+    const b = 1 + 0.05 * Math.sin(lt * 7); ctx.scale(b, b);
+    ctx.fillStyle = C.yel; rrect(-250, -60, 500, 120, 60); ctx.fill();
+    ctx.save(); ctx.translate(-170, 0); icon('save', 70, C.ink); ctx.restore();
+    txt('保存してね', 40, 4, { size: 60, color: C.ink });
+  });
+  txt('※効果には個人差があります。不眠が続く場合は医療機関へ', 520, 1090, { size: 26, color: '#dfe3ff', alpha: seg(lt, 0.5, 0.4) });
+}
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  background(t);
+  const idx = Math.max(0, TL.scenes.findIndex(s => t >= s.start && t < s.end)) ;
+  const ii = TL.scenes.findIndex(s => t >= s.start && t < s.end) < 0 ? TL.scenes.length - 1 : idx;
+  const d = TL.scenes[ii], sc = SCRIPT.scenes[ii], lt = t - d.start;
+  // シーン頭のズームイン(パンチ感)
+  const z = 1 + 0.06 * (1 - easeOut(seg(lt, 0, 0.3)));
+  ctx.save(); ctx.translate(540, 760); ctx.scale(z, z); ctx.translate(-540, -760);
+  if (ii < TL.scenes.length - 1) ctx.globalAlpha = clamp((d.end - t) / 0.15);
+  ({ quiz: sceneQuiz, answer: sceneAnswer, stat: sceneStat, intro: sceneIntro, tip: (lt, d, t) => sceneTip(lt, d, sc, t), outro: sceneOutro })[sc.type](lt, d, t);
+  ctx.restore();
+  // 正解発表の白フラッシュ
+  const a = SC.answer.d, rev = a.lines[0].end - 0.15;
+  if (t >= rev && t < rev + 0.25) { ctx.fillStyle = `rgba(255,255,255,${0.6 * (1 - (t - rev) / 0.25)})`; ctx.fillRect(0, 0, W, H); }
+  caption(t);
+  // 話者ラベル
+  txt('🌙 四国めたん', 520, 1480, { size: 30, color: '#ffd0e6', alpha: 0.9, stroke: '#1c1f3a', sw: 6 });
+  if (t < 0.2) { ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.2})`; ctx.fillRect(0, 0, W, H); }
+}
+
+function renderCover() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  background(1.0);
+  [[330, C.red, 0], [750, C.blue, 1]].forEach(([x, col, isX]) => {
+    ctx.save(); ctx.translate(x, 1120); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 130, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 22; ctx.beginPath();
+    if (isX) { ctx.moveTo(-55, -55); ctx.lineTo(55, 55); ctx.moveTo(55, -55); ctx.lineTo(-55, 55); } else ctx.arc(0, 0, 65, 0, 7);
+    ctx.stroke(); ctx.restore(); });
+  txt('眠れない夜の', 520, 520, { size: 110, f: MIN, w: 800, stroke: '#000', sw: 18 });
+  txt('NG行動', 520, 690, { size: 190, f: MIN, w: 800, color: C.yel, stroke: '#000', sw: 22 });
+  txt('やってない？', 520, 880, { size: 110, f: MIN, w: 800, stroke: '#000', sw: 18 });
+}
+window.render = render; window.renderThumb = renderCover;
+</script>
+</body>
+</html>

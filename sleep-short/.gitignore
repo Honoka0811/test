@@ -1,0 +1,9 @@
+fonts/*.ttf
+output/mix.wav
+output/narration.wav
+output/video_silent.mp4
+output/part*.mp4
+output/parts.txt
+output/still_*.png
+output/bgm_test.wav
+__pycache__/
