@@ -145,9 +145,14 @@ with open(SRT, 'w', encoding='utf-8') as f:
 print('wrote', SRT)
 
 # ---------- BGM(G線上のアリア)をダッキングしながらミックス ----------
-dec = subprocess.run(['ffmpeg', '-loglevel', 'error', '-ss', str(BGM_OFFSET), '-i', BGM_FILE, '-t', str(TOTAL),
-                      '-ac', '1', '-ar', str(SR), '-f', 's16le', '-'], check=True, capture_output=True).stdout
-music = np.frombuffer(dec, dtype=np.int16).astype(np.float32) / 32768.0
+# BGM=original で、YouTube の Content ID に引っかからない自作BGM(bgm.py・打音なし)を使う
+if os.environ.get('BGM') == 'original':
+    import bgm as bgm_mod
+    music = bgm_mod.generate(TOTAL, hits_on=False)
+else:
+    dec = subprocess.run(['ffmpeg', '-loglevel', 'error', '-ss', str(BGM_OFFSET), '-i', BGM_FILE, '-t', str(TOTAL),
+                          '-ac', '1', '-ar', str(SR), '-f', 's16le', '-'], check=True, capture_output=True).stdout
+    music = np.frombuffer(dec, dtype=np.int16).astype(np.float32) / 32768.0
 music = music[:len(track)] if len(music) >= len(track) else np.pad(music, (0, len(track) - len(music)))
 music = music / (np.sqrt(np.mean(music ** 2)) + 1e-9) * 0.10       # 音源の音量を揃える(RMS 約 -20 dBFS)
 fo = int(3.0 * SR); music[-fo:] *= np.linspace(1, 0, fo) ** 2         # 終わりは 3 秒でフェードアウト

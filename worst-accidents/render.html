@@ -25,6 +25,8 @@ const C = {
   accent: '#d9a441', red: '#d0574b', glow: 'rgba(217,164,65,0.35)'
 };
 const FPS = 30, DURATION = 87.5;
+// ?bgm=original のとき、クレジットを自作BGM版にする
+const BGM_ORIGINAL = new URLSearchParams(location.search).get('bgm') === 'original';
 
 // ---------- データ(数値は諸説あり・概数) ----------
 const ACC = [
@@ -335,8 +337,12 @@ function sceneOutro(t, a) {
   });
   const ca = a * easeOut((t - 3.0) / .8);
   text('数値は資料により諸説あり・概数', W / 2, 1420, { size: 28, color: C.ink3, align: 'center', alpha: ca });
-  text('BGM: J.S.バッハ「G線上のアリア」', W / 2, 1490, { size: 30, color: C.ink2, align: 'center', alpha: ca });
-  text('演奏: アメリカ空軍軍楽隊(パブリックドメイン)', W / 2, 1540, { size: 28, color: C.ink3, align: 'center', alpha: ca });
+  if (BGM_ORIGINAL) {
+    text('BGM: オリジナル', W / 2, 1515, { size: 30, color: C.ink2, align: 'center', alpha: ca });
+  } else {
+    text('BGM: J.S.バッハ「G線上のアリア」', W / 2, 1490, { size: 30, color: C.ink2, align: 'center', alpha: ca });
+    text('演奏: アメリカ空軍軍楽隊(パブリックドメイン)', W / 2, 1540, { size: 28, color: C.ink3, align: 'center', alpha: ca });
+  }
   text('音声: VOICEVOX:青山龍星', W / 2, 1600, { size: 30, color: C.ink2, align: 'center', alpha: ca });
 }
 

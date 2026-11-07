@@ -40,3 +40,18 @@ python3 narrate.py     # ナレーション合成 + BGM ダッキング → outp
 ```
 
 VOICEVOX のセットアップ方法は `../pacific-war-analysis/README.md` と同じです(voicevox_core 0.17.1・`voicevox_onnxruntime` 1.17.3・`15.vvm`)。ナレーション原稿は `narrate.py` の `SCRIPT` にあり、書き換えて再実行すれば差し替えられます。
+
+## YouTube の Content ID で「G線上のアリア」が申し立てられた場合
+
+YouTube では「著作権 - メロディーまたは歌詞: Orchestral Suite No. 3 In D Major BWV1068: II. "Air On A G String"」として全世界でブロックされました。
+曲そのもの(1730年頃作曲)も演奏(米国政府の著作物)もパブリックドメインなので、異議申し立てはできます。ただし、メロディーで照合されているため、別の演奏に差し替えても同じように引っかかる可能性が高いです。
+
+すぐ公開したい場合は、自作BGM版(`upload/worst_accidents_final_bgm_original.mp4`)を使ってください。
+
+```bash
+QUERY='?bgm=original' node capture.js output/worst_accidents_bgm_original.mp4   # 最後のクレジットを「BGM: オリジナル」にする
+BGM=original python3 narrate.py output/worst_accidents_bgm_original.mp4 output/worst_accidents_bgm_original_narrated.mp4
+./export_upload.sh output/worst_accidents_bgm_original_narrated.mp4 worst_accidents_final_bgm_original.mp4
+```
+
+`bgm.py` は打音なしの静かなパッドとアルペジオ(Dマイナー)を numpy で合成します。外部音源を使わないので権利表記は不要です。

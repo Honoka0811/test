@@ -10,7 +10,7 @@ const fs = require('fs');
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
-  await page.goto('file://' + path.join(__dirname, 'render.html'));
+  await page.goto('file://' + path.join(__dirname, 'render.html') + (process.env.QUERY || ''));
   await page.evaluate(() => document.fonts.ready);
   const { FPS, DURATION } = await page.evaluate(() => ({ FPS: window.FPS, DURATION: window.DURATION }));
   const total = FPS * DURATION;
