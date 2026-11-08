@@ -1,0 +1,37 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Main,Noto Sans CJK JP Black,112,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,1,12,6,5,40,40,40,1
+Style: Whisper,Noto Sans CJK JP Black,100,&H00E8E8F2,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,2,0,1,10,5,5,40,40,40,1
+Style: Title,Noto Sans CJK JP Black,58,&H000AD6FF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,1,0,1,8,3,5,40,40,40,1
+Style: Credit,Noto Sans CJK JP,34,&H00B8B8B8,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,5,0,2,40,40,46,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:54.57,Title,,0,0,0,,{\pos(540,300)\fad(300,300)}【注意】カルト勧誘の手口
+Dialogue: 0,0:00:00.00,0:00:54.57,Credit,,0,0,0,,VOICEVOX:四国めたん
+Dialogue: 1,0:00:00.35,0:00:02.81,Whisper,,0,0,0,,{\pos(540,1170)}{\fad(260,200)\blur2.2}ねえ……\N知ってた？
+Dialogue: 1,0:00:02.88,0:00:06.93,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}カルトの勧誘は\N絶対に{\c&H303BFF&}「宗教」{\c&HFFFFFF&}と\N名乗らない
+Dialogue: 1,0:00:06.98,0:00:10.07,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}ヨガ教室\N自己啓発セミナー\Nボランティア
+Dialogue: 1,0:00:10.07,0:00:13.43,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}入り口は全部\N{\c&H0AD6FF&}普通の顔{\c&HFFFFFF&}をしてる
+Dialogue: 1,0:00:13.48,0:00:17.80,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}ハマる仕組みを\N{\c&H0AD6FF&}３つ{\c&HFFFFFF&}だけ教えるね
+Dialogue: 1,0:00:17.86,0:00:20.15,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H303BFF&}①ラブボンビング
+Dialogue: 1,0:00:20.15,0:00:23.06,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}初対面なのに\N全員が褒めまくる
+Dialogue: 1,0:00:23.06,0:00:25.51,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H0AD6FF&}孤独なとき{\c&HFFFFFF&}ほど\N効いてしまう
+Dialogue: 1,0:00:25.56,0:00:27.65,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H303BFF&}②小さな要求から
+Dialogue: 1,0:00:27.65,0:00:30.55,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}無料のお茶会\N→ 勉強会
+Dialogue: 1,0:00:30.55,0:00:33.60,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}気づけば\N{\c&H0AD6FF&}お布施とノルマ
+Dialogue: 1,0:00:33.65,0:00:35.16,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H303BFF&}③サンクコスト
+Dialogue: 1,0:00:35.16,0:00:37.28,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}「ここまで\Nやったんだから…」
+Dialogue: 1,0:00:37.28,0:00:39.91,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}時間とお金が\N{\c&H0AD6FF&}あなたを縛る
+Dialogue: 1,0:00:39.97,0:00:42.53,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}狙われるのは\N弱い人じゃない
+Dialogue: 1,0:00:42.53,0:00:45.66,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}真面目で優しくて\N{\c&H0AD6FF&}ちょっと疲れてる人
+Dialogue: 1,0:00:45.72,0:00:48.09,Whisper,,0,0,0,,{\pos(540,1170)}{\fad(260,200)\blur2.2}……今の{\c&H303BFF&}あなた{\c&HFFFFFF&}、かも
+Dialogue: 1,0:00:48.18,0:00:51.01,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}守る方法は\N{\c&H0AD6FF&}コメント欄に固定{\c&HFFFFFF&}
+Dialogue: 1,0:00:51.01,0:00:53.84,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}大切な人に\Nシェアしてね
