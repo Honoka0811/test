@@ -13,8 +13,8 @@ FALLBACK_IDS = {"normal": 2, "whisper": 36, "hiso": 37}  # 四国めたん
 # スタイル別の調整（ささやき系は音量が小さいので持ち上げる）
 TUNE = {
     "normal": dict(speedScale=1.17, pitchScale=-0.02, intonationScale=1.15, volumeScale=1.0),
-    "whisper": dict(speedScale=1.05, pitchScale=0.0, intonationScale=1.0, volumeScale=1.9),
-    "hiso": dict(speedScale=1.08, pitchScale=0.0, intonationScale=1.0, volumeScale=1.9),
+    "whisper": dict(speedScale=1.05, pitchScale=0.0, intonationScale=1.0, volumeScale=1.1),
+    "hiso": dict(speedScale=1.08, pitchScale=0.0, intonationScale=1.0, volumeScale=1.1),
 }
 
 
