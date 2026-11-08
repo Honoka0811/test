@@ -1,0 +1,8 @@
+{
+  "name": "paper-fold-moon",
+  "private": true,
+  "description": "紙を42回折ると月に届く — YouTube ショート動画",
+  "dependencies": {
+    "@fontsource/noto-sans-jp": "^5.0.0"
+  }
+}

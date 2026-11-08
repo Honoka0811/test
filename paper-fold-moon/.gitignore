@@ -1,0 +1,5 @@
+node_modules/
+output/*
+!output/timeline.json
+!output/events.json
+!output/subtitles_ja.srt

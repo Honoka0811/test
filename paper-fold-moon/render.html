@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>紙を42回折ると月に届く</title>
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; height: 100vh; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+'use strict';
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"Noto Sans JP", "IPAGothic", sans-serif';
+const GOLD = '#FFD84D', RED = '#FF4D5E', CYAN = '#5CE1FF', WHITE = '#FFFFFF', GREY = '#A9B0C9';
+
+let TL = null;           // output/timeline.json
+const LINE = {};         // id -> line
+
+// ---------- 数学ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => { k = clamp(k); return k * k * (3 - 2 * k); };
+const easeOut = k => { k = clamp(k); return 1 - Math.pow(1 - k, 3); };
+const easeIn = k => { k = clamp(k); return k * k * k; };
+const backOut = k => { k = clamp(k); const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+// 0→1 に「ポン」と出る(オーバーシュート付き)
+const pop = (t, t0, d = 0.32) => t < t0 ? 0 : backOut((t - t0) / d);
+const fadeIn = (t, t0, d = 0.25) => clamp((t - t0) / d);
+const fadeOut = (t, t1, d = 0.25) => 1 - clamp((t - t1) / d);
+
+// ---------- タイムライン参照 ----------
+const S = id => LINE[id].start;
+const E = id => LINE[id].start + LINE[id].dur;
+// 行 id のアクセント句のうち kana で始まる最初のものの絶対時刻
+function M(id, kana) {
+  const l = LINE[id];
+  const m = l.marks.find(m => m[0].startsWith(kana));
+  if (!m) throw new Error('mark not found: ' + id + ' ' + kana);
+  return l.start + m[1];
+}
+function lineAt(t) {
+  let cur = TL.lines[0];
+  for (const l of TL.lines) if (t >= l.start - 0.12) cur = l;
+  return cur;
+}
+
+// ---------- 演出イベント(画面の揺れ・フラッシュ・効果音の共通ソース) ----------
+let EVENTS = [];
+function buildEvents() {
+  const ev = [];
+  const add = (t, type, extra = {}) => ev.push(Object.assign({ t: +t.toFixed(3), type }, extra));
+  add(0, 'whoosh');
+  add(M('hook', 'イチミリノ'), 'pop');
+  add(M('hook', 'ヨンジュウニ'), 'hit');
+  add(M('hook', 'ツキニ') - 0.25, 'whoosh');
+  add(M('hook', 'トドキマス'), 'impact');
+  add(S('doubt'), 'whoosh');
+  add(M('doubt', 'ケエサン'), 'pop');
+  add(M('doubt', 'ホントオナ'), 'stamp');
+  add(S('f10') - 0.1, 'whoosh');
+  // 折るたびのカチッ音(foldCount が整数で増えた瞬間)
+  let prev = 0;
+  for (let t = S('f10'); t < E('f42'); t += 1 / 120) {
+    const n = Math.floor(foldCount(t));
+    if (n > prev) { add(t, 'tick', { n }); prev = n; }
+  }
+  add(S('f20') - 0.05, 'whoosh');
+  add(S('f30') - 0.05, 'whoosh');
+  add(M('f10', 'ジュッセンチ'), 'ding');
+  add(M('f20', 'ヒャクメエトル'), 'ding');
+  add(M('f30', 'ヒャッキロ'), 'ding');
+  add(S('f42'), 'riser', { until: M('f42', 'コエマシタ') });
+  add(M('f42', 'ヨンジュウ'), 'ding');
+  add(M('f42', 'コエマシタ'), 'impact', { big: true });
+  add(S('half') - 0.05, 'whoosh');
+  for (let i = 0; i < 4; i++) add(barTime(38 + i), 'pop', { n: i });
+  add(M('half', 'ヨンジュウ'), 'ding');
+  add(S('last') - 0.05, 'whoosh');
+  add(M('last', 'イッカイデ'), 'impact');
+  add(S('life') - 0.05, 'whoosh');
+  add(M('life', 'サンジュウ'), 'hit');
+  add(M('lazy', 'レイテン'), 'down');
+  add(M('lazy', 'バイ') + 0.6, 'pop');
+  add(S('quit') - 0.05, 'whoosh');
+  add(M('quit', 'ヨンジュウ'), 'impact');
+  add(S('ask') - 0.05, 'whoosh');
+  add(M('ask', 'ナンカイメデスカ'), 'hit');
+  ev.sort((a, b) => a.t - b.t);
+  return ev;
+}
+function impulses(t, types, decay) {
+  let s = 0;
+  for (const e of EVENTS) {
+    if (!types.includes(e.type) || t < e.t || t > e.t + 1.2) continue;
+    const amp = (e.big ? 2.2 : 1) * Math.exp(-(t - e.t) * decay);
+    s += amp;
+  }
+  return s;
+}
+function shake(t) {
+  const a = impulses(t, ['impact', 'stamp', 'hit'], 9) * 18;
+  return [a * Math.sin(t * 91.0), a * Math.cos(t * 77.0)];
+}
+function flash(t) {
+  return clamp(impulses(t, ['impact'], 7) * 0.55) + (t < 0.25 ? 1 - t / 0.25 : 0);
+}
+
+// ---------- 折った回数 ----------
+function ramp(t, t0, t1, a, b, p = 1) { return lerp(a, b, Math.pow(clamp((t - t0) / (t1 - t0)), p)); }
+function foldCount(t) {
+  if (t < S('f10')) return 0;
+  if (t < S('f20')) return ramp(t, S('f10') + 0.35, M('f10', 'ジュッカイデ') + 0.05, 0, 10.001, 1.25);
+  if (t < S('f30')) return ramp(t, S('f20'), S('f20') + 0.85, 10, 20.001);
+  if (t < S('f42')) return ramp(t, S('f30'), S('f30') + 0.9, 20, 30.001);
+  if (t < E('f42') + 0.4) return ramp(t, S('f42') + 0.2, M('f42', 'カイメ'), 30, 42.001, 0.85);
+  return 42;
+}
+const thickness = n => 0.0001 * Math.pow(2, n); // m
+function fmtLen(h) {
+  if (h < 0.01) return (h * 1000).toFixed(1) + 'mm';
+  if (h < 1) return (h * 100).toFixed(1) + 'cm';
+  if (h < 1000) return h.toFixed(h < 10 ? 1 : 0) + 'm';
+  const km = h / 1000;
+  if (km < 10000) return Math.round(km).toLocaleString('ja-JP') + 'km';
+  return (km / 10000).toFixed(1) + '万km';
+}
+function barTime(n) { // half シーンで 38〜41回目の棒が出る時刻
+  const a = M('half', 'ココカラデス'), b = M('half', 'ヨンジュウ');
+  return lerp(a, b, (n - 38) / 3);
+}
+
+// ---------- 描画ヘルパー ----------
+function font(size, w = 900) { ctx.font = `${w} ${size}px ${FONT}`; }
+// segs: [[文字列, 色], ...] を中央揃えで縁取り付き描画
+function rich(segs, x, y, size, opt = {}) {
+  if (typeof segs === 'string') segs = [[segs, opt.color || WHITE]];
+  font(size, opt.weight || 900);
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const ws = segs.map(s => ctx.measureText(s[0]).width);
+  const total = ws.reduce((a, b) => a + b, 0);
+  let cx = opt.align === 'left' ? x : x - total / 2;
+  ctx.lineJoin = 'round';
+  ctx.miterLimit = 2;
+  const sw = opt.stroke === undefined ? size * 0.2 : opt.stroke;
+  segs.forEach((s, i) => {
+    if (sw > 0) {
+      ctx.strokeStyle = opt.strokeColor || 'rgba(0,0,0,0.92)';
+      ctx.lineWidth = sw;
+      ctx.strokeText(s[0], cx, y);
+    }
+    if (opt.glow) { ctx.shadowColor = s[1]; ctx.shadowBlur = opt.glow; }
+    ctx.fillStyle = s[1];
+    ctx.fillText(s[0], cx, y);
+    ctx.shadowBlur = 0;
+    cx += ws[i];
+  });
+  return total;
+}
+// k(0..1+)でスケールしながら出す
+function popText(segs, x, y, size, k, opt = {}) {
+  if (k <= 0) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(k, k);
+  ctx.globalAlpha *= clamp(k * 1.5);
+  rich(segs, 0, 0, size, opt);
+  ctx.restore();
+}
+// segs の右肩に指数 sup を付けて中央揃えで出す
+function powText(segs, sup, supColor, x, y, size, k, opt = {}) {
+  if (k <= 0) return;
+  font(size, 900);
+  const bw = segs.reduce((a, s) => a + ctx.measureText(s[0]).width, 0);
+  font(size * 0.45, 900);
+  const sw = ctx.measureText(sup).width;
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.globalAlpha *= clamp(k * 1.5);
+  rich(segs, -(bw + sw) / 2, 0, size, Object.assign({ align: 'left' }, opt));
+  rich([[sup, supColor]], -(bw + sw) / 2 + bw + 4, -size * 0.42, size * 0.45, { align: 'left' });
+  ctx.restore();
+}
+// 数字・単位を金色にする
+function highlight(line) {
+  const re = /(「?\d[\d.,]*(?:万km|万|km|cm|m|ミリ|倍|回目|回|%)?」?|月|宇宙|最後のたった1回|半分)/g;
+  const out = []; let last = 0, m;
+  while ((m = re.exec(line))) {
+    if (m.index > last) out.push([line.slice(last, m.index), WHITE]);
+    out.push([m[0], GOLD]);
+    last = m.index + m[0].length;
+  }
+  if (last < line.length) out.push([line.slice(last), WHITE]);
+  return out;
+}
+
+// ---------- 背景 ----------
+const PAL = {
+  space:  ['#05061a', '#151a46', 1.0],
+  dusk:   ['#1a1033', '#4b2b6b', 0.25],
+  sky:    ['#2f6fd0', '#9fd2ff', 0.0],
+  upper:  ['#020616', '#173a86', 0.8],
+  deep:   ['#000006', '#0a0d2e', 1.0],
+  chart:  ['#070a1c', '#182046', 0.6],
+  grow:   ['#06141a', '#0f3b3f', 0.5],
+  night:  ['#020208', '#0d0b26', 0.9],
+};
+const SCENE_PAL = { hook: 'space', doubt: 'space', f10: 'dusk', f20: 'sky', f30: 'upper', f42: 'deep',
+  half: 'chart', last: 'chart', life: 'grow', lazy: 'grow', quit: 'night', ask: 'space' };
+function hex2rgb(h) { return [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); }
+function mixc(a, b, k) { const A = hex2rgb(a), B = hex2rgb(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], k))).join(',')})`; }
+function palAt(t) {
+  let idx = 0;
+  TL.lines.forEach((l, i) => { if (t >= l.start - 0.3) idx = i; });
+  const cur = PAL[SCENE_PAL[TL.lines[idx].id]];
+  const prev = idx > 0 ? PAL[SCENE_PAL[TL.lines[idx - 1].id]] : cur;
+  const k = ease((t - (TL.lines[idx].start - 0.3)) / 0.6);
+  return [mixc(prev[0], cur[0], k), mixc(prev[1], cur[1], k), lerp(prev[2], cur[2], k)];
+}
+function drawBG(t) {
+  const [top, bot, stars] = palAt(t);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, top); g.addColorStop(1, bot);
+  ctx.fillStyle = g;
+  ctx.fillRect(-60, -60, W + 120, H + 120);
+  if (stars > 0.01) {
+    for (let i = 0; i < 170; i++) {
+      const x = rnd(i) * W, y = rnd(i + 500) * H;
+      const r = 0.8 + rnd(i + 900) * 2.4;
+      const tw = 0.55 + 0.45 * Math.sin(t * (1 + rnd(i + 77) * 3) + i);
+      // ゆっくり下へ流れる(上昇している感覚)
+      const speed = 6 + rnd(i + 31) * 30;
+      const yy = (y + t * speed) % H;
+      ctx.globalAlpha = stars * tw * 0.9;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(x, yy, r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.25, W / 2, H * 0.45, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(-60, -60, W + 120, H + 120);
+}
+
+// ---------- イラスト ----------
+function drawMoon(x, y, r, glow = 1) {
+  ctx.save();
+  const g = ctx.createRadialGradient(x, y, r * 0.8, x, y, r * 2.4);
+  g.addColorStop(0, `rgba(255,236,180,${0.45 * glow})`); g.addColorStop(1, 'rgba(255,236,180,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2.4, 0, Math.PI * 2); ctx.fill();
+  const b = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+  b.addColorStop(0, '#fffbe8'); b.addColorStop(0.7, '#f0dfa8'); b.addColorStop(1, '#c9b27a');
+  ctx.fillStyle = b; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(150,125,80,0.35)';
+  [[-0.3, -0.2, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.42, 0.12], [0.42, -0.35, 0.1], [-0.5, 0.25, 0.08]].forEach(([dx, dy, rr]) => {
+    ctx.beginPath(); ctx.arc(x + dx * r, y + dy * r, rr * r, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+}
+function drawPaperSheet(x, y, w, h, tilt) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.transform(1, 0, -0.35 * tilt, 1, 0, 0);
+  ctx.shadowColor = 'rgba(160,200,255,0.6)'; ctx.shadowBlur = 40;
+  ctx.fillStyle = '#fbfbff';
+  ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(80,90,130,0.25)'; ctx.lineWidth = 3;
+  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(-w / 2 + 20, -h / 2 + i * h / 6); ctx.lineTo(w / 2 - 20, -h / 2 + i * h / 6); ctx.stroke(); }
+  ctx.restore();
+}
+// 紙の柱(下端 baseY から高さ hpx)
+function drawColumn(x, baseY, hpx, w = 70) {
+  if (hpx <= 0) return;
+  ctx.save();
+  const g = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+  g.addColorStop(0, '#d9def0'); g.addColorStop(0.5, '#ffffff'); g.addColorStop(1, '#c4cbe4');
+  ctx.shadowColor = 'rgba(255,255,255,0.75)'; ctx.shadowBlur = 30;
+  ctx.fillStyle = g;
+  ctx.fillRect(x - w / 2, baseY - hpx, w, hpx);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(90,100,140,0.35)'; ctx.lineWidth = 2;
+  for (let y = baseY - 9; y > baseY - hpx; y -= 9) { ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x + w / 2, y); ctx.stroke(); }
+  // 先端の光
+  const tg = ctx.createRadialGradient(x, baseY - hpx, 0, x, baseY - hpx, 90);
+  tg.addColorStop(0, 'rgba(255,240,160,0.9)'); tg.addColorStop(1, 'rgba(255,240,160,0)');
+  ctx.fillStyle = tg; ctx.beginPath(); ctx.arc(x, baseY - hpx, 90, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function drawPhone(x, baseY, h) {
+  const w = h * 0.49;
+  ctx.save();
+  ctx.fillStyle = '#1b1d26'; ctx.strokeStyle = '#8890b0'; ctx.lineWidth = 6;
+  roundRect(x - w / 2, baseY - h, w, h, w * 0.16); ctx.fill(); ctx.stroke();
+  const g = ctx.createLinearGradient(0, baseY - h, 0, baseY);
+  g.addColorStop(0, '#5b7cff'); g.addColorStop(1, '#ff6fb1');
+  ctx.fillStyle = g; roundRect(x - w / 2 + 12, baseY - h + 26, w - 24, h - 52, w * 0.1); ctx.fill();
+  ctx.restore();
+}
+function drawBuilding(x, baseY, h) {
+  const w = 240;
+  ctx.save();
+  ctx.fillStyle = '#1d2b4a';
+  ctx.fillRect(x - w / 2, baseY - h, w, h);
+  ctx.fillStyle = '#ffe38a';
+  const floors = 30, fh = h / floors;
+  for (let f = 0; f < floors; f++) for (let c = 0; c < 5; c++) {
+    if (rnd(f * 7 + c) < 0.35) continue;
+    ctx.globalAlpha = 0.55 + 0.45 * rnd(f * 13 + c);
+    ctx.fillRect(x - w / 2 + 18 + c * 44, baseY - h + f * fh + fh * 0.25, 26, fh * 0.5);
+  }
+  ctx.restore();
+}
+function drawEarth(t, y) {
+  ctx.save();
+  const R = 1600;
+  const cx = W / 2, cy = y + R;
+  const atm = ctx.createRadialGradient(cx, cy, R, cx, cy, R + 120);
+  atm.addColorStop(0, 'rgba(120,200,255,0.75)'); atm.addColorStop(1, 'rgba(120,200,255,0)');
+  ctx.fillStyle = atm; ctx.beginPath(); ctx.arc(cx, cy, R + 120, 0, Math.PI * 2); ctx.fill();
+  const g = ctx.createLinearGradient(0, y, 0, y + 400);
+  g.addColorStop(0, '#3f8ff0'); g.addColorStop(1, '#0b2d66');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function dashedLine(x1, y1, x2, y2, color, w = 5, dash = [18, 14], off = 0) {
+  ctx.save(); ctx.setLineDash(dash); ctx.lineDashOffset = off;
+  ctx.strokeStyle = color; ctx.lineWidth = w;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function pill(text, x, y, size, bg, fg) {
+  font(size, 900);
+  const w = ctx.measureText(text).width + size * 1.2, h = size * 1.6;
+  ctx.fillStyle = bg; roundRect(x - w / 2, y - h / 2, w, h, h / 2); ctx.fill();
+  ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y + size * 0.04);
+  ctx.textAlign = 'left';
+}
+
+// ---------- 共通 UI ----------
+function drawHeader(t) {
+  const a = fadeIn(t, S('doubt') - 0.1, 0.3);
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  pill('紙を42回折ると…？', W / 2, 205, 44, 'rgba(255,216,77,0.95)', '#14152a');
+  ctx.globalAlpha = 1;
+}
+function drawFoldBar(t, n) {
+  // 42マスの進捗バー
+  const x0 = 110, x1 = 970, y = 300, gap = 4;
+  const w = (x1 - x0 - gap * 41) / 42;
+  for (let i = 0; i < 42; i++) {
+    const on = i < Math.floor(n);
+    ctx.fillStyle = on ? (i === 41 ? RED : GOLD) : 'rgba(255,255,255,0.18)';
+    ctx.fillRect(x0 + i * (w + gap), y, w, 22);
+  }
+}
+function drawSubtitle(t) {
+  const l = lineAt(t);
+  if (t > l.start + l.dur + 0.5) return;
+  const k = pop(t, l.start - 0.08, 0.22);
+  const lines = l.text.split('\n');
+  const y0 = 1395;
+  ctx.save();
+  // 読みやすさのための帯
+  ctx.globalAlpha = 0.5 * clamp(k);
+  const bg = ctx.createLinearGradient(0, y0 - 110, 0, y0 + 200);
+  bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(0.3, 'rgba(0,0,0,0.75)'); bg.addColorStop(0.8, 'rgba(0,0,0,0.75)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = bg; ctx.fillRect(0, y0 - 110, W, 310);
+  ctx.restore();
+  lines.forEach((s, i) => {
+    let size = 66;
+    font(size); while (ctx.measureText(s).width > 960) { size -= 2; font(size); }
+    popText(highlight(s), W / 2, y0 + i * 92, size, lerp(0.85, 1, clamp(k)) * (k > 0 ? 1 : 0), { stroke: size * 0.22 });
+  });
+}
+
+// ---------- シーン ----------
+function sceneHook(t) {
+  const paperK = pop(t, M('hook', 'アツサ'), 0.45);
+  const y = 1080;
+  if (paperK > 0) {
+    ctx.save(); ctx.translate(W / 2, y); ctx.scale(paperK, paperK);
+    drawPaperSheet(0, 0, 420, 300, 1);
+    ctx.restore();
+  }
+  popText([['厚さ ', WHITE], ['0.1mm', CYAN], [' の紙', WHITE]], W / 2, 1270, 64, pop(t, M('hook', 'レイテン')));
+  // 月が上から降りてきて、紙から点線が伸びる
+  const mk = easeOut((t - (M('hook', 'ツキニ') - 0.3)) / 0.6);
+  if (mk > 0) {
+    drawMoon(820, lerp(-200, 330, mk), 120, mk);
+    const lk = easeOut((t - M('hook', 'ツキニ')) / 0.5);
+    if (lk > 0) dashedLine(W / 2 + 60, y - 160, lerp(W / 2 + 60, 790, lk), lerp(y - 160, 440, lk), GOLD, 7, [20, 14], -t * 120);
+  }
+  // 最初の1フレームから結論の手前を見せて、スクロールを止める
+  const big = 1 + 0.12 * Math.exp(-Math.max(0, t - M('hook', 'ヨンジュウニ')) * 8) * (t > M('hook', 'ヨンジュウニ') ? 1 : 0);
+  popText([['42', GOLD], ['回', WHITE]], W / 2, 600, 300, pop(t, 0.0, 0.3) * big, { glow: 40 });
+  popText('折ると…', W / 2, 800, 96, pop(t, 0.12));
+  popText([['月に届く', GOLD]], W / 2, 960, 130, pop(t, M('hook', 'トドキマス'), 0.3), { glow: 30 });
+}
+function sceneDoubt(t) {
+  const t0 = S('doubt');
+  const q = pop(t, t0, 0.35) * fadeOut(t, M('doubt', 'デモ'), 0.25);
+  if (q > 0) {
+    ctx.save(); ctx.translate(W / 2, 760); ctx.rotate(0.12 * Math.sin(t * 9));
+    popText([['？', GOLD]], 0, 0, 520, q, { glow: 30 });
+    ctx.restore();
+    popText('ウソでしょ…', W / 2, 1120, 100, pop(t, M('doubt', 'オモイマシタ')) * fadeOut(t, M('doubt', 'デモ')));
+  }
+  const fk = pop(t, M('doubt', 'ケエサン'));
+  powText([['0.1mm', CYAN], [' × 2', WHITE]], '42', GOLD, W / 2, 700, 120, fk);
+  popText([['= 月まで届く？', WHITE]], W / 2, 860, 92, pop(t, M('doubt', 'スルト')));
+  // 「本当」スタンプ
+  const sk = t < M('doubt', 'ホントオナ') ? 0 : clamp(1 + 1.5 * (1 - easeOut((t - M('doubt', 'ホントオナ')) / 0.18)), 0, 2.5);
+  if (sk > 0) {
+    ctx.save(); ctx.translate(W / 2, 1100); ctx.rotate(-0.18); ctx.scale(sk, sk);
+    ctx.strokeStyle = RED; ctx.lineWidth = 16;
+    roundRect(-230, -95, 460, 190, 30); ctx.stroke();
+    rich([['本当', RED]], 0, 4, 140, { stroke: 0 });
+    ctx.restore();
+  }
+}
+function foldHUD(t, n, a) {
+  ctx.globalAlpha = a;
+  drawFoldBar(t, n);
+  const ni = Math.floor(n);
+  // 数字が増えるたびに少し跳ねる
+  const bump = 1 + 0.18 * Math.exp(-((n % 1) * 6)) * (n < 42 || t < E('f42') ? 1 : 0);
+  popText([[String(ni), GOLD], ['回', WHITE]], W / 2, 470, 190, a * bump, { glow: 25 });
+  popText([['厚さ 約', WHITE], [fmtLen(thickness(ni)), CYAN]], W / 2, 640, 84, a);
+  ctx.globalAlpha = 1;
+}
+function footnote(t, a) {
+  if (a <= 0) return;
+  ctx.globalAlpha = a * 0.85;
+  rich([['※計算上の話。実際に紙を折れた最高記録は12回です', GREY]], W / 2, 1290, 30, { stroke: 6, weight: 700 });
+  ctx.globalAlpha = 1;
+}
+function sceneFold(t, id) {
+  const n = foldCount(t);
+  const base = 1240, top = 760;
+  const colX = 400, lmX = 680;
+  const hCont = thickness(n);
+  if (id === 'f10') {
+    const LH = 380, ref = 0.15;
+    drawPhone(lmX, base, LH);
+    rich([['スマホ 約15cm', GREY]], lmX, base - LH - 40, 40, { stroke: 8 });
+    drawColumn(colX, base, Math.min(base - top, LH * hCont / ref));
+  } else if (id === 'f20') {
+    const LH = 440, ref = 100;
+    drawBuilding(lmX, base, LH);
+    rich([['30階建てビル 約100m', GREY]], lmX, base - LH - 40, 40, { stroke: 8 });
+    drawColumn(colX, base, Math.min(base - top + 20, LH * hCont / ref));
+  } else if (id === 'f30') {
+    drawEarth(t, base - 20);
+    const LH = 400, ref = 100000;
+    const ly = base - LH;
+    dashedLine(90, ly, 990, ly, CYAN, 4, [16, 12], -t * 60);
+    rich([['ここから宇宙(100km)', CYAN]], 700, ly - 40, 40, { stroke: 8 });
+    drawColumn(colX, base, Math.min(base - top + 20, LH * hCont / ref));
+  } else if (id === 'f42') {
+    drawEarth(t, base - 20);
+    // 柱が月へ。ヨンジュウ(44万km)で月の手前、コエマシタで月を貫く
+    const moonY = 830;
+    const tHit = M('f42', 'コエマシタ');
+    const mk = easeOut((t - S('f42')) / 0.7);
+    drawMoon(W / 2 + 120, lerp(-260, moonY, mk), 130, 1 + impulses(t, ['impact'], 3));
+    const k1 = ease((t - S('f42') - 0.2) / (M('f42', 'ツキマデノ') - S('f42') - 0.2));
+    const k2 = easeIn((t - (tHit - 0.35)) / 0.35);
+    const hp = lerp(0, base - moonY - 170, k1) + k2 * 330 + (t > tHit ? (t - tHit) * 30 : 0);
+    const ml = fadeIn(t, M('f42', 'ツキマデノ'));
+    if (ml > 0) {
+      ctx.globalAlpha = ml;
+      dashedLine(90, moonY, 990, moonY, GOLD, 4, [16, 12], -t * 60);
+      rich([['月まで 38万km', GOLD]], 250, moonY - 46, 44, { stroke: 9 });
+      ctx.globalAlpha = 1;
+    }
+    drawColumn(W / 2 - 60, base, hp, 64);
+    const hk = pop(t, tHit, 0.3);
+    if (hk > 0) {
+      ctx.save(); ctx.translate(W / 2, 1110); ctx.rotate(-0.08);
+      popText([['月を超えた！', RED]], 0, 0, 120, hk, { glow: 30, strokeColor: '#fff', stroke: 22 });
+      ctx.restore();
+    }
+  }
+  foldHUD(t, n, 1);
+  footnote(t, 1);
+}
+function chartBars(t, show42, gold42) {
+  const x0 = 150, x1 = 930, base = 1210, hmax = 620;
+  const n = 5, gap = 36, bw = (x1 - x0 - gap * (n - 1)) / n;
+  const moonFrac = 384400 / 439805;
+  // 月ライン
+  const my = base - hmax * moonFrac;
+  dashedLine(x0 - 40, my, x1 + 20, my, GOLD, 4, [16, 12], -t * 50);
+  drawMoon(x0 - 10, my - 64, 40, 0.6);
+  rich([['月 38万km', GOLD]], x0 + 130, my - 36, 38, { stroke: 8 });
+  for (let i = 0; i < n; i++) {
+    const fold = 38 + i;
+    const frac = Math.pow(2, fold - 42);
+    const x = x0 + i * (bw + gap);
+    let k;
+    if (fold < 42) k = easeOut((t - barTime(fold)) / 0.35);
+    else k = show42 ? easeOut((t - show42) / 0.6) : 0;
+    // 42回目は枠だけ先に見せる
+    if (fold === 42 && !show42) {
+      ctx.save(); ctx.setLineDash([12, 10]); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 4;
+      ctx.strokeRect(x, base - hmax, bw, hmax); ctx.restore();
+      rich([['?', 'rgba(255,255,255,0.6)']], x + bw / 2, base - hmax / 2, 90, { stroke: 0 });
+    }
+    if (k > 0) {
+      const h = hmax * frac * k;
+      const hl = fold === 41 && t > M('half', 'ヨンジュウ');
+      ctx.fillStyle = hl ? CYAN : 'rgba(200,210,255,0.85)';
+      if (fold === 42) {
+        // 下半分(=41回目までの量)と、上半分(=最後の1回で増えた分)
+        const half = Math.min(h, hmax * 0.5);
+        ctx.fillStyle = 'rgba(200,210,255,0.85)';
+        ctx.fillRect(x, base - half, bw, half);
+        if (h > half) {
+          ctx.fillStyle = GOLD;
+          ctx.shadowColor = GOLD; ctx.shadowBlur = gold42 ? 30 + 20 * Math.sin(t * 8) : 0;
+          ctx.fillRect(x, base - h, bw, h - half);
+          ctx.shadowBlur = 0;
+        }
+      } else ctx.fillRect(x, base - h, bw, h);
+    }
+    rich([[fold + '回', fold === 42 ? GOLD : WHITE]], x + bw / 2, base + 50, 44, { stroke: 8 });
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(x0 - 40, base, x1 - x0 + 60, 4);
+  return { x0, x1, base, hmax, bw, gap };
+}
+function sceneHalf(t) {
+  popText([['本当にすごいのは', WHITE]], W / 2, 330, 80, pop(t, S('half')));
+  popText([['ここから', GOLD]], W / 2, 440, 110, pop(t, M('half', 'ココカラデス')), { glow: 20 });
+  chartBars(t, null, false);
+  const k = pop(t, M('half', 'ヨンジュウ'));
+  if (k > 0) {
+    const x = 150 + 3 * ((930 - 150 - 36 * 4) / 5 + 36) + 63;
+    popText([['22万km', CYAN]], x, 1210 - 310 - 60, 50, k);
+  }
+  popText([['まだ 月の57%', CYAN]], W / 2, 560, 76, pop(t, M('half', 'ハンブン')));
+}
+function sceneLast(t) {
+  const t42 = S('last') + 0.1;
+  const g = t > M('last', 'ハンブンワ');
+  const c = chartBars(t, t42, g);
+  // 括弧と注記
+  const k = pop(t, M('last', 'サイゴノ'));
+  if (k > 0) {
+    const x = c.x0 + 4 * (c.bw + c.gap);
+    ctx.save(); ctx.globalAlpha = clamp(k);
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(x - 20, c.base - c.hmax); ctx.lineTo(x - 40, c.base - c.hmax); ctx.lineTo(x - 40, c.base - c.hmax / 2); ctx.lineTo(x - 20, c.base - c.hmax / 2); ctx.stroke();
+    ctx.restore();
+    popText([['最後の1回', GOLD]], x - 210, c.base - c.hmax * 0.68, 56, k);
+  }
+  popText([['全体の', WHITE], ['半分', GOLD], ['は', WHITE]], W / 2, 340, 90, pop(t, M('last', 'ゼンタイノ')));
+  popText([['最後の', WHITE], ['1回', GOLD], ['で生まれる', WHITE]], W / 2, 470, 96, pop(t, M('last', 'イッカイデ')), { glow: 20 });
+}
+function growthChart(t, upK, downK) {
+  const x0 = 140, x1 = 940, base = 1220, top = 720;
+  const yOf = v => base - (base - top) * v / 40;
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x0, top - 20); ctx.lineTo(x0, base); ctx.lineTo(x1 + 10, base); ctx.stroke();
+  rich([['1年後', GREY]], x1 - 40, base + 44, 36, { stroke: 7 });
+  rich([['今日', GREY]], x0 + 10, base + 44, 36, { stroke: 7 });
+  dashedLine(x0, yOf(1), x1, yOf(1), 'rgba(255,255,255,0.3)', 2, [8, 8]);
+  const curve = (f, k, color, w) => {
+    if (k <= 0) return null;
+    const days = 365 * k;
+    ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.shadowColor = color; ctx.shadowBlur = 18;
+    ctx.beginPath();
+    for (let d = 0; d <= days; d += 2) {
+      const x = lerp(x0, x1, d / 365), y = yOf(Math.pow(f, d));
+      d === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke(); ctx.restore();
+    const ex = lerp(x0, x1, days / 365), ey = yOf(Math.pow(f, days));
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(ex, ey, 14, 0, Math.PI * 2); ctx.fill();
+    return [ex, ey, Math.pow(f, days)];
+  };
+  const u = curve(1.01, upK, GOLD, 10);
+  const d = curve(0.99, downK, CYAN, 10);
+  return { u, d };
+}
+function sceneLife(t, id) {
+  const upK = easeIn((t - M('life', 'マイニチ')) / (M('life', 'サンジュウ') - M('life', 'マイニチ'))) ;
+  const downK = id === 'lazy' ? ease((t - M('lazy', 'イチネンデ')) / (M('lazy', 'レイテン') - M('lazy', 'イチネンデ') + 0.2)) : 0;
+  const r = growthChart(t, upK, downK);
+  powText([['1.01', GOLD]], '365', GOLD, 300, 380, 120, pop(t, M('life', 'イチパアセント')));
+  if (r.u) {
+    const v = r.u[2];
+    const done = t > M('life', 'サンジュウ');
+    popText([['= ', WHITE], [done ? '37.8' : v.toFixed(1), GOLD], ['倍', WHITE]], 720, 380, 110, done ? pop(t, M('life', 'サンジュウ'), 0.3) : 1, { glow: done ? 25 : 0 });
+  }
+  if (id === 'lazy') {
+    powText([['0.99', CYAN]], '365', CYAN, 300, 560, 120, pop(t, M('lazy', 'イチパアセント')));
+    if (r.d) {
+      const done = t > M('lazy', 'レイテン');
+      popText([['= ', WHITE], [done ? '0.03' : r.d[2].toFixed(2), CYAN], ['倍', WHITE]], 720, 560, 110, done ? pop(t, M('lazy', 'レイテン'), 0.3) : 1);
+    }
+    popText([['その差 ', WHITE], ['約1,500倍', RED]], W / 2, 1060, 84, pop(t, M('lazy', 'バイ') + 0.6), { glow: 20 });
+  } else {
+    popText([['毎日 1%', GOLD], [' 成長すると', WHITE]], W / 2, 600, 64, pop(t, M('life', 'マイニチ')) * fadeOut(t, E('life') + 0.1));
+  }
+}
+function sceneQuit(t) {
+  const t0 = S('quit');
+  drawMoon(W / 2, 520, 120, 0.8 + 0.2 * Math.sin(t * 2));
+  // 41マス点灯、42マス目が点滅
+  ctx.save();
+  const x0 = 110, x1 = 970, y = 1000, gap = 4, w = (x1 - x0 - gap * 41) / 42;
+  const fill = ease((t - t0) / 1.6) * 41;
+  for (let i = 0; i < 42; i++) {
+    let c = 'rgba(255,255,255,0.15)';
+    if (i < fill) c = GOLD;
+    if (i === 41) c = `rgba(255,77,94,${0.25 + 0.75 * (0.5 + 0.5 * Math.sin(t * 7))})`;
+    ctx.fillStyle = c; ctx.fillRect(x0 + i * (w + gap), y, w, 40);
+  }
+  ctx.restore();
+  rich([['ここで やめる？', GREY]], W / 2, 1100, 46, { stroke: 8 });
+  popText([['成果が見えなくて', WHITE]], W / 2, 800, 70, pop(t, t0) * fadeOut(t, M('quit', 'ソレワ'), 0.2));
+  popText([['やめたくなった時', WHITE]], W / 2, 900, 70, pop(t, M('quit', 'ヤメタク')) * fadeOut(t, M('quit', 'ソレワ'), 0.2));
+  popText([['それは', WHITE]], W / 2, 790, 76, pop(t, M('quit', 'ソレワ')));
+  popText([['41回目', GOLD]], W / 2, 900, 150, pop(t, M('quit', 'ヨンジュウ'), 0.3), { glow: 40 });
+  popText([['かもしれない', WHITE]], W / 2, 1210, 76, pop(t, M('quit', 'シレマセン')));
+}
+function sceneAsk(t) {
+  const t0 = S('ask');
+  drawMoon(820, 400, 110, 1);
+  popText([['あなたは今', WHITE]], W / 2, 690, 100, pop(t, t0));
+  popText([['何回目？', GOLD]], W / 2, 860, 190, pop(t, M('ask', 'ナンカイメデスカ'), 0.35), { glow: 40 });
+  popText([['コメントで教えてね', WHITE]], W / 2, 1060, 64, pop(t, E('ask') + 0.2));
+  const ck = fadeIn(t, E('ask') + 0.4, 0.4);
+  if (ck > 0) {
+    ctx.globalAlpha = ck;
+    pill('保存して 明日も1回折ろう', W / 2, 1190, 50, RED, '#fff');
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const [sx, sy] = shake(t);
+  const l = lineAt(t);
+  // シーン切替時の軽いズームパンチ
+  const zp = 1 + 0.05 * Math.exp(-Math.max(0, t - (l.start - 0.12)) * 10);
+  ctx.translate(W / 2 + sx, H / 2 + sy);
+  ctx.scale(zp, zp);
+  ctx.translate(-W / 2, -H / 2);
+  drawBG(t);
+  const id = l.id;
+  if (id === 'hook') sceneHook(t);
+  else if (id === 'doubt') sceneDoubt(t);
+  else if (id.startsWith('f')) sceneFold(t, id);
+  else if (id === 'half') sceneHalf(t);
+  else if (id === 'last') sceneLast(t);
+  else if (id === 'life' || id === 'lazy') sceneLife(t, id);
+  else if (id === 'quit') sceneQuit(t);
+  else if (id === 'ask') sceneAsk(t);
+  drawHeader(t);
+  ctx.restore();
+  drawSubtitle(t);
+  // 右下のクレジット(左揃えで画面外にはみ出さないよう、幅を測って配置)
+  font(28, 700); const cw = ctx.measureText('VOICEVOX:四国めたん').width;
+  ctx.globalAlpha = 0.8;
+  rich([['VOICEVOX:四国めたん', '#e9eaf5']], W - 40 - cw, 1590, 28, { stroke: 6, weight: 700, align: 'left' });
+  ctx.globalAlpha = 1;
+  // フラッシュ
+  const f = flash(t);
+  if (f > 0) { ctx.fillStyle = `rgba(255,255,255,${clamp(f)})`; ctx.fillRect(0, 0, W, H); }
+  // 末尾は冒頭に向けてフェード(ループ再生で自然につながるように)
+  const endK = clamp((t - (TL.total - 0.35)) / 0.35);
+  if (endK > 0) { ctx.fillStyle = `rgba(5,6,26,${endK})`; ctx.fillRect(0, 0, W, H); }
+}
+
+async function init(tl) {
+  TL = tl;
+  TL.lines.forEach(l => LINE[l.id] = l);
+  EVENTS = buildEvents();
+  // 使う文字を全部先読み(フォントのサブセット読み込み待ち)
+  const chars = Array.from(new Set((document.documentElement.innerHTML + TL.lines.map(l => l.text).join('')).split(''))).join('');
+  await Promise.all(['900', '700'].map(w => document.fonts.load(`${w} 64px "Noto Sans JP"`, chars)));
+  await document.fonts.ready;
+  window.READY = true;
+}
+window.render = render;
+window.init = init;
+window.getEvents = () => EVENTS;
+window.getTotal = () => TL.total;
+
+// ブラウザで直接開いたときのプレビュー
+if (!window.CAPTURE) {
+  fetch('output/timeline.json').then(r => r.json()).then(init).then(() => {
+    const a = new Audio('output/narration.wav');
+    const t0 = performance.now();
+    a.play().catch(() => {});
+    const loop = () => { render(((performance.now() - t0) / 1000) % TL.total); requestAnimationFrame(loop); };
+    loop();
+  });
+}
+</script>
+</body>
+</html>
