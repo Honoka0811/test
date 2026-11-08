@@ -3,3 +3,4 @@ output/*
 !output/timeline.json
 !output/events.json
 !output/subtitles_ja.srt
+__pycache__/
