@@ -1,0 +1,42 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Main,Noto Sans CJK JP Black,112,&H00FFFFFF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,0,0,1,12,6,5,40,40,40,1
+Style: Whisper,Noto Sans CJK JP Black,100,&H00E8E8F2,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,2,0,1,10,5,5,40,40,40,1
+Style: Title,Noto Sans CJK JP Black,58,&H000AD6FF,&H000000FF,&H00000000,&H90000000,0,0,0,0,100,100,1,0,1,8,3,5,40,40,40,1
+Style: Note,Noto Sans CJK JP,30,&H009A9A9A,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,4,0,2,40,40,100,1
+Style: Credit,Noto Sans CJK JP,34,&H00B8B8B8,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,5,0,2,40,40,46,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:58.67,Title,,0,0,0,,{\pos(540,300)\fad(300,300)}日本の新興宗教 信者数TOP5
+Dialogue: 0,0:00:00.00,0:00:58.67,Note,,0,0,0,,※信者数は各団体の公称値
+Dialogue: 0,0:00:00.00,0:00:58.67,Credit,,0,0,0,,VOICEVOX:四国めたん
+Dialogue: 1,0:00:00.35,0:00:05.26,Whisper,,0,0,0,,{\pos(540,1170)}{\fad(260,200)\blur2.2}日本で一番\N信者が多い\N新興宗教…\N知ってる？
+Dialogue: 1,0:00:05.32,0:00:10.11,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}信者数ランキング\N{\c&H0AD6FF&}TOP5
+Dialogue: 1,0:00:10.16,0:00:11.72,Main,,0,0,0,,{\pos(540,1170)}{\fad(60,80)\fscx132\fscy132\t(0,110,\fscx100\fscy100)}{\fs170}{\c&H303BFF&}第5位
+Dialogue: 1,0:00:11.72,0:00:14.70,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}真如苑\N仏教系・1936年
+Dialogue: 1,0:00:14.70,0:00:17.24,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H0AD6FF&}約92万人
+Dialogue: 1,0:00:17.30,0:00:18.67,Main,,0,0,0,,{\pos(540,1170)}{\fad(60,80)\fscx132\fscy132\t(0,110,\fscx100\fscy100)}{\fs170}{\c&H303BFF&}第4位
+Dialogue: 1,0:00:18.67,0:00:21.82,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}天理教\N幕末創立の草分け
+Dialogue: 1,0:00:21.82,0:00:24.15,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H0AD6FF&}約110万人
+Dialogue: 1,0:00:24.21,0:00:25.63,Main,,0,0,0,,{\pos(540,1170)}{\fad(60,80)\fscx132\fscy132\t(0,110,\fscx100\fscy100)}{\fs170}{\c&H303BFF&}第3位
+Dialogue: 1,0:00:25.63,0:00:28.46,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}霊友会\N法華系・大正時代
+Dialogue: 1,0:00:28.46,0:00:30.64,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H0AD6FF&}約120万人
+Dialogue: 1,0:00:30.70,0:00:32.04,Main,,0,0,0,,{\pos(540,1170)}{\fad(60,80)\fscx132\fscy132\t(0,110,\fscx100\fscy100)}{\fs170}{\c&H303BFF&}第2位
+Dialogue: 1,0:00:32.04,0:00:34.38,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}立正佼成会\N霊友会から分派
+Dialogue: 1,0:00:34.38,0:00:36.27,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H0AD6FF&}約200万人
+Dialogue: 1,0:00:36.33,0:00:39.28,Whisper,,0,0,0,,{\pos(540,1170)}{\fad(260,200)\blur2.2}そして\N第1位は……
+Dialogue: 1,0:00:39.39,0:00:40.45,Main,,0,0,0,,{\pos(540,1170)}{\fad(60,80)\fscx132\fscy132\t(0,110,\fscx100\fscy100)}{\fs170}{\c&H303BFF&}第1位
+Dialogue: 1,0:00:40.45,0:00:42.10,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}創価学会
+Dialogue: 1,0:00:42.10,0:00:45.29,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}{\c&H0AD6FF&}公称827万世帯{\c&HFFFFFF&}\N日本最大
+Dialogue: 1,0:00:45.36,0:00:48.91,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}ただし数字は全部\N{\c&H303BFF&}自己申告
+Dialogue: 1,0:00:48.91,0:00:53.25,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}実際の活動者は\N{\c&H0AD6FF&}ずっと少ない{\c&HFFFFFF&}とも
+Dialogue: 1,0:00:53.31,0:00:55.72,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}気になる団体は\N{\c&H0AD6FF&}コメントへ
+Dialogue: 1,0:00:55.72,0:00:57.94,Main,,0,0,0,,{\pos(540,1170)}{\fad(110,90)\fscx93\fscy93\t(0,130,\fscx100\fscy100)}次回\N深掘りします
