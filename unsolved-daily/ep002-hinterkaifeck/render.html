@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>毎日の未解決事件 FILE No.002 ヒンターカイフェック事件</title>
+<style>
+  html,body{margin:0;background:#000}
+  canvas{width:540px;height:960px;display:block;margin:0 auto}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+'use strict';
+// ========= 基本設定(capture.js が参照) =========
+window.FPS = 30;
+window.DURATION = 58;
+
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+// 配色(不気味系)
+const BG    = '#050607';
+const BONE  = '#D9D5C9';   // 骨色の文字
+const BLOOD = '#A61B15';   // 深い血の赤
+const SICK  = '#8FAE94';   // 病的な淡緑
+const SEPIA = '#C9B28A';   // 古写真
+const GRAY  = '#6E7278';
+const SNOW  = '#9AA4B5';
+const F     = 'IPAPGothic, "IPA Pゴシック", sans-serif';
+
+// ========= ユーティリティ =========
+function hash(n){ n = Math.sin(n * 127.1 + 311.7) * 43758.5453; return n - Math.floor(n); }
+function clamp(v,a,b){ return Math.min(b, Math.max(a, v)); }
+function lerp(a,b,t){ return a + (b-a)*clamp(t,0,1); }
+function eo(t){ t=clamp(t,0,1); return 1-Math.pow(1-t,3); }
+function ei(t){ t=clamp(t,0,1); return t*t*t; }
+function step(t, s, d){ return clamp((t-s)/d, 0, 1); }
+
+function text(s, x, y, size, color, opts={}){
+  ctx.save();
+  ctx.font = `${size}px ${F}`;
+  ctx.textAlign = opts.align || 'center';
+  ctx.textBaseline = opts.base || 'middle';
+  ctx.globalAlpha = opts.alpha !== undefined ? opts.alpha : 1;
+  if (opts.shadow){ ctx.shadowColor = opts.shadow; ctx.shadowBlur = opts.blur || 30; }
+  if (opts.outline){ ctx.strokeStyle = opts.outline; ctx.lineWidth = opts.ow || size*0.18; ctx.lineJoin='round'; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color;
+  if (opts.bold){ ctx.strokeStyle = color; ctx.lineWidth = size * (opts.boldW || 0.045); ctx.lineJoin='round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+  ctx.restore();
+}
+
+let shakeAmp = 0;
+function slamShake(t, at, amp=18, decay=0.35){
+  const dt = t - at;
+  if (dt < 0 || dt > decay) return;
+  const k = 1 - dt/decay;
+  shakeAmp = Math.max(shakeAmp, amp * k * k);
+}
+
+function stamp(t, at, s, x, y, size, rot=-0.08){
+  const p = step(t, at, 0.18);
+  if (p <= 0) return;
+  slamShake(t, at + 0.18, 20);
+  const sc = lerp(3.2, 1, ei(p));
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.globalAlpha = p * 0.92;
+  const w = size * s.length * 1.12 + 70, h = size * 1.75;
+  ctx.strokeStyle = BLOOD; ctx.lineWidth = 10;
+  ctx.strokeRect(-w/2, -h/2, w, h);
+  ctx.strokeStyle = 'rgba(166,27,21,.45)'; ctx.lineWidth = 3;
+  ctx.strokeRect(-w/2+14, -h/2+14, w-28, h-28);
+  ctx.font = `${size}px ${F}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle = BLOOD; ctx.lineJoin = 'round';
+  ctx.strokeStyle = BLOOD; ctx.lineWidth = size*0.06; ctx.strokeText(s, 0, size*0.04);
+  ctx.fillText(s, 0, size*0.04);
+  ctx.restore();
+}
+
+function typew(t, at, cps, s, x, y, size, color){
+  const n = Math.floor(Math.max(0, t - at) * cps);
+  if (n <= 0) return;
+  const shown = s.slice(0, n);
+  ctx.save();
+  ctx.font = `${size}px ${F}`; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillStyle = color;
+  ctx.fillText(shown, x, y);
+  if (n < s.length && Math.floor(t*3)%2===0){
+    const w = ctx.measureText(shown).width;
+    ctx.fillRect(x + w + 6, y - size*0.45, size*0.5, size*0.9);
+  }
+  ctx.restore();
+}
+
+function comma(n){ return Math.round(n).toLocaleString('en-US'); }
+
+// 降る雪
+function snowfall(t, density, alpha){
+  ctx.save();
+  for (let i = 0; i < density; i++){
+    const spd = 55 + hash(i*7+1)*65;
+    const x = (hash(i)*W + Math.sin(t*0.7 + i)*40 + t*18) % (W+40) - 20;
+    const y = (hash(i*3+2)*H + t*spd) % (H+40) - 20;
+    const r = 2 + hash(i*5+4)*4;
+    ctx.fillStyle = `rgba(200,210,225,${alpha*(0.35+hash(i*9)*0.65)})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 家のシルエット(切妻屋根+煙突)
+function house(x, y, sc, opts={}){
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(sc, sc);
+  ctx.fillStyle = opts.color || '#0A0C10';
+  ctx.strokeStyle = opts.edge || 'rgba(120,128,140,.35)'; ctx.lineWidth = 3;
+  // 本体
+  ctx.beginPath(); ctx.rect(-170, -120, 340, 120); ctx.fill(); ctx.stroke();
+  // 屋根
+  ctx.beginPath(); ctx.moveTo(-190, -120); ctx.lineTo(0, -230); ctx.lineTo(190, -120); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // 煙突
+  ctx.fillRect(80, -215, 34, 60); ctx.strokeRect(80, -215, 34, 60);
+  // 窓
+  if (opts.window){
+    const fl = 0.75 + 0.25*Math.sin(opts.t*13 + Math.sin(opts.t*29)*2);
+    ctx.fillStyle = `rgba(222,168,70,${0.85*fl})`;
+    ctx.fillRect(-120, -84, 52, 52);
+    ctx.strokeStyle = '#0A0C10'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(-94, -84); ctx.lineTo(-94, -32); ctx.moveTo(-120, -58); ctx.lineTo(-68, -58); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// 下部キャプション
+function caption(t, at, lines, opt={}){
+  const p = step(t, at, 0.25);
+  if (p <= 0) return;
+  const size = opt.size || 62;
+  const y0 = opt.y || 1560;
+  lines.forEach((ln, i) => {
+    text(ln, W/2, y0 + i*(size*1.45), size, opt.color || BONE,
+      { alpha: p, outline: '#000', ow: size*0.22, bold: true, boldW: 0.05 });
+  });
+}
+
+// ========= シーン =========
+
+// S0: 雪原の足跡(0–7)
+function s0(t){
+  // 夜空と雪原
+  const sky = ctx.createLinearGradient(0, 150, 0, 1250);
+  sky.addColorStop(0, '#07090E'); sky.addColorStop(1, '#10141D');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, 1250);
+  const gnd = ctx.createLinearGradient(0, 1250, 0, H);
+  gnd.addColorStop(0, '#2B3140'); gnd.addColorStop(1, '#171B25');
+  ctx.fillStyle = gnd; ctx.fillRect(0, 1250, W, H-1250);
+  // 地平線の森(ギザギザ)
+  ctx.fillStyle = '#04050A';
+  ctx.beginPath(); ctx.moveTo(0, 1250);
+  for (let x = 0; x <= W; x += 36) ctx.lineTo(x, 1250 - 40 - hash(x)*85);
+  ctx.lineTo(W, 1250); ctx.closePath(); ctx.fill();
+
+  // 家(遠景・窓あかり)
+  house(W*0.76, 1246, 0.9, {window:true, t});
+
+  // 足跡: 左下から家へ(1歩ずつ現れる)
+  const steps = 16;
+  const shown = Math.floor(step(t, 0.4, 5.0) * steps);
+  for (let i = 0; i < shown; i++){
+    const u = i / (steps-1);
+    const px = lerp(W*0.12, W*0.72, u) + Math.sin(u*5)*46;
+    const py = lerp(H*0.97, 0.675*H + 60, Math.pow(u, 0.8));
+    const s = lerp(1.25, 0.42, u);
+    const side = (i%2 ? 1 : -1) * 26 * s;
+    ctx.save();
+    ctx.translate(px + side, py);
+    ctx.rotate(Math.atan2(-1, 0.45) + 1.5708);
+    ctx.scale(s, s);
+    ctx.fillStyle = 'rgba(8,10,14,0.85)';
+    ctx.beginPath(); ctx.ellipse(0, 0, 17, 30, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -40, 13, 15, 0, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+
+  snowfall(t, 110, 0.5);
+
+  // テキスト
+  text('雪の上の、足跡。', W/2, 420, 86, BONE, {alpha: step(t,0.6,0.5), bold:true, boldW:0.05, outline:'#000', ow:18});
+  if (t > 4.0){
+    slamShake(t, 4.0, 10);
+    text('── 出た足跡が、ない', W/2, 570, 88, BLOOD,
+      {alpha: step(t,4.0,0.3), bold:true, boldW:0.06, shadow:'rgba(166,27,21,.6)', blur:44, outline:'#000', ow:18});
+  }
+}
+
+// S1: 事件ファイル(7–14)
+function s1(t){
+  // 古写真カード
+  const a = step(t, 0.1, 0.5);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.translate(W/2, 820); ctx.rotate(-0.015);
+  // 台紙
+  ctx.fillStyle = '#17150F';
+  ctx.fillRect(-430, -470, 860, 940);
+  // 写真(セピア)
+  const ph = ctx.createLinearGradient(0, -400, 0, 380);
+  ph.addColorStop(0, '#B9A47C'); ph.addColorStop(1, '#8F7C58');
+  ctx.fillStyle = ph; ctx.fillRect(-380, -420, 760, 800);
+  // 写真の中: 農場のシルエット
+  ctx.fillStyle = 'rgba(46,38,24,0.9)';
+  ctx.fillRect(-380, 160, 760, 220); // 地面
+  ctx.save(); ctx.translate(-110, 180); ctx.scale(1.15, 1.15);
+  ctx.fillStyle = '#2E2618';
+  ctx.beginPath(); ctx.rect(-150, -130, 300, 130); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-170, -130); ctx.lineTo(0, -240); ctx.lineTo(170, -130); ctx.closePath(); ctx.fill();
+  ctx.fillRect(70, -225, 30, 60);
+  ctx.restore();
+  // 納屋
+  ctx.save(); ctx.translate(210, 210); ctx.scale(0.85, 0.85);
+  ctx.fillStyle = '#2E2618';
+  ctx.fillRect(-110, -100, 220, 100);
+  ctx.beginPath(); ctx.moveTo(-125, -100); ctx.lineTo(0, -175); ctx.lineTo(125, -100); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 枯れ木
+  ctx.strokeStyle = '#2E2618'; ctx.lineWidth = 9; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-300, 180); ctx.lineTo(-300, 20);
+  ctx.moveTo(-300, 70); ctx.lineTo(-250, -10); ctx.moveTo(-300, 110); ctx.lineTo(-345, 30); ctx.stroke();
+  // 傷・ビネット
+  for (let i = 0; i < 26; i++){
+    ctx.strokeStyle = `rgba(60,48,30,${0.1+hash(i)*0.2})`; ctx.lineWidth = 1 + hash(i*3)*2;
+    const x0 = (hash(i*7)-0.5)*760, y0 = (hash(i*11)-0.5)*800;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0 + (hash(i*13)-0.5)*90, y0 + (hash(i*17)-0.5)*90); ctx.stroke();
+  }
+  const pvg = ctx.createRadialGradient(0,-20,120, 0,-20,560);
+  pvg.addColorStop(0,'rgba(0,0,0,0)'); pvg.addColorStop(1,'rgba(30,20,8,0.55)');
+  ctx.fillStyle = pvg; ctx.fillRect(-380, -420, 760, 800);
+  // フォトコーナー
+  ctx.fillStyle = '#0B0A07';
+  for (const [cx, cy] of [[-380,-420],[380,-420],[-380,380],[380,380]]){
+    ctx.save(); ctx.translate(cx, cy);
+    ctx.beginPath(); ctx.moveTo(-54*Math.sign(cx||1), 0); ctx.lineTo(0, 0); ctx.lineTo(0, 54*Math.sign(cy||1)); ctx.closePath();
+    ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+
+  // キャプション(タイプライター)
+  typew(t, 0.7, 18, '1922.3.31  ドイツ・バイエルン', 150, 1400, 56, SEPIA);
+  typew(t, 2.2, 14, 'ヒンターカイフェック農場', 150, 1486, 68, BONE);
+  // スタンプ
+  if (t > 4.2) stamp(t, 4.2, '一家6人 犠牲', W/2, 1700, 92, -0.07);
+}
+
+// S2: 前兆(14–23)
+function s2(t){
+  // 家の断面
+  ctx.save();
+  ctx.translate(W/2, 1120);
+  ctx.strokeStyle = 'rgba(150,155,165,.5)'; ctx.lineWidth = 6;
+  ctx.fillStyle = '#0B0D13';
+  // 1F+2F
+  ctx.beginPath(); ctx.rect(-360, -420, 720, 560); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-360, -140); ctx.lineTo(360, -140); ctx.stroke(); // 床
+  // 屋根(屋根裏)
+  ctx.beginPath(); ctx.moveTo(-400, -420); ctx.lineTo(0, -700); ctx.lineTo(400, -420); ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  // 屋根裏の脈動
+  const pulse = 0.5 + 0.5*Math.sin(t*5.2);
+  const ag = ctx.createRadialGradient(0, -520, 10, 0, -520, 260);
+  ag.addColorStop(0, `rgba(166,27,21,${0.33*pulse+0.08})`);
+  ag.addColorStop(1, 'rgba(166,27,21,0)');
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(-390, -424); ctx.lineTo(0, -694); ctx.lineTo(390, -424); ctx.closePath(); ctx.clip();
+  ctx.fillStyle = ag; ctx.fillRect(-400, -700, 800, 290);
+  // 波紋
+  for (let k = 0; k < 3; k++){
+    const rp = ((t*0.5 + k/3) % 1);
+    ctx.strokeStyle = `rgba(166,27,21,${0.4*(1-rp)})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, -520, 30 + rp*220, 0, 7); ctx.stroke();
+  }
+  // 目(21.5秒以降 = ローカル7.5秒以降、ほんの一瞬)
+  const eyeA = step(t, 7.5, 0.5) * (1 - step(t, 8.6, 0.4));
+  if (eyeA > 0){
+    ctx.fillStyle = `rgba(217,213,201,${0.75*eyeA})`;
+    ctx.beginPath(); ctx.arc(-42, -520, 7, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(42, -520, 7, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+
+  // 「ミシ…」の明滅
+  const creaks = [[-150,-600,0.0],[180,-560,0.9],[-60,-480,1.8],[120,-640,2.7],[-220,-520,3.6],[60,-560,4.5]];
+  creaks.forEach(([x,y,at], i) => {
+    const cyc = (t - at) % 5.4;
+    const a2 = cyc > 0 ? Math.max(0, Math.sin(Math.min(cyc/1.2, 1) * Math.PI)) * (cyc < 2 ? 1 : 0) : 0;
+    if (a2 > 0) text(i%2 ? '…ミシ…' : 'ミシッ', x, y, 42, 'rgba(217,213,201,0.9)', {alpha: a2*0.8});
+  });
+  ctx.restore();
+
+  text('事件の数日前から──', W/2, 310, 64, SICK, {alpha: step(t,0.3,0.4), bold:true, outline:'#000', ow:14});
+
+  // 鍵が消える / 新聞が増える
+  if (t > 5.6){
+    const a = step(t, 5.6, 0.4);
+    // 鍵(フェードアウトを繰り返す)
+    const ka = 0.25 + 0.75*Math.abs(Math.sin(t*1.1));
+    ctx.save(); ctx.translate(300, 1560); ctx.globalAlpha = a * ka;
+    ctx.strokeStyle = SEPIA; ctx.lineWidth = 9; ctx.lineCap='round';
+    ctx.beginPath(); ctx.arc(0, 0, 34, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(30, 18); ctx.lineTo(86, 66); ctx.moveTo(66, 50) ; ctx.lineTo(50, 70); ctx.moveTo(86, 66); ctx.lineTo(68, 88); ctx.stroke();
+    ctx.restore();
+    text('鍵が、消える', 300, 1700, 44, BONE, {alpha:a, bold:true, outline:'#000', ow:10});
+    // 新聞
+    const stackN = 1 + Math.min(3, Math.floor((t-5.6)/0.8));
+    ctx.save(); ctx.translate(760, 1575); ctx.globalAlpha = a;
+    for (let i = 0; i < stackN; i++){
+      ctx.fillStyle = '#B7B2A4';
+      ctx.fillRect(-90, -i*20, 180, 16);
+      ctx.strokeStyle = '#55524A'; ctx.lineWidth = 2; ctx.strokeRect(-90, -i*20, 180, 16);
+    }
+    ctx.restore();
+    text('見知らぬ新聞', 760, 1700, 44, BONE, {alpha:a, bold:true, outline:'#000', ow:10});
+  }
+}
+
+// S3: 納屋・6本のロウソク(23–31)
+function s3(t){
+  // 納屋の板壁
+  ctx.save();
+  for (let x = 0; x < W; x += 120){
+    ctx.fillStyle = `rgba(26,22,16,${0.5 + hash(x)*0.3})`;
+    ctx.fillRect(x, 260, 112, 1400);
+  }
+  ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 4;
+  for (let x = 0; x < W; x += 120){ ctx.beginPath(); ctx.moveTo(x, 260); ctx.lineTo(x, 1660); ctx.stroke(); }
+  ctx.restore();
+
+  typew(t, 0.2, 14, '1922年3月31日、夜。', 170, 400, 62, SICK);
+
+  // ロウソク6本
+  const candleY = 1150;
+  for (let i = 0; i < 6; i++){
+    const cx = 165 + i*150;
+    const outAt = 1.6 + i*0.92;            // 消える時刻
+    const lit = t < outAt;
+    // 蝋
+    ctx.fillStyle = '#C9C2B0';
+    ctx.fillRect(cx-20, candleY, 40, 180);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(cx+6, candleY, 14, 180);
+    // 芯
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(cx, candleY); ctx.lineTo(cx, candleY-16); ctx.stroke();
+    if (lit){
+      // 炎(ゆらぎ)
+      const fl = Math.sin(t*17 + i*3)*4 + Math.sin(t*31+i)*2;
+      const g = ctx.createRadialGradient(cx+fl*0.3, candleY-48, 4, cx+fl*0.3, candleY-48, 90);
+      g.addColorStop(0, 'rgba(236,190,96,.5)'); g.addColorStop(1, 'rgba(236,190,96,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx+fl*0.3, candleY-48, 90, 0, 7); ctx.fill();
+      ctx.save();
+      ctx.translate(cx + fl*0.4, candleY - 18);
+      ctx.fillStyle = '#F0C068';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(-14, -26, 0 + fl*0.4, -56);
+      ctx.quadraticCurveTo(14, -26, 0, 0);
+      ctx.fill();
+      ctx.fillStyle = '#FCEBC4';
+      ctx.beginPath(); ctx.ellipse(0, -18, 5, 12, 0, 0, 7); ctx.fill();
+      ctx.restore();
+    } else {
+      // 煙
+      const sm = clamp(t - outAt, 0, 2.2);
+      if (sm < 2.2){
+        ctx.save();
+        ctx.strokeStyle = `rgba(170,170,175,${0.5*(1 - sm/2.2)})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx, candleY - 18);
+        for (let k = 1; k <= 8; k++){
+          const yy = candleY - 18 - k*16 - sm*44;
+          ctx.lineTo(cx + Math.sin(k*1.3 + t*2.4)*10*k*0.35, yy);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+  // 床
+  ctx.fillStyle = '#0A0806'; ctx.fillRect(0, candleY+180, W, 160);
+
+  if (t > 7.0){
+    text('6人、全員。', W/2, 820, 92, BONE, {alpha: step(t,7.0,0.4), bold:true, boldW:0.055, outline:'#000', ow:20});
+  }
+  caption(t, 0.6, ['家族は納屋へ 一人ずつ', '呼び出されて、戻らなかった'], {});
+}
+
+// S4: 事件後の煙(31–40)
+function s4(t){
+  // 夜空
+  const sky = ctx.createLinearGradient(0, 150, 0, 1500);
+  sky.addColorStop(0, '#07080D'); sky.addColorStop(1, '#141822');
+  ctx.fillStyle = sky; ctx.fillRect(0, 150, W, 1350);
+  ctx.fillStyle = '#10141D'; ctx.fillRect(0, 1500, W, 420);
+
+  // 月(欠け)
+  ctx.save();
+  ctx.fillStyle = 'rgba(214,218,226,0.8)';
+  ctx.beginPath(); ctx.arc(W*0.2, 430, 74, 0, 7); ctx.fill();
+  ctx.fillStyle = '#07080D';
+  ctx.beginPath(); ctx.arc(W*0.2 - 30, 414, 66, 0, 7); ctx.fill();
+  ctx.restore();
+
+  // 家(大きめ・窓あかり)
+  house(W/2, 1500, 2.1, {window: t > 2.2, t});
+
+  // 煙突の煙
+  for (let i = 0; i < 26; i++){
+    const life = (t*0.22 + hash(i*13)) % 1;
+    const px = W/2 + 2.1*97 + Math.sin(life*5 + i)*40*life + life*70;
+    const py = 1500 - 2.1*215 - life*560;
+    ctx.fillStyle = `rgba(165,168,178,${0.22*(1-life)})`;
+    ctx.beginPath(); ctx.arc(px, py, 16 + life*72, 0, 7); ctx.fill();
+  }
+
+  // テキスト
+  if (t > 0.15){
+    slamShake(t, 0.15, 16);
+    text('犯人は、逃げなかった', W/2, 400, 92, BLOOD,
+      {alpha: step(t,0.15,0.2), bold:true, boldW:0.06, shadow:'rgba(166,27,21,.6)', blur:46, outline:'#000', ow:20});
+  }
+  // 事実チェックリスト
+  const facts = ['家畜に、餌が与えられていた', '台所の食料が、減っていた', '煙突からは、煙'];
+  facts.forEach((s, i) => {
+    const at = 3.0 + i*1.5;
+    const a = step(t, at, 0.3);
+    if (a <= 0) return;
+    const y = 580 + i*108;
+    text('✔', 150, y, 56, BLOOD, {alpha:a, align:'left', bold:true});
+    text(s, 230, y, 52, BONE, {alpha:a, align:'left', bold:true, outline:'#000', ow:11});
+  });
+  caption(t, 3.2, ['事件の後も、数日間', '犯人はこの家にいた'], {y:1640});
+}
+
+// S5: 捜査→取り壊し(40–48.5)
+function s5(t){
+  const rows = [
+    { at: 0.2, label: '容疑者',   val: 100, suf: '人以上' },
+    { at: 1.2, label: '経過',     val: 100, suf: '年' },
+    { at: 2.2, label: '逮捕者',   val: 0,   suf: '人' },
+  ];
+  rows.forEach((r, i) => {
+    const a = step(t, r.at, 0.3);
+    if (a <= 0) return;
+    const y = 430 + i*215;
+    const v = r.val * eo(step(t, r.at, 1.1));
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(10,11,16,0.85)';
+    ctx.fillRect(100, y-88, 880, 176);
+    ctx.strokeStyle = i===2 ? BLOOD : 'rgba(150,155,165,.4)'; ctx.lineWidth = i===2 ? 6 : 3;
+    ctx.strokeRect(100, y-88, 880, 176);
+    ctx.restore();
+    text(r.label, 150, y, 54, GRAY, {alpha:a, align:'left', bold:true});
+    const col = i===2 ? BLOOD : BONE;
+    text(`${comma(v)} ${r.suf}`, 930, y, i===2 ? 96 : 80, col,
+      {alpha:a, align:'right', bold:true, boldW:0.05, shadow: i===2 ? 'rgba(166,27,21,.5)' : undefined, blur:36});
+  });
+
+  // 取り壊し(崩れる家)
+  if (t > 4.4){
+    const p = step(t, 4.4, 1.6);
+    ctx.save();
+    ctx.translate(W/2, 1520);
+    const parts = [[-170,-120,160,120,-1],[10,-120,160,120,1],[-190,-230,180,110,-1],[10,-230,180,110,1],[80,-275,34,60,1]];
+    parts.forEach(([px,py,pw,ph2,dir], i) => {
+      const d = ei(clamp(p*1.4 - i*0.08, 0, 1));
+      ctx.save();
+      ctx.translate(px + pw/2 + dir*d*110, py + ph2/2 + d*d*300);
+      ctx.rotate(dir * d * 0.6);
+      ctx.fillStyle = '#0A0C10';
+      ctx.strokeStyle = 'rgba(120,128,140,.35)'; ctx.lineWidth = 3;
+      ctx.fillRect(-pw/2, -ph2/2, pw, ph2); ctx.strokeRect(-pw/2, -ph2/2, pw, ph2);
+      ctx.restore();
+    });
+    ctx.restore();
+    // 土煙
+    for (let i = 0; i < 10; i++){
+      const life = clamp((p*1.8 - hash(i)) , 0, 1);
+      if (life <= 0) continue;
+      ctx.fillStyle = `rgba(120,115,105,${0.2*(1-life)})`;
+      ctx.beginPath(); ctx.arc(W/2 + (hash(i*7)-0.5)*420, 1540 - life*120, 30+life*90, 0, 7); ctx.fill();
+    }
+    text('1923年、取り壊し', W/2, 1300, 58, SEPIA, {alpha: step(t,5.2,0.4), bold:true, outline:'#000', ow:13});
+  }
+  if (t > 6.4) stamp(t, 6.4, '未解決のまま', W/2, 1120, 100, -0.09);
+}
+
+// S6: 屋根裏の闇+CTA(48.5–58)
+function s6(t){
+  // 屋根裏の梁
+  ctx.save();
+  ctx.strokeStyle = 'rgba(70,66,58,.5)'; ctx.lineWidth = 16;
+  ctx.beginPath(); ctx.moveTo(0, 760); ctx.lineTo(W/2, 360); ctx.lineTo(W, 760); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W/2, 360); ctx.lineTo(W/2, 1180); ctx.stroke();
+  ctx.restore();
+
+  // 闇の中の目(ゆっくり瞬き)
+  const blink = Math.abs(Math.sin(t*0.9)) > 0.12 ? 1 : 0.1;
+  const ea = 0.35 + 0.3*Math.sin(t*0.7);
+  ctx.fillStyle = `rgba(217,213,201,${ea*blink})`;
+  ctx.beginPath(); ctx.ellipse(W/2-58, 820, 9, 11*blink, 0, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(W/2+58, 820, 9, 11*blink, 0, 0, 7); ctx.fill();
+
+  text('屋根裏の足音の主は、', W/2, 560, 80, BONE, {alpha: step(t,0.3,0.5), bold:true, boldW:0.05, outline:'#000', ow:17});
+  text('誰?', W/2, 700, 120, BLOOD, {alpha: step(t,0.8,0.5), bold:true, boldW:0.06, shadow:'rgba(166,27,21,.6)', blur:50, outline:'#000', ow:24});
+
+  // CTAカード
+  if (t > 3.6){
+    const a = step(t, 3.6, 0.35);
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(10,8,10,0.92)';
+    ctx.fillRect(80, 1330, 920, 400);
+    ctx.strokeStyle = BLOOD; ctx.lineWidth = 5; ctx.strokeRect(80, 1330, 920, 400);
+    ctx.restore();
+    text('あなたの考えは?', W/2, 1425, 82, SEPIA, {alpha:a, bold:true, boldW:0.055});
+    text('コメントで教えて', W/2, 1540, 70, BONE, {alpha:a, bold:true});
+    const blink2 = 0.75 + 0.25*Math.sin(t*5);
+    text('▶ フォローで毎日21時、不気味な事件', W/2, 1655, 50, BLOOD, {alpha: a*blink2, bold:true});
+  }
+  text('ナレーション VOICEVOX:四国めたん / BGM・映像 自作', W/2, 1790, 34, GRAY, {alpha: step(t,4.0,0.4)});
+}
+
+const SCENES = [
+  { start: 0,    end: 7,    draw: s0 },
+  { start: 7,    end: 14,   draw: s1 },
+  { start: 14,   end: 23,   draw: s2 },
+  { start: 23,   end: 31,   draw: s3 },
+  { start: 31,   end: 40,   draw: s4 },
+  { start: 40,   end: 48.5, draw: s5 },
+  { start: 48.5, end: 58,   draw: s6 },
+];
+
+// ========= メイン描画 =========
+window.render = function(t){
+  t = clamp(t, 0, DURATION - 1/60);
+  shakeAmp = 0;
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+  const bgg = ctx.createRadialGradient(W/2, H*0.42, 100, W/2, H*0.42, H*0.85);
+  bgg.addColorStop(0, 'rgba(24,28,36,0.5)'); bgg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = bgg; ctx.fillRect(0, 0, W, H);
+
+  const sc = SCENES.find(s => t >= s.start && t < s.end) || SCENES[SCENES.length-1];
+  const lt = t - sc.start;
+  ctx.save();
+  sc.draw(lt);
+  ctx.restore();
+  if (shakeAmp > 0){
+    const dx = (hash(Math.floor(t*60)) - 0.5) * 2 * shakeAmp;
+    const dy = (hash(Math.floor(t*60) + 99) - 0.5) * 2 * shakeAmp;
+    const img = ctx.getImageData(0, 0, W, H);
+    ctx.fillStyle = BG; ctx.fillRect(0,0,W,H);
+    ctx.putImageData(img, dx, dy);
+  }
+
+  // ---- 常時オーバーレイ ----
+  // ブランドバー
+  ctx.fillStyle = 'rgba(6,7,10,0.84)';
+  ctx.fillRect(0, 0, W, 150);
+  ctx.fillStyle = BLOOD; ctx.fillRect(0, 150, W, 6);
+  text('毎日の未解決事件', 60, 62, 52, BONE, {align:'left', bold:true, boldW:0.05});
+  text('FILE No.002「ヒンターカイフェック事件」', 60, 118, 36, SEPIA, {align:'left', bold:true});
+  const recOn = Math.floor(t*1.4)%2===0;
+  if (recOn){ ctx.fillStyle = BLOOD; ctx.beginPath(); ctx.arc(W-150, 62, 13, 0, 7); ctx.fill(); }
+  text('REC', W-60, 62, 40, recOn ? BLOOD : '#471310', {align:'right', bold:true});
+  text('●ARCHIV 1922', W-60, 116, 28, GRAY, {align:'right'});
+
+  // 進行バー
+  ctx.fillStyle = 'rgba(217,213,201,0.16)'; ctx.fillRect(0, 0, W, 10);
+  ctx.fillStyle = BLOOD; ctx.fillRect(0, 0, W * t / DURATION, 10);
+
+  // 呼吸するビネット(ゆっくり・不規則)
+  const breath = 0.5 + 0.5*Math.sin(t*0.48 + Math.sin(t*0.13)*1.6);
+  const vg = ctx.createRadialGradient(W/2, H/2, H*0.26, W/2, H/2, H*0.76);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, `rgba(0,0,0,${0.52 + breath*0.16})`);
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+
+  // VHSトラッキングノイズ帯(約7秒おきに降りてくる)
+  const vhsCyc = (t % 7) / 7;
+  if (vhsCyc < 0.18){
+    const vy = vhsCyc/0.18 * H;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.fillStyle = 'rgba(160,170,190,0.07)';
+    ctx.fillRect(0, vy, W, 60);
+    ctx.fillStyle = 'rgba(160,170,190,0.12)';
+    ctx.fillRect(0, vy+18, W, 8);
+    ctx.restore();
+    const img = ctx.getImageData(0, vy, W, 26);
+    ctx.putImageData(img, (hash(Math.floor(t*30))-0.5)*26, vy);
+  }
+
+  // ランダムちらつき(フレーム単位で暗くなる)
+  const fl = hash(Math.floor(t*30)*7.7);
+  if (fl > 0.93){
+    ctx.fillStyle = `rgba(0,0,0,${(fl-0.93)*3.2})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // フィルムグレイン + スキャンライン(強め)
+  ctx.save();
+  ctx.globalAlpha = 0.065;
+  const gseed = Math.floor(t*30);
+  for (let i = 0; i < 160; i++){
+    const x = hash(gseed*31+i)*W, y = hash(gseed*37+i)*H;
+    ctx.fillStyle = hash(i)>0.5 ? '#fff' : '#000';
+    ctx.fillRect(x, y, 3, 3);
+  }
+  ctx.globalAlpha = 0.05;
+  ctx.fillStyle = '#000';
+  for (let y = (gseed%2); y < H; y += 6) ctx.fillRect(0, y, W, 2);
+  ctx.restore();
+};
+
+// プレビュー再生(ブラウザで開いたとき)
+if (!navigator.webdriver){
+  const t0 = performance.now();
+  (function loop(){
+    window.render(((performance.now() - t0) / 1000) % DURATION);
+    requestAnimationFrame(loop);
+  })();
+}
+</script>
+</body>
+</html>
