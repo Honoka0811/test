@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>伝わらないのは、あなただけのせいじゃない</title>
+<style>
+  @font-face { font-family: 'Rounded'; font-weight: 500; src: url('fonts/MPLUSRounded1c-Medium.ttf'); }
+  @font-face { font-family: 'Rounded'; font-weight: 800; src: url('fonts/MPLUSRounded1c-ExtraBold.ttf'); }
+  html, body { margin: 0; background: #222; }
+  canvas { display: block; max-height: 100vh; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 「伝わらないのは、あなただけのせいじゃない」 9:16 ショート
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン・セリフのタイミングは narrate.py が書き出す timeline.js(window.TL)から読む。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const DURATION = TL.duration;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"Rounded","IPAPGothic",sans-serif';
+const EMOJI = '"Noto Color Emoji"';
+const C = {
+  bgTop: '#FFF5EC', bgBot: '#F3E9FA',
+  ink: '#3B3346', ink2: '#6E6478', ink3: '#A59BAF',
+  pink: '#E0679A', pinkSoft: '#FBD9E7', purple: '#8B63C9', purpleSoft: '#E6DAF6',
+  blue: '#5A8FD6', blueSoft: '#DCE8F8', mint: '#3FAE93', mintSoft: '#D5F1E9',
+  harsh: '#4A4453', white: '#FFFFFF', cloud: '#9C96A6',
+};
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const easeBack = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const seg = (t, s, d) => clamp((t - s) / d);
+const LINE = name => TL.lines.find(l => l.scene === name);
+const SCENE = name => TL.scenes.find(s => s.name === name);
+
+function font(size, weight = 800) { return `${weight} ${size}px ${FONT}`; }
+function text(str, x, y, { size = 56, weight = 800, color = C.ink, align = 'center', base = 'middle', alpha = 1 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.font = font(size, weight);
+  ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(str, x, y); ctx.restore();
+}
+function emoji(ch, x, y, size, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.font = `${size}px ${EMOJI}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ch, x, y); ctx.restore();
+}
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, fill, { alpha = 1, shadow = false, stroke = null, lw = 4 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  if (shadow) { ctx.shadowColor = 'rgba(80,50,110,0.16)'; ctx.shadowBlur = 36; ctx.shadowOffsetY = 12; }
+  rrectPath(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill();
+  if (stroke) { ctx.shadowColor = 'transparent'; ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+// 中央基準でスケール・回転して描く
+function withXf(x, y, s, rot, alpha, fn) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rot || 0); ctx.scale(s, s); fn(); ctx.restore();
+}
+// 文字幅で折り返す(行頭禁則: 、。」？！ を前の行へ)
+function wrap(str, maxW, size, weight = 500) {
+  ctx.save(); ctx.font = font(size, weight);
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !'、。」』？！）…'.includes(ch)) { lines.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore(); return lines;
+}
+// 行数はそのままに、各行の長さを均等にして最終行が1〜2文字だけ残るのを防ぐ
+function wrapBalanced(str, maxW, size, weight = 500) {
+  const n = wrap(str, maxW, size, weight).length;
+  if (n < 2) return [str];
+  ctx.save(); ctx.font = font(size, weight); const total = ctx.measureText(str).width; ctx.restore();
+  for (let w = total / n + size * 0.5; w <= maxW; w += size * 0.5) {
+    const ls = wrap(str, w, size, weight);
+    if (ls.length === n) return ls;
+  }
+  return wrap(str, maxW, size, weight);
+}
+
+// ---------- 背景 ----------
+function background(t, gloom) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bgTop); g.addColorStop(1, C.bgBot);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ふわふわ漂う丸
+  const blobs = [[160, 340, 140, C.pinkSoft], [930, 560, 180, C.purpleSoft], [120, 1180, 160, C.blueSoft], [960, 1500, 150, C.mintSoft], [520, 1780, 200, C.pinkSoft]];
+  blobs.forEach(([x, y, r, c], i) => {
+    ctx.save(); ctx.globalAlpha = 0.55; ctx.fillStyle = c; ctx.beginPath();
+    ctx.arc(x + 24 * Math.sin(t * 0.35 + i * 1.7), y + 30 * Math.cos(t * 0.28 + i), r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  });
+  if (gloom > 0) { ctx.save(); ctx.globalAlpha = 0.28 * gloom; ctx.fillStyle = '#6F6A7A'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+}
+
+// ---------- 人物(シンプルなアイコン) ----------
+// mood: 'sad' | 'neutral' | 'smile' / look: 目線の向き(-1..1)
+function person(x, y, s, color, { mood = 'neutral', look = 0, sweat = 0, droop = 0, label = null, alpha = 1 } = {}) {
+  withXf(x, y, s, 0, alpha, () => {
+    // 体
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(-120, 200); ctx.quadraticCurveTo(-120, 60 + droop * 10, 0, 60 + droop * 10);
+    ctx.quadraticCurveTo(120, 60 + droop * 10, 120, 200); ctx.closePath(); ctx.fill();
+    // 頭
+    const hy = -40 + droop * 26;
+    ctx.fillStyle = '#FFE3D3'; ctx.beginPath(); ctx.arc(0, hy, 86, 0, Math.PI * 2); ctx.fill();
+    // 髪
+    ctx.fillStyle = color; ctx.globalAlpha *= 0.9;
+    ctx.beginPath(); ctx.arc(0, hy - 6, 90, Math.PI * 1.02, Math.PI * 1.98); ctx.quadraticCurveTo(40, hy - 50, -88, hy - 14); ctx.fill();
+    ctx.globalAlpha /= 0.9;
+    // 目
+    const ex = look * 10, ey = hy + 10 + droop * 6;
+    ctx.fillStyle = C.ink;
+    if (mood === 'smile') {
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 7; ctx.lineCap = 'round';
+      [-30, 30].forEach(dx => { ctx.beginPath(); ctx.arc(dx + ex, ey + 6, 12, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); });
+    } else {
+      [-30, 30].forEach(dx => { ctx.beginPath(); ctx.ellipse(dx + ex, ey, 8, 11, 0, 0, Math.PI * 2); ctx.fill(); });
+      if (mood === 'sad') {
+        ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(-46 + ex, ey - 22); ctx.lineTo(-18 + ex, ey - 30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(46 + ex, ey - 22); ctx.lineTo(18 + ex, ey - 30); ctx.stroke();
+      }
+    }
+    // 頬
+    ctx.fillStyle = 'rgba(240,120,150,0.35)';
+    [-50, 50].forEach(dx => { ctx.beginPath(); ctx.ellipse(dx + ex, ey + 26, 15, 9, 0, 0, Math.PI * 2); ctx.fill(); });
+    // 口
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath();
+    const my = ey + 40;
+    if (mood === 'smile') ctx.arc(ex, my - 14, 20, Math.PI * 0.2, Math.PI * 0.8);
+    else if (mood === 'sad') ctx.arc(ex, my + 14, 16, Math.PI * 1.2, Math.PI * 1.8);
+    else { ctx.moveTo(ex - 12, my); ctx.lineTo(ex + 12, my); }
+    ctx.stroke();
+    // 汗
+    if (sweat > 0) {
+      ctx.globalAlpha *= sweat; ctx.fillStyle = '#7FB8EE';
+      ctx.beginPath(); ctx.moveTo(78, hy - 40); ctx.quadraticCurveTo(100, hy - 4, 78, hy + 6); ctx.quadraticCurveTo(58, hy - 4, 78, hy - 40); ctx.fill();
+      ctx.globalAlpha /= sweat;
+    }
+    if (label) {
+      rrect(-110, 222, 220, 64, 32, C.white, { shadow: true });
+      text(label, 0, 255, { size: 36, color: C.ink2 });
+    }
+  });
+}
+
+// ---------- 吹き出し ----------
+function bubble(x, y, str, { size = 58, fill = C.harsh, color = C.white, tail = 'down', tailX = 0, s = 1, rot = 0, alpha = 1, padX = 48, h = 130 } = {}) {
+  ctx.save(); ctx.font = font(size); const w = ctx.measureText(str).width + padX * 2; ctx.restore();
+  withXf(x, y, s, rot, alpha, () => {
+    ctx.save(); ctx.shadowColor = 'rgba(60,40,90,0.22)'; ctx.shadowBlur = 30; ctx.shadowOffsetY = 10;
+    rrectPath(-w / 2, -h / 2, w, h, h / 2); ctx.fillStyle = fill; ctx.fill();
+    ctx.beginPath();
+    if (tail === 'down') { ctx.moveTo(tailX - 26, h / 2 - 4); ctx.lineTo(tailX + 30, h / 2 + 46); ctx.lineTo(tailX + 30, h / 2 - 4); }
+    else if (tail === 'up') { ctx.moveTo(tailX - 26, -h / 2 + 4); ctx.lineTo(tailX - 30, -h / 2 - 46); ctx.lineTo(tailX + 30, -h / 2 + 4); }
+    ctx.fill(); ctx.restore();
+    text(str, 0, 4, { size, color });
+  });
+  return w;
+}
+
+// マーカー強調つきの1行テキスト。parts = [[文字, 強調?], ...]
+function markedLine(parts, cx, y, size, progress, { color = C.ink, mark = C.pinkSoft, markColor = C.pink } = {}) {
+  ctx.save(); ctx.font = font(size);
+  const widths = parts.map(([s]) => ctx.measureText(s).width);
+  const total = widths.reduce((a, b) => a + b, 0);
+  let x = cx - total / 2;
+  parts.forEach(([s, hl], i) => {
+    if (hl) {
+      ctx.fillStyle = mark; const mw = widths[i] * easeOut(progress);
+      rrectPath(x - 6, y + size * 0.05, mw + 12, size * 0.5, 10); ctx.fill();
+    }
+    ctx.fillStyle = hl ? markColor : color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+    x += widths[i];
+  });
+  ctx.restore();
+}
+
+function sceneTitle(str, y, u, { size = 64, color = C.ink, sub = null } = {}) {
+  const a = easeOut(seg(u, 0.1, 0.5));
+  text(str, W / 2, y + (1 - a) * 30, { size, color, alpha: a });
+  if (sub) text(sub, W / 2, y - size * 0.95 + (1 - a) * 30, { size: 36, color: C.pink, alpha: a });
+}
+
+// ------------------------------------------------------------
+// シーン描画: (t: 絶対時刻, u: シーン内時刻)
+// ------------------------------------------------------------
+const SCENES = {
+  hook(t, u) {
+    const L = LINE('hook');
+    sceneTitle('会議で、こう言われたら…', 290, u, { sub: 'こんな経験、ありませんか？' });
+    const b1 = L.start + 1.2, b2 = L.start + 3.1;
+    const k1 = seg(t, b1, 0.35), k2 = seg(t, b2, 0.35);
+    const shake = (k, t0) => (k > 0 && t - t0 < 0.5) ? Math.sin((t - t0) * 60) * 10 * (1 - (t - t0) / 0.5) : 0;
+    if (k1 > 0) bubble(390 + shake(k1, b1), 540, '何が言いたいの？', { s: easeBack(k1), rot: -0.05, tailX: 60 });
+    if (k2 > 0) bubble(660 + shake(k2, b2), 740, 'で、何がしたいの？', { s: easeBack(k2), rot: 0.04, tailX: -80 });
+    const hurt = clamp(seg(t, b1, 0.3) * 0.5 + seg(t, b2, 0.3) * 0.5);
+    person(540, 1040, 1.05, C.purple, { mood: hurt > 0.4 ? 'sad' : 'neutral', sweat: seg(t, b2 + 0.4, 0.4), droop: hurt * 0.6 });
+    // ズキッの線
+    if (k1 > 0) {
+      ctx.save(); ctx.strokeStyle = C.pink; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.globalAlpha = hurt;
+      [[-170, -110, -215, -150], [-185, -40, -240, -48], [170, -110, 215, -150], [185, -40, 240, -48]].forEach(([a, b, c, d]) => {
+        ctx.beginPath(); ctx.moveTo(540 + a, 1040 + b); ctx.lineTo(540 + c, 1040 + d); ctx.stroke();
+      });
+      ctx.restore();
+    }
+  },
+
+  blame(t, u) {
+    // 雨雲と雨
+    const a = easeOut(seg(u, 0.1, 0.6));
+    for (let i = 0; i < 26; i++) {
+      const x = 330 + (i * 97) % 420, y0 = 520 + ((i * 53) % 130);
+      const y = y0 + ((t * 520 + i * 61) % 260);
+      ctx.save(); ctx.globalAlpha = a * 0.7 * clamp((780 - y) / 80 + 1); ctx.strokeStyle = '#8FB4DA'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 8, y + 34); ctx.stroke(); ctx.restore();
+    }
+    withXf(540, 470 - (1 - a) * 40, 1, 0, a, () => {
+      ctx.fillStyle = C.cloud;
+      [[-150, 20, 90], [-60, -30, 115], [60, -40, 120], [160, 15, 90], [0, 40, 110]].forEach(([x, y, r]) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); });
+      text('自分が悪いんだ…', 0, 20, { size: 56, color: C.white });
+    });
+    person(540, 1060, 1.0, C.purple, { mood: 'sad', droop: 1, sweat: 1 });
+  },
+
+  question(t, u) {
+    const L = LINE('question');
+    const k1 = easeOut(seg(t, L.start - 0.1, 0.45));
+    text('でも、ちょっと待って。', W / 2, 400 + (1 - k1) * 30, { size: 62, color: C.ink2, alpha: k1 });
+    const k2 = seg(t, L.start + 1.6, 0.5);
+    withXf(W / 2, 560, lerp(0.9, 1, easeBack(k2)), 0, clamp(k2 * 2), () => {
+      markedLine([['本当に ', false], ['あなただけ', true], [' の', false]], 0, 0, 84, seg(t, L.start + 2.3, 0.6));
+      text('せいでしょうか？', 0, 120, { size: 84 });
+    });
+    // 大きな「？」と、顔を上げる人物
+    const k3 = easeBack(seg(t, L.start + 2.6, 0.5));
+    withXf(820, 920, k3, 0.15, clamp(k3), () => text('？', 0, 0, { size: 220, color: C.pink }));
+    person(540, 1080, 1.0, C.purple, { mood: 'neutral', look: 0.6, droop: lerp(1, 0, easeOut(seg(u, 0.2, 1.0))) });
+  },
+
+  coop(t, u) {
+    const L = LINE('coop');
+    sceneTitle('会話は「共同作業」', 300, u, { sub: '伝える ＋ 受け取る' });
+    const k = easeOut(seg(u, 0.4, 0.6));
+    person(300, 730, 0.85 * k, C.purple, { mood: 'neutral', look: 0.6, label: '話す人' });
+    person(780, 730, 0.85 * k, C.blue, { mood: 'neutral', look: -0.6, label: '聞く人' });
+    // 言葉が行き来する矢印
+    const ka = seg(u, 0.9, 0.6);
+    ctx.save(); ctx.globalAlpha = ka; ctx.strokeStyle = C.ink3; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.setLineDash([2, 22]);
+    ctx.lineDashOffset = -t * 60;
+    ctx.beginPath(); ctx.moveTo(420, 610); ctx.quadraticCurveTo(540, 530, 660, 610); ctx.stroke(); ctx.restore();
+    if (ka > 0) emoji('💬', 540 + 90 * Math.sin(t * 2.2), 550, 64, ka);
+    // 原因のバー
+    const kb = seg(t, L.start + 3.6, 0.5);
+    if (kb > 0) {
+      const y = 1110, x0 = 140, w = 800, half = w / 2 * easeOut(seg(t, L.start + 3.9, 0.8));
+      text('伝わらない原因は…', W / 2, y - 50, { size: 44, color: C.ink2, alpha: kb });
+      rrect(x0, y, w, 96, 48, C.white, { alpha: kb, shadow: true });
+      ctx.save(); rrectPath(x0, y, w, 96, 48); ctx.clip();
+      ctx.fillStyle = C.purple; ctx.fillRect(x0, y, half, 96);
+      ctx.fillStyle = C.blue; ctx.fillRect(x0 + w - half, y, half, 96); ctx.restore();
+      const kl = seg(t, L.start + 4.6, 0.4);
+      text('話す側', x0 + w / 4, y + 50, { size: 42, color: C.white, alpha: kl });
+      text('聞く側', x0 + w * 3 / 4, y + 50, { size: 42, color: C.white, alpha: kl });
+      // 「聞く側」を強調する枠
+      const kh = seg(t, L.start + 5.4, 0.4);
+      if (kh > 0) rrect(x0 + w / 2 - 6, y - 10, w / 2 + 16, 116, 58, 'transparent', { stroke: C.pink, lw: 8, alpha: kh });
+    }
+  },
+
+  signs(t, u) {
+    sceneTitle('相手に原因があるかも？', 250, u, { size: 62, sub: '3つのサイン' });
+    const cards = [
+      ['signs1', '✋', '最後まで聞かずに遮る', '「で、結論は？」が早すぎる'],
+      ['signs2', '💢', '責めるだけで、質問がない', 'どこが分からないのか言わない'],
+      ['signs3', '🎯', '目的を共有していない', '前提やゴールが曖昧なまま話を振る'],
+    ];
+    const lines = cards.map(c => LINE(c[0]));
+    let active = -1; lines.forEach((l, i) => { if (t >= l.start - 0.2) active = i; });
+    const sum = LINE('signs_sum');
+    if (t >= sum.start - 0.2) active = 3;
+    cards.forEach(([id, ico, title, sub], i) => {
+      const L = lines[i], k = seg(t, L.start - 0.2, 0.45);
+      if (k <= 0) return;
+      const y = 390 + i * 232, x = 90, w = 900, h = 200;
+      const on = active === i;
+      const dx = (1 - easeOut(k)) * 120;
+      ctx.save(); ctx.globalAlpha = clamp(k * 2) * (active > i && active < 3 ? 0.62 : 1);
+      rrect(x + dx, y, w, h, 40, C.white, { shadow: true, stroke: on ? C.pink : null, lw: 7 });
+      ctx.fillStyle = on ? C.pink : C.purple; ctx.beginPath(); ctx.arc(x + dx + 80, y + h / 2, 48, 0, Math.PI * 2); ctx.fill();
+      text(String(i + 1), x + dx + 80, y + h / 2 + 3, { size: 56, color: C.white });
+      emoji(ico, x + dx + w - 70, y + h / 2, 60);
+      text(title, x + dx + 160, y + 78, { size: 48, align: 'left' });
+      text(sub, x + dx + 160, y + 144, { size: 36, weight: 500, color: C.ink2, align: 'left' });
+      ctx.restore();
+    });
+    const ks = seg(t, sum.start + 1.0, 0.45);
+    if (ks > 0) withXf(W / 2, 1150, easeBack(ks), -0.03, clamp(ks * 2), () => {
+      rrect(-380, -62, 760, 124, 62, C.pink, { shadow: true });
+      text('相手の「聞き方」にも問題あり', 0, 3, { size: 50, color: C.white });
+    });
+  },
+
+  tip(t, u) {
+    const L = LINE('tip');
+    sceneTitle('返し方のコツ', 260, u, { sub: '責められたら、聞き返す' });
+    const k1 = seg(u, 0.4, 0.4);
+    if (k1 > 0) bubble(400, 470, '何が言いたいの？', { s: easeBack(k1), size: 52, h: 116, tailX: 40, alpha: lerp(1, 0.55, seg(t, L.start + 1.5, 0.5)) });
+    const ka = seg(t, L.start + 0.7, 0.4);
+    if (ka > 0) {
+      ctx.save(); ctx.globalAlpha = ka; ctx.fillStyle = C.ink3;
+      ctx.beginPath(); ctx.moveTo(500, 590); ctx.lineTo(580, 590); ctx.lineTo(580, 640); ctx.lineTo(620, 640); ctx.lineTo(540, 710); ctx.lineTo(460, 640); ctx.lineTo(500, 640); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    const k2 = seg(t, L.start + 1.0, 0.45);
+    if (k2 > 0) bubble(560, 810, 'どの部分が分かりにくかったですか？', { s: easeBack(k2), size: 46, h: 120, padX: 40, fill: C.mint, tail: 'down', tailX: -160 });
+    person(300, 1060, 0.7, C.purple, { mood: k2 > 0.5 ? 'smile' : 'neutral', look: 0.5 });
+    // 変換チップ
+    const kc = seg(t, L.start + 5.0, 0.5);
+    if (kc > 0) {
+      const y = 1050;
+      ctx.save(); ctx.globalAlpha = kc;
+      rrect(470, y - 56, 220, 112, 30, C.white, { shadow: true });
+      text('責める言葉', 580, y + 2, { size: 38, color: C.ink2 });
+      text('→', 735, y, { size: 56, color: C.pink });
+      rrect(780, y - 56, 220, 112, 30, C.pink, { shadow: true });
+      text('具体的な', 890, y - 20, { size: 36, color: C.white });
+      text('質問', 890, y + 24, { size: 40, color: C.white });
+      ctx.restore();
+    }
+  },
+
+  relief(t, u) {
+    const L = LINE('relief');
+    sceneTitle('ひとりで抱え込まなくていい', 290, u, { size: 60 });
+    const split = easeInOut(seg(t, L.start + 2.9, 1.0));
+    const kIn = easeOut(seg(u, 0.2, 0.5));
+    // 人物2人(右の人は分割と同時に登場)
+    person(lerp(540, 330, split), 1060, 0.85, C.purple, { mood: split > 0.6 ? 'smile' : 'sad', droop: 1 - split, sweat: 1 - split });
+    person(760, 1060, 0.85, C.blue, { mood: 'neutral', look: -0.4, alpha: split });
+    // 重い荷物 → 半分ずつに
+    const bw = lerp(520, 250, split), by = lerp(790, 810, split);
+    const lx = lerp(540, 330, split), rx = lerp(540, 760, split);
+    ctx.save(); ctx.globalAlpha = kIn;
+    if (split < 0.02) {
+      rrect(540 - bw / 2, by - 90 + (1 - kIn) * -60, bw, 150, 26, '#B9A8CF', { shadow: true });
+      text('ぜんぶ自分のせい', 540, by - 15 + (1 - kIn) * -60, { size: 46, color: C.white });
+    } else {
+      rrect(lx - bw / 2, by - 90, bw, 130, 26, C.purple, { shadow: true });
+      text('伝え方', lx, by - 25, { size: 46, color: C.white });
+      rrect(rx - bw / 2, by - 90, bw, 130, 26, C.blue, { shadow: true, alpha: split });
+      text('聞き方', rx, by - 25, { size: 46, color: C.white, alpha: split });
+    }
+    ctx.restore();
+    // 工夫のポイント(上部)
+    const kp = seg(t, L.start + 0.3, 0.5);
+    text('伝え方の工夫も、もちろん大切', W / 2, 430, { size: 42, weight: 500, color: C.ink2, alpha: kp });
+  },
+
+  end(t, u) {
+    const L = LINE('end');
+    const k1 = easeOut(seg(u, 0.2, 0.5)), k2 = easeOut(seg(t, L.start + 0.6, 0.5)), k3 = easeOut(seg(t, L.start + 1.3, 0.5));
+    text('伝わらないのは、', W / 2, 480 + (1 - k1) * 30, { size: 76, alpha: k1 });
+    withXf(W / 2, 620 + (1 - k2) * 30, 1, 0, k2, () => markedLine([['あなただけの', true]], 0, 0, 96, seg(t, L.start + 0.9, 0.6)));
+    text('せいじゃない。', W / 2, 760 + (1 - k3) * 30, { size: 96, alpha: k3 });
+    const kp = easeBack(seg(u, 0.6, 0.6));
+    person(540, 1110, 0.9 * kp, C.purple, { mood: 'smile' });
+    // きらきら
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * Math.PI * 2 + t * 0.4, r = 230 + 20 * Math.sin(t * 2 + i);
+      emoji('✨', 540 + Math.cos(a) * r, 1080 + Math.sin(a) * r * 0.7, 44, kp * (0.6 + 0.4 * Math.sin(t * 3 + i)));
+    }
+    const kc = seg(u, 1.5, 0.6);
+    text('ナレーション  VOICEVOX:四国めたん', W / 2, 1440, { size: 34, weight: 500, color: C.ink2, alpha: kc });
+    text('BGM  オリジナル', W / 2, 1494, { size: 34, weight: 500, color: C.ink2, alpha: kc });
+  },
+};
+
+// ---------- 字幕(長いセリフは「。」で分けて文字数比で時間配分) ----------
+const CAPS = [];
+TL.lines.forEach((l, i) => {
+  if (l.scene === 'end') return;
+  const parts = l.text.match(/[^。]+。?/g);
+  const total = parts.reduce((a, p) => a + p.length, 0);
+  let s = l.start;
+  const next = TL.lines[i + 1];
+  parts.forEach((p, j) => {
+    const d = (l.end - l.start) * p.length / total;
+    const last = j === parts.length - 1;
+    CAPS.push({ start: s, end: last ? (next ? Math.min(next.start, l.end + 0.6) : l.end + 0.4) : s + d, text: p });
+    s += d;
+  });
+});
+function captions(t) {
+  const c = CAPS.find(c => t >= c.start - 0.05 && t < c.end);
+  if (!c) return;
+  const a = Math.min(seg(t, c.start - 0.05, 0.12), 1 - seg(t, c.end - 0.12, 0.12));
+  const size = 46, lh = 66, lines = wrapBalanced(c.text, 880, size);
+  const h = lines.length * lh + 52, y = 1300;
+  rrect(70, y, 940, h, 36, 'rgba(255,255,255,0.94)', { alpha: a, shadow: true });
+  lines.forEach((ln, i) => text(ln, W / 2, y + 26 + lh / 2 + i * lh + 2, { size, weight: 500, color: C.ink, alpha: a }));
+}
+
+// ---------- メイン ----------
+function render(t) {
+  const sc = TL.scenes.find(s => t >= s.start && t < s.end) || TL.scenes[TL.scenes.length - 1];
+  const gloom = clamp(seg(t, SCENE('blame').start, 0.6) - seg(t, SCENE('question').start, 0.8));
+  background(t, gloom);
+  const u = t - sc.start;
+  // シーン切り替え: 前シーンを 0.35 秒でフェードアウトしつつ重ねる
+  const XF = 0.35, idx = TL.scenes.indexOf(sc);
+  if (u < XF && idx > 0) {
+    const prev = TL.scenes[idx - 1];
+    ctx.save(); ctx.globalAlpha = 1 - u / XF; SCENES[prev.name](t, t - prev.start); ctx.restore();
+  }
+  ctx.save(); ctx.globalAlpha = idx > 0 ? easeOut(u / XF) : 1; SCENES[sc.name](t, u); ctx.restore();
+  captions(t);
+  // 全体フェードアウト
+  const fo = seg(t, DURATION - 0.6, 0.6);
+  if (fo > 0) { ctx.save(); ctx.globalAlpha = fo; ctx.fillStyle = C.bgTop; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+}
+window.render = render; window.FPS = FPS; window.DURATION = DURATION;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  document.fonts.ready.then(() => {
+    const t0 = performance.now();
+    (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>
