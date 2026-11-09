@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Glico Morinaga Case</title>
+<style>
+  html,body{margin:0;background:#050506;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timings.js"></script>
+<script>
+// ------------------------------------------------------------
+// グリコ・森永事件 ショート動画 (1080x1920 / 30fps)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン尺と字幕タイミングは narrate.py が書き出す timings.js から読む。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const T = window.TIMINGS;
+const DURATION = T.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MIN = '"IPAMincho","IPAPMincho",serif';
+const GOT = '"IPAGothic","IPAPGothic",sans-serif';
+const C = { bg: '#070708', ink: '#ece8de', ink2: '#9c978c', ink3: '#5a5650', red: '#c8161d', red2: '#ff2a2a', paper: '#d8d0bb', paperInk: '#1c1a17' };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const seg = (t, s, d) => clamp((t - s) / d);
+function hash(a, b = 0) { let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x7f4a7c15, 0xc2b2ae35); h ^= h >>> 15; h = Math.imul(h, 0x27d4eb2f); h ^= h >>> 13; return ((h >>> 0) % 100000) / 100000; }
+
+function txt(str, x, y, { size = 60, font = MIN, weight = 'normal', color = C.ink, align = 'center', alpha = 1, ls = 0, stroke = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+// タイプライター風に1文字ずつ出す
+function typed(str, u, cps = 14) { return [...str].slice(0, Math.max(0, Math.floor(u * cps))).join(''); }
+// 赤いゴム印: 大きく現れて押される
+function stamp(str, x, y, u, { size = 90, rot = -0.08, color = C.red, box = true } = {}) {
+  if (u <= 0) return;
+  const k = easeOut(u / 0.18);
+  const s = 1.8 - 0.8 * k;
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s);
+  ctx.globalAlpha = clamp(u / 0.12) * 0.92;
+  ctx.font = `bold ${size}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const w = ctx.measureText(str).width + size * 0.7, h = size * 1.45;
+  ctx.strokeStyle = color; ctx.fillStyle = color;
+  if (box) { ctx.lineWidth = size * 0.08; ctx.strokeRect(-w / 2, -h / 2, w, h); }
+  ctx.fillText(str, 0, size * 0.04);
+  // インクのかすれ
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 70; i++) {
+    const rx = (hash(i, str.length) - 0.5) * w, ry = (hash(i + 99, str.length) - 0.5) * h;
+    ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(rx, ry, 1 + hash(i, 7) * size * 0.05, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+// 赤と青緑にずれるグリッチ文字
+function glitchText(str, x, y, opts, t, amt = 1) {
+  const f = Math.floor(t * FPS);
+  const j = hash(f, 3) < 0.15 ? 1 : 0.15;
+  const dx = (hash(f, 1) - 0.5) * 18 * amt * j, dy = (hash(f, 2) - 0.5) * 6 * amt * j;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  txt(str, x - dx, y - dy, { ...opts, color: 'rgba(255,0,30,0.55)' });
+  txt(str, x + dx, y + dy, { ...opts, color: 'rgba(0,200,210,0.35)' });
+  ctx.restore();
+  txt(str, x, y, opts);
+}
+function line(x1, y1, x2, y2, color = C.ink3, w = 2, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = w;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function cueStart(scene, k) { const cs = T.cues.filter(c => c.scene === scene); return cs[Math.min(k, cs.length - 1)].start - T.scenes[scene].start; }
+
+// 古い紙
+function paper(x, y, w, h, rot, alpha, seed) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(x, y); ctx.rotate(rot);
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 40;
+  const g = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+  g.addColorStop(0, '#ddd5c0'); g.addColorStop(1, '#bdb39b');
+  ctx.fillStyle = g; ctx.fillRect(-w / 2, -h / 2, w, h);
+  ctx.shadowBlur = 0;
+  for (let i = 0; i < 260; i++) {           // シミ
+    ctx.fillStyle = `rgba(90,70,40,${0.03 + hash(i, seed) * 0.05})`;
+    ctx.beginPath(); ctx.arc((hash(i, seed + 1) - 0.5) * w, (hash(i, seed + 2) - 0.5) * h, 2 + hash(i, seed + 3) * 22, 0, 7); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(60,50,30,0.25)'; ctx.lineWidth = 2;   // 折り目
+  ctx.beginPath(); ctx.moveTo(-w / 2, -h / 6); ctx.lineTo(w / 2, -h / 6 + 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-w / 2, h / 6); ctx.lineTo(w / 2, h / 6 - 6); ctx.stroke();
+  ctx.restore();
+}
+function withPaper(x, y, rot, fn) { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); fn(); ctx.restore(); }
+
+// ---------- 共通レイヤー ----------
+const grain = [];
+for (let g = 0; g < 8; g++) {
+  const c = document.createElement('canvas'); c.width = 360; c.height = 640;
+  const x = c.getContext('2d'); const im = x.createImageData(360, 640);
+  for (let i = 0; i < im.data.length; i += 4) { const v = hash(i, g + 11) * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+  x.putImageData(im, 0, 0); grain.push(c);
+}
+function overlay(t) {
+  const f = Math.floor(t * FPS);
+  // フィルムグレイン
+  ctx.save(); ctx.globalAlpha = 0.07; ctx.globalCompositeOperation = 'overlay';
+  ctx.drawImage(grain[f % 8], 0, 0, W, H); ctx.restore();
+  // 縦の傷
+  if (hash(f, 40) < 0.25) line(hash(f, 41) * W, 0, hash(f, 41) * W + 6, H, 'rgba(230,225,210,0.12)', 1 + hash(f, 42) * 2);
+  // 走査線
+  ctx.save(); ctx.fillStyle = 'rgba(0,0,0,0.12)';
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 1);
+  ctx.restore();
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H * 0.45, H * 0.2, W / 2, H * 0.45, H * 0.75);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  // 明滅
+  ctx.fillStyle = `rgba(0,0,0,${0.04 + hash(f, 50) * 0.07})`; ctx.fillRect(0, 0, W, H);
+}
+function header(t, sceneIdx) {
+  const a = sceneIdx === T.scenes.length - 1 ? 0 : 1;
+  txt('警察庁広域重要指定 114号事件', 70, 120, { size: 30, font: GOT, align: 'left', color: C.ink2, alpha: 0.8 * a, ls: 4 });
+  // 録画中風の赤い点
+  if (Math.floor(t * 1.2) % 2 === 0) { ctx.fillStyle = C.red2; ctx.globalAlpha = a; ctx.beginPath(); ctx.arc(W - 200, 120, 11, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
+  txt('FILE', W - 120, 120, { size: 30, font: GOT, color: C.ink2, alpha: 0.8 * a, ls: 4 });
+  line(70, 160, W - 70, 160, C.ink3, 1, 0.6 * a);
+}
+// 字幕(画面下部、自動折り返し)
+function subtitle(t) {
+  const c = T.cues.find(c => t >= c.start - 0.05 && t < c.end + 0.25);
+  if (!c) return;
+  const a = clamp((t - c.start + 0.05) / 0.12) * clamp((c.end + 0.25 - t) / 0.15);
+  ctx.save(); ctx.font = `bold 54px ${GOT}`;
+  // 1行に収まらなければ、中央付近の読点・括弧の位置で2行に分ける
+  const chars = [...c.text]; let lines = [c.text];
+  if (ctx.measureText(c.text).width > 900) {
+    let best = -1, bestScore = 1e9;
+    for (let i = 2; i < chars.length - 2; i++) {
+      const a = chars.slice(0, i).join(''), b = chars.slice(i).join('');
+      const wa = ctx.measureText(a).width, wb = ctx.measureText(b).width;
+      if (wa > 900 || wb > 900 || '、。」'.includes(chars[i])) continue;
+      let score = Math.abs(wa - wb);
+      if ('、。'.includes(chars[i - 1])) score -= 1000;                       // 読点の直後が最優先
+      else if (chars[i - 1] === ' ' || chars[i] === '「') score -= 600;
+      else if ('はをにがでと'.includes(chars[i - 1]) && !/[ぁ-ん]/.test(chars[i])) score -= 200;  // 助詞の直後
+      else if (/[ぁ-んァ-ヶー]/.test(chars[i - 1]) && /[ぁ-んァ-ヶー]/.test(chars[i])) score += 300; // 語の途中は避ける
+      if (score < bestScore) { bestScore = score; best = i; }
+    }
+    lines = [chars.slice(0, best).join('').trim(), chars.slice(best).join('').trim()];
+  }
+  ctx.restore();
+  const y0 = 1490 - (lines.length - 1) * 38;
+  lines.forEach((l, i) => txt(l, W / 2, y0 + i * 76, { size: 54, font: GOT, weight: 'bold', color: '#fff', alpha: a, stroke: 12 }));
+}
+
+// ---------- シーン ----------
+// u: シーン内の経過秒, d: シーン長, t: 全体時刻
+const SCENE_DRAW = [
+  // 0. タイトル
+  (u, d, t) => {
+    const k1 = cueStart(0, 1), k2 = cueStart(0, 2);
+    txt('昭和 59年 — 60年', W / 2, 480, { size: 44, ls: 14, color: C.ink2, alpha: seg(u, 0.2, 0.8) });
+    txt('昭和最大の未解決事件', W / 2, 600, { size: 58, ls: 10, color: C.red2, alpha: seg(u, 0.5, 0.8) });
+    const ta = seg(u, k1 - 0.3, 0.6);
+    if (ta > 0) {
+      glitchText('グリコ', W / 2, 820, { size: 190, weight: 'bold', alpha: ta, ls: 20 }, t, 1.5);
+      glitchText('森永事件', W / 2, 1030, { size: 190, weight: 'bold', alpha: ta, ls: 20 }, t, 1.5);
+      line(140, 1180, 140 + 800 * easeOut(seg(u, k1, 0.8)), 1180, C.red, 4);
+    }
+    stamp('犯人 未逮捕', W / 2, 1300, u - k2 - 0.6, { size: 80 });
+  },
+  // 1. 社長誘拐
+  (u, d, t) => {
+    const k1 = cueStart(1, 1), k2 = cueStart(1, 2);
+    txt(typed('1984.3.18', u - 0.2, 10), W / 2, 380, { size: 120, font: GOT, weight: 'bold', ls: 6, color: C.ink });
+    txt('江崎グリコ社長  誘拐', W / 2, 530, { size: 64, ls: 6, alpha: seg(u, 1.4, 0.6) });
+    txt('入浴中の自宅に、覆面の男たち', W / 2, 620, { size: 40, color: C.ink2, alpha: seg(u, 2.0, 0.6) });
+    // 要求
+    const r = seg(u, k1 - 0.2, 0.5);
+    if (r > 0) {
+      txt('身代金の要求', W / 2, 780, { size: 40, color: C.red2, ls: 10, alpha: r });
+      const n1 = Math.round(10 * easeOut(seg(u, k1 + 0.6, 0.9)));
+      const n2 = Math.round(100 * easeOut(seg(u, k1 + 2.0, 0.9)));
+      txt('現金', 300, 920, { size: 52, alpha: r, color: C.ink2 });
+      txt(n1 + '億円', 300, 1030, { size: 110, weight: 'bold', alpha: seg(u, k1 + 0.6, 0.3) });
+      txt('金塊', 780, 920, { size: 52, alpha: r, color: C.ink2 });
+      txt(n2 + 'kg', 780, 1030, { size: 110, weight: 'bold', alpha: seg(u, k1 + 2.0, 0.3), color: '#d9b45a' });
+      line(W / 2, 880, W / 2, 1090, C.ink3, 2, r);
+    }
+    stamp('3日後 自力で脱出', W / 2, 1270, u - k2 - 0.5, { size: 70, rot: 0.05, color: '#e8e2d0' });
+  },
+  // 2. 挑戦状
+  (u, d, t) => {
+    const k1 = cueStart(2, 1), k2 = cueStart(2, 2);
+    txt('報道機関に届いた「挑戦状」', W / 2, 330, { size: 52, alpha: seg(u, 0.2, 0.6), ls: 4 });
+    const pa = easeOut(seg(u, 0.5, 0.8));
+    const py = 840 + (1 - pa) * 120;
+    paper(W / 2, py, 820, 900, -0.035, pa, 3);
+    if (pa > 0.3) withPaper(W / 2, py, -0.035, () => {
+      const o = { size: 64, font: GOT, color: C.paperInk, align: 'left', ls: 6 };
+      txt(typed('けいさつの あほども え', u - 1.2, 9), -340, -300, { ...o, size: 54, ls: 2 });
+      for (let i = 0; i < 6; i++) {           // 塗りつぶされた本文
+        const w = 520 + hash(i, 5) * 160, a = seg(u, 2.6 + i * 0.25, 0.3);
+        ctx.fillStyle = `rgba(28,26,23,${0.75 * a})`; ctx.fillRect(-340, -190 + i * 70, w * a, 30);
+      }
+      txt(typed('かい人21面相', u - k1 - 0.2, 8), 340, 320, { ...o, align: 'right', size: 76, weight: 'bold' });
+    });
+    stamp('警察を挑発', W / 2 + 200, 1270, u - k2 - 0.3, { size: 70, rot: -0.12 });
+  },
+  // 3. 標的の拡大と毒入り菓子
+  (u, d, t) => {
+    const k1 = cueStart(3, 1), k2 = cueStart(3, 2);
+    txt('脅迫された企業', W / 2, 300, { size: 46, ls: 10, color: C.ink2, alpha: seg(u, 0.1, 0.5) });
+    const cos = ['江崎グリコ', '丸大食品', '森永製菓', 'ハウス食品', '不二家', '駿河屋'];
+    cos.forEach((c, i) => {
+      const x = i % 2 ? 790 : 290, y = 420 + Math.floor(i / 2) * 120;
+      const a = seg(u, 0.3 + i * 0.45, 0.3) * (1 - 0.6 * seg(u, k1 - 0.3, 0.5));
+      txt(c, x, y, { size: 62, weight: 'bold', alpha: a });
+      if (a > 0) line(x - 150, y + 44, x + 150, y + 44, C.red, 3, a);
+    });
+    // 店頭の菓子箱と貼り紙
+    const b = easeOut(seg(u, k1 - 0.2, 0.7));
+    if (b > 0) {
+      ctx.save(); ctx.globalAlpha = b; ctx.translate(W / 2, 1050 + (1 - b) * 60); ctx.rotate(0.03);
+      ctx.fillStyle = '#2a2523'; ctx.fillRect(-330, -170, 660, 340);
+      ctx.fillStyle = '#3a312d'; ctx.fillRect(-330, -170, 660, 60);
+      ctx.strokeStyle = '#5a4c44'; ctx.lineWidth = 4; ctx.strokeRect(-330, -170, 660, 340);
+      txt('お菓子', 0, -10, { size: 70, color: 'rgba(236,232,222,0.25)', weight: 'bold' });
+      ctx.restore();
+      txt('青酸ソーダ混入', W / 2, 820, { size: 52, color: C.red2, ls: 8, alpha: seg(u, k1 + 1.2, 0.4) });
+    }
+    const s = u - k2 + 0.1;
+    if (s > 0) {
+      const k = easeOut(s / 0.25), sc = 1.5 - 0.5 * k;
+      ctx.save(); ctx.translate(W / 2, 1090); ctx.rotate(-0.06); ctx.scale(sc, sc); ctx.globalAlpha = clamp(s / 0.15);
+      ctx.fillStyle = '#f2efe6'; ctx.fillRect(-300, -120, 600, 240);
+      ctx.strokeStyle = C.red; ctx.lineWidth = 8; ctx.strokeRect(-285, -105, 570, 210);
+      txt('どくいり きけん', 0, -50, { size: 64, font: GOT, weight: 'bold', color: C.red });
+      txt('たべたら 死ぬで', 0, 30, { size: 64, font: GOT, weight: 'bold', color: C.red });
+      txt('かい人21面相', 200, 85, { size: 26, font: GOT, color: '#333' });
+      ctx.restore();
+    }
+  },
+  // 4. キツネ目の男
+  (u, d, t) => {
+    const k1 = cueStart(4, 1), k2 = cueStart(4, 2);
+    txt('現金受け渡し — 何度も接近', W / 2, 320, { size: 48, color: C.ink2, ls: 4, alpha: seg(u, 0.2, 0.6) });
+    // 人影
+    const a = seg(u, 0.6, 2.5);
+    ctx.save(); ctx.globalAlpha = a;
+    const g = ctx.createRadialGradient(W / 2, 780, 50, W / 2, 780, 520);
+    g.addColorStop(0, 'rgba(60,60,64,0.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 300, W, 1000);
+    ctx.fillStyle = '#020203';
+    ctx.beginPath(); ctx.ellipse(W / 2, 720, 160, 200, 0, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(W / 2 - 420, 1250); ctx.quadraticCurveTo(W / 2 - 380, 920, W / 2 - 110, 890);
+    ctx.lineTo(W / 2 + 110, 890); ctx.quadraticCurveTo(W / 2 + 380, 920, W / 2 + 420, 1250); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // 細くつり上がった目
+    const e = seg(u, k1 - 0.1, 0.4) * (hash(Math.floor(t * FPS), 77) < 0.04 ? 0.2 : 1);
+    if (e > 0) for (const sx of [-1, 1]) {
+      ctx.save(); ctx.translate(W / 2 + sx * 72, 700); ctx.scale(sx, 1); ctx.rotate(-0.32);
+      ctx.globalAlpha = e; ctx.shadowColor = C.red2; ctx.shadowBlur = 30; ctx.fillStyle = '#e8dfc8';
+      ctx.beginPath(); ctx.moveTo(-55, 8); ctx.quadraticCurveTo(0, -22, 55, -6); ctx.quadraticCurveTo(10, 14, -55, 8); ctx.fill();
+      ctx.shadowBlur = 0; ctx.fillStyle = '#0a0a0a'; ctx.beginPath(); ctx.arc(6, -2, 8, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+    glitchText('キツネ目の男', W / 2, 1100, { size: 110, weight: 'bold', alpha: seg(u, k1 + 0.4, 0.5), ls: 8 }, t, 2);
+    stamp('取り逃がし', W / 2, 1300, u - k2 - 1.0, { size: 80, rot: 0.07 });
+  },
+  // 5. 本部長の死と終結宣言
+  (u, d, t) => {
+    const k1 = cueStart(5, 1), k2 = cueStart(5, 2);
+    const fade = 1 - seg(u, k1 - 0.2, 0.5) * 0.75;
+    txt(typed('1985.8.7', u - 0.2, 10), W / 2, 380, { size: 110, font: GOT, weight: 'bold', ls: 6, alpha: fade });
+    txt('滋賀県警本部長、自ら命を絶つ', W / 2, 520, { size: 54, alpha: seg(u, 1.2, 0.6) * fade });
+    line(240, 590, 840, 590, C.ink3, 1, seg(u, 1.6, 0.6) * fade);
+    txt(typed('1985.8.12', u - k1 + 0.1, 10), W / 2, 700, { size: 80, font: GOT, weight: 'bold', color: C.red2, ls: 6 });
+    txt('犯人から「終結宣言」', W / 2, 800, { size: 50, alpha: seg(u, k1 + 0.8, 0.5) });
+    const pa = easeOut(seg(u, k2 - 0.5, 0.6));
+    if (pa > 0) {
+      paper(W / 2, 1090, 820, 400, 0.03, pa, 9);
+      withPaper(W / 2, 1090, 0.03, () => {
+        const o = { size: 66, font: GOT, color: C.paperInk, align: 'left', ls: 4 };
+        txt(typed('くいもんの 会社', u - k2 + 0.1, 8), -340, -90, o);
+        txt(typed('いびるの もお やめや', u - k2 - 1.2, 8), -340, 10, o);
+        txt('かい人21面相', 340, 120, { ...o, align: 'right', size: 40, alpha: seg(u, k2 + 2.4, 0.4) });
+      });
+    }
+  },
+  // 6. 時効
+  (u, d, t) => {
+    const k1 = cueStart(6, 1);
+    txt(typed('2000.2.13', u - 0.2, 10), W / 2, 400, { size: 110, font: GOT, weight: 'bold', ls: 6 });
+    txt('すべての事件で 公訴時効成立', W / 2, 540, { size: 54, alpha: seg(u, 1.3, 0.6) });
+    stamp('未 解 決', W / 2, 820, u - 2.2, { size: 150, rot: -0.06 });
+    // 闇に溶けていく名前
+    const a = seg(u, k1 + 0.5, 0.8) * (1 - seg(u, d - 1.6, 1.4));
+    glitchText('かい人21面相', W / 2, 1120, { size: 100, weight: 'bold', alpha: a * (0.75 + 0.25 * Math.sin(t * 9)), ls: 10 }, t, 3);
+    txt('正体は、今も闇の中', W / 2, 1250, { size: 48, color: C.ink2, alpha: seg(u, k1 + 1.8, 0.8) * (1 - seg(u, d - 1.6, 1.4)), ls: 8 });
+  },
+  // 7. クレジット
+  (u, d, t) => {
+    const a = seg(u, 0.2, 0.6) * (1 - seg(u, d - 0.6, 0.5));
+    txt('グリコ・森永事件', W / 2, 760, { size: 70, weight: 'bold', alpha: a, ls: 8 });
+    txt('1984 – 1985  /  2000年 時効', W / 2, 860, { size: 40, color: C.ink2, alpha: a });
+    line(340, 940, 740, 940, C.ink3, 1, a);
+    txt('ナレーション  VOICEVOX:四国めたん', W / 2, 1020, { size: 40, alpha: a, font: GOT });
+    txt('BGM  オリジナル(自作)', W / 2, 1090, { size: 40, alpha: a, font: GOT });
+    txt('事件の内容は公開報道に基づく概要です', W / 2, 1180, { size: 30, color: C.ink3, alpha: a, font: GOT });
+  },
+];
+
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  let si = T.scenes.findIndex((s, i) => t < s.start + s.dur || i === T.scenes.length - 1);
+  const s = T.scenes[si], u = t - s.start;
+  // シーン頭: 暗転からのフェード+横ずれグリッチ
+  const f = Math.floor(t * FPS);
+  const shake = u < 0.25 && si > 0 ? (hash(f, 9) - 0.5) * 40 : 0;
+  ctx.save(); ctx.translate(shake, 0);
+  SCENE_DRAW[si](u, s.dur, t);
+  ctx.restore();
+  if (u < 0.25 && si > 0) {        // 横スライスのずれ
+    for (let i = 0; i < 6; i++) {
+      const y = hash(f, 20 + i) * H, h = 20 + hash(f, 30 + i) * 80;
+      ctx.drawImage(cv, 0, y, W, h, (hash(f, 40 + i) - 0.5) * 120, y, W, h);
+    }
+  }
+  header(t, si);
+  subtitle(t);
+  overlay(t);
+  const fadeIn = si === 0 ? clamp(u / 0.8) : clamp(u / 0.35);
+  const fadeOut = clamp((s.start + s.dur - t) / 0.3);
+  const k = si === T.scenes.length - 1 ? fadeIn : Math.min(fadeIn, si === T.scenes.length - 2 ? 1 : fadeOut);
+  if (k < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - k})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  document.fonts.ready.then(() => {
+    const t0 = performance.now();
+    (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>
