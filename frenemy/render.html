@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Frenemy Short</title>
+<style>
+  html,body{margin:0;background:#160f20;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+<script src="timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// フレネミー解説ショート (1080×1920 / 30fps)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン尺と字幕は narrate.py が生成する timeline.js(実測したナレーション長)に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TIMELINE;
+const DURATION = TL.total;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg1: '#1b1326', bg2: '#2c1840',
+  ink: '#f7f3fa', ink2: '#cdc2da', ink3: '#8d80a0', line: '#45375a', panel: '#251c33', panel2: '#30253f',
+  pink: '#FF7EB3', purple: '#9B6BFF', yellow: '#FFD166', red: '#FF5C6C', green: '#5ED6A0', teal: '#5CC8E8',
+  me: '#5ED6A0', other: '#3a2d4c'
+};
+// 縦型ショートの UI に隠れない領域: 上 220px / 下 420px / 右 140px 程度を避ける
+const CAP_Y = 1330;   // 字幕ボックス上端
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function font(size, weight = 'normal') { return `${weight} ${size}px ${FONT}`; }
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, stroke = null, sw = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = font(size, weight);
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+// 日本語を 1 文字単位で折り返し(行頭禁則: 句読点・閉じ括弧を前の行に追い込む)
+function wrap(str, maxW, size, weight = 'normal') {
+  ctx.save(); ctx.font = font(size, weight);
+  const NG = '、。,.!?!?」』)〕…ー';
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !NG.includes(ch)) { lines.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore();
+  return lines;
+}
+function rrect(x, y, w, h, r, color, alpha = 1, strokeColor = null, lw = 0) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function strokePath(fn, color, lw, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); fn(); ctx.stroke(); ctx.restore();
+}
+// 中心 (x,y) を基準に拡大縮小・回転して描く
+function withXform(x, y, s, rot, alpha, fn) {
+  if (alpha <= 0 || s <= 0) return;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0); ctx.scale(s, s); ctx.globalAlpha *= alpha; fn(); ctx.restore();
+}
+
+// ---------- 顔アイコン(原点中心・半径 r) ----------
+function eyes(r, color, kind = 'dot') {
+  for (const sx of [-1, 1]) {
+    if (kind === 'dot') circle(sx * r * 0.33, -r * 0.12, r * 0.09, color);
+    else if (kind === 'happy') strokePath(() => { ctx.arc(sx * r * 0.33, -r * 0.08, r * 0.12, Math.PI * 1.15, Math.PI * 1.85); }, color, r * 0.07);
+    else if (kind === 'sly') strokePath(() => { ctx.moveTo(sx * r * 0.33 - r * 0.14, -r * 0.12 - sx * r * 0.05); ctx.lineTo(sx * r * 0.33 + r * 0.14, -r * 0.12 + sx * r * 0.05); }, color, r * 0.08);
+  }
+}
+function smile(r, color, w = 0.38, depth = 0.25) {
+  strokePath(() => { ctx.moveTo(-r * w, r * 0.2); ctx.quadraticCurveTo(0, r * (0.2 + depth * 2), r * w, r * 0.2); }, color, r * 0.08);
+}
+function faceFriend(r) { circle(0, 0, r, C.pink); eyes(r, '#3a1730', 'happy'); smile(r, '#3a1730'); blush(r); }
+function faceEnemy(r) {
+  // 角
+  ctx.save(); ctx.fillStyle = C.purple;
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx * r * 0.35, -r * 0.8); ctx.lineTo(sx * r * 0.75, -r * 1.25); ctx.lineTo(sx * r * 0.78, -r * 0.5); ctx.fill(); }
+  ctx.restore();
+  circle(0, 0, r, C.purple); eyes(r, '#1d1030', 'sly');
+  strokePath(() => { ctx.moveTo(-r * 0.32, r * 0.35); ctx.quadraticCurveTo(r * 0.05, r * 0.5, r * 0.36, r * 0.22); }, '#1d1030', r * 0.08);
+}
+function faceMe(r, mood = 'normal') {
+  circle(0, 0, r, C.green);
+  if (mood === 'sad') {
+    eyes(r, '#123326', 'dot');
+    strokePath(() => { ctx.moveTo(-r * 0.25, r * 0.42); ctx.quadraticCurveTo(0, r * 0.25, r * 0.25, r * 0.42); }, '#123326', r * 0.08);
+  } else if (mood === 'happy') { eyes(r, '#123326', 'happy'); smile(r, '#123326'); }
+  else { eyes(r, '#123326', 'dot'); strokePath(() => { ctx.moveTo(-r * 0.2, r * 0.35); ctx.lineTo(r * 0.2, r * 0.35); }, '#123326', r * 0.08); }
+}
+function facePerson(r, color = '#7d7290') { circle(0, 0, r, color); eyes(r, '#2a2236', 'dot'); smile(r, '#2a2236', 0.25, 0.1); }
+function blush(r) { for (const sx of [-1, 1]) circle(sx * r * 0.55, r * 0.15, r * 0.12, '#ffffff', 0.25); }
+// 左半分が笑顔(友達)、右半分が悪い顔(敵)の「仮面」
+function faceMask(r, split = 1) {
+  ctx.save(); ctx.beginPath(); ctx.rect(-r * 1.4, -r * 1.4, r * 1.4, r * 2.8); ctx.clip(); faceFriend(r); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(0, -r * 1.4, r * 1.4, r * 2.8); ctx.clip();
+  ctx.translate(r * 0.06 * split, 0); faceEnemy(r); ctx.restore();
+  strokePath(() => { ctx.moveTo(0, -r * 1.05); for (let i = 1; i <= 8; i++) ctx.lineTo((i % 2 ? 1 : -1) * r * 0.06, -r * 1.05 + i * r * 0.26); }, C.bg1, r * 0.05);
+}
+
+// ---------- 共通パーツ ----------
+function bg(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ゆっくり漂う光の玉
+  for (let i = 0; i < 9; i++) {
+    const x = (i * 241 + t * (12 + i * 3)) % (W + 300) - 150;
+    const y = 300 + ((i * 397) % 1300) + Math.sin(t * 0.6 + i) * 30;
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, 180);
+    const col = i % 2 ? '155,107,255' : '255,126,179';
+    rg.addColorStop(0, `rgba(${col},0.10)`); rg.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = rg; ctx.fillRect(x - 180, y - 180, 360, 360);
+  }
+}
+// シーン見出し(バッジ + タイトル)
+function header(badge, title, t, a, color = C.pink) {
+  const e = easeOut(seg(t, 0, 0.5));
+  const y = 330 - (1 - e) * 40;
+  if (badge) {
+    ctx.save(); ctx.font = font(40, 'bold'); const bw = ctx.measureText(badge).width + 56; ctx.restore();
+    rrect(W / 2 - bw / 2, y - 120, bw, 66, 33, color, a * e);
+    text(badge, W / 2, y - 74, { size: 40, weight: 'bold', color: C.bg1, align: 'center', alpha: a * e });
+  }
+  text(title, W / 2, y + 20, { size: 76, weight: 'bold', align: 'center', alpha: a * e });
+}
+// ローカル時刻 lt におけるこのシーンの i 番目の字幕キューの開始時刻(シーン先頭基準)
+function cueAt(sid, i) {
+  const sc = TL.scenes.find(s => s.id === sid);
+  const cs = TL.cues.filter(c => c.scene === sid);
+  return (cs[Math.min(i, cs.length - 1)].s - sc.s);
+}
+// 吹き出し(チャット)。side: 'L'(相手) / 'R'(自分)
+function bubble(str, side, y, appear, { color, ink = C.ink, size = 50, avatar = null, maxW = 640 } = {}) {
+  const p = backOut(appear), a = clamp(appear * 3);
+  if (a <= 0) return 0;
+  const lines = wrap(str, maxW, size);
+  ctx.save(); ctx.font = font(size); const tw = Math.max(...lines.map(l => ctx.measureText(l).width)); ctx.restore();
+  const bw = tw + 68, bh = lines.length * size * 1.35 + 44;
+  const ax = side === 'L' ? 150 : W - 150;
+  const bx = side === 'L' ? 230 : W - 230 - bw;
+  withXform(side === 'L' ? bx : bx + bw, y, lerp(0.6, 1, p), 0, a, () => {
+    ctx.translate(side === 'L' ? -bx : -(bx + bw), -y);
+    rrect(bx, y, bw, bh, 36, color || (side === 'L' ? C.other : C.me));
+    // しっぽ
+    ctx.save(); ctx.fillStyle = color || (side === 'L' ? C.other : C.me); ctx.beginPath();
+    if (side === 'L') { ctx.moveTo(bx + 4, y + 26); ctx.lineTo(bx - 20, y + 16); ctx.lineTo(bx + 14, y + 56); }
+    else { ctx.moveTo(bx + bw - 4, y + 26); ctx.lineTo(bx + bw + 20, y + 16); ctx.lineTo(bx + bw - 14, y + 56); }
+    ctx.fill(); ctx.restore();
+    lines.forEach((l, i) => text(l, bx + 34, y + 22 + size * 1.08 + i * size * 1.35, { size, color: ink }));
+  });
+  if (avatar) withXform(ax, y + 46, lerp(0.6, 1, p), 0, a, () => avatar(46));
+  return bh;
+}
+function typing(side, y, a) {
+  if (a <= 0) return;
+  const bx = side === 'L' ? 230 : W - 230 - 150;
+  rrect(bx, y, 150, 86, 36, side === 'L' ? C.other : C.me, a);
+  for (let i = 0; i < 3; i++) circle(bx + 45 + i * 30, y + 43 + Math.sin(performance_t * 9 - i) * 6, 9, C.ink2, a);
+}
+let performance_t = 0; // render() が更新する現在時刻(タイピング点のアニメ用)
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const e1 = backOut(seg(t, 0.1, 0.7));
+  text('その友達、', W / 2, 400, { size: 72, weight: 'bold', align: 'center', alpha: a * easeOut(seg(t, 0, 0.5)) });
+  text('本当に味方?', W / 2, 500, { size: 72, weight: 'bold', color: C.yellow, align: 'center', alpha: a * easeOut(seg(t, 0.3, 0.5)) });
+  // 仮面: 最初は笑顔の面だけ見せ、少しずつ右半分が「ずれて」本性が見える
+  const reveal = easeInOut(seg(t, cueAt('title', 1) - 0.2, 1.0));
+  withXform(W / 2, 860, lerp(0.3, 1, e1), Math.sin(t * 1.5) * 0.03, a, () => {
+    if (reveal < 0.02) faceFriend(220);
+    else { faceMask(220, reveal * 3); }
+  });
+  // 「フレネミー」を 1 文字ずつ
+  const word = 'フレネミー';
+  const t2 = cueAt('title', 1) + 0.6;
+  [...word].forEach((ch, i) => {
+    const p = backOut(seg(t, t2 + i * 0.09, 0.45));
+    withXform(W / 2 - 300 + i * 150, 1220, p, 0, a * clamp(p * 2), () =>
+      text(ch, 0, 0, { size: 140, weight: 'bold', color: i % 2 ? C.purple : C.pink, align: 'center', base: 'middle', stroke: C.bg1, sw: 14 }));
+  });
+}
+
+function sceneDefine(t, a) {
+  header(null, 'フレネミーとは?', t, a);
+  const y = 650;
+  const p1 = backOut(seg(t, 0.4, 0.6)), p2 = backOut(seg(t, 1.1, 0.6)), p3 = backOut(seg(t, 2.0, 0.7));
+  withXform(250, y, p1, 0, a, () => faceFriend(110));
+  text('Friend', 250, y + 190, { size: 54, weight: 'bold', color: C.pink, align: 'center', alpha: a * clamp(p1) });
+  text('友達', 250, y + 250, { size: 40, color: C.ink2, align: 'center', alpha: a * clamp(p1) });
+  text('+', W / 2, y + 20, { size: 110, weight: 'bold', color: C.ink2, align: 'center', base: 'middle', alpha: a * clamp(p2) });
+  withXform(830, y, p2, 0, a, () => faceEnemy(110));
+  text('Enemy', 830, y + 190, { size: 54, weight: 'bold', color: C.purple, align: 'center', alpha: a * clamp(p2) });
+  text('敵', 830, y + 250, { size: 40, color: C.ink2, align: 'center', alpha: a * clamp(p2) });
+  // = Frenemy
+  text('=', W / 2, 1010, { size: 100, weight: 'bold', color: C.ink2, align: 'center', base: 'middle', alpha: a * clamp(p3) });
+  withXform(W / 2 - 200, 1170, p3, 0, a, () => faceMask(85, 1));
+  text('Frenemy', W / 2 + 90, 1195, { size: 86, weight: 'bold', align: 'center', alpha: a * clamp(p3) });
+  // 2文目: 「表」と「裏」のラベル
+  const p4 = easeOut(seg(t, cueAt('define', 1), 0.5));
+  if (p4 > 0) {
+    rrect(W / 2 - 200 - 170, 1080, 120, 56, 28, C.pink, a * p4);
+    text('表', W / 2 - 310, 1120, { size: 36, weight: 'bold', color: C.bg1, align: 'center', alpha: a * p4 });
+    rrect(W / 2 - 200 + 110, 1240, 120, 56, 28, C.purple, a * easeOut(seg(t, cueAt('define', 1) + 1.0, 0.5)));
+    text('裏', W / 2 - 200 + 170, 1280, { size: 36, weight: 'bold', color: C.bg1, align: 'center', alpha: a * easeOut(seg(t, cueAt('define', 1) + 1.0, 0.5)) });
+  }
+}
+
+function scenePraise(t, a) {
+  header('特徴 ①', '褒めながら落とす', t, a);
+  const c1 = cueAt('praise', 1);
+  bubble('今日の服どう?', 'R', 520, seg(t, 0.6, 0.4), { avatar: r => faceMe(r) });
+  typing('L', 700, a * (seg(t, 1.4, 0.2) - seg(t, c1 - 0.3, 0.15)));
+  bubble('え〜かわいい!', 'L', 700, seg(t, c1 - 0.3, 0.4), { avatar: r => faceFriend(r) });
+  const p = seg(t, c1 + 0.9, 0.4);
+  bubble('安かったでしょ?笑', 'L', 860, p, { avatar: r => faceMask(r), color: '#4a2b5e' });
+  // グサッ
+  const g = backOut(seg(t, c1 + 1.5, 0.4));
+  withXform(830, 1110, g, -0.15, a * clamp(g * 2), () =>
+    text('グサッ', 0, 0, { size: 110, weight: 'bold', color: C.red, align: 'center', base: 'middle', stroke: C.bg1, sw: 12 }));
+  withXform(W - 150, 566, 1, 0, a * seg(t, c1 + 1.5, 0.2), () => { circle(0, 0, 50, C.bg1); faceMe(46, 'sad'); });
+}
+
+function sceneSuccess(t, a) {
+  header('特徴 ②', '成功を喜ばない', t, a);
+  const c1 = cueAt('success', 1);
+  bubble('資格試験、合格したよ!', 'R', 520, seg(t, 0.5, 0.4), { avatar: r => faceMe(r, 'happy') });
+  // 紙吹雪(自分の喜び)…が、水を差されて止まる
+  const stop = seg(t, c1 + 0.6, 0.3);
+  for (let i = 0; i < 26; i++) {
+    const s = 0.7 + (i % 7) * 0.05, life = t - s;
+    if (life < 0) continue;
+    const fall = Math.min(life, c1 + 0.6 - s);
+    const x = 620 + Math.sin(i * 2.3) * 300 + fall * Math.cos(i) * 40;
+    const y = 470 + fall * (160 + (i % 5) * 40);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(i + fall * 3);
+    ctx.globalAlpha = a * (1 - stop) * 0.9; ctx.fillStyle = [C.yellow, C.pink, C.teal, C.green][i % 4];
+    ctx.fillRect(-10, -5, 20, 10); ctx.restore();
+  }
+  bubble('へー', 'L', 720, seg(t, c1 - 0.2, 0.35), { avatar: r => faceMask(r) });
+  bubble('運が良かっただけでしょ', 'L', 880, seg(t, c1 + 0.5, 0.4), { avatar: r => faceMask(r), color: '#4a2b5e' });
+  // 水を差す: 自分の吹き出しに水滴がかかって色あせ
+  const w = seg(t, c1 + 1.2, 0.6);
+  for (let i = 0; i < 5; i++) {
+    const y = lerp(380, 560, easeInOut(seg(t, c1 + 1.0 + i * 0.12, 0.5)));
+    withXform(580 + i * 70, y, 1, 0, a * clamp(seg(t, c1 + 1.0 + i * 0.12, 0.1)) * (1 - seg(t, c1 + 1.7 + i * 0.12, 0.2)), () => {
+      ctx.fillStyle = C.teal; ctx.beginPath(); ctx.moveTo(0, -24); ctx.quadraticCurveTo(18, 0, 0, 14); ctx.quadraticCurveTo(-18, 0, 0, -24); ctx.fill();
+    });
+  }
+  withXform(W - 150, 566, 1, 0, a * w, () => { circle(0, 0, 50, C.bg1); faceMe(46, 'sad'); });
+  text('しーん…', 770, 1150, { size: 64, weight: 'bold', color: C.ink3, align: 'center', alpha: a * easeOut(seg(t, c1 + 2.0, 0.5)) });
+}
+
+function sceneSecret(t, a) {
+  header('特徴 ③', '秘密が広まる', t, a);
+  const c1 = cueAt('secret', 1);
+  const cx = W / 2, cy = 860;
+  // 自分 → フレネミーに耳打ち
+  const p0 = easeOut(seg(t, 0.3, 0.5));
+  withXform(210, 600, p0, 0, a, () => faceMe(70));
+  text('ここだけの話…', 210, 720, { size: 36, color: C.ink2, align: 'center', alpha: a * p0 });
+  const msg = easeInOut(seg(t, 0.9, 0.9));
+  if (msg > 0 && msg < 1) withXform(lerp(280, cx - 90, msg), lerp(600, cy - 40, msg), 1, 0, a, () => {
+    rrect(-34, -24, 68, 48, 8, C.yellow); strokePath(() => { ctx.moveTo(-34, -24); ctx.lineTo(0, 4); ctx.lineTo(34, -24); }, C.bg1, 4);
+  });
+  withXform(cx, cy, backOut(seg(t, 0.6, 0.5)), 0, a, () => faceMask(90));
+  // 周囲の人へ広がる
+  const N = 6, R = 330, ts = 2.4;
+  for (let i = 0; i < N; i++) {
+    const ang = -Math.PI * 0.05 + (i / (N - 1)) * Math.PI * 1.1 + Math.PI * 0.0;
+    const px = cx + Math.cos(ang) * R, py = cy + Math.sin(ang) * R * 0.85 + 80;
+    const sp = easeOut(seg(t, ts + i * 0.22, 0.5));
+    strokePath(() => { ctx.moveTo(cx, cy); ctx.lineTo(lerp(cx, px, sp), lerp(cy, py, sp)); }, C.pink, 5, a * 0.7, [14, 12]);
+    withXform(px, py, backOut(seg(t, ts + i * 0.22 + 0.3, 0.4)), 0, a, () => facePerson(52));
+    text('ヒソヒソ', px, py - 72, { size: 30, weight: 'bold', color: C.pink, align: 'center', alpha: a * easeOut(seg(t, ts + i * 0.22 + 0.5, 0.3)) });
+  }
+  // 出どころ
+  const q = backOut(seg(t, c1 + 0.5, 0.5));
+  withXform(cx + 150, cy - 150, q, 0.1, a * clamp(q * 2), () => {
+    rrect(-100, -40, 200, 80, 40, C.red); text('出どころ', 0, 14, { size: 40, weight: 'bold', align: 'center' });
+  });
+}
+
+function sceneDivide(t, a) {
+  header('特徴 ④', '仲を引き裂く', t, a);
+  const c1 = cueAt('divide', 1);
+  const A = [230, 720], B = [850, 720], F = [W / 2, 1180];
+  const p0 = easeOut(seg(t, 0.2, 0.5));
+  // 自分と友達 B のつながり(ハート)
+  const crack = easeInOut(seg(t, c1 + 0.2, 0.6));
+  strokePath(() => { ctx.moveTo(A[0] + 90, A[1]); ctx.lineTo(B[0] - 90, B[1]); }, crack > 0 ? C.red : C.pink, 8, a * p0 * (1 - crack * 0.6), crack > 0 ? [18, 14] : null);
+  withXform(W / 2, A[1] - 6, 1, 0, a * p0, () => {
+    const off = crack * 30;
+    ctx.fillStyle = crack > 0 ? C.red : C.pink;
+    for (const sx of [-1, 1]) {
+      ctx.save(); ctx.translate(sx * off, crack * 20); ctx.rotate(sx * crack * 0.35);
+      ctx.beginPath(); ctx.rect(sx < 0 ? -60 : 0, -60, 60, 120); ctx.clip();
+      ctx.beginPath(); ctx.moveTo(0, 40); ctx.bezierCurveTo(-70, -10, -40, -60, 0, -28); ctx.bezierCurveTo(40, -60, 70, -10, 0, 40); ctx.fill();
+      ctx.restore();
+    }
+  });
+  withXform(A[0], A[1], p0, 0, a, () => faceMe(80, crack > 0.5 ? 'sad' : 'normal'));
+  text('あなた', A[0], A[1] + 130, { size: 40, color: C.ink2, align: 'center', alpha: a * p0 });
+  withXform(B[0], B[1], p0, 0, a, () => facePerson(80, '#6fa8dc'));
+  text('友達', B[0], B[1] + 130, { size: 40, color: C.ink2, align: 'center', alpha: a * p0 });
+  // フレネミーが下から登場して告げ口
+  const pf = backOut(seg(t, 0.8, 0.5));
+  withXform(F[0], F[1], pf, 0, a, () => faceMask(80));
+  const pb = seg(t, 1.3, 0.4);
+  if (pb > 0) {
+    const s = backOut(pb), al = a * clamp(pb * 3);
+    withXform(F[0] - 80, 1010, lerp(0.6, 1, s), 0, al, () => {
+      rrect(-330, -70, 500, 110, 40, '#4a2b5e');
+      ctx.fillStyle = '#4a2b5e'; ctx.beginPath(); ctx.moveTo(40, 36); ctx.lineTo(90, 36); ctx.lineTo(70, 80); ctx.fill();
+      text('あの子が悪口言ってたよ', -80, 4, { size: 40, align: 'center', base: 'middle' });
+    });
+  }
+}
+
+function sceneCheck(t, a) {
+  header(null, 'こんなサインに注意', t, a, C.yellow);
+  const items = ['会ったあと、どっと疲れる', 'なぜか自信がなくなる', '本音を話せない'];
+  const starts = [0.3, 1.6, cueAt('check', 1) - 0.4];
+  items.forEach((s, i) => {
+    const y = 560 + i * 190;
+    const p = easeOut(seg(t, starts[i], 0.45));
+    rrect(110 - (1 - p) * 60, y, 860, 140, 30, C.panel, a * p, C.line, 3);
+    rrect(150 - (1 - p) * 60, y + 35, 70, 70, 14, null, a * p, C.ink2, 5);
+    const ck = seg(t, starts[i] + 0.35, 0.3);
+    if (ck > 0) strokePath(() => {
+      const x0 = 150 - (1 - p) * 60; ctx.moveTo(x0 + 12, y + 70);
+      ctx.lineTo(x0 + 12 + 20 * clamp(ck * 2), y + 70 + 20 * clamp(ck * 2));
+      if (ck > 0.5) ctx.lineTo(x0 + 32 + 40 * clamp(ck * 2 - 1), y + 90 - 60 * clamp(ck * 2 - 1));
+    }, C.yellow, 12, a);
+    text(s, 260 - (1 - p) * 60, y + 90, { size: 52, weight: 'bold', alpha: a * p });
+  });
+  // 「要注意」スタンプ
+  const st = seg(t, cueAt('check', 1) + 0.9, 0.35);
+  withXform(W / 2 + 200, 1180, lerp(2.2, 1, easeOut(st)), -0.2, a * clamp(st * 2), () => {
+    rrect(-200, -70, 400, 140, 20, null, 1, C.red, 10);
+    text('要注意', 0, 0, { size: 96, weight: 'bold', color: C.red, align: 'center', base: 'middle' });
+  });
+}
+
+function sceneCope(t, a) {
+  header(null, '対処法は3つ', t, a, C.green);
+  const items = [
+    ['少しずつ距離を置く', '急に切らず、会う回数を減らす'],
+    ['大切な情報は話さない', '秘密・悩み・予定は共有しない'],
+    ['挑発に反応しない', '相手の言葉に振り回されない'],
+  ];
+  const starts = [cueAt('cope', 0) + 1.0, cueAt('cope', 1) - 0.1, cueAt('cope', 2) + 0.2];
+  items.forEach(([h, sub], i) => {
+    const y = 520 + i * 245;
+    const p = easeOut(seg(t, starts[i], 0.5));
+    const x = 100 + (1 - p) * 120;
+    rrect(x, y, 880, 205, 34, C.panel, a * p, C.green, 3);
+    circle(x + 90, y + 102, 52, C.green, a * p);
+    text(String(i + 1), x + 90, y + 104, { size: 64, weight: 'bold', color: C.bg1, align: 'center', base: 'middle', alpha: a * p });
+    text(h, x + 175, y + 95, { size: 56, weight: 'bold', alpha: a * p });
+    text(sub, x + 175, y + 160, { size: 36, color: C.ink2, alpha: a * p });
+  });
+}
+
+function sceneOutro(t, a) {
+  const p = backOut(seg(t, 0.2, 0.7));
+  // 2人の笑顔とハート
+  withXform(W / 2 - 170, 720, p, Math.sin(t * 2) * 0.05, a, () => faceMe(120, 'happy'));
+  withXform(W / 2 + 170, 720, p, -Math.sin(t * 2) * 0.05, a, () => faceFriend(120));
+  const hb = 1 + Math.sin(t * 5) * 0.06;
+  withXform(W / 2, 540, backOut(seg(t, 0.8, 0.5)) * hb, 0, a, () => {
+    ctx.fillStyle = C.pink; ctx.beginPath(); ctx.moveTo(0, 50); ctx.bezierCurveTo(-90, -10, -55, -80, 0, -38); ctx.bezierCurveTo(55, -80, 90, -10, 0, 50); ctx.fill();
+  });
+  const e = easeOut(seg(t, cueAt('outro', 1) - 0.2, 0.6));
+  text('心が軽くなる人を、', W / 2, 1010, { size: 70, weight: 'bold', align: 'center', alpha: a * e });
+  text('大切に。', W / 2, 1110, { size: 90, weight: 'bold', color: C.yellow, align: 'center', alpha: a * e });
+  const cr = easeOut(seg(t, cueAt('outro', 1) + 1.5, 0.6));
+  text('ナレーション: VOICEVOX:四国めたん', W / 2, 1230, { size: 32, color: C.ink3, align: 'center', alpha: a * cr });
+  text('BGM: 自作(権利フリー)', W / 2, 1280, { size: 32, color: C.ink3, align: 'center', alpha: a * cr });
+}
+
+const SCENE_FUNCS = {
+  title: sceneTitle, define: sceneDefine, praise: scenePraise, success: sceneSuccess,
+  secret: sceneSecret, divide: sceneDivide, check: sceneCheck, cope: sceneCope, outro: sceneOutro,
+};
+
+// 行数を保ったまま各行の長さをなるべく揃える(末尾に 1〜2 文字だけ残るのを防ぐ)
+function wrapBalanced(str, maxW, size, weight) {
+  const n = wrap(str, maxW, size, weight).length;
+  if (n < 2) return [str];
+  let lo = maxW * 0.5, hi = maxW;
+  for (let k = 0; k < 14; k++) { const mid = (lo + hi) / 2; if (wrap(str, mid, size, weight).length > n) lo = mid; else hi = mid; }
+  return wrap(str, hi + 1, size, weight);
+}
+// 字幕(焼き込み)
+function captions(t) {
+  TL.cues.forEach((c, i) => {
+    const nx = TL.cues[i + 1];
+    const e = Math.min(c.e + 0.25, nx ? nx.s - 0.22 : Infinity);
+    if (t < c.s - 0.1 || t > e + 0.12) return;
+    const a = Math.min(easeOut(seg(t, c.s - 0.1, 0.1)), 1 - seg(t, e, 0.12));
+    const size = 52;
+    const lines = wrapBalanced(c.text, 860, size, 'bold');
+    const h = lines.length * size * 1.4 + 40;
+    rrect(70, CAP_Y, W - 140, h, 28, 'rgba(10,6,16,0.72)', a);
+    lines.forEach((l, i) => text(l, W / 2, CAP_Y + 20 + size * 1.08 + i * size * 1.4,
+      { size, weight: 'bold', align: 'center', alpha: a, stroke: 'rgba(0,0,0,0.6)', sw: 6 }));
+  });
+}
+
+const XF = 0.3; // クロスフェード秒
+function render(t) {
+  performance_t = t;
+  bg(t);
+  for (const sc of TL.scenes) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const last = sc === TL.scenes[TL.scenes.length - 1];
+    const a = Math.min(easeOut((lt + XF) / XF), last ? 1 : easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    SCENE_FUNCS[sc.id](Math.max(lt, 0), clamp(a));
+  }
+  captions(t);
+  // 上部の小さなチャンネル風ラベルと下部プログレスバー
+  text('人間関係のトリセツ', 60, 120, { size: 34, weight: 'bold', color: C.ink3 });
+  rrect(0, H - 10, W, 10, 0, C.line, 0.5);
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.pink, 1);
+  // 最後 0.4 秒でフェードアウト
+  const fo = seg(t, DURATION - 0.5, 0.5);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
