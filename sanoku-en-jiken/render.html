@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>三億円事件</title>
+<style>
+  @font-face { font-family: 'Mincho'; src: url('fonts/ShipporiMincho-Regular.ttf'); font-weight: 400; }
+  @font-face { font-family: 'Mincho'; src: url('fonts/ShipporiMincho-ExtraBold.ttf'); font-weight: 800; }
+  html,body{margin:0;background:#000;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 三億円事件 (9:16 ショート動画 / 68秒)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する
+// 字幕は narrate.py が書き出す output/cues.json を window.CUES に読み込んで焼き込む
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30, DURATION = 68.0;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MIN = '"Mincho","IPAPGothic",serif';
+const GOT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0b0a09', ink: '#ece6da', ink2: '#a39d92', ink3: '#5f5a52',
+  red: '#c8221f', redDark: '#5a0e0c', paper: '#1a1714', road: '#1c1c1c', line: '#3a3833',
+};
+window.FPS = FPS; window.DURATION = DURATION;
+window.CUES = window.CUES || [];
+
+// ---------- 乱数(決定論的) ----------
+function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+function noise1(x) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash(i) * (1 - u) + hash(i + 1) * u; }
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeIn = t => { t = clamp(t); return t * t * t; };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function text(str, x, y, { size = 48, weight = 400, color = C.ink, align = 'left', alpha = 1, font = MIN, ls = 0, stroke = 0, shadow = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = color; ctx.shadowBlur = shadow; }
+  if (stroke) { ctx.lineWidth = stroke; ctx.strokeStyle = 'rgba(0,0,0,0.9)'; ctx.lineJoin = 'round'; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+// タイプライター風に1文字ずつ表示
+function typed(str, t, cps = 14) { return str.slice(0, Math.max(0, Math.floor(t * cps))); }
+function rect(x, y, w, h, color, alpha = 1) { if (alpha <= 0) return; ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color; ctx.fillRect(x, y, w, h); ctx.restore(); }
+function hline(x1, y, x2, color, w = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke(); ctx.restore();
+}
+// 赤いハンコ(枠付き・傾き)
+function stamp(str, x, y, size, t, rot = -0.12) {
+  if (t <= 0) return;
+  const s = 1 + 1.6 * (1 - easeOut(t / 0.18));
+  const a = clamp(t / 0.08);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s); ctx.globalAlpha = a * 0.92;
+  ctx.font = `800 ${size}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (str.length > 1) ctx.letterSpacing = (size * 0.1) + 'px';
+  const w = ctx.measureText(str).width + size * 0.7, h = size * 1.45;
+  ctx.strokeStyle = C.red; ctx.lineWidth = size * 0.09; ctx.strokeRect(-w / 2, -h / 2, w, h);
+  ctx.fillStyle = C.red; ctx.fillText(str, size * 0.05, size * 0.04);
+  // かすれ
+  ctx.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 70; i++) {
+    const rx = (hash(i * 3.1 + size) - .5) * w, ry = (hash(i * 7.7 + size) - .5) * h;
+    ctx.globalAlpha = 0.5 * hash(i * 1.3); ctx.beginPath(); ctx.arc(rx, ry, 2 + hash(i) * size * 0.05, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- 背景・質感 ----------
+const grainTiles = [];
+(function makeGrain() {
+  for (let k = 0; k < 6; k++) {
+    const g = document.createElement('canvas'); g.width = 270; g.height = 480;
+    const gx = g.getContext('2d'), img = gx.createImageData(270, 480);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = hash(i * 0.013 + k * 91.7) * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+    }
+    gx.putImageData(img, 0, 0); grainTiles.push(g);
+  }
+})();
+function postFX(t) {
+  // フィルムグレイン
+  ctx.save(); ctx.globalAlpha = 0.07; ctx.globalCompositeOperation = 'overlay';
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(grainTiles[Math.floor(t * FPS) % grainTiles.length], 0, 0, W, H); ctx.restore();
+  // 縦の傷
+  const f = Math.floor(t * 12);
+  if (hash(f * 1.7) > 0.6) { const x = hash(f * 3.3) * W; rect(x, 0, 1.5, H, '#d8d0c0', 0.12); }
+  if (hash(f * 5.1) > 0.85) { const x = hash(f * 2.9) * W; rect(x, 0, 3, H, '#000', 0.25); }
+  // 走査線
+  ctx.save(); ctx.globalAlpha = 0.06; ctx.fillStyle = '#000';
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 2);
+  ctx.restore();
+  // ビネット
+  const g = ctx.createRadialGradient(W / 2, H * 0.46, H * 0.18, W / 2, H * 0.46, H * 0.72);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 明滅
+  const fl = 0.06 * (noise1(t * 9) - 0.5) + (hash(Math.floor(t * 30) * 0.7) > 0.97 ? 0.08 : 0);
+  if (fl > 0) rect(0, 0, W, H, '#fff', fl * 0.5); else rect(0, 0, W, H, '#000', -fl);
+}
+// ノイズ・グリッチ(シーン転換用)
+function glitch(t, at, dur = 0.35) {
+  const p = (t - at) / dur; if (p < 0 || p > 1) return;
+  const k = 1 - p;
+  for (let i = 0; i < 14; i++) {
+    const y = hash(i * 9.1 + Math.floor(t * 30)) * H, h = 6 + hash(i * 4.4) * 60;
+    const dx = (hash(i * 2.2 + Math.floor(t * 30)) - .5) * 120 * k;
+    ctx.drawImage(cv, 0, y, W, h, dx, y, W, h);
+  }
+  rect(0, 0, W, H, C.red, 0.18 * k);
+}
+function rain(t, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.strokeStyle = '#9aa3a8'; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.28 * alpha;
+  ctx.beginPath();
+  for (let i = 0; i < 160; i++) {
+    const sp = 1400 + hash(i) * 900;
+    const x = (hash(i * 1.37) * (W + 300) - 150 + t * 120) % (W + 200) - 100;
+    const y = ((hash(i * 2.71) * H + t * sp) % (H + 200)) - 100;
+    ctx.moveTo(x, y); ctx.lineTo(x - 10, y + 46);
+  }
+  ctx.stroke(); ctx.restore();
+}
+
+// ---------- 小道具 ----------
+// 上から見た車(現金輸送車)
+function carTop(x, y, rot, alpha, color = '#2b2f36') {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#000'; ctx.globalAlpha = alpha * 0.5; ctx.fillRect(-58, -118, 124, 248);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color; roundRect(-60, -125, 120, 250, 22); ctx.fill();
+  ctx.fillStyle = '#4b5562'; roundRect(-48, -70, 96, 52, 10); ctx.fill();  // フロントガラス
+  ctx.fillStyle = '#3b434e'; roundRect(-48, 60, 96, 38, 10); ctx.fill();   // リアガラス
+  ctx.fillStyle = '#e8dfb8'; ctx.fillRect(-50, -127, 22, 8); ctx.fillRect(28, -127, 22, 8); // ライト
+  ctx.restore();
+}
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+// 上から見た白バイ
+function bikeTop(x, y, alpha) {
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha = alpha;
+  // ヘッドライトの光
+  const g = ctx.createRadialGradient(0, -60, 5, 0, -160, 200);
+  g.addColorStop(0, 'rgba(255,250,220,0.55)'); g.addColorStop(1, 'rgba(255,250,220,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, -55); ctx.lineTo(-110, -330); ctx.lineTo(110, -330); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e9e6df'; roundRect(-16, -60, 32, 120, 14); ctx.fill();
+  ctx.fillStyle = '#c8221f'; ctx.beginPath(); ctx.arc(0, -64, 7, 0, Math.PI * 2); ctx.fill(); // 赤色灯
+  ctx.fillStyle = '#d8d4cc'; ctx.beginPath(); ctx.arc(0, 6, 22, 0, Math.PI * 2); ctx.fill();   // ヘルメット
+  ctx.restore();
+}
+// 白バイ警官のシルエット(正面・顔なし)
+function officer(x, y, s, alpha, t = 0) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#050505';
+  // 肩と胴
+  ctx.beginPath(); ctx.moveTo(-260, 520); ctx.quadraticCurveTo(-250, 230, -110, 190); ctx.lineTo(110, 190);
+  ctx.quadraticCurveTo(250, 230, 260, 520); ctx.closePath(); ctx.fill();
+  // 首
+  ctx.fillRect(-48, 120, 96, 90);
+  // 頭
+  ctx.beginPath(); ctx.ellipse(0, 40, 95, 118, 0, 0, Math.PI * 2); ctx.fill();
+  // ヘルメット(白)
+  ctx.fillStyle = '#d9d4ca';
+  ctx.beginPath(); ctx.ellipse(0, -10, 118, 108, 0, Math.PI, 0); ctx.lineTo(118, 18); ctx.lineTo(-118, 18); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#b8b2a6'; ctx.fillRect(-122, 6, 244, 22);
+  ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(0, -62, 16, 0, Math.PI * 2); ctx.fill();
+  // ゴーグルの反射(目の代わり)
+  const blink = hash(Math.floor(t * 3)) > 0.92 ? 0.2 : 1;
+  ctx.fillStyle = `rgba(200,34,31,${0.75 * blink})`;
+  ctx.shadowColor = C.red; ctx.shadowBlur = 30;
+  ctx.fillRect(-70, 52, 50, 10); ctx.fillRect(20, 52, 50, 10);
+  ctx.restore();
+}
+function smoke(cx, cy, t, alpha) {
+  if (alpha <= 0) return;
+  for (let i = 0; i < 46; i++) {
+    const b = hash(i * 1.9) * 2.2, age = t - b; if (age < 0) continue;
+    const life = (age % 3.2) / 3.2;
+    const r = 30 + life * 190;
+    const x = cx + (hash(i * 4.1) - .5) * 160 + Math.sin(age * 1.3 + i) * 40 * life;
+    const y = cy - life * 520;
+    ctx.save(); ctx.globalAlpha = alpha * 0.28 * (1 - life);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, '#c9c3b8'); g.addColorStop(1, 'rgba(201,195,184,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+
+// ---------- 字幕 ----------
+function wrapJa(str, maxW, size) {
+  ctx.save(); ctx.font = `800 ${size}px ${GOT}`;
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      // 句読点・閉じかっこは行頭に来ないようにする
+      if ('、。」!?'.includes(ch)) { cur += ch; continue; }
+      // 数字の途中では改行しない(連続する数字ごと次の行へ送る)
+      const m = /[0-9.,]+$/.exec(cur);
+      if (/[0-9.,]/.test(ch) && m && m[0].length < cur.length) { lines.push(cur.slice(0, -m[0].length)); cur = m[0] + ch; continue; }
+      // 行の後半に読点・句点があればそこで折り返す
+      const cut = Math.max(cur.lastIndexOf('、'), cur.lastIndexOf('。'), cur.lastIndexOf('」'));
+      if (cut >= cur.length * 0.55 && cut < cur.length - 1) { lines.push(cur.slice(0, cut + 1)); cur = cur.slice(cut + 1) + ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore(); return lines;
+}
+function subtitles(t) {
+  const c = window.CUES.find(c => t >= c.start - 0.05 && t <= c.end + 0.35);
+  if (!c) return;
+  const a = clamp((t - c.start + 0.05) / 0.15) * clamp((c.end + 0.35 - t) / 0.2);
+  const size = 50, lines = wrapJa(c.text, W - 160, size);
+  const y0 = 1480 - (lines.length - 1) * (size + 18) / 2;
+  lines.forEach((ln, i) => text(ln, W / 2, y0 + i * (size + 18), { size, weight: 800, font: GOT, align: 'center', alpha: a, stroke: 10 }));
+}
+
+// ---------- シーン ----------
+// S1 0–7.5 タイトル
+function sTitle(t) {
+  text('1968.12.10', W / 2, 560, { size: 46, color: C.ink2, align: 'center', font: GOT, ls: 14, alpha: easeOut((t - 0.3) / 1) });
+  const jit = t < 1.2 ? (hash(Math.floor(t * 30)) - .5) * 14 : 0;
+  text('三億円', W / 2 + jit, 860, { size: 230, weight: 800, align: 'center', alpha: easeOut(t / 0.6), shadow: 0 });
+  text('事件', W / 2 - jit, 1090, { size: 230, weight: 800, align: 'center', alpha: easeOut((t - 0.2) / 0.6) });
+  hline(200, 1170, 200 + 680 * easeOut((t - 0.8) / 1.2), C.red, 4);
+  text('戦後最大の未解決事件', W / 2, 1250, { size: 54, align: 'center', color: C.ink2, alpha: easeOut((t - 1.4) / 0.8), ls: 6 });
+  stamp('未解決', 880, 1000, 64, t - 4.4, -0.16);
+}
+// S2 7.5–16 府中・現金輸送車(俯瞰マップ)
+function sRoute(t) {
+  rain(t, 1);
+  // 道路
+  rect(380, 0, 320, H, C.road);
+  hline(380, 0, 380, C.line, 4);
+  for (let y = -200; y < H + 200; y += 160) {
+    const yy = (y + t * 260) % (H + 160) - 80; rect(536, yy, 8, 80, '#6b665c', 0.7);
+  }
+  // 刑務所の塀
+  rect(210, 0, 26, H, '#3c3933');
+  for (let y = 0; y < H; y += 40) rect(210, y, 26, 2, '#22201c');
+  text('府', 120, 700, { size: 56, color: C.ink3, align: 'center' });
+  text('中', 120, 770, { size: 56, color: C.ink3, align: 'center' });
+  text('刑', 120, 840, { size: 56, color: C.ink3, align: 'center' });
+  text('務', 120, 910, { size: 56, color: C.ink3, align: 'center' });
+  text('所', 120, 980, { size: 56, color: C.ink3, align: 'center' });
+  // 現金輸送車
+  const cy = lerp(1500, 980, easeOut(t / 7));
+  carTop(620, cy, 0, 1);
+  text('現金輸送車', 760, cy - 30, { size: 40, font: GOT, weight: 800, color: C.ink, alpha: easeOut((t - 1.5) / .6) });
+  text('約3億円', 760, cy + 30, { size: 40, font: GOT, weight: 800, color: C.red, alpha: easeOut((t - 2.2) / .6) });
+  // 日時カード
+  rect(60, 170, W - 120, 270, '#000', 0.65);
+  text(typed('1968年12月10日 午前9時20分頃', t - 0.3, 18), 100, 270, { size: 54, font: GOT, weight: 800 });
+  text(typed('東京都府中市 ── 天候:雨', t - 2.2, 16), 100, 370, { size: 46, font: GOT, color: C.ink2 });
+}
+// S3 16–24 白バイの接近
+function sBike(t) {
+  rain(t, 0.8);
+  rect(380, 0, 320, H, C.road);
+  rect(210, 0, 26, H, '#3c3933');
+  for (let y = -200; y < H + 200; y += 160) { const yy = (y + t * 120) % (H + 160) - 80; rect(536, yy, 8, 80, '#6b665c', 0.7); }
+  const slow = easeOut(t / 5);
+  carTop(620, 980, 0, 1);
+  const by = lerp(1900, 1210, easeOut((t - 0.5) / 3.5));
+  const bx = lerp(470, 470, 0);
+  bikeTop(bx, by, 1);
+  // 赤色灯の回転光
+  const blink = Math.sin(t * 14) > 0;
+  if (t > 0.5) { ctx.save(); ctx.globalAlpha = blink ? 0.16 : 0.05; ctx.fillStyle = C.red; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  text('白バイ?', 300, by + 20, { size: 44, font: GOT, weight: 800, color: C.ink, align: 'right', alpha: easeOut((t - 2) / .5) });
+  // セリフ
+  const qa = easeOut((t - 4.0) / .4);
+  rect(60, 180, W - 120, 330, '#000', 0.75 * qa);
+  rect(60, 180, 10, 330, C.red, qa);
+  text('「この車に', 110, 300, { size: 70, weight: 800, alpha: qa });
+  text(' ダイナマイトが', 110, 390, { size: 70, weight: 800, color: C.red, alpha: easeOut((t - 4.4) / .3) });
+  text(' 仕掛けられている」', 110, 480, { size: 70, weight: 800, alpha: easeOut((t - 4.8) / .3) });
+}
+// S4 24–32 発煙筒と逃走
+function sSmoke(t) {
+  rect(0, 0, W, H, '#0e0d0c');
+  // 地面
+  rect(0, 1200, W, 720, '#141312');
+  const cx = lerp(540, 540, 0) + (t > 5 ? -easeIn((t - 5) / 2.2) * 1400 : 0);
+  // 横から見た車
+  ctx.save(); ctx.translate(cx, 1150);
+  ctx.fillStyle = '#23272d'; roundRect(-330, -150, 660, 150, 30); ctx.fill();
+  ctx.fillStyle = '#23272d'; roundRect(-200, -260, 380, 140, 40); ctx.fill();
+  ctx.fillStyle = '#3e4752'; roundRect(-175, -240, 150, 100, 16); ctx.fill(); roundRect(5, -240, 150, 100, 16); ctx.fill();
+  ctx.fillStyle = '#090909'; ctx.beginPath(); ctx.arc(-200, 0, 62, 0, Math.PI * 2); ctx.arc(210, 0, 62, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // 車の下の男の足
+  if (t < 4.6) {
+    const la = easeOut((t - 0.3) / .5);
+    ctx.save(); ctx.globalAlpha = la; ctx.fillStyle = '#d6d1c6';
+    ctx.fillRect(cx + 260, 1112, 150, 26); ctx.fillRect(cx + 260, 1146, 150, 26);
+    ctx.fillStyle = '#050505'; ctx.fillRect(cx + 400, 1106, 40, 36); ctx.fillRect(cx + 400, 1140, 40, 36);
+    ctx.restore();
+  }
+  // 煙
+  smoke(540, 1180, t - 1.2, t > 1.2 ? 1 : 0);
+  // 叫び
+  const sa = clamp((t - 2.6) / .1) * clamp((5.6 - t) / .3);
+  const shake = (hash(Math.floor(t * 30)) - .5) * 16;
+  text('「爆発するぞ!」', W / 2 + shake, 560, { size: 110, weight: 800, color: C.red, align: 'center', alpha: sa, shadow: 30 });
+  // ストップウォッチ
+  const ta = easeOut((t - 5.2) / .4);
+  rect(0, 300, W, 330, '#000', 0.6 * ta);
+  text('犯行時間', W / 2, 410, { size: 46, font: GOT, color: C.ink2, align: 'center', alpha: ta, ls: 10 });
+  const sec = Math.min(180, Math.floor(easeOut((t - 5.2) / 1.8) * 180));
+  text(`約 ${Math.floor(sec / 60)}分${String(sec % 60).padStart(2, '0')}秒`, W / 2, 560, { size: 120, weight: 800, align: 'center', alpha: ta });
+}
+// S5 32–40 偽物・3億円
+function sReveal(t) {
+  const rows = [['白バイ', '偽物', 0.2], ['煙', '発煙筒', 1.3]];
+  rows.forEach(([a, b, d], i) => {
+    const y = 420 + i * 200, al = easeOut((t - d) / .4);
+    text(a, 140, y, { size: 80, weight: 800, alpha: al });
+    text('→', 520, y, { size: 70, color: C.ink3, align: 'center', alpha: al });
+    text(b, 640, y, { size: 80, weight: 800, color: C.red, alpha: easeOut((t - d - 0.5) / .3) });
+    hline(140, y + 40, 940, C.ink3, 1, al);
+  });
+  text('奪われた現金', W / 2, 900, { size: 50, font: GOT, color: C.ink2, align: 'center', alpha: easeOut((t - 2.6) / .5), ls: 10 });
+  const v = Math.floor(294307500 * easeOut((t - 3.0) / 3.2));
+  const str = '¥' + v.toLocaleString('en-US');
+  text(str, W / 2, 1100, { size: 118, weight: 800, align: 'center', alpha: easeOut((t - 3.0) / .3), font: MIN });
+  text('(2億9430万7500円)', W / 2, 1190, { size: 46, color: C.ink2, align: 'center', alpha: easeOut((t - 6.0) / .5) });
+}
+// S6 40–49 捜査の規模
+function sInvest(t) {
+  officer(W / 2, 260, 0.9, 0.55 * easeOut(t / 1.5), t);
+  rect(0, 640, W, 720, '#000', 0.5);
+  const items = [
+    ['遺留品', 120, '点以上', 0.4],
+    ['捜査員', 17, '万人(延べ)', 2.6],
+    ['容疑者', 11, '万人以上', 5.2],
+  ];
+  items.forEach(([lab, n, unit, d], i) => {
+    const y = 790 + i * 210, a = easeOut((t - d) / .4);
+    text(lab, 110, y, { size: 52, font: GOT, color: C.ink2, alpha: a });
+    const v = Math.round(n * easeOut((t - d) / 1.2));
+    text(String(v), 610, y + 18, { size: 130, weight: 800, align: 'right', alpha: a });
+    text(unit, 630, y, { size: 50, weight: 800, color: C.red, alpha: a });
+    hline(110, y + 60, 970, C.ink3, 1, a);
+  });
+}
+// S7 49–57 時効
+function sStatute(t) {
+  // 年のカウンター 1968 → 1975
+  const yr = Math.floor(lerp(1968, 1975.999, easeInOut((t - 0.4) / 4.2)));
+  text('YEAR', W / 2, 560, { size: 40, font: GOT, color: C.ink3, align: 'center', ls: 20 });
+  text(String(Math.min(yr, 1975)), W / 2, 820, { size: 260, weight: 800, align: 'center', color: yr >= 1975 ? C.ink : C.ink2 });
+  text('1975.12.10', W / 2, 960, { size: 58, font: GOT, align: 'center', color: C.ink2, alpha: easeOut((t - 4.6) / .4), ls: 10 });
+  stamp('時効', W / 2, 1180, 150, t - 5.1, -0.1);
+}
+// S8 57–64.5 余韻  / 64.5–68 クレジット
+function sEnd(t) {
+  const a = easeOut(t / 2.5) * (1 - easeOut((t - 7.2) / .6));
+  const zoom = 1 + t * 0.025;
+  ctx.save(); ctx.translate(W / 2, 700); ctx.scale(zoom, zoom); ctx.translate(-W / 2, -700);
+  officer(W / 2, 480, 1.25, a, t);
+  ctx.restore();
+  text('?', W / 2, 820, { size: 220, weight: 800, color: C.red, align: 'center', alpha: a * 0.9 * (0.6 + 0.4 * noise1(t * 3)), shadow: 40 });
+  // クレジット
+  const ca = easeOut((t - 7.6) / .6);
+  if (ca > 0) {
+    rect(0, 0, W, H, '#000', ca);
+    text('三億円事件', W / 2, 800, { size: 110, weight: 800, align: 'center', alpha: ca });
+    text('1968.12.10 ─ 1975.12.10 公訴時効', W / 2, 900, { size: 40, font: GOT, color: C.ink2, align: 'center', alpha: ca });
+    text('犯人は、今も見つかっていない。', W / 2, 1030, { size: 52, align: 'center', color: C.red, alpha: ca });
+    text('ナレーション: VOICEVOX:四国めたん', W / 2, 1300, { size: 34, font: GOT, color: C.ink3, align: 'center', alpha: ca });
+    text('BGM: 自作(権利フリー)', W / 2, 1352, { size: 34, font: GOT, color: C.ink3, align: 'center', alpha: ca });
+  }
+}
+
+const SCENES = [
+  [0, 7.5, sTitle], [7.5, 8.5, sRoute], [16, 8, sBike], [24, 8, sSmoke],
+  [32, 8, sReveal], [40, 9, sInvest], [49, 8, sStatute], [57, 11, sEnd],
+];
+
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const [s, d, fn] of SCENES) {
+    if (t >= s && t < s + d) {
+      const lt = t - s;
+      ctx.save(); fn(lt); ctx.restore();
+      // フェードイン/アウト(黒)
+      const fin = clamp(lt / 0.35), fout = clamp((s + d - t) / 0.35);
+      const last = s + d >= DURATION;
+      rect(0, 0, W, H, '#000', 1 - Math.min(fin, last ? 1 : fout));
+    }
+  }
+  if (t < 0.3) rect(0, 0, W, H, '#000', 1 - t / 0.3);
+  for (const [s] of SCENES) if (s > 0) glitch(t, s - 0.05, 0.3);
+  subtitles(t);
+  postFX(t);
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生
+if (!window.__CAPTURE__) {
+  fetch('output/cues.json').then(r => r.json()).then(j => { window.CUES = j.cues; }).catch(() => {});
+  const t0 = performance.now();
+  document.fonts.ready.then(() => {
+    (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>
