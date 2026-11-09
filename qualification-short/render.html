@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Qualification Short</title>
+<style>
+  @font-face { font-family: 'MPR'; font-weight: 700; src: url('fonts/MPLUSRounded1c-Bold.ttf'); }
+  @font-face { font-family: 'MPR'; font-weight: 800; src: url('fonts/MPLUSRounded1c-ExtraBold.ttf'); }
+  html, body { margin: 0; background: #fff4f8; }
+  canvas { display: block; }
+</style>
+<script src="script.js"></script>
+<script src="timing.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 「会社で働きやすくするために資格は重要？」 9:16 ショート動画
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する
+// シーンの長さと字幕のタイミングは timing.js(narrate.py が生成)に従う
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"MPR","IPAPGothic",sans-serif';
+const C = {
+  bg1: '#FFF1F6', bg2: '#F1EEFF', card: '#FFFFFF',
+  ink: '#2B2440', ink2: '#5D5675', ink3: '#9A93AD', line: '#E7E1F0',
+  pink: '#E5488A', pinkSoft: '#FDE3EE', purple: '#7B5CE6', purpleSoft: '#ECE7FF',
+  mint: '#16A887', mintSoft: '#DDF5EE', orange: '#EE8420', orangeSoft: '#FFEBD6',
+  gold: '#F2B233', red: '#E2504A',
+};
+const FPS = 30;
+const DURATION = TIMING.total;
+window.FPS = FPS; window.DURATION = DURATION;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function setFont(size, weight = 700) { ctx.font = `${weight} ${size}px ${FONT}`; }
+function text(str, x, y, { size = 48, weight = 700, color = C.ink, align = 'left', base = 'alphabetic', alpha = 1 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; setFont(size, weight);
+  ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(str, x, y); ctx.restore();
+}
+// 行頭禁則つきの簡易折り返し
+const NO_HEAD = '、。，．！？）」』ー・ぁぃぅぇぉっゃゅょァィゥェォッャュョ';
+function wrap(str, maxW, size, weight = 700) {
+  setFont(size, weight);
+  const out = [];
+  for (const para of str.split('\n')) {
+    let cur = '';
+    for (const ch of para) {
+      if (ctx.measureText(cur + ch).width > maxW && cur && !NO_HEAD.includes(ch)) { out.push(cur); cur = ch; }
+      else cur += ch;
+    }
+    out.push(cur);
+  }
+  return out;
+}
+function para(str, x, y, maxW, { size = 48, lh = 1.45, ...o } = {}) {
+  const lines = wrap(str, maxW, size, o.weight);
+  lines.forEach((l, i) => text(l, x, y + i * size * lh, { size, ...o }));
+  return lines.length;
+}
+function rrPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, { alpha = 1, shadow = false, stroke = null, lw = 4 } = {}) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  if (shadow) { ctx.shadowColor = 'rgba(80,50,120,0.14)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14; }
+  rrPath(x, y, w, h, r); ctx.fillStyle = color; ctx.fill();
+  if (stroke) { ctx.shadowColor = 'transparent'; ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (!(r > 0)) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function stroke(pts, color, w, p = 1) {   // 折れ線を進捗 p まで描く(チェックマーク等)
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const segs = []; let L = 0;
+  for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(d); L += d; }
+  let left = L * clamp(p);
+  ctx.beginPath(); ctx.moveTo(...pts[0]);
+  for (let i = 1; i < pts.length && left > 0; i++) {
+    const f = Math.min(1, left / segs[i - 1]);
+    ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f)); left -= segs[i - 1];
+  }
+  ctx.stroke(); ctx.restore();
+}
+function check(x, y, s, color, p, w = 14) { stroke([[x - s * .5, y], [x - s * .12, y + s * .38], [x + s * .55, y - s * .4]], color, w, p); }
+function cross(x, y, s, color, p, w = 14) {
+  stroke([[x - s / 2, y - s / 2], [x + s / 2, y + s / 2]], color, w, clamp(p * 2));
+  stroke([[x + s / 2, y - s / 2], [x - s / 2, y + s / 2]], color, w, clamp(p * 2 - 1));
+}
+// 出現アニメーション: at 秒から dur 秒で下からふわっと
+function pop(t, at, dur = 0.45) { const p = easeOut((t - at) / dur); return { a: p, dy: (1 - p) * 40 }; }
+function withAlpha(a, dy, fn) { if (a <= 0) return; ctx.save(); ctx.globalAlpha *= a; ctx.translate(0, dy); fn(); ctx.restore(); }
+function scale(x, y, s, fn) { ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.translate(-x, -y); fn(); ctx.restore(); }
+function chip(str, cx, y, color, soft, size = 40) {
+  setFont(size); const w = ctx.measureText(str).width + 64;
+  rrect(cx - w / 2, y - size - 14, w, size + 34, 40, soft);
+  text(str, cx, y + 2, { size, color, align: 'center' });
+}
+
+// ---------- アイコン ----------
+function iconCertificate(x, y, s) {           // 賞状 + リボン
+  scale(x, y, s, () => {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-0.06); ctx.translate(-x, -y);
+    rrect(x - 220, y - 150, 440, 300, 26, C.card, { shadow: true, stroke: C.gold, lw: 8 });
+    rrect(x - 190, y - 120, 380, 240, 16, 'transparent', { stroke: '#F6DE9E', lw: 3 });
+    text('資格', x, y - 40, { size: 64, weight: 800, color: C.ink, align: 'center' });
+    [10, 50].forEach(dy => rrect(x - 140, y + dy, 280 - (dy === 50 ? 90 : 0), 14, 7, C.line));
+    ctx.restore();
+    // シールとリボン
+    ctx.save(); ctx.fillStyle = C.pink;
+    ctx.beginPath(); ctx.moveTo(x + 150, y + 120); ctx.lineTo(x + 125, y + 230); ctx.lineTo(x + 155, y + 205); ctx.lineTo(x + 175, y + 240); ctx.lineTo(x + 190, y + 130); ctx.fill();
+    ctx.restore();
+    circle(x + 165, y + 110, 62, C.pink); circle(x + 165, y + 110, 44, '#F27AAB');
+    text('★', x + 165, y + 128, { size: 50, color: '#fff', align: 'center' });
+  });
+}
+function iconBadge(x, y, s, p) {               // 社員証 + チェック
+  scale(x, y, s, () => {
+    rrect(x - 26, y - 230, 52, 70, 12, C.purple);
+    rrect(x - 170, y - 180, 340, 400, 34, C.card, { shadow: true });
+    rrect(x - 170, y - 180, 340, 90, 34, C.purple); rrect(x - 170, y - 120, 340, 30, 0, C.purple);
+    circle(x, y - 10, 62, C.purpleSoft); circle(x, y - 28, 26, C.purple);
+    ctx.save(); ctx.fillStyle = C.purple; ctx.beginPath(); ctx.ellipse(x, y + 40, 48, 30, 0, Math.PI, 0); ctx.fill(); ctx.restore();
+    rrect(x - 110, y + 90, 220, 18, 9, C.line); rrect(x - 80, y + 130, 160, 18, 9, C.line);
+    circle(x + 150, y + 190, 66, C.mint, easeOut(p * 3));
+    check(x + 150, y + 192, 64, '#fff', p, 15);
+  });
+}
+function iconCoin(x, y, s, p) {                // コイン + 上向き矢印
+  scale(x, y, s, () => {
+    const bars = [80, 140, 210];
+    bars.forEach((h, i) => { const hh = h * easeOut(p * 1.5 - i * 0.2); rrect(x - 190 + i * 90, y + 170 - hh, 64, hh, 14, i === 2 ? C.mint : '#BFE9DC'); });
+    stroke([[x - 200, y + 40], [x - 100, y - 20], [x - 20, y + 10], [x + 70, y - 90]], C.mint, 14, p);
+    if (p > 0.6) { ctx.save(); ctx.globalAlpha *= clamp((p - 0.6) * 3); ctx.fillStyle = C.mint; ctx.beginPath(); ctx.moveTo(x + 100, y - 120); ctx.lineTo(x + 40, y - 105); ctx.lineTo(x + 85, y - 60); ctx.fill(); ctx.restore(); }
+    circle(x + 120, y + 70, 120, C.gold); circle(x + 120, y + 70, 96, '#F8CB5C');
+    text('¥', x + 120, y + 112, { size: 120, weight: 800, color: '#B97A00', align: 'center' });
+  });
+}
+function iconBooks(x, y, s, p) {               // 積み上がる本
+  const cols = [C.purple, C.pink, C.mint, C.orange];
+  scale(x, y, s, () => {
+    cols.forEach((c, i) => {
+      const q = easeBack(p * 1.6 - i * 0.25); if (q <= 0) return;
+      const yy = y + 170 - i * 78 - (1 - q) * 120, ww = 380 - i * 30, xx = x - ww / 2 + (i % 2 ? 18 : -12);
+      ctx.save(); ctx.globalAlpha *= clamp(q);
+      rrect(xx, yy - 64, ww, 64, 12, c); rrect(xx + ww - 70, yy - 54, 50, 44, 6, 'rgba(255,255,255,0.85)');
+      rrect(xx + 26, yy - 38, ww - 140, 10, 5, 'rgba(255,255,255,0.5)');
+      ctx.restore();
+    });
+    const q = clamp(p * 1.6 - 1.1);
+    circle(x + 170, y - 190, 48 * easeBack(q), C.gold);
+    if (q > 0.3) text('！', x + 170, y - 172, { size: 54, weight: 800, color: '#fff', align: 'center', alpha: q });
+  });
+}
+function iconWarning(x, y, s) {
+  scale(x, y, s, () => {
+    ctx.save(); ctx.fillStyle = C.orange; ctx.lineJoin = 'round'; ctx.strokeStyle = C.orange; ctx.lineWidth = 40;
+    ctx.beginPath(); ctx.moveTo(x, y - 130); ctx.lineTo(x + 150, y + 120); ctx.lineTo(x - 150, y + 120); ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.restore();
+    rrect(x - 14, y - 60, 28, 110, 14, '#fff'); circle(x, y + 90, 17, '#fff');
+  });
+}
+
+// ---------- 共通レイアウト ----------
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ゆっくり漂う丸
+  [[150, 420, 220, C.pinkSoft], [950, 900, 260, C.purpleSoft], [200, 1450, 180, '#E3F4FF']].forEach(([x, y, r, c], i) => {
+    circle(x + Math.sin(t * 0.3 + i * 2) * 30, y + Math.cos(t * 0.25 + i) * 30, r, c, 0.7);
+  });
+}
+function topBar(t, si) {
+  rrect(0, 0, W * (t / DURATION), 10, 0, C.pink);
+  chip('資格って必要？', 220, 170, C.pink, C.card, 38);
+  const n = TIMING.scenes.length;
+  for (let i = 0; i < n; i++) circle(W - 90 - (n - 1 - i) * 34, 150, i === si ? 11 : 7, i <= si ? C.pink : '#DCD3E8');
+}
+// 字幕の改行: 読点(、)で2行に収まるならそこで切る。無理なら、はみ出した行を
+// 後半にある句読点・助詞の直後まで戻して折り返す(単語の途中で切らない)
+const BREAK_AFTER = '、。？！はがをにでともの';
+function subLines(str, maxW, size) {
+  setFont(size);
+  const fits = x => ctx.measureText(x).width <= maxW;
+  if (fits(str)) return [str];
+  let best = null;
+  for (let i = 0; i < str.length - 1; i++) {
+    if (!'、？'.includes(str[i])) continue;
+    const a = str.slice(0, i + 1), b = str.slice(i + 1);
+    if (fits(a) && fits(b) && (!best || Math.abs(a.length - b.length) < best.d)) best = { d: Math.abs(a.length - b.length), l: [a, b] };
+  }
+  if (best) return best.l;
+  const out = []; let rest = str;
+  while (!fits(rest)) {
+    let n = 1; while (fits(rest.slice(0, n + 1))) n++;
+    let cut = n;
+    for (let j = n - 1; j >= Math.floor(n * 0.55); j--) {
+      if (BREAK_AFTER.includes(rest[j - 1]) && !NO_HEAD.includes(rest[j])) { cut = j; break; }
+    }
+    out.push(rest.slice(0, cut)); rest = rest.slice(cut);
+  }
+  out.push(rest);
+  return out;
+}
+// 字幕パネル(Shorts の UI に隠れない高さ)
+function subtitle(t) {
+  let cur = null, curEnd = 0;
+  const all = TIMING.scenes.flatMap(s => s.chunks);
+  for (let i = 0; i < all.length; i++) if (all[i].start <= t + 0.05) { cur = all[i]; curEnd = i + 1 < all.length ? all[i + 1].start : DURATION; }
+  if (!cur || t > cur.end + 1.2) return;
+  const a = easeOut((t - cur.start + 0.05) / 0.15);
+  const size = 50, lines = subLines(cur.text, 860, size);
+  const h = lines.length * size * 1.42 + 70, y0 = 1560 - h / 2;
+  ctx.save(); ctx.globalAlpha = 0.6 + 0.4 * a;
+  rrect(70, y0, W - 140, h, 34, 'rgba(255,255,255,0.94)', { shadow: true });
+  rrect(70, y0 + 26, 10, h - 52, 5, C.pink);
+  lines.forEach((l, i) => text(l, W / 2, y0 + 50 + size * 0.85 + i * size * 1.42, { size, color: C.ink, align: 'center' }));
+  ctx.restore();
+  // 話者ラベル
+  chip('四国めたん', 210, y0 - 6, '#fff', C.pink, 30);
+}
+
+// ---------- シーン ----------
+// 各シーン関数は (t: シーン内の秒, s: timing のシーン情報) を受け取る。c(i) = i番目のチャンク開始(シーン内秒)
+const S = {};
+S.title = (t, s, c) => {
+  const p0 = pop(t, 0.1, 0.6);
+  withAlpha(p0.a, p0.dy, () => scale(W / 2, 560, 0.8 + 0.2 * easeBack((t - 0.1) / 0.7), () => iconCertificate(W / 2, 540, 1)));
+  const p1 = pop(t, 0.5); withAlpha(p1.a, p1.dy, () => text('会社で', W / 2, 900, { size: 84, color: C.ink2, align: 'center' }));
+  const p2 = pop(t, 0.8); withAlpha(p2.a, p2.dy, () => text('働きやすくなる？', W / 2, 1030, { size: 104, weight: 800, align: 'center' }));
+  const p3 = pop(t, 1.3); withAlpha(p3.a, p3.dy, () => {
+    rrect(150, 1095, W - 300, 120, 60, C.pink, { shadow: true });
+    text('資格取得は重要なのか', W / 2, 1177, { size: 60, weight: 800, color: '#fff', align: 'center' });
+  });
+  const p4 = pop(t, c(1)); withAlpha(p4.a, p4.dy, () => {
+    [['メリット', C.mint, C.mintSoft, 380], ['注意点', C.orange, C.orangeSoft, 700]].forEach(([l, col, soft, x]) => chip(l, x, 1310, col, soft, 42));
+  });
+};
+S.answer = (t, s, c) => {
+  const p0 = pop(t, 0.1); withAlpha(p0.a, p0.dy, () => chip('結論', W / 2, 330, '#fff', C.pink, 48));
+  const p1 = pop(t, 0.5); withAlpha(p1.a, p1.dy, () => {
+    rrect(90, 400, W - 180, 430, 44, C.card, { shadow: true });
+    text('目的があれば', W / 2, 530, { size: 64, color: C.ink2, align: 'center' });
+    text('資格は', W / 2, 660, { size: 96, weight: 800, align: 'center' });
+    setFont(110, 800);
+    text('強い武器', W / 2, 790, { size: 110, weight: 800, color: C.pink, align: 'center' });
+    // 下線マーカー
+    const w = ctx.measureText('強い武器').width; rrect(W / 2 - w / 2, 800, w * easeOut((t - 1.0) / 0.6), 16, 8, '#FFD1E3');
+  });
+  const p2 = pop(t, c(1)); withAlpha(p2.a, p2.dy, () => {
+    rrect(130, 900, W - 260, 330, 40, C.orangeSoft);
+    text('でも…', 200, 985, { size: 46, color: C.orange });
+    text('取るだけ', 330, 1110, { size: 64, weight: 800, align: 'center' });
+    text('→', W / 2, 1110, { size: 64, color: C.ink3, align: 'center' });
+    text('働きやすい', 760, 1110, { size: 64, weight: 800, align: 'center' });
+    cross(760, 1088, 150, C.red, (t - c(1) - 0.6) / 0.5, 16);
+    text('…とは限らない', W - 190, 1190, { size: 40, color: C.ink2, align: 'right' });
+  });
+};
+function meritScene(n, title, color, soft, icon, points, note) {
+  return (t, s, c) => {
+    const p0 = pop(t, 0.05); withAlpha(p0.a, p0.dy, () => {
+      circle(200, 330, 76, color); text(String(n), 200, 362, { size: 92, weight: 800, color: '#fff', align: 'center' });
+      text('メリット', 310, 310, { size: 40, color });
+      text(title, 310, 380, { size: 64, weight: 800 });
+    });
+    const p1 = pop(t, 0.3, 0.6);
+    withAlpha(p1.a, p1.dy, () => {
+      rrect(90, 450, W - 180, 520, 48, soft);
+      icon(W / 2, 715, 1, clamp((t - 0.4) / 1.6));
+    });
+    points.forEach((pt, i) => {
+      const at = c(1) + i * 0.9, q = pop(t, at);
+      withAlpha(q.a, q.dy, () => {
+        const y = 1040 + i * 130;
+        rrect(90, y, W - 180, 108, 30, C.card, { shadow: true });
+        circle(160, y + 54, 30, color); check(160, y + 56, 26, '#fff', (t - at - 0.2) / 0.4, 8);
+        text(pt, 215, y + 72, { size: 48 });
+      });
+    });
+    if (note) { const q = pop(t, c(1) + 2.0); withAlpha(q.a, q.dy, () => text(note, W / 2, 1330, { size: 36, color: C.ink3, align: 'center' })); }
+  };
+}
+S.merit1 = meritScene(1, 'スキルを客観的に示せる', C.purple, C.purpleSoft, iconBadge,
+  ['できることを説明しやすい', '仕事を任されやすくなる']);
+S.merit2 = meritScene(2, '手当や昇格につながる', C.mint, C.mintSoft, iconCoin,
+  ['資格手当が出る会社も', '昇格の条件になることも'], '※ 制度は会社ごとに違う。就業規則・人事制度を確認');
+S.merit3 = meritScene(3, '知識が体系的に身につく', C.pink, C.pinkSoft, iconBooks,
+  ['仕事の全体像がつかめる', '自信がつき、進め方が楽に']);
+S.caution = (t, s, c) => {
+  const p0 = pop(t, 0.05, 0.5);
+  withAlpha(p0.a, p0.dy, () => scale(W / 2, 520, 0.7 + 0.3 * easeBack((t - 0.05) / 0.6), () => iconWarning(W / 2, 520, 1.1)));
+  const p1 = pop(t, 0.4); withAlpha(p1.a, p1.dy, () => text('注意点', W / 2, 820, { size: 100, weight: 800, color: C.orange, align: 'center' }));
+  [['資格だけでは', '評価されない'], ['仕事と無関係だと', '時間とお金の負担に']].forEach(([a, b], i) => {
+    const at = c(1) + i * 1.6, q = pop(t, at);
+    withAlpha(q.a, q.dy, () => {
+      const y = 890 + i * 215;
+      rrect(90, y, W - 180, 185, 36, C.card, { shadow: true });
+      circle(185, y + 92, 52, C.orangeSoft); cross(185, y + 92, 44, C.orange, (t - at - 0.2) / 0.4, 12);
+      text(a, 270, y + 78, { size: 42, color: C.ink2 });
+      text(b, 270, y + 145, { size: 58, weight: 800 });
+    });
+  });
+};
+S.check = (t, s, c) => {
+  const p0 = pop(t, 0.05); withAlpha(p0.a, p0.dy, () => {
+    text('取る前に', W / 2, 360, { size: 60, color: C.ink2, align: 'center' });
+    setFont(100, 800);
+    text('3つチェック', W / 2, 490, { size: 100, weight: 800, color: C.purple, align: 'center' });
+  });
+  ['今の仕事で使う？', '会社が評価する？', '将来のキャリアに\nつながる？'].forEach((q, i) => {
+    const at = c(i + 1) - 0.15, p = pop(t, Math.min(at, 0.4 + i * 0.25));
+    withAlpha(p.a, p.dy, () => {
+      const y = 580 + i * 240, on = t >= at;
+      rrect(90, y, W - 180, 205, 40, C.card, { shadow: true, stroke: on ? C.purple : null, lw: 6 });
+      rrect(140, y + 52, 100, 100, 24, on ? C.purple : '#fff', { stroke: on ? C.purple : '#CFC6DE', lw: 6 });
+      check(190, y + 104, 62, '#fff', (t - at) / 0.35, 13);
+      const lines = q.split('\n');
+      lines.forEach((l, k) => text(l, 290, y + 125 + (k - (lines.length - 1) / 2) * 70, { size: 58, weight: 800, color: on ? C.ink : C.ink3 }));
+    });
+  });
+};
+S.summary = (t, s, c) => {
+  const p0 = pop(t, 0.05); withAlpha(p0.a, p0.dy, () => {
+    text('資格は', W / 2, 360, { size: 64, color: C.ink2, align: 'center' });
+    text('ゴールじゃなくて', W / 2, 470, { size: 76, weight: 800, align: 'center' });
+    text('道具', W / 2, 640, { size: 170, weight: 800, color: C.pink, align: 'center' });
+  });
+  const q = pop(t, c(1)); withAlpha(q.a, q.dy, () => {
+    const y = 730, box = (x, w, l, col, soft) => { rrect(x, y, w, 150, 34, soft); text(l, x + w / 2, y + 98, { size: 54, weight: 800, color: col, align: 'center' }); };
+    box(80, 220, '資格', C.purple, C.purpleSoft);
+    text('×', 335, y + 100, { size: 64, color: C.ink3, align: 'center' });
+    box(380, 220, '実務', C.mint, C.mintSoft);
+    text('=', 635, y + 100, { size: 64, color: C.ink3, align: 'center' });
+    box(680, 320, '働きやすさ', '#fff', C.pink);
+  });
+  const r = pop(t, c(2)); withAlpha(r.a, r.dy, () => {
+    rrect(120, 950, W - 240, 160, 80, C.card, { shadow: true, stroke: C.pink, lw: 6 });
+    text('自分に合う資格を選ぼう', W / 2, 1052, { size: 58, weight: 800, align: 'center' });
+  });
+  const e = pop(t, c(2) + 1.0); withAlpha(e.a, e.dy, () => {
+    text('VOICEVOX:四国めたん', W / 2, 1220, { size: 36, color: C.ink2, align: 'center' });
+    text('BGM:オリジナル(自作)', W / 2, 1275, { size: 30, color: C.ink3, align: 'center' });
+  });
+};
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  background(t);
+  const scs = TIMING.scenes;
+  let si = scs.findIndex(s => t < s.start + s.dur); if (si < 0) si = scs.length - 1;
+  // クロスフェード: シーン終わり 0.25 秒で消え、次は頭 0.3 秒で現れる
+  for (let i = Math.max(0, si - 1); i <= si; i++) {
+    const s = scs[i], lt = t - s.start;
+    if (lt < 0) continue;
+    const out = i === scs.length - 1 ? 1 : clamp((s.dur - lt) / 0.25), inn = i === 0 ? 1 : clamp(lt / 0.3);
+    const a = Math.min(out, inn); if (a <= 0) continue;
+    ctx.save(); ctx.globalAlpha = a;
+    S[s.id](lt, s, k => s.chunks[Math.min(k, s.chunks.length - 1)].start - s.start);
+    ctx.restore();
+  }
+  topBar(t, si);
+  subtitle(t);
+}
+window.render = render;
+
+if (!navigator.webdriver) {   // ブラウザで開いたときはプレビュー再生
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
