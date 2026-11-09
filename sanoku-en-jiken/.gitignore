@@ -3,3 +3,4 @@ output/video_silent.mp4
 output/*.log
 output/still_*
 output/sheet*
+__pycache__/
