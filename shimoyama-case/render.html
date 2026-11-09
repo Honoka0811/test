@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Shimoyama Case</title>
+<style>
+  html,body{margin:0;background:#000;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/cues.js"></script>
+<script>
+// ------------------------------------------------------------
+// 下山事件 (9:16 ショート動画 / 72秒)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する(乱数はフレーム番号から生成)
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MIN = '"IPAMincho","IPAPMincho",serif';
+const GO = '"IPAGothic","IPAPGothic",sans-serif';
+const C = {
+  bg: '#0a0908', ink: '#ece6d8', ink2: '#b9b2a3', ink3: '#7a7468', line: '#3a3530',
+  red: '#c8102e', redDim: 'rgba(200,16,46,0.25)', paper: '#d9d0bc'
+};
+const FPS = 30, DURATION = 72;
+const CUES = window.CUES || [];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+function rng(seed) { let s = seed >>> 0 || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function hash(n) { n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n ^= n >>> 4; n = Math.imul(n, 0x27d4eb2d); n ^= n >>> 15; return (n >>> 0) / 4294967296; }
+
+function text(str, x, y, { size = 48, font = MIN, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, stroke = 0, strokeColor = '#000', shadow = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = color; ctx.shadowBlur = shadow; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function box(x, y, w, h, color, alpha = 1) { ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color; ctx.fillRect(x, y, w, h); ctx.restore(); }
+function frame(x, y, w, h, color, width = 2, alpha = 1) { ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.strokeRect(x, y, w, h); ctx.restore(); }
+
+// 判子(赤い枠付きの斜め文字)。p: 0→1 で押される
+function stamp(str, x, y, p, { size = 120, rot = -0.18 } = {}) {
+  if (p <= 0) return;
+  const s = lerp(2.2, 1, easeOut(p * 1.4)), a = clamp(p * 3) * 0.92;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s); ctx.globalAlpha = a;
+  ctx.font = `bold ${size}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.letterSpacing = size * 0.12 + 'px';
+  const w = ctx.measureText(str).width + size * 0.5, h = size * 1.45;
+  ctx.strokeStyle = C.red; ctx.lineWidth = size * 0.08; ctx.strokeRect(-w / 2, -h / 2, w, h);
+  ctx.fillStyle = C.red; ctx.fillText(str, size * 0.06, size * 0.04);
+  // かすれ
+  ctx.globalCompositeOperation = 'destination-out';
+  const r = rng(str.length * 97 + size);
+  for (let i = 0; i < 140; i++) { ctx.globalAlpha = r() * 0.7; ctx.fillRect((r() - .5) * w, (r() - .5) * h, r() * 14 + 2, r() * 4 + 1); }
+  ctx.restore();
+}
+
+// タイプライター風に文字を出す
+function typed(str, x, y, t0, t, cps, opts) {
+  const n = Math.floor(clamp((t - t0) * cps, 0, str.length));
+  if (n <= 0) return;
+  text(str.slice(0, n), x, y, opts);
+}
+
+// 帽子とコートの人影
+function silhouette(cx, by, s, alpha, color = '#000') {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color; ctx.translate(cx, by); ctx.scale(s, s);
+  ctx.beginPath();
+  // コート
+  ctx.moveTo(-95, 0); ctx.lineTo(-88, -250); ctx.quadraticCurveTo(-85, -300, -40, -315);
+  ctx.lineTo(40, -315); ctx.quadraticCurveTo(85, -300, 88, -250); ctx.lineTo(95, 0); ctx.closePath(); ctx.fill();
+  // 首と頭
+  ctx.fillRect(-14, -340, 28, 30);
+  ctx.beginPath(); ctx.ellipse(0, -370, 30, 38, 0, 0, Math.PI * 2); ctx.fill();
+  // 中折れ帽
+  ctx.beginPath(); ctx.ellipse(0, -392, 62, 11, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-34, -394); ctx.quadraticCurveTo(-36, -440, 0, -438); ctx.quadraticCurveTo(36, -440, 34, -394); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- 共通の背景・ノイズ ----------
+const grain = [];
+(function () {
+  for (let k = 0; k < 6; k++) {
+    const g = document.createElement('canvas'); g.width = g.height = 256;
+    const gx = g.getContext('2d'), im = gx.createImageData(256, 256), r = rng(k * 7919 + 13);
+    for (let i = 0; i < im.data.length; i += 4) { const v = r() * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255; }
+    gx.putImageData(im, 0, 0); grain.push(g);
+  }
+})();
+
+function background(t) {
+  box(0, 0, W, H, C.bg);
+  // ぼんやりした赤黒いムラ
+  const g = ctx.createRadialGradient(W * 0.5, H * 0.42, 50, W * 0.5, H * 0.42, H * 0.7);
+  g.addColorStop(0, 'rgba(60,40,32,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+function post(t, f) {
+  // フィルムグレイン
+  ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.16;
+  const tile = grain[f % grain.length], r = rng(f * 31 + 7), ox = -Math.floor(r() * 256), oy = -Math.floor(r() * 256);
+  for (let y = oy; y < H; y += 256) for (let x = ox; x < W; x += 256) ctx.drawImage(tile, x, y);
+  ctx.restore();
+  // 縦の傷
+  const r2 = rng(f * 17 + 3);
+  if (r2() < 0.35) line(r2() * W, 0, r2() * W, H, 'rgba(230,220,200,1)', r2() * 2 + 0.5, 0.08 + r2() * 0.08);
+  // ゴミ
+  for (let i = 0; i < 3; i++) if (r2() < 0.25) { ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = r2() < .5 ? '#000' : '#ddd'; ctx.beginPath(); ctx.arc(r2() * W, r2() * H, r2() * 4 + 1, 0, 7); ctx.fill(); ctx.restore(); }
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 0.72);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+  // 明滅
+  box(0, 0, W, H, '#000', 0.04 + hash(f * 3 + 1) * 0.07);
+}
+
+// 場面転換のグリッチ(横方向のずれ)
+function glitch(t, f) {
+  let k = 0;
+  for (const sc of SCENES) { const d = Math.abs(t - sc.s); if (sc.s > 0 && d < 0.22) k = Math.max(k, 1 - d / 0.22); }
+  if (k <= 0) return;
+  const r = rng(f * 101 + 5);
+  const n = Math.floor(4 + k * 10);
+  for (let i = 0; i < n; i++) {
+    const y = r() * H, h = 8 + r() * 80 * k, dx = (r() - 0.5) * 120 * k;
+    ctx.drawImage(cv, 0, y, W, h, dx, y, W, h);
+  }
+  box(0, 0, W, H, C.red, 0.10 * k);
+}
+
+function header(t, s, label, idx) {
+  const a = seg(t, s, 0.6);
+  text('CASE FILE  1949', 80, 210, { size: 30, font: GO, color: C.ink3, ls: 8, alpha: a });
+  text(label, 80, 270, { size: 44, color: C.ink, alpha: a, ls: 4 });
+  line(80, 300, 80 + 920 * easeOut(seg(t, s, 0.8)), 300, C.red, 3, a);
+  text(String(idx).padStart(2, '0') + ' / 07', W - 80, 210, { size: 30, font: GO, color: C.ink3, align: 'right', alpha: a });
+}
+
+// ---------- シーン ----------
+function sTitle(t) {
+  const a = seg(t, 0.2, 1.2);
+  // 線路の消失点を背景にうっすら
+  tracks(t, 0.18, 0);
+  const jx = (hash(Math.floor(t * 12)) - 0.5) * 6 * (t < 1.6 ? 1 : 0.2);
+  text('1949.7.5', W / 2, 640, { size: 56, font: GO, color: C.ink2, align: 'center', ls: 20, alpha: seg(t, 0.4, 1) });
+  text('下山事件', W / 2 + jx, 900, { size: 210, weight: 'bold', color: C.ink, align: 'center', alpha: a, ls: 10, shadow: 20 });
+  // 赤いズレ
+  text('下山事件', W / 2 + jx + 6, 900, { size: 210, weight: 'bold', color: C.red, align: 'center', alpha: a * 0.35, ls: 10 });
+  line(200, 980, 200 + 680 * easeOut(seg(t, 1.0, 1.2)), 980, C.red, 4);
+  text('国鉄総裁 怪死', W / 2, 1080, { size: 72, color: C.ink, align: 'center', ls: 18, alpha: seg(t, 1.6, 0.8) });
+  stamp('未解決', W / 2 + 230, 1250, seg(t, 3.0, 0.5), { size: 90, rot: -0.2 });
+}
+
+function clockFace(cx, cy, r, hh, mm, ss, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.strokeStyle = C.ink2; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.stroke();
+  for (let i = 0; i < 60; i++) {
+    const a = i / 60 * Math.PI * 2, l = i % 5 ? 10 : 28;
+    line(cx + Math.sin(a) * (r - 8), cy - Math.cos(a) * (r - 8), cx + Math.sin(a) * (r - 8 - l), cy - Math.cos(a) * (r - 8 - l), C.ink2, i % 5 ? 2 : 5, alpha);
+  }
+  const hand = (ang, len, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx - Math.sin(ang) * 20, cy + Math.cos(ang) * 20); ctx.lineTo(cx + Math.sin(ang) * len, cy - Math.cos(ang) * len); ctx.stroke(); };
+  hand(((hh % 12) + mm / 60) / 12 * Math.PI * 2, r * 0.5, 12, C.ink);
+  hand((mm + ss / 60) / 60 * Math.PI * 2, r * 0.75, 7, C.ink);
+  hand(ss / 60 * Math.PI * 2, r * 0.85, 3, C.red);
+  ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+function sMitsukoshi(t) {
+  const s = 7; header(t, s, '7月5日 朝 ― 日本橋・三越', 1);
+  const lt = t - s;
+  // 建物の輪郭(三越本店をイメージした簡素な線画)
+  const a = seg(lt, 0.2, 0.8);
+  ctx.save(); ctx.globalAlpha = a * 0.5; ctx.strokeStyle = C.ink3; ctx.lineWidth = 2;
+  for (let i = 0; i < 7; i++) { ctx.strokeRect(150 + i * 115, 520, 80, 120); ctx.strokeRect(150 + i * 115, 680, 80, 120); }
+  ctx.strokeRect(120, 470, 840, 520); ctx.strokeRect(440, 840, 200, 150);
+  ctx.restore();
+  // 入口に吸い込まれる人影
+  const walk = easeInOut(seg(lt, 0.8, 4.0));
+  silhouette(lerp(800, 540, walk), lerp(1100, 990, walk), lerp(0.75, 0.38, walk), (1 - seg(lt, 4.4, 1.0)) * a, '#050403');
+  box(440, 840, 200, 150, '#000', a * 0.9);
+  // 時計 9:37 から秒針が進む
+  clockFace(W / 2, 1160, 130, 9, 37, Math.floor(lt), seg(lt, 0.3, 0.6));
+  text('午前 9時37分頃', W / 2, 1365, { size: 52, font: GO, color: C.ink, align: 'center', alpha: seg(lt, 0.6, 0.6), ls: 6 });
+  typed('「5分くらいだから待っていてくれ」', W / 2, 410, 1.0, lt, 14, { size: 44, color: C.ink2, align: 'center' });
+  stamp('消息不明', W / 2 + 120, 760, seg(lt, 6.0, 0.4), { size: 100, rot: -0.15 });
+}
+
+function sLayoff(t) {
+  const s = 16.5; header(t, s, '前日 7月4日 ― 人員整理の通告', 2);
+  const lt = t - s;
+  const N = 614, cols = 30, cw = 30, ch = 31, x0 = (W - cols * cw) / 2 + cw / 2, y0 = 440;
+  const shown = Math.floor(N * easeOut(seg(lt, 0.5, 3.5)));
+  for (let i = 0; i < N; i++) {
+    const cx = x0 + (i % cols) * cw, cy = y0 + Math.floor(i / cols) * ch;
+    const on = i < shown;
+    ctx.save(); ctx.globalAlpha = on ? 0.9 : 0.12; ctx.fillStyle = on ? C.red : C.ink3;
+    ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 7); ctx.fill();
+    ctx.fillRect(cx - 6, cy + 7, 12, 13);
+    ctx.restore();
+  }
+  const n = Math.round(30700 * easeOut(seg(lt, 0.5, 3.5)));
+  text(n.toLocaleString('en-US'), W / 2 - 40, 1290, { size: 170, weight: 'bold', color: C.ink, align: 'center', alpha: seg(lt, 0.3, 0.5) });
+  text('人', W / 2 + 290, 1290, { size: 80, color: C.ink, alpha: seg(lt, 0.3, 0.5) });
+  text('●1つ = 50人', W - 90, 1130, { size: 28, font: GO, color: C.ink3, align: 'right', alpha: seg(lt, 1, 0.5) });
+  text('国鉄 第1次人員整理(計 約9万5千人を削減する計画)', W / 2, 1380, { size: 34, font: GO, color: C.ink2, align: 'center', alpha: seg(lt, 2.0, 0.6) });
+  text('下山総裁は、その責任者だった', W / 2, 360, { size: 46, color: C.red, align: 'center', alpha: seg(lt, 4.5, 0.8), ls: 4 });
+}
+
+// 透視図の線路。speed: 枕木が手前に流れる速さ
+function tracks(t, alpha, speed) {
+  const vx = W / 2, vy = 760, by = H;
+  ctx.save(); ctx.globalAlpha = alpha;
+  for (let i = 0; i < 26; i++) {
+    let z = ((i / 26) + t * speed) % 1;          // 0=遠い 1=手前
+    const p = Math.pow(z, 2.4), y = lerp(vy, by + 200, p), hw = lerp(8, 760, p);
+    line(vx - hw, y, vx + hw, y, '#4a4038', lerp(1, 26, p), lerp(0.2, 1, z));
+  }
+  for (const side of [-1, 1]) {
+    line(vx + side * 4, vy, vx + side * 430, by + 200, '#8c8478', 8);
+    line(vx + side * 6, vy, vx + side * 470, by + 200, '#5a544c', 4);
+  }
+  ctx.restore();
+}
+
+function sTracks(t) {
+  const s = 25, lt = t - s;
+  // 夜の線路 + 迫る列車の前照灯
+  tracks(lt, 0.9, 0.35 * (1 - seg(lt, 3.5, 1.5)) + 0.02);
+  const glow = Math.exp(-Math.pow((lt - 2.0) / 0.9, 2));
+  if (glow > 0.01) {
+    const g = ctx.createRadialGradient(W / 2, 760, 5, W / 2, 760, 200 + glow * 1400);
+    g.addColorStop(0, `rgba(255,248,225,${0.95 * glow})`); g.addColorStop(0.3, `rgba(255,230,190,${0.35 * glow})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+  header(t, s, '7月6日 深夜 ― 常磐線', 3);
+  // 路線図
+  const a = seg(lt, 3.0, 0.8), y = 1080;
+  box(60, 900, W - 120, 420, '#000', a * 0.7);
+  line(140, y, 940, y, C.ink, 8, a);
+  for (const [x, nm] of [[180, '北千住'], [900, '綾瀬']]) {
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = C.bg; ctx.strokeStyle = C.ink; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(x, y, 22, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+    text(nm, x, y + 80, { size: 46, font: GO, color: C.ink, align: 'center', alpha: a });
+  }
+  const mx = 640, pa = seg(lt, 3.8, 0.4);
+  if (pa > 0) {
+    const pulse = 1 + 0.25 * Math.sin(lt * 8);
+    ctx.save(); ctx.globalAlpha = pa; ctx.strokeStyle = C.red; ctx.lineWidth = 10;
+    const r = 26 * pulse; ctx.beginPath(); ctx.moveTo(mx - r, y - r); ctx.lineTo(mx + r, y + r); ctx.moveTo(mx + r, y - r); ctx.lineTo(mx - r, y + r); ctx.stroke(); ctx.restore();
+    text('現場(足立区 五反野付近)', mx, y - 60, { size: 38, font: GO, color: C.red, align: 'center', alpha: pa });
+  }
+  text('午前0時25分頃 発見', W / 2, 970, { size: 52, font: GO, color: C.ink, align: 'center', alpha: seg(lt, 4.4, 0.6), ls: 4 });
+  text('轢断された遺体', W / 2, 1260, { size: 44, color: C.ink2, align: 'center', alpha: seg(lt, 5.0, 0.6), ls: 6 });
+}
+
+function card(i, title, sub, y, p, t) {
+  if (p <= 0) return;
+  const x = lerp(-900, 80, easeOut(p)), w = W - 160, h = 250;
+  ctx.save(); ctx.globalAlpha = clamp(p * 2);
+  ctx.fillStyle = C.paper; ctx.translate(x + w / 2, y + h / 2); ctx.rotate((i - 1) * 0.012); ctx.translate(-w / 2, -h / 2);
+  ctx.fillRect(0, 0, w, h);
+  // 紙の汚れ
+  const r = rng(i * 991 + 3);
+  for (let k = 0; k < 40; k++) { ctx.globalAlpha = 0.06; ctx.fillStyle = '#5a4a30'; ctx.beginPath(); ctx.arc(r() * w, r() * h, r() * 40, 0, 7); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.red; ctx.fillRect(0, 0, 14, h);
+  ctx.font = `bold 96px ${GO}`; ctx.fillStyle = 'rgba(200,16,46,0.85)'; ctx.textBaseline = 'alphabetic'; ctx.fillText(String(i).padStart(2, '0'), 50, 140);
+  ctx.font = `bold 60px ${MIN}`; ctx.fillStyle = '#1a1612'; ctx.fillText(title, 210, 118);
+  ctx.font = `34px ${GO}`; ctx.fillStyle = '#4a4238'; ctx.fillText(sub, 214, 190);
+  ctx.restore();
+}
+
+function sMystery(t) {
+  const s = 34, lt = t - s;
+  header(t, s, '不可解な点', 4);
+  text('?', W / 2, 640, { size: 260, color: C.red, align: 'center', alpha: (1 - seg(lt, 2.4, 0.5)) * seg(lt, 0.2, 0.5), shadow: 30 });
+  card(1, '血液がほとんど無い', '轢断遺体にしては出血の跡が乏しかった', 430, seg(lt, 2.7, 0.6), t);
+  card(2, '衣服に大量の油と色素', '機関車の油とは異なる種類とされた', 730, seg(lt, 5.8, 0.6), t);
+  card(3, '総裁に似た男', '現場近くの旅館で数時間休憩していた', 1030, seg(lt, 7.8, 0.6), t);
+}
+
+function sVs(t) {
+  const s = 47, lt = t - s;
+  header(t, s, '割れた鑑定 ― 自殺か、他殺か', 5);
+  const L = seg(lt, 0.3, 0.7), R = seg(lt, 3.3, 0.7);
+  const col = (cx, a, uni, who, key, verdict, red) => {
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = red ? C.red : C.ink2; ctx.lineWidth = 3; ctx.strokeRect(cx - 230, 470, 460, 760); ctx.restore();
+    text(uni, cx, 560, { size: 44, font: GO, color: C.ink2, align: 'center', alpha: a });
+    text(who, cx, 620, { size: 36, font: GO, color: C.ink3, align: 'center', alpha: a });
+    text(key[0], cx, 820, { size: 120, weight: 'bold', color: red ? C.red : C.ink, align: 'center', alpha: a });
+    text(key[1], cx, 960, { size: 120, weight: 'bold', color: red ? C.red : C.ink, align: 'center', alpha: a });
+    text('↓', cx, 1080, { size: 60, color: C.ink3, align: 'center', alpha: a });
+    text(verdict, cx, 1180, { size: 80, weight: 'bold', color: C.ink, align: 'center', alpha: a, ls: 10 });
+  };
+  col(290, L, '東京大学', '法医学 古畑種基', ['死後', '轢断'], '他殺', true);
+  col(790, R, '慶應義塾大学', '法医学 中舘久平', ['生体', '轢断'], '自殺', false);
+  const v = seg(lt, 6.3, 0.3);
+  if (v > 0) {
+    // 稲妻状の亀裂
+    ctx.save(); ctx.globalAlpha = v; ctx.strokeStyle = C.red; ctx.lineWidth = 6; ctx.beginPath();
+    const r = rng(77); let y = 450; ctx.moveTo(540, y);
+    while (y < 1260 * v + 450 * (1 - v)) { y += 40 + r() * 40; ctx.lineTo(540 + (r() - .5) * 50, y); }
+    ctx.stroke(); ctx.restore();
+    text('VS', 540, 780, { size: 80, font: GO, weight: 'bold', color: C.ink, align: 'center', alpha: v, stroke: 10, strokeColor: C.bg });
+  }
+  text('警視庁の内部でも、捜査一課は自殺、二課は他殺に傾いた', W / 2, 1330, { size: 32, font: GO, color: C.ink2, align: 'center', alpha: seg(lt, 7.0, 0.6) });
+}
+
+function sTimeline(t) {
+  const s = 57, lt = t - s;
+  header(t, s, '国鉄三大ミステリー', 6);
+  const x = 230, items = [
+    [0.3, '1949. 7. 5', '下山事件', '国鉄総裁が轢死体で発見'],
+    [1.6, '1949. 7.15', '三鷹事件', '無人電車が暴走、6人死亡'],
+    [3.0, '1949. 8.17', '松川事件', '列車が脱線転覆、3人死亡'],
+    [4.6, '1964. 7. 6', '時効成立', '殺人罪の公訴時効(15年)'],
+  ];
+  const yTop = 470, step = 230;
+  line(x, yTop, x, yTop + (items.length - 1) * step * easeOut(seg(lt, 0.2, 5)), C.ink3, 4);
+  items.forEach(([d, date, name, sub], i) => {
+    const a = seg(lt, d, 0.5), y = yTop + i * step, last = i === 3;
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = last || i === 0 ? C.red : C.ink2; ctx.beginPath(); ctx.arc(x, y, 18, 0, 7); ctx.fill(); ctx.restore();
+    text(date, x + 50, y - 22, { size: 34, font: GO, color: C.ink3, alpha: a });
+    text(name, x + 50, y + 44, { size: 66, weight: 'bold', color: last ? C.red : C.ink, alpha: a });
+    text(sub, x + 50, y + 100, { size: 32, font: GO, color: C.ink2, alpha: a });
+  });
+  stamp('時効', 820, 1180, seg(lt, 6.5, 0.4), { size: 110, rot: -0.22 });
+}
+
+function sEnd(t) {
+  const s = 66, lt = t - s;
+  const str = '真相は、今も闇の中。';
+  ctx.save(); ctx.font = `bold 92px ${MIN}`; const tw = ctx.measureText(str).width; ctx.restore();
+  let x = W / 2 - tw / 2;
+  for (let i = 0; i < str.length; i++) {
+    ctx.save(); ctx.font = `bold 92px ${MIN}`; const cw = ctx.measureText(str[i]).width; ctx.restore();
+    const a = seg(lt, 0.4 + i * 0.12, 0.5) * (1 - seg(lt, 4.0 + hash(i * 13) * 0.6, 0.8));
+    text(str[i], x, 900, { size: 92, weight: 'bold', color: C.ink, alpha: a, shadow: 12 });
+    x += cw;
+  }
+  const c = seg(lt, 2.6, 0.8);
+  text('下山事件  1949', W / 2, 1000, { size: 40, font: GO, color: C.red, align: 'center', alpha: seg(lt, 1.6, 0.8) * (1 - seg(lt, 4.0, 0.6)), ls: 12 });
+  text('ナレーション  VOICEVOX:四国めたん', W / 2, 1180, { size: 38, font: GO, color: C.ink2, align: 'center', alpha: c });
+  text('BGM・効果音  自作', W / 2, 1245, { size: 38, font: GO, color: C.ink2, align: 'center', alpha: c });
+  text('※ 諸説あります。事件の詳細は資料により異なります', W / 2, 1330, { size: 30, font: GO, color: C.ink3, align: 'center', alpha: c });
+}
+
+// 焼き込み字幕(最後の場面は大きな文字と重なるので出さない)
+function captions(t) {
+  const c = CUES.find(c => t >= c.s && t < c.e + 0.15 && c.s < 66);
+  if (!c) return;
+  const a = Math.min(seg(t, c.s, 0.15), 1 - seg(t, c.e, 0.15));
+  // 改行: 1 行最大 15 文字程度、読点で優先的に折る
+  const lines = wrap(c.text, 19);
+  const size = 52, lh = 74, base = 1500;
+  lines.forEach((ln, i) => text(ln, W / 2, base + i * lh, { size, font: GO, weight: 'bold', color: '#fff', align: 'center', alpha: a, stroke: 12, strokeColor: '#000' }));
+}
+function wrap(str, max) {
+  // 読点・句点で区切って詰め、長すぎる句は均等に割る
+  const out = []; let cur = '';
+  const parts = str.split(/(?<=[、。])/);
+  const push = p => { const k = Math.ceil(p.length / max), L = Math.ceil(p.length / k); for (let i = 0; i < p.length; i += L) out.push(p.slice(i, i + L)); };
+  for (const p of parts) {
+    if ((cur + p).length <= max) { cur += p; continue; }
+    if (cur) out.push(cur);
+    cur = '';
+    if (p.length > max) push(p); else cur = p;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+const SCENES = [
+  { s: 0, d: 7, f: sTitle },
+  { s: 7, d: 9.5, f: sMitsukoshi },
+  { s: 16.5, d: 8.5, f: sLayoff },
+  { s: 25, d: 9, f: sTracks },
+  { s: 34, d: 13, f: sMystery },
+  { s: 47, d: 10, f: sVs },
+  { s: 57, d: 9, f: sTimeline },
+  { s: 66, d: 6, f: sEnd },
+];
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  background(t);
+  for (const sc of SCENES) {
+    if (t >= sc.s && t < sc.s + sc.d) {
+      ctx.save();
+      // ゆっくりズームして不安感を出す
+      const z = 1 + 0.03 * ((t - sc.s) / sc.d);
+      ctx.translate(W / 2, H / 2); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+      sc.f(t);
+      ctx.restore();
+      // 場面の出入りを黒でフェード
+      const fade = Math.max(1 - seg(t, sc.s, 0.35), seg(t, sc.s + sc.d - 0.35, 0.35));
+      if (sc.s > 0 || t > 0.4) box(0, 0, W, H, '#000', fade);
+      else box(0, 0, W, H, '#000', 1 - seg(t, 0, 0.4));
+    }
+  }
+  captions(t);
+  glitch(t, f);
+  post(t, f);
+  box(0, H - 8, W * clamp(t / DURATION), 8, C.red, 0.9);
+  // 最後は完全に暗転
+  box(0, 0, W, H, '#000', seg(t, DURATION - 1.2, 1.2));
+}
+
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
