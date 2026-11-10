@@ -9,8 +9,9 @@
 | `output/air_raids.mp4` | 映像のみ(無音) |
 | `output/bgm.wav` | BGMのみ |
 | `output/subtitles_ja.srt` | 字幕 |
-| `output/air_raids_narrated_preview_openjtalk.mp4` | **仮音声(Open JTalk)版のプレビュー**。尺・BGMバランス確認用 |
-| `output/air_raids_narrated.mp4` | 完成版(青山龍星)。下記手順で生成 |
+| `output/air_raids_narrated.mp4` | 完成版(ナレーション VOICEVOX:青山龍星 + BGM) |
+| `output/narration.wav` | ナレーションのみ |
+| **`upload/air_raids_final.mp4`** | **投稿用**(-14 LUFS に正規化・ステレオAAC) |
 
 ## 構成(67秒)
 
@@ -34,6 +35,7 @@ node capture.js                 # render.html → output/air_raids.mp4(無音)
 # 青山龍星の音声: VOICEVOX ENGINE を起動してから narrate.py を実行
 docker run -d -p 50021:50021 voicevox/voicevox_engine:cpu-latest
 python3 narrate.py              # → output/air_raids_narrated.mp4(BGMダッキング付き)
+./export_upload.sh             # → upload/ に投稿用一式
 ```
 
 `narrate.py` は VOICEVOX ENGINE(HTTP, `VOICEVOX_URL`)→ voicevox_core の順に探し、
