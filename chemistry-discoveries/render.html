@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Chemistry Discoveries</title>
+<style>
+  html,body{margin:0;background:#0d1020;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 世界を変えた化学の大発見 6選  (9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// シーンの開始・長さと字幕は narrate.py が書き出す timeline.js から読む
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0d1020', bg2: '#151a33', panel: 'rgba(20,25,48,0.92)', grid: '#2b3258',
+  ink: '#f5f6fb', ink2: '#b9bfd8', ink3: '#7c84a6',
+  gold: '#FFD166', pink: '#FF7AA2', cyan: '#4CC9F0', green: '#7BD389', violet: '#B39DFF', orange: '#FF9F5A',
+};
+const FPS = 30;
+const TL = window.TIMELINE;
+const DURATION = TL.total;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+// 決定論的な疑似乱数
+function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, shadow = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (shadow) { ctx.shadowColor = color; ctx.shadowBlur = shadow; }
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function path_rrect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color; path_rrect(x, y, w, h, r); ctx.fill(); ctx.restore();
+}
+function srrect(x, y, w, h, r, color, width = 4, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; path_rrect(x, y, w, h, r); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function ring(x, y, r, color, width = 3, alpha = 1) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+function glow(x, y, r, color, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+// 化学式: 数字を下付きで描く(例 'NH3')。align は center 固定
+function formula(str, x, y, size, color, alpha = 1) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const chars = [...str];
+  const parts = chars.map((ch, i) => ({ ch, sub: /[0-9]/.test(ch) && i > 0 && /[A-Za-z]/.test(chars[i - 1]) }));
+  const widths = parts.map(p => { ctx.font = `bold ${p.sub ? size * 0.6 : size}px ${FONT}`; return ctx.measureText(p.ch).width; });
+  let cx = x - widths.reduce((a, b) => a + b, 0) / 2;
+  ctx.restore();
+  parts.forEach((p, i) => {
+    text(p.ch, cx, y + (p.sub ? size * 0.22 : 0), { size: p.sub ? size * 0.6 : size, weight: 'bold', color, alpha });
+    cx += widths[i];
+  });
+}
+
+// ---------- 共通パーツ ----------
+// 背景: ゆっくり漂う六角形(ベンゼン環)と粒子
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0d1020'); g.addColorStop(1, '#141a36');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 9; i++) {
+    const x = (rand(i) * W + t * (8 + rand(i + 9) * 10)) % (W + 200) - 100;
+    const y = (rand(i + 20) * H - t * (6 + rand(i + 30) * 8) + H * 2) % (H + 200) - 100;
+    hexagon(x, y, 40 + rand(i + 40) * 60, t * 0.1 * (rand(i + 50) - 0.5), C.grid, 3, 0.35);
+  }
+  for (let i = 0; i < 40; i++) {
+    const x = rand(i + 100) * W, y = (rand(i + 200) * H - t * (10 + rand(i + 300) * 25) + H * 3) % H;
+    circle(x, y, 1.5 + rand(i + 400) * 2.5, C.ink3, 0.25 + 0.2 * Math.sin(t * 2 + i));
+  }
+}
+function hexagon(x, y, r, rot, color, width, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.beginPath();
+  for (let k = 0; k <= 6; k++) { const a = rot + k * Math.PI / 3; const px = x + r * Math.cos(a), py = y + r * Math.sin(a); k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.stroke(); ctx.restore();
+}
+
+// 上部: No.バッジ + 年 + 発見名 + 人物
+function heading(no, year, title, who, color, t, a) {
+  const p = easeOut(t / 0.6);
+  rrect(70, 150, 200, 76, 38, color, a * p);
+  text('No.' + no, 170, 203, { size: 46, weight: 'bold', color: C.bg, align: 'center', alpha: a * p });
+  text(year + '年', 300, 210, { size: 60, weight: 'bold', color, alpha: a * p, shadow: 18 });
+  const p2 = easeOut((t - 0.25) / 0.6);
+  text(title, W / 2, 380 - 20 * (1 - p2), { size: title.length > 9 ? 84 : 100, weight: 'bold', align: 'center', alpha: a * p2 });
+  text(who, W / 2, 460 - 20 * (1 - p2), { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut((t - 0.45) / 0.6) });
+}
+// 上端: 6 つの発見の進捗ドット
+const DOT_COLORS = [C.cyan, C.green, C.gold, C.pink, C.violet, C.orange];
+function progressDots(idx, a) {
+  for (let i = 0; i < 6; i++) {
+    const x = W / 2 + (i - 2.5) * 70;
+    const on = i === idx, done = i < idx;
+    circle(x, 90, on ? 14 : 9, on || done ? DOT_COLORS[i] : C.grid, a * (on ? 1 : done ? 0.6 : 1));
+  }
+}
+// ポップに出るタグ
+function tag(str, x, y, color, t, a) {
+  const p = backOut(t / 0.45);
+  if (t <= 0) return;
+  ctx.save(); ctx.font = `bold 42px ${FONT}`; const w = ctx.measureText(str).width + 60; ctx.restore();
+  ctx.save(); ctx.translate(x, y); ctx.scale(p, p);
+  rrect(-w / 2, -40, w, 80, 40, color, a * 0.2);
+  srrect(-w / 2, -40, w, 80, 40, color, 3, a);
+  text(str, 0, 15, { size: 42, weight: 'bold', color, align: 'center', alpha: a });
+  ctx.restore();
+}
+
+// 字幕(ナレーションに同期・自動改行)
+function wrap(str, size, maxW) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const lines = []; let cur = '';
+  const NOSTART = '、。」』)ー々ぁぃぅぇぉっゃゅょァィゥェォッャュョ';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !NOSTART.includes(ch)) { lines.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore(); return lines;
+}
+function subtitles(t) {
+  const cue = TL.subs.find(c => t >= c.a - 0.05 && t < c.b + 0.25);
+  if (!cue) return;
+  const a = Math.min(easeOut((t - cue.a + 0.05) / 0.15), 1);
+  const size = 54, lh = 74;
+  const lines = wrap(cue.t, size, W - 200);
+  const y0 = 1580 - (lines.length - 1) * lh / 2;
+  rrect(60, y0 - 70, W - 120, lines.length * lh + 50, 28, C.panel, a * 0.95);
+  rrect(60, y0 - 70, 12, lines.length * lh + 50, 6, C.pink, a);
+  lines.forEach((l, i) => {
+    ctx.save(); ctx.globalAlpha = a; ctx.font = `bold ${size}px ${FONT}`; ctx.textAlign = 'center';
+    ctx.lineWidth = 8; ctx.strokeStyle = '#0d1020'; ctx.lineJoin = 'round';
+    ctx.strokeText(l, W / 2, y0 + i * lh); ctx.fillStyle = C.ink; ctx.fillText(l, W / 2, y0 + i * lh);
+    ctx.restore();
+  });
+}
+// 話者アイコン(四国めたんのイメージカラー: ピンク)
+function speakerBadge(a) {
+  rrect(W - 330, H - 120, 270, 60, 30, C.panel, a * 0.9);
+  circle(W - 295, H - 90, 12, C.pink, a);
+  text('四国めたん', W - 270, H - 77, { size: 34, weight: 'bold', color: C.ink2, alpha: a });
+}
+
+// ---------- シーン ----------
+function drawFlask(cx, cy, s, t, a, color) {
+  const flaskPath = () => {
+    ctx.beginPath(); ctx.moveTo(-40, -120); ctx.lineTo(-40, -30); ctx.lineTo(-130, 120); ctx.quadraticCurveTo(-140, 150, -105, 150);
+    ctx.lineTo(105, 150); ctx.quadraticCurveTo(140, 150, 130, 120); ctx.lineTo(40, -30); ctx.lineTo(40, -120);
+  };
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s); ctx.globalAlpha = a;
+  // 液体
+  flaskPath(); ctx.closePath();
+  ctx.save(); ctx.clip();
+  const lv = 30 + 6 * Math.sin(t * 3);
+  ctx.fillStyle = color; ctx.globalAlpha = a * 0.75;
+  ctx.beginPath(); ctx.moveTo(-200, lv);
+  for (let x = -200; x <= 200; x += 10) ctx.lineTo(x, lv + 8 * Math.sin(x / 25 + t * 4));
+  ctx.lineTo(200, 200); ctx.lineTo(-200, 200); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.globalAlpha = a; ctx.strokeStyle = C.ink; ctx.lineWidth = 8; ctx.lineJoin = 'round'; flaskPath(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-58, -120); ctx.lineTo(58, -120); ctx.stroke();
+  ctx.restore();
+  // 泡
+  for (let i = 0; i < 10; i++) {
+    const ph = (t * 0.7 + rand(i)) % 1;
+    const bx = cx + (rand(i + 5) - 0.5) * 60 * s + Math.sin(t * 3 + i) * 10;
+    const by = cy + (40 - ph * 380) * s;
+    ring(bx, by, (6 + rand(i + 7) * 12) * s * (0.6 + ph), color, 4, a * (1 - ph));
+  }
+}
+
+function sceneTitle(t, a) {
+  glow(W / 2, 740, 420, 'rgba(255,122,162,0.35)', a);
+  drawFlask(W / 2, 760, 1.5 * backOut(t / 0.8), t, a, C.pink);
+  text('世界を変えた', W / 2, 1150, { size: 80, weight: 'bold', color: C.ink2, align: 'center', alpha: a * easeOut((t - 0.3) / 0.6) });
+  const p = backOut((t - 0.6) / 0.6);
+  ctx.save(); ctx.translate(W / 2, 1290); ctx.scale(p, p);
+  text('化学の大発見', 0, 0, { size: 130, weight: 'bold', align: 'center', alpha: a, shadow: 30, color: C.gold });
+  ctx.restore();
+  const p3 = easeOut((t - 1.1) / 0.5);
+  rrect(W / 2 - 150, 1340, 300, 110, 55, C.pink, a * p3);
+  text('6選', W / 2, 1422, { size: 84, weight: 'bold', color: C.bg, align: 'center', alpha: a * p3 });
+}
+
+// 簡易周期表(18 列 x 7 行。存在するマス)
+const PT = (() => {
+  const cells = [];
+  const rows = [[1, 18], [1, 2, 13, 14, 15, 16, 17, 18], [1, 2, 13, 14, 15, 16, 17, 18]];
+  rows.forEach((cols, r) => cols.forEach(c => cells.push([r, c])));
+  for (let r = 3; r < 7; r++) for (let c = 1; c <= 18; c++) cells.push([r, c]);
+  return cells;
+})();
+function scenePeriodic(t, a) {
+  heading(1, 1869, '周期表', 'ドミトリ・メンデレーエフ(ロシア)', C.cyan, t, a);
+  const cw = 52, gap = 4, x0 = (W - 18 * (cw + gap)) / 2, y0 = 620;
+  const pred = { '3,13': 'Ga', '3,14': 'Ge' };   // 予言された「エカアルミニウム」「エカケイ素」
+  PT.forEach(([r, c], i) => {
+    const d = 0.6 + (r + c) * 0.045;
+    const p = easeOut((t - d) / 0.4);
+    const x = x0 + (c - 1) * (cw + gap), y = y0 + r * (cw + gap);
+    const k = r + ',' + c;
+    if (pred[k]) {
+      const blink = t > 3.6 ? 1 : 0.5 + 0.5 * Math.sin(t * 8);
+      srrect(x, y, cw, cw, 8, C.gold, 3, a * p);
+      text(t > 4.4 ? pred[k] : '?', x + cw / 2, y + 36, { size: 30, weight: 'bold', color: C.gold, align: 'center', alpha: a * p * blink });
+      glow(x + cw / 2, y + cw / 2, 60, 'rgba(255,209,102,0.5)', a * p * (t > 3.2 ? 1 : 0));
+    } else {
+      const hue = c <= 2 ? C.pink : c >= 13 ? C.cyan : C.violet;
+      rrect(x, y, cw, cw, 8, hue, a * p * (0.35 + 0.25 * rand(i)));
+    }
+  });
+  // 吹き出し
+  const ba = a * easeOut((t - 3.4) / 0.5);
+  const bx = x0 + 12.5 * (cw + gap), by = y0 + 3 * (cw + gap);
+  line(bx, by - 10, bx, 560 + 60, C.gold, 3, ba);
+  tag('まだ見つかっていない元素を予言!', W / 2, 560, C.gold, t - 3.4, a);
+  // 下段: 予言が当たった
+  const ra = a * easeOut((t - 4.6) / 0.5);
+  rrect(110, 1110, W - 220, 230, 28, C.bg2, ra);
+  text('予言 → 実際に発見', W / 2, 1180, { size: 40, color: C.ink2, align: 'center', alpha: ra });
+  text('ガリウム 1875年 / ゲルマニウム 1886年', W / 2, 1270, { size: 46, weight: 'bold', color: C.gold, align: 'center', alpha: ra });
+}
+
+function sceneRadium(t, a) {
+  heading(2, 1898, '放射能とラジウム', 'マリー&ピエール・キュリー', C.green, t, a);
+  const cx = W / 2, cy = 820;
+  const p = backOut((t - 0.4) / 0.7);
+  // 放射の輪
+  for (let k = 0; k < 5; k++) {
+    const ph = ((t * 0.6 + k / 5) % 1);
+    ring(cx, cy, 60 + ph * 330, C.green, 5, a * (1 - ph) * 0.8 * (t > 0.6 ? 1 : 0));
+  }
+  glow(cx, cy, 260, 'rgba(123,211,137,0.55)', a * p);
+  // 原子核
+  for (let i = 0; i < 18; i++) {
+    const ang = i * 2.4, rr = 14 * Math.sqrt(i);
+    circle(cx + Math.cos(ang) * rr * p, cy + Math.sin(ang) * rr * p, 20, i % 2 ? '#e8fff0' : C.green, a * p);
+  }
+  // 電子軌道
+  for (let k = 0; k < 3; k++) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(k * Math.PI / 3 + t * 0.2);
+    ctx.globalAlpha = a * p * 0.6; ctx.strokeStyle = C.ink2; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(0, 0, 220, 80, 0, 0, Math.PI * 2); ctx.stroke();
+    const e = t * 2.2 + k * 2;
+    ctx.globalAlpha = a * p; ctx.fillStyle = C.cyan; ctx.beginPath(); ctx.arc(220 * Math.cos(e), 80 * Math.sin(e), 13, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 元素カード
+  const card = (sym, name, num, x, d) => {
+    const q = backOut((t - d) / 0.5); if (q <= 0) return;
+    ctx.save(); ctx.translate(x, 1200); ctx.scale(q, q);
+    rrect(-120, -110, 240, 220, 24, C.bg2, a); srrect(-120, -110, 240, 220, 24, C.green, 4, a);
+    text(String(num), -95, -70, { size: 32, color: C.ink2, alpha: a });
+    text(sym, 0, 30, { size: 100, weight: 'bold', color: C.green, align: 'center', alpha: a });
+    text(name, 0, 88, { size: 36, color: C.ink, align: 'center', alpha: a });
+    ctx.restore();
+  };
+  card('Po', 'ポロニウム', 84, W / 2 - 150, 1.6);
+  card('Ra', 'ラジウム', 88, W / 2 + 150, 2.2);
+  tag('がん治療', W / 2 - 200, 1420, C.green, t - 5.0, a);
+  tag('原子力', W / 2 + 200, 1420, C.green, t - 5.5, a);
+}
+
+function molecule(atoms, bonds, x, y, s, a) {
+  bonds.forEach(([i, j, n]) => {
+    const [x1, y1] = atoms[i], [x2, y2] = atoms[j];
+    const dx = y2 - y1, dy = x1 - x2, L = Math.hypot(dx, dy) || 1;
+    for (let k = 0; k < n; k++) {
+      const o = (k - (n - 1) / 2) * 12 / L;
+      line(x + (x1 + dx * o) * s, y + (y1 + dy * o) * s, x + (x2 + dx * o) * s, y + (y2 + dy * o) * s, C.ink2, 5 * s, a);
+    }
+  });
+  atoms.forEach(([ax, ay, r, col, lab]) => {
+    circle(x + ax * s, y + ay * s, r * s, col, a);
+    text(lab, x + ax * s, y + ay * s + r * s * 0.38, { size: r * s * 1.05, weight: 'bold', color: C.bg, align: 'center', alpha: a });
+  });
+}
+function sceneHaber(t, a) {
+  heading(3, 1909, 'アンモニア合成', 'フリッツ・ハーバー(ドイツ)/ のちにボッシュが工業化', C.gold, t, a);
+  const y = 720;
+  const N2 = [[[-38, 0, 44, C.cyan, 'N'], [38, 0, 44, C.cyan, 'N']], [[0, 1, 3]]];
+  const H2 = [[[-26, 0, 28, '#f0f0f5', 'H'], [26, 0, 28, '#f0f0f5', 'H']], [[0, 1, 1]]];
+  const NH3 = [[[0, 0, 44, C.cyan, 'N'], [-62, 48, 28, '#f0f0f5', 'H'], [62, 48, 28, '#f0f0f5', 'H'], [0, -76, 28, '#f0f0f5', 'H']], [[0, 1, 1], [0, 2, 1], [0, 3, 1]]];
+  const p1 = backOut((t - 0.5) / 0.5), p2 = backOut((t - 1.0) / 0.5), p3 = backOut((t - 1.9) / 0.6);
+  if (p1 > 0) { molecule(N2[0], N2[1], 190, y, p1, a); formula('N2', 190, y + 110, 46, C.ink, a); text('空気中の窒素', 190, y - 90, { size: 32, color: C.ink2, align: 'center', alpha: a * p1 }); }
+  text('+', 335, y + 20, { size: 70, weight: 'bold', color: C.ink2, align: 'center', alpha: a * clamp(p2) });
+  if (p2 > 0) { molecule(H2[0], H2[1], 470, y, p2, a); formula('3H2', 470, y + 110, 46, C.ink, a); text('水素', 470, y - 90, { size: 32, color: C.ink2, align: 'center', alpha: a * p2 }); }
+  const ar = easeOut((t - 1.5) / 0.5);
+  line(590, y, 590 + 120 * ar, y, C.gold, 8, a * ar);
+  if (ar > 0.9) { line(710, y, 690, y - 16, C.gold, 8, a); line(710, y, 690, y + 16, C.gold, 8, a); }
+  text('高温・高圧', 650, y - 30, { size: 26, color: C.gold, align: 'center', alpha: a * ar });
+  if (p3 > 0) { glow(870, y, 160, 'rgba(255,209,102,0.4)', a * clamp(p3)); molecule(NH3[0], NH3[1], 870, y + 10, p3, a); formula('2NH3', 870, y + 120, 46, C.gold, a); text('アンモニア', 870, y - 100, { size: 32, color: C.gold, align: 'center', alpha: a * clamp(p3) }); }
+  // 肥料 → 世界人口の約半分
+  tag('化学肥料を大量生産', W / 2, 960, C.gold, t - 3.2, a);
+  const pa = a * easeOut((t - 4.6) / 0.5);
+  text('世界人口の 約半分 の食料を支える', W / 2, 1110, { size: 48, weight: 'bold', align: 'center', alpha: pa });
+  for (let i = 0; i < 20; i++) {
+    const c = i % 10, r = Math.floor(i / 10);
+    const x = 170 + c * 82, yy = 1190 + r * 120;
+    const q = easeOut((t - 4.8 - i * 0.07) / 0.3);
+    const col = c < 5 ? C.gold : C.grid;
+    circle(x, yy, 18, col, a * q);
+    rrect(x - 24, yy + 22, 48, 56, 20, col, a * q);
+  }
+  text('※推計(Erisman ほか 2008)', W / 2, 1460, { size: 28, color: C.ink3, align: 'center', alpha: pa });
+}
+
+function scenePenicillin(t, a) {
+  heading(4, 1928, 'ペニシリン', 'アレクサンダー・フレミング(イギリス)', C.pink, t, a);
+  const cx = W / 2, cy = 900, R = 330;
+  const p = easeOut((t - 0.3) / 0.6);
+  circle(cx, cy, R * p, '#1d2442', a);
+  ring(cx, cy, R * p, C.ink2, 8, a);
+  ring(cx, cy, (R - 18) * p, C.ink3, 3, a * 0.6);
+  if (p < 0.99) return;
+  // 阻止円(アオカビの周りから細菌が消える)
+  const mx = cx - 60, my = cy - 30;
+  const zone = 40 + 180 * easeInOut((t - 1.8) / 3.0);
+  for (let i = 0; i < 160; i++) {
+    const ang = rand(i) * Math.PI * 2, rr = Math.sqrt(rand(i + 500)) * (R - 40);
+    const bx = cx + Math.cos(ang) * rr, by = cy + Math.sin(ang) * rr;
+    const d = Math.hypot(bx - mx, by - my);
+    const alive = d > zone ? 1 : clamp((d - zone + 25) / 25);
+    const appear = easeOut((t - 0.8 - rand(i + 900) * 0.6) / 0.3);
+    ctx.save(); ctx.translate(bx, by); ctx.rotate(rand(i + 77) * 3);
+    rrect(-14, -6, 28, 12, 6, '#E9C46A', a * appear * alive * 0.85);
+    ctx.restore();
+  }
+  // 阻止円の縁
+  ring(mx, my, zone, C.pink, 3, a * 0.5 * clamp((t - 1.8) / 0.5));
+  // アオカビのコロニー
+  const mp = backOut((t - 1.2) / 0.6);
+  for (let i = 0; i < 14; i++) {
+    const ang = i * 2.39996, rr = 8 * Math.sqrt(i) * 3;
+    circle(mx + Math.cos(ang) * rr * mp, my + Math.sin(ang) * rr * mp, 26 * mp, i % 2 ? '#3fae8f' : '#2b8a73', a);
+  }
+  text('アオカビ', mx, my - 105, { size: 36, weight: 'bold', color: C.ink, align: 'center', alpha: a * clamp(mp) });
+  text('アオカビの周りだけ細菌が消えた!', cx, cy + R + 70, { size: 36, weight: 'bold', color: C.pink, align: 'center', alpha: a * easeOut((t - 3.6) / 0.5) });
+  tag('人類初の抗生物質', W / 2, 1390, C.pink, t - 4.8, a);
+}
+
+function sceneNylon(t, a) {
+  heading(5, 1935, 'ナイロン', 'ウォーレス・カロザース(アメリカ)', C.violet, t, a);
+  // 繰り返し単位がつながって伸びるポリマー鎖
+  const n = 22, grow = clamp((t - 0.5) / 3.0) * n;
+  let prev = null;
+  for (let i = 0; i < n; i++) {
+    if (i > grow) break;
+    const x = 60 + i * 46, y = 780 + Math.sin(i * 0.9 + t * 2) * 60 + (i % 2 ? 30 : -30);
+    const q = clamp(grow - i);
+    if (prev) line(prev[0], prev[1], x, y, C.ink2, 6, a * q);
+    prev = [x, y];
+    circle(x, y, i % 5 === 2 ? 20 : 15, i % 5 === 2 ? C.cyan : i % 5 === 4 ? C.pink : C.violet, a * q);
+  }
+  text('小さな分子が鎖のようにつながる「高分子」', W / 2, 960, { size: 38, color: C.ink2, align: 'center', alpha: a * easeOut((t - 2.6) / 0.5) });
+  // 糸 → 製品
+  const items = [['ストッキング', C.violet], ['衣服', C.pink], ['ロープ', C.cyan], ['プラスチック製品', C.gold]];
+  items.forEach(([s, c], i) => tag(s, i % 2 ? W / 2 + 220 : W / 2 - 220, 1100 + Math.floor(i / 2) * 120, c, t - 4.0 - i * 0.35, a));
+  text('「石油から作る」素材の時代へ', W / 2, 1390, { size: 46, weight: 'bold', color: C.violet, align: 'center', alpha: a * easeOut((t - 5.6) / 0.5) });
+}
+
+function sceneBattery(t, a) {
+  heading(6, 1985, 'リチウムイオン電池', '吉野彰(日本)2019年ノーベル化学賞', C.orange, t, a);
+  const x = 190, y = 620, w = 700, h = 380;
+  const p = easeOut((t - 0.3) / 0.5);
+  rrect(x, y, w * p, h, 36, C.bg2, a);
+  srrect(x, y, w, h, 36, C.ink2, 8, a * p);
+  rrect(x + w, y + h / 2 - 50, 30, 100, 10, C.ink2, a * p);
+  // 電極
+  rrect(x + 40, y + 40, 90, h - 80, 14, C.ink3, a * p);
+  rrect(x + w - 130, y + 40, 90, h - 80, 14, C.orange, a * p * 0.7);
+  text('−', x + 85, y - 25, { size: 50, weight: 'bold', color: C.ink2, align: 'center', alpha: a * p });
+  text('+', x + w - 85, y - 25, { size: 50, weight: 'bold', color: C.orange, align: 'center', alpha: a * p });
+  // Li+ が行き来する
+  for (let i = 0; i < 12; i++) {
+    const ph = (t * 0.45 + rand(i)) % 1, dir = Math.floor(t * 0.45 + rand(i)) % 2;
+    const f = dir ? ph : 1 - ph;
+    const ix = lerp(x + 160, x + w - 160, easeInOut(f)), iy = y + 70 + rand(i + 33) * (h - 140);
+    circle(ix, iy, 22, C.orange, a * p * (t > 1 ? 1 : 0));
+    text('Li', ix, iy + 10, { size: 26, weight: 'bold', color: C.bg, align: 'center', alpha: a * p * (t > 1 ? 1 : 0) });
+  }
+  text('Li⁺ が電極の間を行き来して充放電', W / 2, 1070, { size: 38, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.6) / 0.5) });
+  // スマホ・電気自動車のアイコン
+  const q1 = backOut((t - 4.5) / 0.5), q2 = backOut((t - 5.0) / 0.5);
+  if (q1 > 0) {
+    ctx.save(); ctx.translate(W / 2 - 220, 1260); ctx.scale(q1, q1);
+    rrect(-60, -110, 120, 220, 22, C.orange, a * 0.2); srrect(-60, -110, 120, 220, 22, C.orange, 6, a);
+    rrect(-20, -95, 40, 8, 4, C.orange, a); circle(0, 88, 9, C.orange, a);
+    ctx.restore();
+    text('スマホ', W / 2 - 220, 1420, { size: 38, weight: 'bold', align: 'center', alpha: a * clamp(q1) });
+  }
+  if (q2 > 0) {
+    ctx.save(); ctx.translate(W / 2 + 200, 1280); ctx.scale(q2, q2);
+    ctx.globalAlpha = a; ctx.strokeStyle = C.orange; ctx.fillStyle = 'rgba(255,159,90,0.2)'; ctx.lineWidth = 6; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-150, 30); ctx.lineTo(-150, -10); ctx.lineTo(-90, -20); ctx.lineTo(-50, -70); ctx.lineTo(60, -70); ctx.lineTo(110, -20); ctx.lineTo(150, -10); ctx.lineTo(150, 30); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    circle(W / 2 + 200 - 90 * q2, 1310, 28 * q2, C.orange, a); circle(W / 2 + 200 + 90 * q2, 1310, 28 * q2, C.orange, a);
+    // 稲妻
+    ctx.save(); ctx.translate(W / 2 + 200, 1240); ctx.scale(q2, q2); ctx.globalAlpha = a; ctx.fillStyle = C.gold;
+    ctx.beginPath(); ctx.moveTo(8, -30); ctx.lineTo(-14, 6); ctx.lineTo(2, 6); ctx.lineTo(-6, 34); ctx.lineTo(16, -4); ctx.lineTo(0, -4); ctx.closePath(); ctx.fill(); ctx.restore();
+    text('電気自動車', W / 2 + 200, 1420, { size: 38, weight: 'bold', align: 'center', alpha: a * clamp(q2) });
+  }
+}
+
+function sceneOutro(t, a) {
+  text('世界を変えた化学の大発見', W / 2, 260, { size: 64, weight: 'bold', align: 'center', alpha: a * easeOut(t / 0.5) });
+  const items = [
+    ['1869', '周期表', C.cyan], ['1898', '放射能・ラジウム', C.green], ['1909', 'アンモニア合成', C.gold],
+    ['1928', 'ペニシリン', C.pink], ['1935', 'ナイロン', C.violet], ['1985', 'リチウムイオン電池', C.orange],
+  ];
+  items.forEach(([y, s, c], i) => {
+    const la = a * easeOut((t - 0.2 - i * 0.18) / 0.4);
+    const yy = 360 + i * 150;
+    rrect(110, yy, W - 220, 120, 24, C.bg2, la);
+    rrect(110, yy, 14, 120, 7, c, la);
+    text(y, 170, yy + 80, { size: 50, weight: 'bold', color: c, alpha: la });
+    text(s, 330, yy + 80, { size: 52, weight: 'bold', alpha: la });
+  });
+  const ca = a * easeOut((t - 2.6) / 0.5);
+  text('音声: VOICEVOX:四国めたん / BGM: 自作', W / 2, 1300, { size: 30, color: C.ink3, align: 'center', alpha: ca });
+}
+
+const SCENE_FUNCS = {
+  title: sceneTitle, periodic: scenePeriodic, radium: sceneRadium, haber: sceneHaber,
+  penicillin: scenePenicillin, nylon: sceneNylon, battery: sceneBattery, outro: sceneOutro,
+};
+const DOT_INDEX = { periodic: 0, radium: 1, haber: 2, penicillin: 3, nylon: 4, battery: 5 };
+const XF = 0.3; // クロスフェード秒
+
+function render(t) {
+  background(t);
+  for (const sc of TL.scenes) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = clamp(Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF)));
+    if (a <= 0) continue;
+    SCENE_FUNCS[sc.id](Math.max(lt, 0), a);
+    if (sc.id in DOT_INDEX) progressDots(DOT_INDEX[sc.id], a);
+  }
+  subtitles(t);
+  speakerBadge(1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.5);
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.pink, 1);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
