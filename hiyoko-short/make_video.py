@@ -159,10 +159,9 @@ def build_audio(scene_voices, durations, total):
     env = np.convolve(env, np.ones(k) / k, mode="same")
     duck = np.clip(1 - env * 25, 0.35, 1.0)
     duck = np.convolve(duck, np.ones(k) / k, mode="same")
-    mix = voice * 1.0 + bgm * 0.55 * duck
+    mix = voice * 1.0 + bgm * 0.3 * duck
     peak = np.max(np.abs(mix))
-    if peak > 0.98:
-        mix *= 0.98 / peak
+    mix *= 0.9 / peak  # ピークを -1dB 付近にそろえる
     path = os.path.join(HERE, "build", "audio.wav")
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
