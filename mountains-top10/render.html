@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>絶対に登るべき山10選</title>
+<style>html,body{margin:0;background:#000}canvas{display:block;max-height:100vh;margin:0 auto}</style></head>
+<body><canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// 時刻 t 秒のフレームを決定論的に描画する(capture.js が window.render(t) を呼ぶ)。
+// シーンの文言と尺は window.DATA(scenes.json、ナレーション合成後は output/timing.json の尺)から受け取る。
+const W = 1080, H = 1920;
+window.FPS = 30;
+const cv = document.getElementById('c');
+const off = document.createElement('canvas'); off.width = W; off.height = H;
+let g = cv.getContext('2d');
+const FONT = '"IPAGothic","IPAPGothic","WenQuanYi Zen Hei",sans-serif';
+
+// ---------- 乱数・ノイズ ----------
+function hash(i, s) { const x = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return x - Math.floor(x); }
+function vnoise(x, s) { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash(i, s) * (1 - u) + hash(i + 1, s) * u; }
+function fbm(x, s, oct = 4) { let a = 0, amp = .5, fr = 1; for (let o = 0; o < oct; o++) { a += amp * (vnoise(x * fr, s + o * 17) - .5); amp *= .5; fr *= 2.03; } return a; }
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const win = (t, a, b) => clamp((t - a) / (b - a));
+
+// ---------- 地形 ----------
+function profile(shape, u) {
+  if (typeof shape === 'function') return shape(u);
+  if (u <= shape[0][0]) return shape[0][1];
+  for (let i = 1; i < shape.length; i++) {
+    if (u <= shape[i][0]) {
+      const [u0, h0] = shape[i - 1], [u1, h1] = shape[i];
+      const f = (u - u0) / (u1 - u0), s = f * f * (3 - 2 * f);
+      return lerp(h0, h1, lerp(f, s, .5));
+    }
+  }
+  return shape[shape.length - 1][1];
+}
+// 稜線の y 座標関数を作る
+function makeRidge(shape, rough, seed, detail = .006) {
+  return x => { const u = x / W; return H - (profile(shape, u) + rough * fbm(u * 6, seed) + detail * fbm(u * 45, seed + 9, 3)) * H; };
+}
+function ridgePath(fy, x0 = -80, x1 = W + 80, step = 5) {
+  g.beginPath(); g.moveTo(x0, H + 20);
+  for (let x = x0; x <= x1; x += step) g.lineTo(x, fy(x));
+  g.lineTo(x1, H + 20); g.closePath();
+}
+function vgrad(y0, y1, stops) {
+  const gr = g.createLinearGradient(0, y0, 0, y1);
+  stops.forEach((c, i) => gr.addColorStop(i / (stops.length - 1), c));
+  return gr;
+}
+function peakOf(fy) { let bx = 0, by = 1e9; for (let x = 60; x <= W - 60; x += 4) { const y = fy(x); if (y < by) { by = y; bx = x; } } return [bx, by]; }
+
+// 主峰を描く: 塗り → 雪 → 陰影 → 沢筋
+function drawMain(m, seed) {
+  const fy = makeRidge(m.shape, m.rough, seed, m.detail ?? .006);
+  const [px, py] = m.peak ? [m.peak * W, fy(m.peak * W)] : peakOf(fy);
+  g.save();
+  ridgePath(fy);
+  g.fillStyle = vgrad(py, H, m.colors); g.fill();
+  g.clip();
+  // 雪
+  if (m.snow) {
+    const s = m.snow;
+    g.beginPath(); g.moveTo(-80, 0);
+    for (let x = -80; x <= W + 80; x += 4) {
+      const streak = Math.pow(Math.abs(fbm(x / 26, seed + 40, 3)) * 2, 1.6) * s.streak;
+      g.lineTo(x, fy(x) + s.depth + 40 * fbm(x / 70, seed + 31) + streak);
+    }
+    g.lineTo(W + 80, 0); g.closePath();
+    g.fillStyle = vgrad(py, py + s.depth + s.streak, [s.color || '#ffffff', s.color2 || '#e6eef8']); g.fill();
+  }
+  if (m.gully) { // 大雪渓: 稜線の鞍部から麓へ広がる白い帯
+    const gx = m.gully * W;
+    g.beginPath();
+    const top = fy(gx) + 30;
+    g.moveTo(gx - 14, top);
+    for (let y = top; y <= H; y += 10) { const k = (y - top) / (H - top); g.lineTo(gx - 14 - k * 150 + 26 * fbm(y / 60, 3), y); }
+    for (let y = H; y >= top; y -= 10) { const k = (y - top) / (H - top); g.lineTo(gx + 14 + k * 110 + 26 * fbm(y / 60, 8), y); }
+    g.closePath(); g.fillStyle = vgrad(top, H, ['#ffffff', '#dfe9f2']); g.fill();
+  }
+  // 陰影(光は左上から): 主稜線から右下へ落ちる尾根線より右側を暗く
+  const spine = [];
+  for (let y = py - 2; y <= H + 20; y += 8) spine.push([px + (y - py) * (m.spine ?? .25) + 38 * fbm(y / 140, seed + 3), y]);
+  g.beginPath(); g.moveTo(px, py - 400);
+  spine.forEach(([x, y]) => g.lineTo(x, y));
+  g.lineTo(W + 100, H + 20); g.lineTo(W + 100, py - 400); g.closePath();
+  g.fillStyle = m.shadeColor || `rgba(10,15,40,${m.shade ?? .3})`; g.fill();
+  // 沢筋・岩肌のテクスチャ
+  g.lineCap = 'round';
+  for (let k = 0; k < 26; k++) {
+    const x0 = (k + .5) / 26 * W + 30 * (hash(k, seed) - .5);
+    let x = x0, y = fy(x0) + 6;
+    const len = 120 + 380 * hash(k, seed + 2);
+    g.beginPath(); g.moveTo(x, y);
+    for (let d = 0; d < len; d += 12) { x += (x0 < px ? -1 : 1) * 2.2 + 6 * fbm((y + d) / 50, k + seed); y += 12; g.lineTo(x, y); }
+    g.strokeStyle = `rgba(0,0,0,${(m.texture ?? .12) * (1 - k % 3 * .25)})`;
+    g.lineWidth = 2 + 4 * hash(k, seed + 5); g.stroke();
+  }
+  // 山頂付近の朝焼け・夕焼け
+  if (m.glow) {
+    g.fillStyle = vgrad(py, py + 420, [m.glow, 'rgba(0,0,0,0)']);
+    g.fillRect(0, py - 10, W, 440);
+  }
+  g.restore();
+  return { fy, px, py };
+}
+
+// 遠景の山並み
+function drawFar(layers, seed) {
+  layers.forEach((L, i) => {
+    const fy = makeRidge(L.shape || [[0, L.h], [1, L.h]], L.rough ?? .05, seed + i * 13, .004);
+    ridgePath(fy); g.fillStyle = L.color; g.fill();
+  });
+}
+
+// ---------- 空・天気 ----------
+function drawSky(stops) { g.fillStyle = vgrad(0, H * .85, stops); g.fillRect(-200, -200, W + 400, H + 400); }
+function drawSun(x, y, r, core, glow) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r * 7);
+  gr.addColorStop(0, glow); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(x - r * 7, y - r * 7, r * 14, r * 14);
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fillStyle = core; g.fill();
+}
+function drawStars(alpha, t, seed = 1) {
+  if (alpha <= 0) return;
+  for (let i = 0; i < 160; i++) {
+    const x = hash(i, seed) * W, y = hash(i, seed + 1) * H * .5;
+    const tw = .6 + .4 * Math.sin(t * 3 + i);
+    g.globalAlpha = alpha * tw * (1 - y / (H * .5)) * hash(i, seed + 2);
+    g.fillStyle = '#fff'; g.fillRect(x, y, 2 + 2 * hash(i, 9), 2 + 2 * hash(i, 9));
+  }
+  g.globalAlpha = 1;
+}
+function cloud(x, y, s, color) {
+  g.save(); g.fillStyle = color;
+  g.beginPath();
+  const parts = [[0, 0, 1], [-1.1, .25, .7], [1.1, .25, .75], [-.5, -.35, .75], [.55, -.4, .7], [-1.8, .45, .45], [1.85, .45, .45]];
+  parts.forEach(([dx, dy, r]) => { g.moveTo(x + dx * s + r * s, y + dy * s); g.arc(x + dx * s, y + dy * s, r * s, 0, Math.PI * 2); });
+  g.fill(); g.restore();
+}
+function drawClouds(t, list, color) { list.forEach(([x, y, s, v]) => cloud(((x * W + t * v) % (W + 600)) - 300, y * H, s, color)); }
+function drawMist(y, h, color, t, seed) {
+  for (let i = 0; i < 6; i++) {
+    const x = ((hash(i, seed) * W + t * (12 + 10 * hash(i, seed + 1))) % (W + 800)) - 400;
+    const yy = y + (hash(i, seed + 2) - .5) * h;
+    const gr = g.createRadialGradient(x, yy, 0, x, yy, 420);
+    gr.addColorStop(0, color); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.save(); g.translate(x, yy); g.scale(1, .28); g.translate(-x, -yy);
+    g.fillStyle = gr; g.fillRect(x - 420, yy - 420, 840, 840); g.restore();
+  }
+}
+function seaOfClouds(y, t) {
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 9; i++) {
+      const x = ((i / 8) * (W + 400) + t * (8 + row * 5)) % (W + 400) - 200;
+      cloud(x, y + row * 90 + 20 * Math.sin(i * 2.1), 80 + row * 30, row === 0 ? 'rgba(255,214,196,.95)' : row === 1 ? 'rgba(246,196,190,.97)' : 'rgba(225,175,185,1)');
+    }
+  }
+}
+
+// ---------- 前景 ----------
+function fgSlope(h0, h1, rough, seed, color) {
+  const fy = makeRidge([[0, h0], [1, h1]], rough, seed, .004);
+  ridgePath(fy); g.fillStyle = color; g.fill();
+  return fy;
+}
+function trees(fy, n, seed, color, hmin = 60, hmax = 170) {
+  g.fillStyle = color;
+  for (let i = 0; i < n; i++) {
+    const x = (i + hash(i, seed)) / n * (W + 100) - 50;
+    const h = hmin + (hmax - hmin) * hash(i, seed + 1), w = h * .36, y = fy(x) + 12;
+    g.beginPath();
+    for (let k = 0; k < 3; k++) { const yy = y - h * k * .3; g.moveTo(x - w * (1 - k * .22), yy); g.lineTo(x, yy - h * .55); g.lineTo(x + w * (1 - k * .22), yy); }
+    g.fill(); g.fillRect(x - 3, y - 4, 6, 18);
+  }
+}
+function bushes(fy, n, seed, colors, size = 34) {
+  for (let i = 0; i < n; i++) {
+    const x = hash(i, seed) * (W + 60) - 30, d = hash(i, seed + 1);
+    const y = fy(x) + 10 + d * 340, r = size * (.5 + d);
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+    g.fillStyle = colors[i % colors.length]; g.fill();
+  }
+}
+function flowers(fy, n, seed, colors) {
+  for (let i = 0; i < n; i++) {
+    const x = hash(i, seed) * W, d = hash(i, seed + 1);
+    const y = fy(x) + 14 + d * d * 380, r = 4 + 9 * d;
+    g.fillStyle = colors[i % colors.length];
+    for (let p = 0; p < 5; p++) { const a = p / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(a) * r * .8, y + Math.sin(a) * r * .8, r * .6, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#ffe36a'; g.beginPath(); g.arc(x, y, r * .45, 0, Math.PI * 2); g.fill();
+  }
+}
+function rocks(list, colorL, colorD) {
+  list.forEach(([x, w, h]) => {
+    const y = H + 20; x *= W;
+    g.beginPath(); g.moveTo(x - w, y);
+    g.bezierCurveTo(x - w * .9, y - h * .7, x - w * .4, y - h, x, y - h);
+    g.bezierCurveTo(x + w * .5, y - h, x + w * .9, y - h * .6, x + w, y); g.closePath();
+    g.fillStyle = vgrad(y - h, y, [colorL, colorD]); g.fill();
+    g.beginPath(); g.moveTo(x + w * .1, y - h); g.bezierCurveTo(x + w * .5, y - h, x + w * .9, y - h * .6, x + w, y); g.lineTo(x + w * .2, y); g.closePath();
+    g.fillStyle = 'rgba(40,30,60,.22)'; g.fill();
+  });
+}
+function hut(x, y, s) {
+  g.fillStyle = '#5a3a2e';
+  g.fillRect(x - s, y - s * .55, s * 2, s * .6);
+  g.beginPath(); g.moveTo(x - s * 1.15, y - s * .5); g.lineTo(x, y - s * 1.05); g.lineTo(x + s * 1.15, y - s * .5); g.closePath();
+  g.fillStyle = '#9c2f2a'; g.fill();
+  g.fillStyle = '#ffd98a'; for (let i = -2; i <= 1; i++) g.fillRect(x + i * s * .4 + s * .1, y - s * .38, s * .18, s * .18);
+}
+function steam(x, y, t, seed) {
+  for (let i = 0; i < 14; i++) {
+    const ph = ((t * .22 + i / 14 + hash(i, seed) * .1) % 1);
+    const yy = y - ph * 420, xx = x + ph * 160 + 30 * Math.sin(ph * 5 + i);
+    g.globalAlpha = .5 * (1 - ph) * clamp(ph * 6);
+    g.beginPath(); g.arc(xx, yy, 24 + ph * 90, 0, Math.PI * 2); g.fillStyle = '#f4f4f2'; g.fill();
+  }
+  g.globalAlpha = 1;
+}
+function sparkles(t, n, seed) {
+  for (let i = 0; i < n; i++) {
+    const ph = (t * (.12 + .1 * hash(i, seed)) + hash(i, seed + 1)) % 1;
+    const x = hash(i, seed + 2) * W + 40 * Math.sin(t + i), y = H * (1 - ph);
+    const a = Math.sin(ph * Math.PI) * (.5 + .5 * Math.sin(t * 6 + i));
+    g.globalAlpha = a * .9; g.fillStyle = '#ffe6a0';
+    const r = 3 + 5 * hash(i, seed + 3);
+    g.beginPath(); g.moveTo(x, y - r * 2.5); g.lineTo(x + r * .6, y); g.lineTo(x, y + r * 2.5); g.lineTo(x - r * .6, y); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(x - r * 2.5, y); g.lineTo(x, y + r * .6); g.lineTo(x + r * 2.5, y); g.lineTo(x, y - r * .6); g.closePath(); g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
+// カメラ: 奥行き d(0=遠景, 1=近景)に応じて拡大・横移動(パララックス)
+function cam(p, d, zoom = .07, pan = -60) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const z = 1 + zoom * p * (.3 + .7 * d), dx = pan * p * d;
+  g.translate(W / 2 + dx, H * .8); g.scale(z, z); g.translate(-W / 2, -H * .8);
+}
+
+// ---------- 各山の風景 ----------
+const fujiShape = u => { const d = Math.abs(u - .5) / .5; return .21 + Math.min(.33, .345 * Math.pow(clamp(1 - d), 2.1)); };
+const BG = {
+  intro(t, p) {
+    cam(p, 0); drawSky(['#0e1440', '#3b2e6e', '#c45f7c', '#f4a46a']);
+    drawStars(1 - p * .7, t, 3);
+    drawSun(W * .5, H * .62, 60, 'rgba(255,236,190,1)', 'rgba(255,170,110,.55)');
+    cam(p, .2); drawFar([{ h: .36, color: '#6a4a7c', rough: .09 }], 21);
+    cam(p, .45); drawFar([{ h: .3, color: '#4a3463', rough: .1 }], 41);
+    cam(p, .7); drawFar([{ h: .24, color: '#2f2148', rough: .08 }], 61);
+    cam(p, 1); drawFar([{ h: .14, color: '#1a1230', rough: .06 }], 81);
+  },
+  takao(t, p) {
+    cam(p, 0); drawSky(['#4aa3e3', '#a8daf5', '#e4f5fb']);
+    drawSun(W * .82, H * .2, 50, 'rgba(255,255,235,1)', 'rgba(255,250,210,.5)');
+    drawClouds(t, [[.1, .16, 60, 14], [.55, .1, 45, 10], [.85, .28, 55, 12]], 'rgba(255,255,255,.95)');
+    cam(p, .25); drawFar([{ h: .36, color: '#a6c9d0', rough: .06 }, { h: .33, color: '#86b2a6', rough: .07 }], 5);
+    cam(p, .55); drawMain({ shape: [[0, .25], [.15, .32], [.38, .41], [.55, .4], [.75, .34], [1, .27]], rough: .03, colors: ['#4c9a55', '#2a6534', '#1d4a26'], shade: .25, spine: .4, texture: .08 }, 11);
+    cam(p, 1); const fy = fgSlope(.2, .15, .05, 7, '#17401f'); trees(fy, 24, 3, '#0f3017');
+  },
+  miyanoura(t, p) {
+    cam(p, 0); drawSky(['#7ea6a8', '#bcd6cf', '#e2ece6']);
+    drawClouds(t, [[.2, .12, 70, 6], [.7, .2, 60, 8]], 'rgba(240,246,244,.8)');
+    cam(p, .25); drawFar([{ h: .38, color: '#9fbdb4', rough: .08 }], 15);
+    cam(p, .55); const r = drawMain({ shape: [[0, .3], [.2, .38], [.32, .43], [.4, .41], [.5, .46], [.58, .44], [.68, .47], [.8, .4], [1, .32]], rough: .02, detail: .012, colors: ['#5e8a74', '#2f5a45', '#1b3a2c'], shade: .3, spine: .3, texture: .1 }, 19);
+    // 花崗岩の露岩
+    g.fillStyle = 'rgba(205,210,200,.85)';
+    [[.5, 0], [.68, 10], [.32, 4]].forEach(([u, k]) => { const x = u * W, y = r.fy(x); g.beginPath(); g.ellipse(x, y + 22, 34, 26, 0, Math.PI, 0); g.fill(); g.fillRect(x - 34, y + 21, 68, 14); });
+    drawMist(H * .66, 160, 'rgba(240,248,245,.75)', t, 4);
+    cam(p, 1); const fy = fgSlope(.22, .18, .05, 9, '#163a29'); trees(fy, 22, 8, '#0c2a1c', 90, 230);
+    drawMist(H * .86, 120, 'rgba(235,245,240,.55)', t, 9);
+  },
+  asahi(t, p) {
+    cam(p, 0); drawSky(['#2e7fcf', '#8dc8ee', '#d9eef9']);
+    drawClouds(t, [[.15, .12, 55, 10], [.8, .2, 40, 9]], 'rgba(255,255,255,.9)');
+    cam(p, .25); drawFar([{ h: .35, color: '#9bbad3', rough: .05 }], 25);
+    cam(p, .55); const r = drawMain({ shape: [[0, .29], [.2, .35], [.42, .46], [.5, .48], [.6, .455], [.8, .36], [1, .3]], rough: .018, colors: ['#9b7a62', '#6e5442', '#4c3b2f'], shade: .28, spine: .5, snow: { depth: 70, streak: 60 }, texture: .14 }, 23);
+    steam(W * .33, r.fy(W * .33) + 150, t, 5);
+    cam(p, 1); const fy = fgSlope(.27, .22, .05, 13, '#7a3a1e');
+    bushes(fy, 260, 3, ['#d8442a', '#f08a24', '#f4c430', '#b8331f', '#e5662a', '#6f8a2a'], 13);
+  },
+  kisokoma(t, p) {
+    cam(p, 0); drawSky(['#2f86d8', '#90cbef', '#dff2fb']);
+    drawClouds(t, [[.3, .1, 50, 9], [.9, .17, 45, 11]], 'rgba(255,255,255,.95)');
+    cam(p, .3); drawMain({ shape: [[0, .38], [.1, .47], [.2, .515], [.3, .48], [.42, .45], [.5, .435], [.58, .45], [.7, .49], [.8, .525], [.9, .49], [1, .4]], rough: .015, detail: .02, colors: ['#8b9097', '#5d646c', '#3e5a3c'], shade: .26, spine: .2, peak: .8, snow: { depth: 15, streak: 70, color: '#f4f8fb' }, texture: .16 }, 31);
+    cam(p, 1); const fy = fgSlope(.31, .27, .03, 17, '#4f8f3f');
+    g.fillStyle = vgrad(H * .66, H, ['#5ea24a', '#2e6b2c']); ridgePath(fy); g.fill();
+    flowers(fy, 90, 4, ['#ffffff', '#f6e04b', '#c99be8', '#ffffff']);
+  },
+  tateyama(t, p) {
+    cam(p, 0); drawSky(['#1b63c2', '#6fb3ec', '#cfe9fa']);
+    cam(p, .3); drawMain({ shape: [[0, .38], [.15, .45], [.3, .5], [.42, .525], [.55, .5], [.7, .53], [.85, .47], [1, .41]], rough: .015, detail: .012, colors: ['#7a8592', '#4c5662', '#3a4250'], shade: .3, spine: .3, snow: { depth: 100, streak: 140 }, texture: .12 }, 41);
+    cam(p, 1); const fy = fgSlope(.29, .25, .03, 21, '#6f9a52');
+    // みくりが池
+    g.save(); g.beginPath(); g.ellipse(W * .45, H * .79, 300, 60, 0, 0, Math.PI * 2);
+    g.fillStyle = vgrad(H * .76, H * .82, ['#3f86c9', '#7cc0ec']); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.5)'; g.lineWidth = 3; g.stroke(); g.restore();
+    flowers(fy, 30, 11, ['#ffffff', '#f6e04b']);
+  },
+  tsubakuro(t, p) {
+    cam(p, 0); drawSky(['#2c2c64', '#7a5a96', '#e3839a', '#f8c79a']);
+    drawStars(.4 * (1 - p), t, 7);
+    drawSun(W * .15, H * .42, 40, 'rgba(255,240,210,1)', 'rgba(255,180,140,.5)');
+    cam(p, .2); drawFar([{ shape: [[0, .36], [.6, .38], [.72, .45], [.74, .48], [.76, .45], [.85, .4], [1, .37]], color: '#7c5f8e', rough: .02 }], 51);
+    cam(p, .5); drawMain({ shape: [[0, .3], [.2, .36], [.35, .4], [.45, .43], [.5, .45], [.55, .42], [.62, .44], [.72, .39], [1, .31]], rough: .015, detail: .025, colors: ['#e9d9d4', '#b9a8b6', '#6f6585'], shade: .32, spine: .25, glow: 'rgba(255,170,150,.35)', texture: .1 }, 57);
+    hut(W * .22, H * .66, 46);
+    cam(p, 1); rocks([[.08, 170, 420], [.86, 210, 560], [.62, 120, 260]], '#f2ebe6', '#9a8ea8');
+  },
+  hakuba(t, p) {
+    cam(p, 0); drawSky(['#2a7bd0', '#86c4ee', '#d8eef9']);
+    drawClouds(t, [[.05, .14, 55, 9], [.6, .09, 40, 12]], 'rgba(255,255,255,.95)');
+    cam(p, .3); drawMain({ shape: [[0, .38], [.2, .47], [.38, .52], [.48, .495], [.6, .53], [.8, .47], [1, .4]], rough: .015, colors: ['#6f7d72', '#4a594e', '#2f3e33'], shade: .26, spine: .35, gully: .49, snow: { depth: 25, streak: 90 }, texture: .14 }, 61);
+    cam(p, 1); const fy = fgSlope(.24, .2, .04, 27, '#3f7f3a');
+    g.fillStyle = vgrad(H * .75, H, ['#4f9440', '#26602a']); ridgePath(fy); g.fill();
+    flowers(fy, 110, 6, ['#f6e04b', '#ffffff', '#e86aa3', '#9a7ae0']);
+  },
+  kitadake(t, p) {
+    cam(p, 0); drawSky(['#24457e', '#7b6b9a', '#e8956a', '#f8d38e']);
+    drawSun(W * .82, H * .45, 46, 'rgba(255,230,180,1)', 'rgba(255,160,90,.55)');
+    cam(p, .15); drawFar([{ shape: u => .32 + .1 * Math.pow(clamp(1 - Math.abs(u - .12) / .1), 1.8), color: '#8a6f8f', rough: .005 }], 71); // 遠くに富士山
+    cam(p, .5); drawMain({ shape: [[0, .3], [.25, .39], [.4, .47], [.47, .545], [.5, .565], [.53, .55], [.62, .47], [.78, .4], [1, .33]], rough: .02, colors: ['#8a6a74', '#4f3d52', '#2c2238'], shade: .42, spine: .15, snow: { depth: 30, streak: 50, color: '#fbe7dc', color2: '#d9c6d4' }, glow: 'rgba(255,150,90,.3)', texture: .16 }, 77);
+    cam(p, 1); fgSlope(.2, .24, .05, 33, '#1f1a2c');
+  },
+  yari(t, p) {
+    cam(p, 0); drawSky(['#0b1838', '#24427a', '#8a6a8e', '#f2a868']);
+    drawStars(1 - p * .6, t, 11);
+    cam(p, .2); drawFar([{ h: .4, color: '#36406a', rough: .06 }], 81);
+    cam(p, .55); drawMain({ shape: [[0, .35], [.15, .41], [.3, .45], [.4, .49], [.45, .52], [.475, .6], [.49, .645], [.51, .645], [.525, .59], [.56, .53], [.65, .49], [.8, .45], [1, .4]], rough: .012, detail: .008, colors: ['#5a5f7e', '#30344b', '#1c1f30'], shade: .4, spine: .12, peak: .5, snow: { depth: 140, streak: 120, color: '#e9e6f2', color2: '#b9bdd6' }, glow: 'rgba(255,150,100,.45)', texture: .18 }, 87);
+    cam(p, 1); fgSlope(.25, .21, .06, 39, '#111424');
+  },
+  fuji(t, p) {
+    cam(p, 0); drawSky(['#1a2a5c', '#5a4a86', '#d06a8a', '#ffb06a', '#ffe0a0']);
+    drawStars(.5 * (1 - p), t, 13);
+    const sunY = H * (.56 - .06 * ease(p));
+    drawSun(W * .84, sunY, 56, 'rgba(255,246,220,1)', 'rgba(255,190,110,.7)');
+    cam(p, .2); drawFar([{ h: .27, color: '#7a5a8a', rough: .05 }], 91);
+    cam(p, .5); drawMain({ shape: fujiShape, rough: .004, detail: .003, colors: ['#5a5a96', '#3a3c72', '#2a2c58'], shade: .3, spine: .05, peak: .5, snow: { depth: 210, streak: 190, color: '#fff3ee', color2: '#f2d4dc' }, glow: 'rgba(255,170,130,.4)', texture: .1 }, 97);
+    cam(p, .8); seaOfClouds(H * .78, t);
+    g.setTransform(1, 0, 0, 1, 0, 0); sparkles(t, 40, 5);
+  },
+  outro(t, p) {
+    cam(p, 0); drawSky(['#18204f', '#4b3f7e', '#c46f86', '#f6b07a']);
+    drawSun(W * .5, H * .7, 70, 'rgba(255,228,180,1)', 'rgba(255,160,100,.5)');
+    cam(p, .3); drawFar([{ h: .3, color: '#5a3f70', rough: .1 }], 101);
+    cam(p, .6); drawFar([{ h: .22, color: '#3a2a55', rough: .1 }], 111);
+    cam(p, 1); drawFar([{ h: .12, color: '#1d1532', rough: .06 }], 121);
+  },
+};
+
+// ---------- 文字 ----------
+function text(s, x, y, size, o = {}) {
+  g.save();
+  g.font = `${size}px ${FONT}`; g.textAlign = o.align || 'left'; g.textBaseline = 'alphabetic';
+  g.globalAlpha = o.alpha ?? 1;
+  g.lineJoin = 'round';
+  if (o.outline !== false) {
+    g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = size * .18; g.shadowOffsetY = size * .04;
+    g.strokeStyle = o.outline || 'rgba(15,20,40,.85)'; g.lineWidth = size * .16; g.strokeText(s, x, y);
+    g.shadowColor = 'transparent';
+  }
+  const fill = o.fill || '#fff';
+  g.fillStyle = fill; g.strokeStyle = fill; g.lineWidth = size * (o.bold ?? .05);
+  if (g.lineWidth > 0) g.strokeText(s, x, y);
+  g.fillText(s, x, y);
+  g.restore();
+}
+function measure(s, size) { g.font = `${size}px ${FONT}`; return g.measureText(s).width; }
+function rrect(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function gold(y0, y1) { return vgrad(y0, y1, ['#fff6c8', '#ffd34a', '#e09a12']); }
+function wrap(s, size, maxW) {
+  const n = Math.ceil(measure(s, size) / maxW);
+  if (n > 1) maxW = Math.min(maxW, measure(s, size) / n * 1.08 + size); // 行の長さを揃える
+  const lines = []; let cur = '';
+  const noStart = '、。！？」）ー';
+  for (const ch of s) {
+    if (measure(cur + ch, size) > maxW && cur) {
+      if (noStart.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function caption(s, lt, yc = 1430) {
+  const a = win(lt, .25, .5);
+  if (a <= 0) return;
+  const size = 50, lines = wrap(s, size, 880), lh = size * 1.42;
+  const h = lines.length * lh + 44, y = yc - h / 2;
+  g.save(); g.globalAlpha = a;
+  rrect(70, y + (1 - a) * 20, W - 140, h, 26); g.fillStyle = 'rgba(12,16,34,.62)'; g.fill();
+  g.restore();
+  lines.forEach((L, i) => text(L, W / 2, y + (1 - a) * 20 + 22 + lh * (i + .5) + size * .36, size, { align: 'center', alpha: a, outline: false, bold: .03 }));
+}
+function progress(rank) {
+  const n = 10, w = 74, gap = 14, x0 = W / 2 - (n * w + (n - 1) * gap) / 2;
+  for (let i = 0; i < n; i++) {
+    const r = 10 - i; // 左から 10 → 1
+    rrect(x0 + i * (w + gap), 96, w, 12, 6);
+    g.fillStyle = r > rank ? 'rgba(255,255,255,.85)' : r === rank ? '#ffd34a' : 'rgba(255,255,255,.28)'; g.fill();
+  }
+}
+function pin(x, y, s, color) {
+  g.beginPath(); g.arc(x, y - s * .55, s * .5, Math.PI, 0); g.lineTo(x, y + s * .25); g.closePath();
+  g.fillStyle = color; g.fill();
+  g.beginPath(); g.arc(x, y - s * .55, s * .2, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill();
+}
+
+function overlayMountain(sc, lt, dur) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  // 文字の可読性のため上部を少し暗く
+  g.fillStyle = vgrad(0, 1000, ['rgba(5,10,30,.55)', 'rgba(5,10,30,.22)', 'rgba(5,10,30,0)']); g.fillRect(0, 0, W, 1000);
+  progress(sc.rank);
+  text('絶対に登るべき山 TOP10', W / 2, 180, 42, { align: 'center', fill: 'rgba(255,255,255,.92)', bold: .02 });
+  const top = sc.rank <= 3, L = 80;
+  // 順位
+  const a1 = easeBack(win(lt, .05, .45)), dx = (1 - a1) * -500;
+  const num = String(sc.rank), ns = sc.rank === 1 ? 270 : 230;
+  const wD = measure('第', 76), wN = measure(num, ns);
+  const fillR = top ? gold(380 - ns * .75, 380) : '#ffffff';
+  text('第', L + dx, 370, 76, { fill: fillR, alpha: clamp(a1) });
+  text(num, L + dx + wD + 8, 380, ns, { fill: fillR, alpha: clamp(a1), bold: .06 });
+  text('位', L + dx + wD + wN + 18, 370, 76, { fill: fillR, alpha: clamp(a1) });
+  // 名前
+  const a2 = ease(win(lt, .2, .55)), dy = (1 - a2) * 40;
+  text(sc.kana, L + 4, 455 + dy, 40, { alpha: a2, fill: 'rgba(255,255,255,.9)', bold: .02 });
+  const nameSize = Math.min(140, 920 / [...sc.name].length);
+  text(sc.name, L, 455 + nameSize * .95 + dy, nameSize, { alpha: a2, bold: .07 });
+  // 地域
+  const yR = 655;
+  g.save(); g.globalAlpha = a2; pin(L + 20, yR - 6, 40, '#ff6b5b'); g.restore();
+  text(sc.region, L + 52, yR, 42, { alpha: a2, bold: .03 });
+  // 標高(カウントアップ)
+  const a3 = ease(win(lt, .35, .6));
+  const ev = Math.round(sc.elev * ease(win(lt, .35, 1.4)));
+  const yE = 770;
+  text('標高', L, yE, 46, { alpha: a3, bold: .03 });
+  const evs = ev.toLocaleString('en-US'), wl = measure('標高', 46) + 18;
+  text(evs, L + wl, yE + 6, 118, { alpha: a3, fill: top ? gold(yE - 90, yE) : '#ffffff', bold: .06 });
+  text('m', L + wl + measure(evs, 118) + 10, yE, 64, { alpha: a3, bold: .04 });
+  // 富士山との比較バー
+  const bw = 600, by = 805, f = ev / 3776;
+  g.save(); g.globalAlpha = a3;
+  rrect(L, by, bw, 18, 9); g.fillStyle = 'rgba(255,255,255,.25)'; g.fill();
+  if (f > 0) { rrect(L, by, Math.max(18, bw * f), 18, 9); g.fillStyle = top ? '#ffd34a' : '#7fd3ff'; g.fill(); }
+  g.restore();
+  text('富士山 3,776m', L + bw + 18, by + 18, 30, { alpha: a3 * .9, bold: .02 });
+  // 難易度とタグ
+  const a4 = ease(win(lt, .6, .9)), yD = 905;
+  text('難易度', L, yD, 42, { alpha: a4, bold: .03 });
+  const stars = '★'.repeat(sc.level) + '☆'.repeat(5 - sc.level);
+  text(stars, L + measure('難易度', 42) + 16, yD + 2, 50, { alpha: a4, fill: '#ffd34a', bold: .02 });
+  const tx = L + measure('難易度', 42) + 16 + measure(stars, 50) + 30, tw = measure(sc.tag, 38) + 44;
+  g.save(); g.globalAlpha = a4; rrect(tx, yD - 44, tw, 60, 30); g.fillStyle = top ? 'rgba(224,154,18,.92)' : 'rgba(255,107,91,.92)'; g.fill(); g.restore();
+  text(sc.tag, tx + 22, yD - 1, 38, { alpha: a4, outline: false, bold: .03 });
+  caption(sc.sub, lt);
+  // 第1位の登場演出
+  if (sc.rank === 1) { const fl = 1 - win(lt, 0, .5); if (fl > 0) { g.fillStyle = `rgba(255,248,230,${fl * .9})`; g.fillRect(0, 0, W, H); } }
+}
+
+function overlayIntro(sc, lt) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  const a = ease(win(lt, .05, .45)), b = easeBack(win(lt, .3, .75)), c = easeBack(win(lt, .6, 1.1));
+  text('一生に一度は登りたい', W / 2, 560 + (1 - a) * 30, 68, { align: 'center', alpha: a, fill: '#ffe9c2', bold: .03 });
+  g.save(); g.translate(W / 2, 760); g.scale(b, b);
+  text('絶対に', 0, 0, 150, { align: 'center', alpha: clamp(b), bold: .07 });
+  text('登るべき山', 0, 180, 150, { align: 'center', alpha: clamp(b), bold: .07 });
+  g.restore();
+  g.save(); g.translate(W / 2, 1230); g.scale(c, c); g.rotate(-.04);
+  text('10選', 0, 0, 300, { align: 'center', alpha: clamp(c), fill: gold(-230, 0), bold: .07 });
+  g.restore();
+  caption(sc.sub, lt, 1470);
+}
+
+function overlayOutro(sc, lt, all) {
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = 'rgba(5,8,25,.25)'; g.fillRect(0, 0, W, H);
+  const a = easeBack(win(lt, .05, .5));
+  g.save(); g.translate(W / 2, 330); g.scale(a, a);
+  text('あなたはどの山に', 0, 0, 96, { align: 'center', alpha: clamp(a), bold: .06 });
+  text('登りたい？', 0, 130, 120, { align: 'center', alpha: clamp(a), fill: gold(-100, 140), bold: .07 });
+  g.restore();
+  const ms = all.filter(s => s.rank).sort((x, y) => x.rank - y.rank);
+  ms.forEach((m, i) => {
+    const col = i < 5 ? 0 : 1, row = i % 5, al = ease(win(lt, .4 + i * .07, .7 + i * .07));
+    const x = 110 + col * 460, y = 620 + row * 92;
+    text(`${m.rank}位`, x + (1 - al) * 40, y, 44, { alpha: al, fill: m.rank <= 3 ? '#ffd34a' : '#bfe6ff', bold: .03 });
+    text(m.name, x + 110 + (1 - al) * 40, y, 48, { alpha: al, bold: .04 });
+  });
+  caption(sc.sub, lt, 1180);
+  const al = ease(win(lt, 1.2, 1.6));
+  text('※ 登山は天候・体力・装備に合わせて、無理のない計画を', W / 2, 1335, 32, { align: 'center', alpha: al * .95, bold: .02 });
+  text('ナレーション  VOICEVOX:四国めたん', W / 2, 1405, 34, { align: 'center', alpha: al * .95, bold: .02 });
+  text('BGM  オリジナル / イラストはイメージです', W / 2, 1455, 30, { align: 'center', alpha: al * .85, bold: .02 });
+}
+
+// ---------- タイムライン ----------
+let SC = [], STARTS = [];
+function setup(data) {
+  SC = data.scenes; STARTS = []; let s = 0;
+  SC.forEach(x => { STARTS.push(s); s += x.dur; });
+  window.DURATION = s;
+}
+function drawScene(i, lt) {
+  const sc = SC[i], p = clamp(lt / sc.dur);
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1;
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  (BG[sc.id] || BG.intro)(lt, p);
+  if (sc.id === 'intro') overlayIntro(sc, lt);
+  else if (sc.id === 'outro') overlayOutro(sc, lt, SC);
+  else overlayMountain(sc, lt, sc.dur);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+const XFADE = .35;
+window.render = function (t) {
+  let i = SC.length - 1;
+  for (let k = 0; k < SC.length; k++) if (t < STARTS[k] + SC[k].dur) { i = k; break; }
+  const lt = t - STARTS[i];
+  const main = cv.getContext('2d');
+  g = main; drawScene(i, lt);
+  if (i > 0 && lt < XFADE) { // 前のシーンからクロスフェード
+    g = off.getContext('2d'); drawScene(i - 1, SC[i - 1].dur + lt);
+    g = main; g.globalAlpha = 1 - lt / XFADE; g.drawImage(off, 0, 0); g.globalAlpha = 1;
+  }
+  // 最後は暗転
+  const fo = clamp((t - (window.DURATION - .6)) / .6);
+  if (fo > 0) { g.fillStyle = `rgba(0,0,0,${fo})`; g.fillRect(0, 0, W, H); }
+};
+if (window.DATA) setup(window.DATA);
+</script></body></html>
