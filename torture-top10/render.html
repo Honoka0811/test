@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Worst Torture Top 10</title>
+<style>html,body{margin:0;background:#07070a;}canvas{display:block;}</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timeline.js"></script>
+<script>
+// 歴史上最悪の拷問10選 (9:16 ショート)  render(t) は時刻 t 秒のフレームを決定論的に描く
+// タイムラインは narrate.py が出力する output/timeline.js (window.TL) から読む
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TL;
+const DURATION = TL.total;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const EMOJI = '"Noto Color Emoji"';
+const C = { bg: '#07070a', ink: '#f4f1ec', ink2: '#bdb6ad', ink3: '#7a726a', red: '#d8262e', red2: '#7a0d12', gold: '#f2c14e' };
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = x => 1 - Math.pow(1 - clamp(x), 3);
+const easeBack = x => { x = clamp(x); const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+function hash(n) { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+function txt(s, x, y, o = {}) {
+  const { size = 48, weight = 'bold', color = C.ink, align = 'center', alpha = 1, glow = 0, glowColor = C.red, stroke = 0, strokeColor = '#000', font = FONT, ls = 0 } = o;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); }
+  if (glow) { ctx.shadowColor = glowColor; ctx.shadowBlur = glow; }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// 日本語の簡易折り返し(行頭禁則)
+function wrap(s, maxW, size) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const lines = []; let cur = '';
+  for (const ch of s) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      if ('、。,.!?!?ー…)」』'.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore(); return lines;
+}
+
+// ---------- 背景 ----------
+function background(t, heat) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 揺らぐ赤い光(松明)
+  const flick = 0.85 + 0.15 * Math.sin(t * 7.3) * Math.sin(t * 3.1 + 1);
+  let g = ctx.createRadialGradient(W / 2, H * 0.42, 50, W / 2, H * 0.42, 1100);
+  g.addColorStop(0, `rgba(120,14,20,${0.55 * flick * heat})`); g.addColorStop(0.6, 'rgba(40,4,8,0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 石壁風の横線
+  ctx.save(); ctx.globalAlpha = 0.06; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  for (let r = 0; r < 26; r++) {
+    const y = r * 80 + 20; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    for (let c = 0; c < 6; c++) { const x = (c * 210 + (r % 2) * 105) % W; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 80); ctx.stroke(); }
+  }
+  ctx.restore();
+  // 火の粉
+  for (let i = 0; i < 46; i++) {
+    const sp = 60 + hash(i) * 120, life = H / sp;
+    const p = ((t + hash(i + 9) * life) % life) / life;
+    const x = hash(i + 3) * W + Math.sin(t * (0.6 + hash(i)) + i) * 40;
+    const y = H + 40 - p * (H + 80);
+    ctx.globalAlpha = Math.sin(p * Math.PI) * (0.35 + 0.5 * hash(i + 5));
+    ctx.fillStyle = hash(i + 7) > 0.5 ? '#ff6a2a' : '#ffb347';
+    ctx.beginPath(); ctx.arc(x, y, 1.5 + hash(i + 2) * 3, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // ビネット
+  g = ctx.createRadialGradient(W / 2, H / 2, 500, W / 2, H / 2, 1250);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// フィルムグレイン
+const grain = document.createElement('canvas'); grain.width = 270; grain.height = 480;
+function drawGrain(t) {
+  const g = grain.getContext('2d'), im = g.createImageData(270, 480), seed = Math.floor(t * FPS);
+  for (let i = 0; i < im.data.length; i += 4) { const v = hash(i * 0.37 + seed * 13.1) * 255; im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 22; }
+  g.putImageData(im, 0, 0);
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalCompositeOperation = 'overlay'; ctx.drawImage(grain, 0, 0, W, H); ctx.restore();
+}
+
+// ---------- 上部バナー(常時表示) ----------
+function header(t, curRank) {
+  const a = seg(t, 0.2, 0.6);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 150, W, 120);
+  ctx.fillStyle = C.red; ctx.fillRect(0, 150, W, 5); ctx.fillRect(0, 265, W, 5);
+  ctx.restore();
+  txt('歴史上 最悪の拷問 10選', W / 2, 212, { size: 64, color: C.ink, alpha: a, glow: 18, ls: 4 });
+  // 進行ドット(10→1)
+  for (let i = 0; i < 10; i++) {
+    const r = 10 - i, x = W / 2 + (i - 4.5) * 74, y = 318;
+    const done = curRank !== null && r >= curRank, cur = r === curRank;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = cur ? C.red : done ? '#5a1418' : 'rgba(255,255,255,0.10)';
+    rrect(x - 30, y - 22, 60, 44, 10); ctx.fill();
+    ctx.restore();
+    txt(String(r), x, y + 2, { size: 28, color: cur ? '#fff' : done ? C.ink2 : C.ink3, alpha: a });
+  }
+}
+
+// ---------- 字幕 ----------
+function subtitle(sc, t) {
+  const a = seg(t, sc.voice - 0.15, 0.2) * (1 - seg(t, sc.end - 0.15, 0.15));
+  if (a <= 0) return;
+  const size = 50, lines = wrap(sc.sub, 900, size), lh = 74;
+  const boxH = lines.length * lh + 50, y0 = 1330;
+  ctx.save(); ctx.globalAlpha = a * 0.78; ctx.fillStyle = '#000'; rrect(60, y0, W - 120, boxH, 22); ctx.fill();
+  ctx.globalAlpha = a; ctx.strokeStyle = 'rgba(216,38,46,0.6)'; ctx.lineWidth = 3; rrect(60, y0, W - 120, boxH, 22); ctx.stroke(); ctx.restore();
+  // 読み上げに合わせて文字を明るくする
+  const total = [...sc.sub].length, prog = seg(t, sc.voice, sc.voiceEnd - sc.voice) * total;
+  let k = 0;
+  lines.forEach((ln, i) => {
+    ctx.save(); ctx.font = `bold ${size}px ${FONT}`; ctx.textBaseline = 'middle';
+    const wl = ctx.measureText(ln).width; let x = W / 2 - wl / 2; const y = y0 + 25 + lh * i + lh / 2;
+    for (const ch of ln) {
+      ctx.globalAlpha = a; ctx.fillStyle = k < prog ? C.ink : '#8b847c';
+      ctx.fillText(ch, x, y); x += ctx.measureText(ch).width; k++;
+    }
+    ctx.restore();
+  });
+}
+
+// ---------- シーン ----------
+function intro(sc, t) {
+  const lt = t - sc.start;
+  const ws = TL.title;
+  ws.forEach((w, i) => {
+    const p = easeBack(seg(lt, 0.15 + i * 0.35, 0.45));
+    const shake = (1 - seg(lt, 0.15 + i * 0.35 + 0.45, 0.4)) * 10 * Math.sin(lt * 90 + i);
+    const size = [96, 168, 220][i], y = [560, 760, 1010][i];
+    ctx.save(); ctx.translate(W / 2 + shake, y); ctx.scale(2 - p, 2 - p);
+    txt(w, 0, 0, { size, color: i === 2 ? C.red : C.ink, alpha: clamp(p * 1.5), glow: i === 2 ? 50 : 24, stroke: 10, strokeColor: '#000' });
+    ctx.restore();
+  });
+  // 血のしずく風の下線
+  const lw = easeOut(seg(lt, 1.3, 0.8)) * 760;
+  ctx.fillStyle = C.red; ctx.fillRect(W / 2 - lw / 2, 1140, lw, 8);
+  for (let i = 0; i < 7; i++) {
+    const x = W / 2 - 360 + i * 120 + hash(i) * 40, len = easeOut(seg(lt, 1.8 + hash(i + 1) * 0.8, 1.6)) * (30 + hash(i + 4) * 90);
+    ctx.fillRect(x, 1144, 6, len); ctx.beginPath(); ctx.arc(x + 3, 1144 + len, 7, 0, 6.29); ctx.fill();
+  }
+  txt('※ 史料・伝承にもとづく歴史の解説です', W / 2, 1360, { size: 34, weight: 'normal', color: C.ink2, alpha: seg(lt, 2.0, 0.5) });
+}
+
+function painMeter(n, x, y, t, lt) {
+  txt('苦痛度', x - 230, y, { size: 40, color: C.ink2, align: 'left' });
+  for (let i = 0; i < 5; i++) {
+    const on = i < n, p = easeBack(seg(lt, 1.1 + i * 0.12, 0.3));
+    ctx.save(); ctx.translate(x - 50 + i * 80, y); ctx.scale(p, p);
+    ctx.globalAlpha = on ? 1 : 0.18;
+    ctx.font = `64px ${EMOJI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (!on) ctx.filter = 'grayscale(1)';
+    ctx.fillText('💀', 0, 0); ctx.restore();
+  }
+}
+
+function item(sc, t) {
+  const lt = t - sc.start, top = sc.rank === 1;
+  const accent = top ? C.gold : C.red;
+  // 順位スラム
+  const p = easeBack(seg(lt, 0.0, 0.35));
+  const flash = 1 - seg(lt, 0, 0.35);
+  if (flash > 0) { ctx.fillStyle = `rgba(255,${top ? 200 : 60},40,${flash * 0.35})`; ctx.fillRect(0, 0, W, H); }
+  const shake = (1 - seg(lt, 0.3, 0.35)) * 14;
+  ctx.save(); ctx.translate(W / 2 + shake * Math.sin(lt * 80), 520 + shake * Math.cos(lt * 70)); ctx.scale(2.4 - 1.4 * p, 2.4 - 1.4 * p);
+  ctx.globalAlpha = clamp(p * 2);
+  ctx.font = `bold 300px ${FONT}`; const half = ctx.measureText(String(sc.rank)).width / 2 + 30;
+  ctx.font = `bold 110px ${FONT}`; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'right';
+  ctx.fillStyle = C.ink; ctx.fillText('第', -half, 60);
+  ctx.textAlign = 'left'; ctx.fillText('位', half, 60);
+  ctx.textAlign = 'center'; ctx.font = `bold 300px ${FONT}`;
+  ctx.lineWidth = 14; ctx.strokeStyle = '#000'; ctx.strokeText(String(sc.rank), 0, 90);
+  ctx.shadowColor = accent; ctx.shadowBlur = 60; ctx.fillStyle = accent; ctx.fillText(String(sc.rank), 0, 90);
+  ctx.restore();
+
+  // アイコン
+  const ip = easeOut(seg(lt, 0.25, 0.5));
+  const bob = Math.sin(t * 2) * 6;
+  ctx.save(); ctx.globalAlpha = ip;
+  const g = ctx.createRadialGradient(W / 2, 830, 10, W / 2, 830, 150);
+  g.addColorStop(0, top ? 'rgba(242,193,78,0.35)' : 'rgba(216,38,46,0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(W / 2, 830, 150, 0, 6.29); ctx.fill();
+  ctx.strokeStyle = accent; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(W / 2, 830, 118 + 6 * (1 - ip), 0, 6.29); ctx.stroke();
+  ctx.font = `140px ${EMOJI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.translate(W / 2, 838 + bob); ctx.scale(0.6 + 0.4 * ip, 0.6 + 0.4 * ip); ctx.fillText(sc.icon, 0, 0);
+  ctx.restore();
+
+  // 名前
+  const np = easeOut(seg(lt, 0.45, 0.45));
+  let size = 116; ctx.font = `bold ${size}px ${FONT}`;
+  while (ctx.measureText(sc.name).width > 960) { size -= 4; ctx.font = `bold ${size}px ${FONT}`; }
+  txt(sc.name, W / 2 + (1 - np) * 120, 1030, { size, alpha: np, stroke: 10, glow: 30, glowColor: accent });
+  // 地域タグ
+  const op = easeOut(seg(lt, 0.7, 0.4));
+  ctx.save(); ctx.globalAlpha = op; ctx.font = `bold 40px ${FONT}`;
+  const tw = ctx.measureText(sc.origin).width + 60;
+  ctx.fillStyle = top ? 'rgba(242,193,78,0.18)' : 'rgba(216,38,46,0.22)'; rrect(W / 2 - tw / 2, 1105, tw, 64, 32); ctx.fill();
+  ctx.strokeStyle = accent; ctx.lineWidth = 2; rrect(W / 2 - tw / 2, 1105, tw, 64, 32); ctx.stroke(); ctx.restore();
+  txt(sc.origin, W / 2, 1139, { size: 40, color: top ? C.gold : '#ff8f8f', alpha: op });
+  // 苦痛度
+  painMeter(sc.pain, W / 2, 1250, t, lt);
+  subtitle(sc, t);
+}
+
+function outro(sc, t) {
+  const lt = t - sc.start;
+  const a = easeOut(seg(lt, 0.1, 0.5));
+  txt('あなたが一番', W / 2, 640, { size: 96, alpha: a, stroke: 10, glow: 24 });
+  txt('恐ろしいと思ったのは?', W / 2, 780, { size: 96, alpha: a, stroke: 10, glow: 24 });
+  const b = easeBack(seg(lt, 0.8, 0.4));
+  ctx.save(); ctx.translate(W / 2, 980); ctx.scale(b, b);
+  ctx.fillStyle = C.red; rrect(-330, -70, 660, 140, 70); ctx.fill(); ctx.restore();
+  txt('💬 コメントで教えて', W / 2, 982, { size: 64, alpha: clamp(b) });
+  subtitle(sc, t);
+}
+
+function credit(t) {
+  txt(TL.credit.startsWith('VOICEVOX') ? TL.credit : '音声: ' + TL.credit, 40, 1868, { size: 28, weight: 'normal', color: C.ink3, align: 'left', alpha: 0.9 });
+}
+
+function render(t) {
+  const sc = TL.scenes.find(s => t >= s.start && t < s.end) || TL.scenes[TL.scenes.length - 1];
+  const heat = sc.kind === 'item' ? 0.7 + 0.3 * (11 - sc.rank) / 10 : 0.8;
+  background(t, heat);
+  header(t, sc.kind === 'item' ? sc.rank : sc.kind === 'outro' ? 0 : null);
+  // シーン境界のクロスフェード(黒)
+  if (sc.kind === 'intro') intro(sc, t); else if (sc.kind === 'item') item(sc, t); else outro(sc, t);
+  const fadeOut = seg(t, sc.end - 0.12, 0.12), fadeEnd = seg(t, DURATION - 0.8, 0.8);
+  const k = Math.max(fadeOut * 0.6, fadeEnd);
+  if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); }
+  credit(t);
+  drawGrain(t);
+}
+window.render = render; window.FPS = FPS; window.DURATION = DURATION;
+
+// ブラウザで直接開いたときはプレビュー再生
+if (!navigator.webdriver) { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>
