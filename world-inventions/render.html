@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>World Inventions Top 10</title>
+<style>
+  html,body{margin:0;background:#0d1020;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 世界を変えた大発明 10選(9:16 ショート動画)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// シーンの尺は narrate.py が書き出す timeline.js(ナレーションの長さ)で決まる。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const TL = window.TIMELINE;
+const FPS = 30, DURATION = Math.ceil(TL.total * FPS) / FPS;
+window.FPS = FPS; window.DURATION = DURATION;
+
+const C = { bg: '#0d1020', ink: '#ffffff', ink2: '#d6dbea', ink3: '#8c93ad', panel: 'rgba(8,10,24,0.78)', gold: '#FFC93C' };
+// 順位ごとのテーマ色
+const ACCENT = { 10: '#4FC3F7', 9: '#FFD54F', 8: '#81D4FA', 7: '#80CBC4', 6: '#AED581',
+                 5: '#FF8A65', 4: '#9FA8DA', 3: '#4DD0E1', 2: '#FFB74D', 1: '#FFC93C' };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeBack = t => { t = clamp(t); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const TAU = Math.PI * 2;
+function hash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 48, weight = 'bold', color = C.ink, align = 'center', base = 'alphabetic', alpha = 1, stroke = 0, strokeColor = 'rgba(0,0,0,0.55)', ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, fill, alpha = 1, strokeC = null, lw = 0) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (strokeC) { ctx.strokeStyle = strokeC; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, fill, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = fill;
+  ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, TAU); ctx.fill(); ctx.restore();
+}
+function withAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
+}
+// 日本語の折り返し(1文字ずつ詰め、あふれたら直近 16 文字以内の句読点で改行。行頭禁則あり)
+function wrap(str, maxW, size) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const PUN = '、。!?', lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && !PUN.includes(ch)) {
+      let k = -1;
+      for (let i = cur.length - 1; i >= Math.max(1, cur.length - 16); i--) if (PUN.includes(cur[i])) { k = i; break; }
+      if (k >= 0) { lines.push(cur.slice(0, k + 1)); cur = cur.slice(k + 1); }
+      else { lines.push(cur); cur = ''; }
+    }
+    cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore();
+  return lines;
+}
+
+// ---------- 背景 ----------
+function background(t, accent, energy = 1) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#141a3a'); g.addColorStop(0.55, '#0d1020'); g.addColorStop(1, '#090b16');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 回転するサンバースト
+  ctx.save(); ctx.translate(W / 2, 820); ctx.rotate(t * 0.12);
+  ctx.globalAlpha = 0.07 * energy; ctx.fillStyle = accent;
+  for (let i = 0; i < 16; i++) {
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.arc(0, 0, 1500, (i / 16) * TAU, (i / 16 + 1 / 32) * TAU); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  // 中央のグロー
+  const rg = ctx.createRadialGradient(W / 2, 820, 50, W / 2, 820, 720);
+  rg.addColorStop(0, withAlpha(accent, 0.28 * energy)); rg.addColorStop(1, withAlpha(accent, 0));
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  // ふわふわ漂う粒
+  for (let i = 0; i < 40; i++) {
+    const x = (hash(i) * W + Math.sin(t * 0.4 + i) * 30) % W;
+    const y = ((hash(i + 50) * H - t * (20 + hash(i + 9) * 40)) % H + H) % H;
+    circle(x, y, 2 + hash(i + 3) * 4, i % 3 ? '#ffffff' : accent, 0.15 + 0.2 * hash(i + 7));
+  }
+}
+
+// ---------- アイコン(中心 0,0・おおよそ ±200 の範囲に描く) ----------
+const ICON = {};
+ICON.phone = (t, a) => {
+  ctx.save(); ctx.rotate(Math.sin(t * 9) * 0.06 * clamp(1 - t / 3)); // 着信のブルブル
+  ctx.fillStyle = a; ctx.strokeStyle = a; ctx.lineCap = 'round';
+  // 受話器
+  ctx.lineWidth = 60;
+  ctx.beginPath(); ctx.arc(0, 40, 150, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+  rrect(-205, -10, 110, 70, 30, a); rrect(95, -10, 110, 70, 30, a);
+  // 本体
+  ctx.beginPath(); ctx.moveTo(-120, 70); ctx.lineTo(120, 70); ctx.lineTo(160, 190); ctx.lineTo(-160, 190); ctx.closePath(); ctx.fill();
+  circle(0, 130, 46, '#0d1020'); circle(0, 130, 18, a);
+  for (let i = 0; i < 8; i++) { const an = i / 8 * TAU + 0.4; circle(Math.cos(an) * 33, 130 + Math.sin(an) * 33, 6, a); }
+  ctx.restore();
+  // 音の波
+  for (let k = 0; k < 3; k++) {
+    const p = ((t * 1.2 + k / 3) % 1);
+    ctx.save(); ctx.globalAlpha = (1 - p) * 0.9; ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(sd * 150, -120, 30 + p * 70, sd > 0 ? -1.1 : Math.PI - 0.5, sd > 0 ? 0.5 : Math.PI + 1.1); ctx.stroke(); }
+    ctx.restore();
+  }
+};
+ICON.bulb = (t, a) => {
+  const on = easeOut((t - 0.6) / 0.4) * (0.85 + 0.15 * Math.sin(t * 6));
+  // 光の放射
+  ctx.save(); ctx.strokeStyle = a; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.globalAlpha = on;
+  for (let i = 0; i < 9; i++) {
+    const an = Math.PI + (i / 8) * Math.PI, r0 = 175, r1 = 175 + 50 * on;
+    ctx.beginPath(); ctx.moveTo(Math.cos(an) * r0, -40 + Math.sin(an) * r0); ctx.lineTo(Math.cos(an) * r1, -40 + Math.sin(an) * r1); ctx.stroke();
+  }
+  ctx.restore();
+  const rg = ctx.createRadialGradient(0, -40, 10, 0, -40, 260);
+  rg.addColorStop(0, withAlpha(a, 0.9 * on)); rg.addColorStop(1, withAlpha(a, 0));
+  ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0, -40, 260, 0, TAU); ctx.fill();
+  // ガラス
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0, -40, 130, Math.PI * 0.78, Math.PI * 2.22);
+  ctx.lineTo(55, 120); ctx.lineTo(-55, 120); ctx.closePath();
+  ctx.fillStyle = on > 0.1 ? withAlpha('#FFF6C8', 0.35 + 0.6 * on) : 'rgba(255,255,255,0.15)';
+  ctx.fill(); ctx.lineWidth = 10; ctx.strokeStyle = '#fff'; ctx.stroke();
+  // フィラメント(竹)
+  ctx.lineWidth = 8; ctx.strokeStyle = on > 0.1 ? '#FF8F00' : '#9e9e9e';
+  ctx.beginPath(); ctx.moveTo(-30, 110); ctx.lineTo(-30, -20); ctx.quadraticCurveTo(0, -90, 30, -20); ctx.lineTo(30, 110); ctx.stroke();
+  ctx.restore();
+  // 口金
+  for (let i = 0; i < 3; i++) rrect(-62, 125 + i * 28, 124, 22, 10, i % 2 ? '#b0bec5' : '#eceff1');
+  rrect(-30, 210, 60, 24, 12, '#78909c');
+};
+ICON.plane = (t, a) => {
+  // 雲
+  for (let i = 0; i < 4; i++) {
+    const x = ((200 - t * 260 - i * 160) % 640 + 640) % 640 - 320, y = -150 + i * 95;
+    ctx.save(); ctx.globalAlpha = 0.5;
+    circle(x, y, 26, '#fff'); circle(x + 30, y - 12, 32, '#fff'); circle(x + 62, y, 24, '#fff'); rrect(x - 20, y, 104, 26, 13, '#fff');
+    ctx.restore();
+  }
+  ctx.save(); ctx.translate(0, Math.sin(t * 2.4) * 18); ctx.rotate(-0.18 + Math.sin(t * 2.4 + 1) * 0.04);
+  // 風の線
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  for (let i = 0; i < 3; i++) { const o = ((t * 3 + i * 0.33) % 1); ctx.globalAlpha = 1 - o; ctx.beginPath(); ctx.moveTo(-200 - o * 80, -40 + i * 40); ctx.lineTo(-260 - o * 80, -40 + i * 40); ctx.stroke(); }
+  ctx.globalAlpha = 1; ctx.fillStyle = '#fff';
+  // 胴体
+  ctx.beginPath(); ctx.ellipse(0, 0, 200, 38, 0, 0, TAU); ctx.fill();
+  // 主翼・尾翼
+  ctx.fillStyle = a;
+  ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-80, -170); ctx.lineTo(-30, -170); ctx.lineTo(80, 0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(-80, 170); ctx.lineTo(-30, 170); ctx.lineTo(80, 0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-150, 0); ctx.lineTo(-200, -90); ctx.lineTo(-170, -90); ctx.lineTo(-110, 0); ctx.closePath(); ctx.fill();
+  // 窓
+  for (let i = 0; i < 5; i++) circle(30 + i * 30, -6, 8, '#0d1020', 0.8);
+  circle(170, -4, 14, a);
+  ctx.restore();
+};
+ICON.vaccine = (t, a) => {
+  const push = 0.5 - 0.5 * Math.cos(clamp((t - 0.4) / 2.2) * Math.PI);
+  ctx.save(); ctx.rotate(-Math.PI / 4);
+  // 針
+  rrect(-6, -250, 12, 90, 4, '#eceff1');
+  // 筒
+  rrect(-62, -165, 124, 300, 18, 'rgba(255,255,255,0.18)', 1, '#fff', 10);
+  // 薬液(押し子が上がるほど減る)
+  const head = lerp(110, -60, push);
+  rrect(-48, -150, 96, head - -150, 8, a, 0.95);
+  // 目盛り
+  for (let i = 0; i < 6; i++) rrect(20, -130 + i * 40, 30, 6, 3, '#fff', 0.7);
+  // 押し子
+  rrect(-50, head, 100, 18, 6, '#eceff1');
+  rrect(-14, head + 18, 28, 235 - head - 18, 6, '#cfd8dc');
+  rrect(-75, 230, 150, 26, 12, '#eceff1');
+  rrect(-90, 128, 180, 22, 10, '#eceff1');
+  ctx.restore();
+  // しずく
+  const dp = (t * 0.8) % 1;
+  ctx.save(); ctx.globalAlpha = 1 - dp; ctx.fillStyle = a;
+  const dx = 185, dy = -185 + dp * 120;
+  ctx.beginPath(); ctx.moveTo(dx, dy - 26); ctx.quadraticCurveTo(dx + 20, dy, dx, dy + 14); ctx.quadraticCurveTo(dx - 20, dy, dx, dy - 26); ctx.fill();
+  ctx.restore();
+  // 盾マーク(免疫)
+  const sp = easeBack((t - 1.0) / 0.5);
+  ctx.save(); ctx.translate(-150, 150); ctx.scale(sp, sp);
+  ctx.fillStyle = '#fff'; ctx.beginPath();
+  ctx.moveTo(0, -60); ctx.lineTo(55, -40); ctx.quadraticCurveTo(55, 30, 0, 65); ctx.quadraticCurveTo(-55, 30, -55, -40); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = a; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(-22, 0); ctx.lineTo(-4, 20); ctx.lineTo(26, -18); ctx.stroke();
+  ctx.restore();
+};
+ICON.penicillin = (t, a) => {
+  // シャーレ
+  circle(0, 0, 210, 'rgba(255,255,255,0.12)');
+  ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 12; ctx.beginPath(); ctx.arc(0, 0, 210, 0, TAU); ctx.stroke(); ctx.restore();
+  // 阻止円(カビの周りで細菌が消えていく)
+  const zone = 40 + 110 * easeOut((t - 0.3) / 2.5);
+  for (let i = 0; i < 70; i++) {
+    const an = hash(i) * TAU, r = 30 + Math.sqrt(hash(i + 100)) * 165;
+    const x = Math.cos(an) * r, y = Math.sin(an) * r;
+    const alive = r > zone ? 1 : clamp((r - zone + 25) / 25);
+    if (alive > 0) {
+      ctx.save(); ctx.globalAlpha = alive; ctx.fillStyle = '#EF9A9A';
+      ctx.beginPath(); ctx.ellipse(x, y, 13, 7, an, 0, TAU); ctx.fill(); ctx.restore();
+    }
+  }
+  // 青カビ
+  for (let i = 0; i < 9; i++) {
+    const an = i / 9 * TAU + 0.3, r = 26 + 10 * hash(i + 30);
+    circle(Math.cos(an) * r, Math.sin(an) * r, 26 + 8 * Math.sin(t * 2 + i), a);
+  }
+  circle(0, 0, 34, '#E6EE9C');
+  // カプセル
+  const sp = easeBack((t - 1.2) / 0.5);
+  ctx.save(); ctx.translate(150, 150); ctx.rotate(-0.6); ctx.scale(sp, sp);
+  rrect(-80, -32, 80, 64, 32, '#fff'); rrect(0, -32, 80, 64, 32, a);
+  rrect(-2, -32, 34, 64, 0, a);
+  ctx.restore();
+};
+ICON.steam = (t, a) => {
+  // 煙
+  for (let i = 0; i < 6; i++) {
+    const p = ((t * 0.7 + i / 6) % 1);
+    circle(-95 - p * 90, -150 - p * 120, 22 + p * 46, '#fff', (1 - p) * 0.7);
+  }
+  ctx.save(); ctx.translate(0, Math.abs(Math.sin(t * 8)) * -4);
+  // ボイラー・運転室
+  rrect(-190, -60, 260, 120, 50, a);
+  rrect(60, -150, 140, 210, 16, a);
+  rrect(85, -125, 90, 70, 10, '#0d1020', 0.85);
+  rrect(40, -170, 180, 30, 10, '#fff');
+  // 煙突
+  rrect(-125, -150, 56, 100, 8, '#fff'); rrect(-140, -165, 86, 26, 8, '#fff');
+  rrect(-200, 60, 420, 26, 10, '#fff');
+  ctx.restore();
+  // 車輪
+  const wheel = (x, r) => {
+    ctx.save(); ctx.translate(x, 140); ctx.rotate(t * 4);
+    circle(0, 0, r, '#fff'); circle(0, 0, r - 12, '#0d1020');
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 8;
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(i / 6 * TAU) * r, Math.sin(i / 6 * TAU) * r); ctx.stroke(); }
+    circle(0, 0, 12, a); ctx.restore();
+  };
+  wheel(-140, 52); wheel(-20, 52); wheel(140, 66);
+  // 連結棒
+  const ox = Math.cos(t * 4) * 30, oy = Math.sin(t * 4) * 30;
+  ctx.save(); ctx.strokeStyle = '#cfd8dc'; ctx.lineWidth = 12; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-140 + ox, 140 + oy); ctx.lineTo(-20 + ox, 140 + oy); ctx.stroke(); ctx.restore();
+  // 線路
+  rrect(-240, 210, 480, 12, 6, '#8c93ad');
+};
+ICON.computer = (t, a) => {
+  const morph = easeOut((t - 2.0) / 0.8);
+  // ENIAC 風の大きな筐体(ランプが点滅)
+  ctx.save(); ctx.globalAlpha = 1 - 0.65 * morph; ctx.translate(-50 * morph, 0);
+  for (let c = 0; c < 3; c++) {
+    const x = -200 + c * 135;
+    rrect(x, -180, 125, 330, 10, '#37474f', 1, '#90a4ae', 6);
+    for (let r = 0; r < 7; r++) for (let k = 0; k < 3; k++) {
+      const on = hash(c * 100 + r * 10 + k + Math.floor(t * 6) * 7) > 0.5;
+      circle(x + 30 + k * 32, -145 + r * 42, 10, on ? a : '#263238');
+    }
+  }
+  rrect(-220, 150, 440, 20, 8, '#90a4ae');
+  ctx.restore();
+  // 手のひらのスマホ
+  if (morph > 0) {
+    const s = easeBack((t - 2.0) / 0.6);
+    ctx.save(); ctx.translate(135, 60); ctx.scale(s, s); ctx.rotate(0.12);
+    rrect(-70, -130, 140, 260, 26, '#fff');
+    rrect(-60, -112, 120, 222, 16, a);
+    for (let i = 0; i < 9; i++) rrect(-48 + (i % 3) * 36, -95 + Math.floor(i / 3) * 40, 26, 26, 7, 'rgba(255,255,255,0.75)');
+    rrect(-25, 118, 50, 6, 3, '#90a4ae');
+    ctx.restore();
+  }
+};
+ICON.internet = (t, a) => {
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 6;
+  circle(0, 0, 200, withAlpha(a, 0.25));
+  ctx.beginPath(); ctx.arc(0, 0, 200, 0, TAU); ctx.stroke();
+  // 経線(回転して見える)
+  for (let i = 0; i < 4; i++) {
+    const ph = ((t * 0.25 + i / 4) % 1) * Math.PI;
+    const rx = Math.abs(Math.cos(ph)) * 200;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, 200, 0, 0, TAU); ctx.stroke();
+  }
+  for (const y of [-120, 0, 120]) { const r = Math.sqrt(200 * 200 - y * y); ctx.beginPath(); ctx.moveTo(-r, y); ctx.lineTo(r, y); ctx.stroke(); }
+  ctx.restore();
+  // ノードと接続
+  const nodes = [];
+  for (let i = 0; i < 12; i++) { const an = hash(i + 7) * TAU, r = 60 + hash(i + 40) * 170; nodes.push([Math.cos(an) * r, Math.sin(an) * r]); }
+  const shown = Math.floor(clamp(t / 2.4) * nodes.length);
+  ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+  for (let i = 1; i <= shown && i < nodes.length; i++) {
+    const [x1, y1] = nodes[i - 1], [x2, y2] = nodes[i], [x3, y3] = nodes[(i * 5) % nodes.length];
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo((x1 + x2) / 2, (y1 + y2) / 2 - 60, x2, y2); ctx.stroke();
+    if (i % 2 === 0) { ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke(); }
+  }
+  ctx.restore();
+  nodes.forEach((n, i) => { if (i <= shown) { const s = easeBack((t - i * 0.2) / 0.4); circle(n[0], n[1], 16 * s, i % 3 ? '#fff' : a); } });
+  // 流れるパケット
+  for (let k = 0; k < 4; k++) {
+    const i = 1 + (k * 3) % Math.max(1, Math.min(shown, nodes.length - 1)), p = (t * 0.9 + k * 0.25) % 1;
+    if (i >= nodes.length || i > shown) continue;
+    const [x1, y1] = nodes[i - 1], [x2, y2] = nodes[i];
+    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2 - 60;
+    const x = (1 - p) * (1 - p) * x1 + 2 * (1 - p) * p * cx + p * p * x2, y = (1 - p) * (1 - p) * y1 + 2 * (1 - p) * p * cy + p * p * y2;
+    circle(x, y, 9, C.gold);
+  }
+};
+ICON.wheel = (t, a) => {
+  // 地面
+  ctx.save(); ctx.strokeStyle = '#8c93ad'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-260, 215); ctx.lineTo(260, 215); ctx.stroke();
+  for (let i = 0; i < 8; i++) { const x = ((i * 80 - t * 200) % 640 + 640) % 640 - 320; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(x, 240); ctx.lineTo(x + 30, 240); ctx.stroke(); }
+  ctx.restore();
+  ctx.save(); ctx.translate(0, 10 + Math.abs(Math.sin(t * 5)) * -6); ctx.rotate(t * 2.5);
+  circle(0, 0, 200, a); circle(0, 0, 165, '#3e2723');
+  ctx.strokeStyle = a; ctx.lineWidth = 26; ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(i / 8 * TAU) * 170, Math.sin(i / 8 * TAU) * 170); ctx.stroke(); }
+  circle(0, 0, 50, '#fff'); circle(0, 0, 20, a);
+  // 木目のボルト
+  for (let i = 0; i < 8; i++) circle(Math.cos(i / 8 * TAU + 0.39) * 183, Math.sin(i / 8 * TAU + 0.39) * 183, 7, '#fff');
+  ctx.restore();
+};
+ICON.press = (t, a) => {
+  // 飛び出す文字
+  const glyphs = ['A', 'あ', 'B', '字', 'Z', '本', 'α', 'G', '知', '文', 'R', 'Ω'];
+  glyphs.forEach((g, i) => {
+    const p = ((t * 0.45 + i / glyphs.length) % 1);
+    const an = -Math.PI / 2 + (hash(i + 3) - 0.5) * 2.2;
+    const r = 40 + p * 300;
+    text(g, Math.cos(an) * r, -20 + Math.sin(an) * r, { size: 40 + 40 * p, color: i % 2 ? '#fff' : a, alpha: Math.sin(p * Math.PI), base: 'middle' });
+  });
+  // 開いた本
+  const open = easeOut(t / 0.8);
+  ctx.save(); ctx.translate(0, 90);
+  for (const sd of [-1, 1]) {
+    ctx.save(); ctx.scale(sd, 1);
+    ctx.fillStyle = a; ctx.beginPath();
+    ctx.moveTo(0, 20); ctx.quadraticCurveTo(110, -20 * open, 230, 10 - 30 * open); ctx.lineTo(230, 140); ctx.quadraticCurveTo(110, 110, 0, 150); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fffdf5'; ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.quadraticCurveTo(100, -40 * open, 210, -20 - 30 * open); ctx.lineTo(210, 115); ctx.quadraticCurveTo(100, 90, 0, 128); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#b0bec5'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    for (let i = 0; i < 4; i++) { const y = 18 + i * 26; ctx.beginPath(); ctx.moveTo(30, y - 6 * open); ctx.quadraticCurveTo(100, y - 28 * open, 185, y - 28 * open); ctx.stroke(); }
+    ctx.restore();
+  }
+  rrect(-5, -5, 10, 160, 5, '#8d6e63');
+  ctx.restore();
+};
+
+// ---------- 共通パーツ ----------
+function topLabel(alpha) {
+  rrect(W / 2 - 300, 150, 600, 76, 38, 'rgba(255,255,255,0.1)', alpha, 'rgba(255,255,255,0.35)', 3);
+  text('世界を変えた大発明 10選', W / 2, 202, { size: 40, color: C.ink, alpha });
+}
+// 10 → 1 の進捗ドット
+function rankStrip(rank, alpha) {
+  const x0 = 175, x1 = W - 175, y = 278;
+  for (let r = 10; r >= 1; r--) {
+    const i = 10 - r, x = lerp(x0, x1, i / 9);
+    const done = r > rank, now = r === rank;
+    circle(x, y, now ? 15 : 9, now ? ACCENT[r] : done ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.18)', alpha);
+  }
+}
+function subtitle(sc, t) {
+  const a = clamp((t - sc.say0 + 0.15) / 0.15) * clamp((sc.say1 + 0.35 - t) / 0.2);
+  if (a <= 0) return;
+  const size = 46, lines = wrap(sc.sub, W - 150, size), lh = 64;
+  const boxH = lines.length * lh + 40, y0 = 1665 - boxH;
+  rrect(50, y0, W - 100, boxH, 28, C.panel, a);
+  lines.forEach((ln, i) => text(ln, W / 2, y0 + 20 + lh * (i + 0.5) + 2, { size, base: 'middle', alpha: a, color: '#fff' }));
+}
+
+// ---------- シーン ----------
+function sceneIntro(t, sc) {
+  const a = '#FF6E9C';
+  background(t, a, 1.2);
+  // 周りを回る小さなアイコン
+  const keys = TL.scenes.filter(s => s.type === 'item').map(s => s.key);
+  keys.forEach((k, i) => {
+    const an = i / keys.length * TAU + t * 0.5, s = easeBack((t - 0.1 - i * 0.06) / 0.5);
+    const x = W / 2 + Math.cos(an) * 400, y = 860 + Math.sin(an) * 520;
+    ctx.save(); ctx.translate(x, y); ctx.scale(0.28 * s, 0.28 * s);
+    circle(0, 0, 250, 'rgba(255,255,255,0.08)');
+    ICON[k](t, ACCENT[11 - (i + 1)] || a);
+    ctx.restore();
+  });
+  const p1 = easeBack(t / 0.5), p2 = easeBack((t - 0.25) / 0.5), p3 = easeBack((t - 0.55) / 0.6);
+  ctx.save(); ctx.translate(W / 2, 640); ctx.scale(p1, p1);
+  text('世界を変えた', 0, 0, { size: 112, stroke: 14 }); ctx.restore();
+  ctx.save(); ctx.translate(W / 2, 830); ctx.scale(p2, p2);
+  text('大発明', 0, 0, { size: 210, color: C.gold, stroke: 18, ls: 6 }); ctx.restore();
+  ctx.save(); ctx.translate(W / 2, 1150); ctx.scale(p3, p3); ctx.rotate(-0.06 + Math.sin(t * 3) * 0.02);
+  circle(0, -65, 190, '#FF4F7B');
+  text('10', -42, 10, { size: 200 });
+  text('選', 112, -4, { size: 88 });
+  ctx.restore();
+  subtitle(sc, sc.start + t);
+}
+
+function sceneItem(t, sc) {
+  const a = ACCENT[sc.rank], one = sc.rank === 1;
+  background(t, a, one ? 1.6 : 1);
+  topLabel(1); rankStrip(sc.rank, 1);
+  // 第1位の紙吹雪
+  if (one) {
+    for (let i = 0; i < 70; i++) {
+      const x = hash(i) * W + Math.sin(t * 2 + i) * 40, y = -40 + ((t * (180 + hash(i + 1) * 220) + hash(i + 2) * H) % (H + 80));
+      ctx.save(); ctx.translate(x, y); ctx.rotate(t * 3 + i); ctx.fillStyle = ['#FFC93C', '#FF6E9C', '#4FC3F7', '#AED581', '#fff'][i % 5];
+      ctx.globalAlpha = clamp(t / 0.5); ctx.fillRect(-9, -5, 18, 10); ctx.restore();
+    }
+  }
+  // 順位
+  const pr = easeBack(t / 0.45);
+  const gap = sc.rank === 10 ? 175 : 130;
+  ctx.save(); ctx.translate(W / 2, 430); ctx.scale(pr, pr);
+  text('第', -gap, 0, { size: 90, stroke: 12 });
+  text(String(sc.rank), 0, 26, { size: one ? 230 : 200, color: a, stroke: 16 });
+  text('位', gap, 0, { size: 90, stroke: 12 });
+  ctx.restore();
+  // アイコン
+  const pi = easeBack((t - 0.12) / 0.55);
+  ctx.save(); ctx.translate(W / 2, 790); ctx.scale(pi, pi);
+  circle(0, 0, 285, 'rgba(255,255,255,0.07)');
+  ctx.save(); ctx.strokeStyle = withAlpha(a, 0.9); ctx.lineWidth = 8; ctx.setLineDash([24, 18]); ctx.lineDashOffset = -t * 40;
+  ctx.beginPath(); ctx.arc(0, 0, 285, 0, TAU); ctx.stroke(); ctx.restore();
+  ctx.scale(1.05, 1.05);
+  ICON[sc.key](t, a);
+  ctx.restore();
+  // 名前・年・人物
+  const pn = easeOut((t - 0.3) / 0.4);
+  ctx.save(); ctx.globalAlpha = pn; ctx.translate(0, (1 - pn) * 40);
+  const ns = sc.name.length >= 6 ? 120 : 140;
+  text(sc.name, W / 2, 1210, { size: ns, stroke: 16 });
+  text(`${sc.year}  ${sc.who}`, W / 2, 1285, { size: 42, color: C.ink2, weight: 'normal' });
+  ctx.restore();
+  // ひとことキャッチ
+  const pc = easeBack((t - 0.7) / 0.45);
+  if (pc > 0) {
+    ctx.save(); ctx.font = `bold 46px ${FONT}`; const cw = ctx.measureText(sc.catch).width + 80; ctx.restore();
+    ctx.save(); ctx.translate(W / 2, 1320); ctx.scale(pc, pc);
+    rrect(-cw / 2, 0, cw, 78, 39, a);
+    text(sc.catch, 0, 40, { size: 46, color: '#101320', base: 'middle' });
+    ctx.restore();
+  }
+  // 入りのフラッシュ
+  const fl = 1 - clamp(t / 0.18);
+  if (fl > 0) { ctx.save(); ctx.globalAlpha = fl * 0.55; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); ctx.restore(); }
+  subtitle(sc, sc.start + t);
+}
+
+function sceneOutro(t, sc) {
+  const a = '#FF6E9C';
+  background(t, a, 1);
+  const p = easeBack(t / 0.5);
+  ctx.save(); ctx.translate(W / 2, 330); ctx.scale(p, p);
+  text('あなたが一番', 0, 0, { size: 84, stroke: 12 });
+  text('すごいと思う発明は?', 0, 110, { size: 84, color: C.gold, stroke: 12 });
+  ctx.restore();
+  // 10個のおさらい(2列 × 5)
+  const items = TL.scenes.filter(s => s.type === 'item').slice().reverse();
+  items.forEach((it, i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = 115 + col * 440, y = 560 + row * 150;
+    const s = easeBack((t - 0.25 - i * 0.06) / 0.4);
+    if (s <= 0) return;
+    ctx.save(); ctx.translate(x + 200, y + 55); ctx.scale(s, s); ctx.translate(-200, -55);
+    rrect(0, 0, 410, 120, 26, 'rgba(255,255,255,0.08)', 1, withAlpha(ACCENT[it.rank], 0.7), 3);
+    ctx.save(); ctx.translate(62, 60); ctx.scale(0.21, 0.21); ICON[it.key](t + i, ACCENT[it.rank]); ctx.restore();
+    text(`${it.rank}`, 178, 74, { size: 46, color: ACCENT[it.rank], align: 'right' });
+    text(it.name, 196, 74, { size: it.name.length >= 6 ? 36 : 44, align: 'left' });
+    ctx.restore();
+  });
+  const pc = easeBack((t - 1.0) / 0.5);
+  ctx.save(); ctx.translate(W / 2, 1405); ctx.scale(pc, pc);
+  rrect(-330, -50, 660, 100, 50, '#FF4F7B');
+  text('コメントで教えてね!', 0, 2, { size: 54, base: 'middle' });
+  ctx.restore();
+  subtitle(sc, sc.start + t);
+  text(`ナレーション VOICEVOX:四国めたん  /  BGM 自作`, W / 2, 1720, { size: 30, color: C.ink3, weight: 'normal', alpha: clamp((t - 0.5) / 0.5) });
+}
+
+const SCENE_FN = { intro: sceneIntro, item: sceneItem, outro: sceneOutro };
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  let sc = TL.scenes[0];
+  for (const s of TL.scenes) if (t >= s.start) sc = s;
+  SCENE_FN[sc.type](t - sc.start, sc);
+  // 全体のフェードアウト
+  const fo = clamp((t - (TL.total - 0.6)) / 0.6);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生(?t=秒 で静止)
+if (!navigator.webdriver) {
+  const q = new URLSearchParams(location.search);
+  if (q.has('t')) render(parseFloat(q.get('t')));
+  else { const t0 = performance.now(); const loop = () => { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); }; loop(); }
+} else render(0);
+</script>
+</body>
+</html>
