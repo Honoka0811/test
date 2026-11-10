@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Haber-Bosch Short</title>
+<style>
+  html,body{margin:0;background:#0b1020;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// ハーバー・ボッシュ法がすごすぎる (9:16 ショート動画 / 70秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// window.CUES = [[開始秒, 終了秒, 字幕], ...] があれば下部に字幕を焼き込む
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0b1020', bg2: '#121a33', panel: '#18213d', grid: '#2b365a',
+  ink: '#f4f6fb', ink2: '#b9c1d9', ink3: '#7f89a8',
+  n: '#5AA9FF',      // 窒素
+  h: '#E9EEF8',      // 水素
+  o: '#FF7A6B',      // 酸素
+  green: '#5FD38D',  // 作物・食料
+  accent: '#FFC94D', red: '#FF6B6B'
+};
+const FPS = 30, DURATION = 70;
+
+// ---------- データ(概数) ----------
+// 世界人口(億人) 国連推計ほか
+const POP = [[1800, 10], [1850, 12.6], [1900, 16.5], [1920, 18.6], [1950, 25.4], [1960, 30.2], [1970, 37.0],
+  [1980, 44.5], [1990, 53.3], [2000, 61.5], [2010, 69.9], [2020, 78.4], [2025, 82.0]];
+// ハーバー・ボッシュ法由来の窒素肥料で養われている人口の割合(概算, Erisman et al. 2008 / Smil 2001)
+const HB_SHARE = { 1800: 0, 1850: 0, 1900: 0, 1920: 0.01, 1950: 0.04, 1960: 0.1, 1970: 0.2, 1980: 0.3,
+  1990: 0.37, 2000: 0.42, 2010: 0.48, 2020: 0.5, 2025: 0.5 };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.70158; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+function hash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, stroke = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = 'rgba(5,8,18,0.92)'; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, strokeColor = null) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.lineWidth = 3; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  const g = ctx.createRadialGradient(x - r * .35, y - r * .35, r * .1, x, y, r);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.25, color); g.addColorStop(1, shade(color, -0.45));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+function shade(hex, k) {
+  const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const f = v => Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k);
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+}
+// 原子(元素記号つき)
+function atom(x, y, r, el, alpha = 1) {
+  const col = el === 'N' ? C.n : el === 'H' ? C.h : C.o;
+  circle(x, y, r, col, alpha);
+  text(el, x, y + r * 0.36, { size: r, weight: 'bold', color: el === 'H' ? '#24304f' : '#ffffff', align: 'center', alpha });
+}
+// 結合(本数 n)
+function bond(x1, y1, x2, y2, n, alpha = 1, color = '#d6def0', w = 7) {
+  const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
+  const nx = -dy / L, ny = dx / L, gap = 15;
+  for (let i = 0; i < n; i++) {
+    const o = (i - (n - 1) / 2) * gap;
+    line(x1 + nx * o, y1 + ny * o, x2 + nx * o, y2 + ny * o, color, w, alpha);
+  }
+}
+function N2(x, y, s, alpha = 1, ang = 0, spread = 0) {
+  const d = (46 + spread) * s, c = Math.cos(ang), si = Math.sin(ang);
+  bond(x - c * d, y - si * d, x + c * d, y + si * d, 3, alpha * clamp(1 - spread / 60), '#d6def0', 6 * s);
+  atom(x - c * d, y - si * d, 40 * s, 'N', alpha); atom(x + c * d, y + si * d, 40 * s, 'N', alpha);
+}
+function H2(x, y, s, alpha = 1, ang = 0) {
+  const d = 28 * s, c = Math.cos(ang), si = Math.sin(ang);
+  bond(x - c * d, y - si * d, x + c * d, y + si * d, 1, alpha, '#d6def0', 6 * s);
+  atom(x - c * d, y - si * d, 26 * s, 'H', alpha); atom(x + c * d, y + si * d, 26 * s, 'H', alpha);
+}
+function NH3(x, y, s, alpha = 1, rot = 0) {
+  for (let k = 0; k < 3; k++) {
+    const a = rot + Math.PI / 2 + (k - 1) * 2.1, hx = x + Math.cos(a) * 70 * s, hy = y + Math.sin(a) * 70 * s;
+    bond(x, y, hx, hy, 1, alpha, '#d6def0', 6 * s); atom(hx, hy, 24 * s, 'H', alpha);
+  }
+  atom(x, y, 40 * s, 'N', alpha);
+}
+function header(title, sub, a, y = 300) {
+  text(title, W / 2, y, { size: 72, weight: 'bold', align: 'center', alpha: a });
+  if (sub) text(sub, W / 2, y + 70, { size: 38, color: C.ink2, align: 'center', alpha: a });
+}
+function tag(str, x, y, color, a, size = 34) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`; const w = ctx.measureText(str).width + 44; ctx.restore();
+  rrect(x - w / 2, y - size - 10, w, size + 30, (size + 30) / 2, color, a * 0.18, null);
+  rrect(x - w / 2, y - size - 10, w, size + 30, (size + 30) / 2, null, a, color);
+  text(str, x, y + 4, { size, weight: 'bold', color, align: 'center', alpha: a });
+}
+function bigStat(num, unit, label, x, y, color, a, size = 130) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`; const wn = ctx.measureText(num).width;
+  ctx.font = `bold ${size * .42}px ${FONT}`; const wu = ctx.measureText(unit).width; ctx.restore();
+  const x0 = x - (wn + wu + 10) / 2;
+  text(num, x0, y, { size, weight: 'bold', color, alpha: a });
+  text(unit, x0 + wn + 10, y, { size: size * .42, weight: 'bold', color, alpha: a });
+  if (label) text(label, x, y + 64, { size: 36, color: C.ink2, align: 'center', alpha: a });
+}
+
+// 背景: ゆっくり漂う分子とグラデーション
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#0d1530'); g.addColorStop(1, '#070a16');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 14; i++) {
+    const x = (hash(i) * W + t * (8 + hash(i + 9) * 14)) % (W + 200) - 100;
+    const y = (hash(i + 3) * H + Math.sin(t * .3 + i) * 30);
+    const s = 0.35 + hash(i + 5) * 0.35;
+    const ang = t * (hash(i + 7) - .5) * .6 + i;
+    if (i % 3 === 0) N2(x, y, s, 0.07, ang); else H2(x, y, s * 1.2, 0.06, ang);
+  }
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const p = backOut(t / 0.8);
+  // 中央の窒素分子
+  N2(W / 2, 560, 1.6 * p, a, Math.sin(t * 1.2) * 0.12);
+  text('空気からパンを作った発明', W / 2, 830, { size: 50, color: C.green, weight: 'bold', align: 'center', alpha: a * easeOut((t - .5) / .6) });
+  const s2 = backOut((t - .2) / .6);
+  text('ハーバー・', W / 2, 1010, { size: 128 * s2, weight: 'bold', align: 'center', alpha: a, stroke: 10 });
+  text('ボッシュ法が', W / 2, 1160, { size: 128 * s2, weight: 'bold', align: 'center', alpha: a, stroke: 10 });
+  const s3 = backOut((t - .9) / .5);
+  ctx.save(); ctx.translate(W / 2, 1320); ctx.rotate(-0.04);
+  text('すごすぎる', 0, 0, { size: 150 * s3, weight: 'bold', color: C.accent, align: 'center', alpha: a, stroke: 12 });
+  ctx.restore();
+}
+
+function sceneCrisis(t, a) {
+  header('1900年ごろ 肥料の危機', '作物を育てるには「窒素」が欠かせない', a * easeOut(t / .5));
+  const cards = [
+    { name: 'チリ硝石', sub: '南米の砂漠で採掘', x: 290 },
+    { name: 'グアノ', sub: '海鳥のふんの堆積', x: 790 },
+  ];
+  cards.forEach((c, i) => {
+    const ca = a * easeOut((t - .6 - i * .4) / .5);
+    rrect(c.x - 220, 470, 440, 470, 28, C.panel, ca);
+    // 山(鉱床)のアイコン — 時間とともに削れていく
+    const left = 1 - clamp((t - 2.5) / 5) * 0.85;
+    ctx.save(); ctx.globalAlpha = ca; ctx.fillStyle = i ? '#d9d2bf' : '#c7b48a';
+    ctx.beginPath(); ctx.moveTo(c.x - 150, 760); ctx.lineTo(c.x, 760 - 190 * left); ctx.lineTo(c.x + 150, 760); ctx.closePath(); ctx.fill(); ctx.restore();
+    text(c.name, c.x, 840, { size: 54, weight: 'bold', align: 'center', alpha: ca });
+    text(c.sub, c.x, 900, { size: 32, color: C.ink2, align: 'center', alpha: ca });
+    // 残量ゲージ
+    rrect(c.x - 160, 540, 320, 22, 11, C.grid, ca);
+    rrect(c.x - 160, 540, 320 * left, 22, 11, left < .35 ? C.red : C.accent, ca);
+    text('残量', c.x - 160, 525, { size: 26, color: C.ink3, alpha: ca });
+  });
+  const qa = a * easeOut((t - 3.8) / .6);
+  rrect(80, 1010, W - 160, 230, 28, null, qa, C.red);
+  text('「このままでは', W / 2, 1100, { size: 54, weight: 'bold', color: C.ink, align: 'center', alpha: qa });
+  text('小麦が足りなくなる」', W / 2, 1180, { size: 54, weight: 'bold', color: C.red, align: 'center', alpha: qa });
+  text('— 化学者 W. クルックス(1898年の警告)', W / 2, 1300, { size: 32, color: C.ink3, align: 'center', alpha: qa });
+}
+
+function sceneAir(t, a) {
+  header('窒素なら空気中にいくらでもある', null, a * easeOut(t / .5));
+  // ドーナツチャート
+  const cx = W / 2, cy = 640, R = 230, p = easeInOut((t - .3) / 1.6);
+  const parts = [[0.78, C.n, '窒素 78%'], [0.21, C.o, '酸素 21%'], [0.01, C.ink3, '']];
+  let acc = -Math.PI / 2;
+  parts.forEach(([v, col]) => {
+    const sweep = v * Math.PI * 2 * p;
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 90; ctx.beginPath();
+    ctx.arc(cx, cy, R, acc, acc + sweep); ctx.stroke(); ctx.restore();
+    acc += v * Math.PI * 2 * p;
+  });
+  text('78', cx - 30, cy + 40, { size: 140, weight: 'bold', color: C.n, align: 'center', alpha: a * easeOut((t - 1.2) / .5) });
+  text('%', cx + 80, cy + 40, { size: 60, weight: 'bold', color: C.n, align: 'center', alpha: a * easeOut((t - 1.2) / .5) });
+  text('空気の成分', cx, cy - 70, { size: 34, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.2) / .5) });
+  text('酸素 21%', cx + 270, cy - 230, { size: 34, color: C.o, align: 'center', alpha: a * easeOut((t - 1.6) / .5) });
+
+  // 三重結合
+  const ba = a * easeOut((t - 3.4) / .6);
+  const shake = t > 4 ? Math.sin(t * 40) * 3 * clamp((t - 4) / .3) * clamp((6.2 - t) / .3) : 0;
+  rrect(80, 980, W - 160, 340, 28, C.panel, ba);
+  N2(W / 2 + shake, 1110, 1.25, ba);
+  text('でも窒素どうしは「三重結合」でガッチリ', W / 2, 1230, { size: 40, weight: 'bold', align: 'center', alpha: ba });
+  text('植物は空気中の窒素をそのまま使えない', W / 2, 1290, { size: 32, color: C.ink2, align: 'center', alpha: ba });
+}
+
+function sceneReaction(t, a) {
+  header('1909年 ハーバーが成功', 'ボッシュが工業化(1913年 BASF)', a * easeOut(t / .5));
+  // 反応式
+  const ea = a * easeOut((t - .5) / .5);
+  text('N₂ + 3H₂ → 2NH₃', W / 2, 510, { size: 84, weight: 'bold', color: C.accent, align: 'center', alpha: ea });
+  text('窒素 + 水素 → アンモニア', W / 2, 570, { size: 34, color: C.ink2, align: 'center', alpha: ea });
+
+  // 反応塔
+  const rx = W / 2, ry = 640, rw = 380, rh = 520;
+  const ra = a * easeOut((t - 1.0) / .6);
+  const heat = clamp((t - 2) / 2);
+  const glow = ctx.createLinearGradient(0, ry, 0, ry + rh);
+  glow.addColorStop(0, `rgba(255,120,60,${0.10 + 0.25 * heat})`); glow.addColorStop(1, `rgba(255,200,80,${0.05 + 0.2 * heat})`);
+  rrect(rx - rw / 2, ry, rw, rh, 40, '#1d2747', ra);
+  ctx.save(); ctx.globalAlpha = ra; ctx.fillStyle = glow; ctx.beginPath(); ctx.roundRect(rx - rw / 2, ry, rw, rh, 40); ctx.fill(); ctx.restore();
+  rrect(rx - rw / 2, ry, rw, rh, 40, null, ra, '#55648f');
+  // 触媒の層
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 9; j++) {
+    const px = rx - 150 + j * 37.5, py = ry + 330 + i * 26 + (j % 2) * 8;
+    circle(px, py, 11, '#8d96a8', ra * 0.9);
+  }
+  text('触媒(鉄など)', rx, ry + rh - 18, { size: 28, color: C.ink2, align: 'center', alpha: ra });
+
+  // 分子の流れ: 上から N2/H2 が入り、触媒を通って NH3 になって下から出る
+  for (let k = 0; k < 7; k++) {
+    const life = ((t - 2.2) * 0.45 + k / 7) % 1;
+    if (t < 2.2) break;
+    const px = rx + Math.sin(k * 2.3 + t) * 100;
+    const py = ry + 40 + life * (rh + 60);
+    const ma = ra * clamp(life * 8) * clamp((1 - life) * 6);
+    if (py < ry + 320) { if (k % 2) N2(px, py, 0.55, ma, t + k); else H2(px, py, 0.7, ma, t * 1.5 + k); }
+    else if (py > ry + rh) NH3(px, py, 0.6, ma, t + k);
+  }
+  // 条件ラベル
+  const la = a * easeOut((t - 2.6) / .5), lb = a * easeOut((t - 3.4) / .5);
+  rrect(40, 720, 230, 150, 24, C.panel, la);
+  text('約200', 155, 800, { size: 64, weight: 'bold', color: C.red, align: 'center', alpha: la });
+  text('気圧', 155, 848, { size: 32, color: C.ink2, align: 'center', alpha: la });
+  rrect(W - 270, 720, 230, 150, 24, C.panel, lb);
+  text('約500', W - 155, 800, { size: 64, weight: 'bold', color: C.accent, align: 'center', alpha: lb });
+  text('℃', W - 155, 848, { size: 32, color: C.ink2, align: 'center', alpha: lb });
+
+  // 人物タグ
+  const pa = a * easeOut((t - 6.5) / .6);
+  rrect(60, 1210, 460, 130, 24, C.panel, pa);
+  text('フリッツ・ハーバー', 290, 1265, { size: 40, weight: 'bold', align: 'center', alpha: pa });
+  text('1918年 ノーベル化学賞', 290, 1315, { size: 28, color: C.accent, align: 'center', alpha: pa });
+  const pb = a * easeOut((t - 7.3) / .6);
+  rrect(560, 1210, 460, 130, 24, C.panel, pb);
+  text('カール・ボッシュ', 790, 1265, { size: 40, weight: 'bold', align: 'center', alpha: pb });
+  text('1931年 ノーベル化学賞', 790, 1315, { size: 28, color: C.accent, align: 'center', alpha: pb });
+}
+
+function scenePopulation(t, a) {
+  header('世界人口が爆発的に増えた', '1800〜2025年(億人)', a * easeOut(t / .5), 280);
+  const x0 = 150, x1 = W - 90, y0 = 1180, y1 = 470;
+  const X = yr => lerp(x0, x1, (yr - 1800) / 225), Y = v => lerp(y0, y1, v / 90);
+  const ga = a * easeOut((t - .3) / .5);
+  [0, 20, 40, 60, 80].forEach(v => {
+    line(x0, Y(v), x1, Y(v), C.grid, 2, ga * .7);
+    text(String(v), x0 - 20, Y(v) + 12, { size: 30, color: C.ink3, align: 'right', alpha: ga });
+  });
+  [1800, 1850, 1900, 1950, 2000].forEach(yr => text(String(yr), X(yr), y0 + 50, { size: 30, color: C.ink3, align: 'center', alpha: ga }));
+  // 進捗
+  const p = easeInOut((t - .6) / 4.2);
+  const yrNow = lerp(1800, 2025, p);
+  const pts = [];
+  for (let i = 0; i < POP.length; i++) {
+    const [yr, v] = POP[i];
+    if (yr <= yrNow) pts.push([yr, v]);
+    else { const [py, pv] = POP[i - 1]; pts.push([yrNow, lerp(pv, v, (yrNow - py) / (yr - py))]); break; }
+  }
+  const share = yr => { const ks = Object.keys(HB_SHARE).map(Number); for (let i = 1; i < ks.length; i++) if (yr <= ks[i]) return lerp(HB_SHARE[ks[i - 1]], HB_SHARE[ks[i]], (yr - ks[i - 1]) / (ks[i] - ks[i - 1])); return 0.5; };
+  // 下側の面: HB 肥料なしでも養える人口 / 上側: HB 由来
+  const sa = a * easeOut((t - 5.2) / .8);
+  if (pts.length > 1) {
+    ctx.save(); ctx.globalAlpha = a * 0.25; ctx.fillStyle = C.n; ctx.beginPath(); ctx.moveTo(X(pts[0][0]), y0);
+    pts.forEach(([yr, v]) => ctx.lineTo(X(yr), Y(v))); ctx.lineTo(X(pts[pts.length - 1][0]), y0); ctx.closePath(); ctx.fill(); ctx.restore();
+    if (sa > 0) {
+      ctx.save(); ctx.globalAlpha = sa * 0.75; ctx.fillStyle = C.green; ctx.beginPath();
+      pts.forEach(([yr, v], i) => i ? ctx.lineTo(X(yr), Y(v)) : ctx.moveTo(X(yr), Y(v)));
+      for (let i = pts.length - 1; i >= 0; i--) { const [yr, v] = pts[i]; ctx.lineTo(X(yr), Y(v * (1 - share(yr)))); }
+      ctx.closePath(); ctx.fill(); ctx.restore();
+    }
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = C.ink; ctx.lineWidth = 6; ctx.lineJoin = 'round'; ctx.beginPath();
+    pts.forEach(([yr, v], i) => i ? ctx.lineTo(X(yr), Y(v)) : ctx.moveTo(X(yr), Y(v))); ctx.stroke(); ctx.restore();
+    const [ly, lv] = pts[pts.length - 1];
+    circle(X(ly), Y(lv), 14, C.accent, a);
+    text(Math.round(lv) + '億人', X(ly) - 20, Y(lv) - 30, { size: 46, weight: 'bold', color: C.accent, align: 'right', alpha: a });
+  }
+  // 1913 マーカー
+  const ma = a * easeOut((t - 2.0) / .5);
+  line(X(1913), y0, X(1913), Y(60), C.accent, 3, ma, [10, 10]);
+  text('1913 工業化', X(1913) + 14, Y(60) + 6, { size: 30, color: C.accent, alpha: ma });
+  // 凡例
+  rrect(150, 1240, 34, 34, 8, C.green, sa); text('この方法の肥料で養われている人口(推計)', 200, 1270, { size: 32, color: C.ink, alpha: sa });
+  const ba = a * easeOut((t - 6.5) / .6);
+  rrect(100, 1310, W - 200, 0, 0, null, 0);
+  tag('人類のおよそ半分', W / 2, 1360, C.green, ba, 44);
+}
+
+function sceneBody(t, a) {
+  header('じつは、あなたの体にも', null, a * easeOut(t / .5));
+  // 人型シルエット(下半分から緑で満ちていく)
+  const cx = 300, top = 430, fill = easeInOut((t - .8) / 2.2) * 0.5;
+  const ha = a * easeOut((t - .3) / .5);
+  function body(path) {
+    ctx.beginPath();
+    ctx.arc(cx, top + 70, 62, 0, Math.PI * 2);
+    ctx.roundRect(cx - 110, top + 150, 220, 330, 60);
+    ctx.roundRect(cx - 160, top + 160, 44, 280, 22); ctx.roundRect(cx + 116, top + 160, 44, 280, 22);
+    ctx.roundRect(cx - 95, top + 440, 80, 340, 36); ctx.roundRect(cx + 15, top + 440, 80, 340, 36);
+  }
+  ctx.save(); ctx.globalAlpha = ha; body(); ctx.fillStyle = '#25305a'; ctx.fill('nonzero');
+  ctx.clip('nonzero');
+  const bot = top + 780, h = (bot - top) * fill * 2 * 0.5;
+  ctx.fillStyle = C.green; ctx.fillRect(cx - 200, bot - (bot - top) * fill, 400, (bot - top) * fill);
+  ctx.restore();
+  const sa = a * easeOut((t - 2.2) / .5);
+  text('体内の窒素の', 750, 620, { size: 46, weight: 'bold', align: 'center', alpha: sa });
+  bigStat('約半分', '', '', 750, 770, C.green, sa, 120);
+  text('はこの方法に由来', 750, 860, { size: 46, weight: 'bold', align: 'center', alpha: sa });
+  text('(食べ物の肥料を通じて)', 750, 920, { size: 30, color: C.ink2, align: 'center', alpha: sa });
+
+  const ta = a * easeOut((t - 4.0) / .5), tb = a * easeOut((t - 4.6) / .5);
+  rrect(60, 1260, 465, 150, 24, C.panel, ta);
+  text('アンモニア生産', 292, 1310, { size: 30, color: C.ink2, align: 'center', alpha: ta });
+  text('年 約1.8億t', 292, 1380, { size: 52, weight: 'bold', color: C.accent, align: 'center', alpha: ta });
+  rrect(555, 1260, 465, 150, 24, C.panel, tb);
+  text('世界のエネルギーの', 787, 1310, { size: 30, color: C.ink2, align: 'center', alpha: tb });
+  text('約1〜2%', 787, 1380, { size: 52, weight: 'bold', color: C.red, align: 'center', alpha: tb });
+}
+
+function sceneDark(t, a) {
+  // 赤い色調
+  ctx.save(); ctx.globalAlpha = a * 0.25; ctx.fillStyle = '#3a0d14'; ctx.fillRect(0, 0, W, H); ctx.restore();
+  header('ただし、影の面も', null, a * easeOut(t / .5));
+  const items = [
+    ['💥', '火薬の原料に', 'アンモニア → 硝酸 → 爆薬。第一次大戦のドイツを支えた'],
+    ['☠', '毒ガス開発', 'ハーバー自身が塩素ガス兵器の開発を指揮'],
+    ['🌊', '窒素の流出', '使いすぎた肥料が水質汚染や温室効果ガス(N₂O)に'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .6 - i * 1.6) / .6), dx = (1 - easeOut((t - .6 - i * 1.6) / .6)) * 80;
+    const y = 450 + i * 280;
+    rrect(60 + dx, y, W - 120, 230, 26, C.panel, la);
+    rrect(60 + dx, y, 12, 230, 6, C.red, la);
+    circle(170 + dx, y + 115, 60, i === 2 ? C.n : C.red, la * .9);
+    text(['!', '!', '~'][i], 170 + dx, y + 140, { size: 72, weight: 'bold', align: 'center', alpha: la });
+    text(it[1], 270 + dx, y + 100, { size: 52, weight: 'bold', alpha: la });
+    wrapText(it[2], 270 + dx, y + 160, 700, 30, 42, C.ink2, la);
+  });
+}
+function wrapText(str, x, y, maxW, size, lh, color, alpha) {
+  ctx.save(); ctx.font = `${size}px ${FONT}`;
+  let lineStr = '', yy = y;
+  for (const ch of str) {
+    if (ctx.measureText(lineStr + ch).width > maxW) { text(lineStr, x, yy, { size, color, alpha }); lineStr = ch; yy += lh; }
+    else lineStr += ch;
+  }
+  text(lineStr, x, yy, { size, color, alpha }); ctx.restore();
+}
+
+function sceneSummary(t, a) {
+  const p = backOut(t / .7);
+  N2(W / 2 - 230, 560, 0.9 * p, a, 0);
+  text('→', W / 2, 590, { size: 90, weight: 'bold', color: C.accent, align: 'center', alpha: a * p });
+  NH3(W / 2 + 230, 560, 1.1 * p, a, Math.sin(t) * .2);
+  text('空気から食料を生み、', W / 2, 840, { size: 66, weight: 'bold', align: 'center', alpha: a * easeOut((t - .4) / .5) });
+  text('戦争も支えた', W / 2, 940, { size: 66, weight: 'bold', align: 'center', alpha: a * easeOut((t - .9) / .5) });
+  const s = backOut((t - 1.6) / .5);
+  text('世界を変えた化学反応', W / 2, 1110, { size: 84 * s, weight: 'bold', color: C.accent, align: 'center', alpha: a, stroke: 10 });
+  const ca = a * easeOut((t - 2.4) / .6);
+  text('数値は概数 / 出典: Smil (2001), Erisman et al. (2008), 国連人口推計 ほか', W / 2, 1250, { size: 24, color: C.ink3, align: 'center', alpha: ca });
+  text('音声: VOICEVOX:四国めたん  BGM: 自作', W / 2, 1295, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- 字幕 ----------
+function subtitles(t) {
+  const cues = window.CUES || [];
+  const cue = cues.find(c => t >= c[0] && t < c[1]);
+  if (!cue) return;
+  const fade = Math.min(easeOut((t - cue[0]) / .15), easeOut((cue[1] - t) / .15));
+  // 字幕は "|" で画面送り、"/" で改行。各画面は文字数に比例した時間だけ表示する
+  const pages = cue[2].split('|').map(p => p.split('/').map(l => l.replace(/[、。]$/, '')));
+  const len = pages.map(p => p.join('').length), totalChars = len.reduce((x, y) => x + y, 0);
+  const prog = (t - cue[0]) / (cue[1] - cue[0]) * totalChars;
+  let acc = 0, page = pages[pages.length - 1];
+  for (let i = 0; i < pages.length; i++) { if (prog < acc + len[i]) { page = pages[i]; break; } acc += len[i]; }
+  const y0 = 1560;
+  rrect(50, y0 - 70, W - 100, page.length * 78 + 50, 24, 'rgba(5,8,18,0.72)', fade);
+  page.forEach((ln, i) => text(ln, W / 2, y0 + i * 78, { size: 56, weight: 'bold', align: 'center', alpha: fade, stroke: 8 }));
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [
+  { s: 0, d: 6, f: sceneTitle },
+  { s: 6, d: 9, f: sceneCrisis },
+  { s: 15, d: 9, f: sceneAir },
+  { s: 24, d: 12, f: sceneReaction },
+  { s: 36, d: 12, f: scenePopulation },
+  { s: 48, d: 8, f: sceneBody },
+  { s: 56, d: 8, f: sceneDark },
+  { s: 64, d: 6, f: sceneSummary },
+];
+const XF = 0.3;
+
+function render(t) {
+  background(t);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  subtitles(t);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.5);
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.accent, 1);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  fetch('output/cues.json').then(r => r.json()).then(c => window.CUES = c).catch(() => {});
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
