@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Air Raids on Japan</title>
+<style>
+  html,body{margin:0;background:#0d0c0b;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 被害が大きかった日本本土空襲  (9:16 ショート動画 / 約67秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0d0c0b', panel: '#1a1715', grid: '#34302b',
+  ink: '#f4f1ec', ink2: '#c2bbb1', ink3: '#857d73',
+  fire: '#E8643A', fireSoft: 'rgba(232,100,58,0.25)', ember: '#F2A65A',
+  accent: '#F2C35B', steel: '#8C96A3'
+};
+const FPS = 30, DURATION = 67;
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+function hash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function header(title, sub, alpha) {
+  text(title, 80, 300, { size: 64, weight: 'bold', alpha });
+  if (sub) text(sub, 80, 370, { size: 36, color: C.ink2, alpha });
+}
+function dateTag(str, alpha) {
+  ctx.save(); ctx.font = `bold 34px ${FONT}`; const w = ctx.measureText(str).width; ctx.restore();
+  rrect(80, 150, w + 48, 62, 31, C.fire, alpha);
+  text(str, 104, 194, { size: 34, weight: 'bold', color: '#1a120d', alpha });
+}
+function caption(str, y, alpha, color = C.accent, size = 44) {
+  rrect(60, y - size - 22, W - 120, size + 48, 18, C.panel, alpha);
+  text(str, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha });
+}
+function footnote(str, alpha) { text(str, W / 2, 1640, { size: 28, color: C.ink3, align: 'center', alpha }); }
+
+// 背景: 下からの赤いグローと舞い上がる火の粉(強さ k)
+function embers(t, k) {
+  if (k <= 0) return;
+  const g = ctx.createLinearGradient(0, H, 0, H * 0.35);
+  g.addColorStop(0, `rgba(160,50,20,${0.45 * k})`); g.addColorStop(1, 'rgba(160,50,20,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 70; i++) {
+    const sp = 40 + hash(i) * 90, life = H / sp;
+    const ph = ((t + hash(i + 7) * life) % life) / life;
+    const x = hash(i + 3) * W + Math.sin(t * (0.5 + hash(i + 9)) + i) * 30;
+    const y = H + 20 - ph * H * 1.1;
+    const r = 1.5 + hash(i + 5) * 3.5;
+    ctx.save(); ctx.globalAlpha = k * (1 - ph) * (0.4 + 0.6 * hash(i + 11));
+    ctx.fillStyle = C.ember; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+
+// B-29 のシルエット(簡略・上面図)
+function bomber(x, y, s, alpha, color = C.steel) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color; ctx.translate(x, y); ctx.scale(s, s);
+  ctx.beginPath(); ctx.ellipse(0, 0, 90, 9, 0, 0, Math.PI * 2); ctx.fill();               // 胴体
+  ctx.beginPath(); ctx.moveTo(-8, -6); ctx.lineTo(18, -6); ctx.lineTo(4, -120); ctx.lineTo(-10, -120); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-8, 6); ctx.lineTo(18, 6); ctx.lineTo(4, 120); ctx.lineTo(-10, 120); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-70, -4); ctx.lineTo(-58, -4); ctx.lineTo(-66, -40); ctx.lineTo(-76, -40); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-70, 4); ctx.lineTo(-58, 4); ctx.lineTo(-66, 40); ctx.lineTo(-76, 40); ctx.closePath(); ctx.fill();
+  for (const e of [-90, -50, 50, 90]) { ctx.fillRect(10, e - 4, 22, 8); }                  // エンジン
+  ctx.restore();
+}
+// 街並みのシルエット(木造家屋の屋根)
+function skyline(y0, alpha, burn = 0, t = 0) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  let x = 0, i = 0;
+  while (x < W) {
+    const w = 50 + hash(i) * 60, h = 50 + hash(i + 1) * 70;
+    const lit = hash(i + 2) < burn;
+    ctx.fillStyle = lit ? `rgba(${200 + 40 * Math.sin(t * 9 + i)},${70 + 20 * hash(i)},30,1)` : '#221d19';
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 - h); ctx.lineTo(x + w / 2, y0 - h - 26); ctx.lineTo(x + w, y0 - h); ctx.lineTo(x + w, y0); ctx.closePath(); ctx.fill();
+    x += w + 4; i += 3;
+  }
+  ctx.fillStyle = '#221d19'; ctx.fillRect(0, y0, W, 40);
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  embers(t, a * 0.8);
+  // 遠くを飛ぶ編隊
+  const FORM = [[0, 0], [-170, -110], [-170, 110], [-340, -220], [-340, 220]];
+  FORM.forEach(([dx, dy]) => bomber(lerp(-100, W + 500, t / 9) + dx, 440 + dy, 0.4, a * 0.35));
+  const p = easeOut(t / 1.2);
+  rrect(140, 720, 800 * p, 8, 4, C.fire, a);
+  text('太平洋戦争', W / 2, 870, { size: 100, weight: 'bold', align: 'center', color: C.ink2, alpha: a * easeOut(t / .8), ls: 6 });
+  text('日本本土空襲', W / 2, 1020, { size: 140, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .8), ls: 4 });
+  text('被害が大きかった空襲', W / 2, 1140, { size: 66, color: C.accent, weight: 'bold', align: 'center', alpha: a * easeOut((t - .6) / .8) });
+  rrect(140, 1210, 800 * p, 8, 4, C.fire, a);
+  text('1944年11月 〜 1945年8月', W / 2, 1330, { size: 44, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.2) / .8) });
+}
+
+function sceneB29(t, a) {
+  embers(t, a * 0.3);
+  dateTag('1944年11月〜', a);
+  header('B-29による本土空襲', 'マリアナ諸島(サイパン・グアム・テニアン)から', a);
+  // 航路の図: マリアナ → 東京 約2,300km
+  const mx = 760, my = 1060, tx = 330, ty = 560;
+  const pa = a * easeOut((t - .3) / .6);
+  rrect(60, 440, W - 120, 720, 22, C.panel, pa);
+  ctx.save(); ctx.globalAlpha = pa; ctx.fillStyle = '#2b2622';
+  // 本州・九州の簡略形(装飾)
+  ctx.beginPath(); ctx.ellipse(270, 600, 190, 46, -0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(130, 720, 50, 34, -0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(mx, my, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  text('東京', tx + 10, ty - 30, { size: 34, weight: 'bold', alpha: pa });
+  text('マリアナ諸島', mx - 40, my + 70, { size: 34, weight: 'bold', alpha: pa });
+  const fp = easeInOut((t - .8) / 2.2);
+  line(mx, my, lerp(mx, tx, fp), lerp(my, ty, fp), C.fire, 4, pa, [16, 12]);
+  bomber(lerp(mx, tx, fp), lerp(my, ty, fp), 0.5, pa * (fp > 0 ? 1 : 0));
+  ctx.save(); ctx.globalAlpha = pa; ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(tx, ty, 10, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  text('約2,300km', (mx + tx) / 2 + 40, (my + ty) / 2 + 20, { size: 36, color: C.accent, weight: 'bold', alpha: pa * easeOut((t - 2.4) / .6) });
+  // 作戦の変化
+  const ca = a * easeOut((t - 4.2) / .6);
+  const bx = 60, bw = (W - 140) / 2, by = 1210;
+  rrect(bx, by, bw, 230, 22, C.panel, ca);
+  text('〜1945年2月', bx + 36, by + 60, { size: 30, color: C.ink3, alpha: ca });
+  text('昼間・高高度', bx + 36, by + 125, { size: 46, weight: 'bold', color: C.steel, alpha: ca });
+  text('軍需工場を精密爆撃', bx + 36, by + 185, { size: 30, color: C.ink2, alpha: ca });
+  const da = a * easeOut((t - 5.4) / .6);
+  rrect(bx + bw + 20, by, bw, 230, 22, C.panel, da);
+  text('1945年3月〜', bx + bw + 56, by + 60, { size: 30, color: C.ink3, alpha: da });
+  text('夜間・低空', bx + bw + 56, by + 125, { size: 46, weight: 'bold', color: C.fire, alpha: da });
+  text('市街地に焼夷弾', bx + bw + 56, by + 185, { size: 30, color: C.ink2, alpha: da });
+  text('→', bx + bw + 10, by + 135, { size: 40, color: C.accent, align: 'center', alpha: da });
+  caption('木造家屋の多い都市が狙われた', 1560, a * easeOut((t - 7.0) / .6), C.accent, 44);
+}
+
+function sceneTokyo(t, a) {
+  const burn = clamp((t - 1.2) / 4);
+  embers(t, a * (0.3 + 0.7 * burn));
+  dateTag('1945年3月10日', a);
+  header('東京大空襲', '深夜0時すぎ〜約2時間半・下町一帯', a);
+  // 焼夷弾の落下
+  ctx.save();
+  for (let i = 0; i < 50; i++) {
+    const st = 0.6 + hash(i) * 4.5, ph = (t - st) / 1.2;
+    if (ph < 0 || ph > 1) continue;
+    const x = 80 + hash(i + 1) * (W - 160), y = lerp(420, 860, ph);
+    ctx.globalAlpha = a * (1 - ph) * 0.9; ctx.strokeStyle = C.ember; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x - 6, y - 60); ctx.lineTo(x, y); ctx.stroke();
+  }
+  ctx.restore();
+  skyline(900, a, burn, t);
+  // 数字パネル
+  const stats = [
+    { label: '来襲したB-29', val: 300, unit: '機', pre: '約' },
+    { label: '死者', val: 100000, unit: '人', pre: '約', big: true },
+    { label: '焼失家屋', val: 270000, unit: '戸', pre: '約' },
+    { label: '被災者', val: 1000000, unit: '人', pre: '約' },
+  ];
+  stats.forEach((s, i) => {
+    const la = a * easeOut((t - 2.0 - i * 1.6) / .6);
+    const p = easeOut((t - 2.0 - i * 1.6) / 1.2);
+    const y = 1010 + i * 135;
+    rrect(60, y, W - 120, 115, 18, C.panel, la);
+    text(s.label, 100, y + 72, { size: 38, color: C.ink2, alpha: la });
+    text(s.pre + fmtInt(s.val * p) + s.unit, W - 100, y + 80, { size: s.big ? 70 : 54, weight: 'bold', color: s.big ? C.fire : C.ink, align: 'right', alpha: la });
+  });
+  const ca = a * easeOut((t - 8.6) / .6);
+  caption('一夜の空襲として史上最大級の犠牲', 1610, ca, C.accent, 44);
+  text('出典: 東京都・各種資料 / 概数(推計に幅あり)', W / 2, 1690, { size: 28, color: C.ink3, align: 'center', alpha: ca });
+}
+
+const CITIES = [
+  { name: '東京', note: '3月10日の空襲', v: 100000, label: '約10万人' },
+  { name: '大阪', note: '8回の大空襲', v: 10000, label: '約1万人以上' },
+  { name: '名古屋', note: '', v: 7900, label: '約7,900人' },
+  { name: '神戸', note: '', v: 7500, label: '約7,500人' },
+];
+function sceneCities(t, a) {
+  embers(t, a * 0.35);
+  dateTag('1945年3月〜6月', a);
+  header('大都市への焼夷弾攻撃', '主な都市の空襲による死者(概数)', a);
+  const x0 = 100, maxW = W - 200, maxV = 100000;
+  CITIES.forEach((c, i) => {
+    const la = a * easeOut((t - .5 - i * 1.0) / .6);
+    const p = easeOut((t - .7 - i * 1.0) / 1.3);
+    const y = 500 + i * 230;
+    rrect(60, y, W - 120, 200, 22, C.panel, la);
+    text(c.name, x0, y + 70, { size: 50, weight: 'bold', alpha: la });
+    if (c.note) text(c.note, x0 + 30 + c.name.length * 52, y + 70, { size: 28, color: C.ink3, alpha: la });
+    text(c.label, W - 100, y + 72, { size: 46, weight: 'bold', color: i === 0 ? C.fire : C.accent, align: 'right', alpha: la });
+    const bw = Math.max(10, maxW * c.v / maxV) * p;
+    rrect(x0, y + 115, maxW, 40, 6, C.grid, la * 0.6);
+    rrect(x0, y + 115, bw, 40, 6, C.fire, la);
+  });
+  const na = a * easeOut((t - 5.0) / .6);
+  rrect(60, 1440, W - 120, 150, 22, C.panel, na);
+  text('このほか横浜・川崎・福岡・静岡・鹿児島など', 100, 1500, { size: 34, alpha: na });
+  text('各地で数千人規模の犠牲が出た', 100, 1556, { size: 34, color: C.ink2, alpha: na });
+  footnote('各自治体・慰霊団体の資料より / 推計値には幅がある', na);
+}
+
+function sceneLocal(t, a) {
+  embers(t, a * 0.4);
+  dateTag('1945年6月〜8月', a);
+  header('地方の中小都市へ', 'ほぼ全国の都市が空襲を受けた', a);
+  // 都市のドット(約200都市の比喩)
+  const cols = 20, rows = 10, gx = 90, gy = 470, cs = (W - 180) / cols;
+  const pa = easeOut((t - .4) / .5);
+  for (let i = 0; i < cols * rows; i++) {
+    const appear = 0.6 + hash(i + 40) * 3.5;
+    const on = t > appear;
+    const x = gx + (i % cols) * cs + cs / 2, y = gy + Math.floor(i / cols) * cs + cs / 2;
+    ctx.save(); ctx.globalAlpha = a * pa * (on ? 1 : 0.35);
+    ctx.fillStyle = on ? C.fire : C.grid; ctx.beginPath(); ctx.arc(x, y, on ? 13 : 9, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+  text('約200都市が被災', W / 2, gy + rows * cs + 70, { size: 54, weight: 'bold', color: C.accent, align: 'center', alpha: a * easeOut((t - 3.6) / .6) });
+  // 富山
+  const ta = a * easeOut((t - 4.6) / .6);
+  const by = 1200;
+  rrect(60, by, W - 120, 290, 22, C.panel, ta);
+  text('富山大空襲  1945年8月2日', 100, by + 66, { size: 40, weight: 'bold', alpha: ta });
+  text('市街地の焼失率', 100, by + 120, { size: 30, color: C.ink3, alpha: ta });
+  const p = easeOut((t - 5.0) / 1.4);
+  rrect(100, by + 150, W - 200, 50, 8, C.grid, ta * 0.6);
+  rrect(100, by + 150, (W - 200) * 0.995 * p, 50, 8, C.fire, ta);
+  text('約' + (99.5 * p).toFixed(1) + '%', W - 100, by + 265, { size: 64, weight: 'bold', color: C.fire, align: 'right', alpha: ta });
+  text('死者 約2,700人', 100, by + 258, { size: 34, color: C.ink2, alpha: ta });
+  footnote('出典: 富山市ほか / 概数', ta);
+}
+
+function sceneAtomic(t, a) {
+  dateTag('1945年8月', a);
+  header('原子爆弾の投下', '1945年末までの死者(推計)', a);
+  const items = [
+    { city: '広島', date: '8月6日 午前8時15分', v: 140000, label: '約14万人' },
+    { city: '長崎', date: '8月9日 午前11時2分', v: 74000, label: '約7万4千人' },
+  ];
+  items.forEach((it, i) => {
+    const st = 0.5 + i * 2.4;
+    const la = a * easeOut((t - st) / .6);
+    const y = 470 + i * 480;
+    rrect(60, y, W - 120, 430, 26, C.panel, la);
+    // 閃光の輪
+    const fp = easeOut((t - st) / 1.6);
+    const cx = 230, cy = y + 215;
+    ctx.save();
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 150 * fp + 1);
+    g.addColorStop(0, `rgba(255,236,200,${0.9 * la})`); g.addColorStop(0.5, `rgba(242,166,90,${0.5 * la})`); g.addColorStop(1, 'rgba(232,100,58,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 150 * fp + 1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    text(it.city, cx, cy + 30, { size: 80, weight: 'bold', align: 'center', color: '#1a120d', alpha: la * fp });
+    text(it.date, 420, y + 120, { size: 34, color: C.ink2, alpha: la });
+    const p = easeOut((t - st - .4) / 1.4);
+    text('約' + fmtInt(it.v * p) + '人', 420, y + 250, { size: 84, weight: 'bold', color: C.accent, alpha: la });
+    text('その後も被爆による死者は増え続けた', 420, y + 330, { size: 28, color: C.ink3, alpha: la });
+  });
+  const ca = a * easeOut((t - 6.4) / .6);
+  caption('合わせて20万人以上が犠牲に', 1560, ca, C.accent, 46);
+  footnote('出典: 広島市・長崎市 / 推計値', ca);
+}
+
+function sceneSummary(t, a) {
+  embers(t, a * 0.25);
+  text('本土空襲の被害', W / 2, 330, { size: 74, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['死者', '約50万人以上', '原爆を含む・推計に幅あり'],
+    ['焼失家屋', '約220万戸', '空襲・原爆による全焼・全壊'],
+    ['被災都市', '約200都市', '大都市から地方都市まで'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .4 - i * .9) / .6);
+    const y = 450 + i * 280;
+    rrect(60, y, W - 120, 240, 22, C.panel, la);
+    text(it[0], 100, y + 80, { size: 38, color: C.ink2, alpha: la });
+    text(it[1], W - 100, y + 120, { size: 76, weight: 'bold', color: i === 0 ? C.fire : C.accent, align: 'right', alpha: la });
+    text(it[2], 100, y + 200, { size: 30, color: C.ink3, alpha: la });
+  });
+  const ca = a * easeOut((t - 3.4) / .8);
+  rrect(140, 1360, 800 * ca, 6, 3, C.fire, ca);
+  text('失われた日常を、忘れないために', W / 2, 1480, { size: 52, weight: 'bold', align: 'center', alpha: ca });
+  text('出典: 経済安定本部「太平洋戦争による我国の被害総合報告書」(1949)', W / 2, 1620, { size: 25, color: C.ink3, align: 'center', alpha: ca });
+  text('東京都・広島市・長崎市・各自治体資料ほか / 数値は概数', W / 2, 1660, { size: 25, color: C.ink3, align: 'center', alpha: ca });
+  text('音声: VOICEVOX:青山龍星', W / 2, 1710, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒)  narrate.py の SCRIPT と対応 ----------
+const SCENES = [
+  { s: 0, d: 7, f: sceneTitle },
+  { s: 7, d: 10.5, f: sceneB29 },
+  { s: 17.5, d: 11.5, f: sceneTokyo },
+  { s: 29, d: 10, f: sceneCities },
+  { s: 39, d: 9, f: sceneLocal },
+  { s: 48, d: 11, f: sceneAtomic },
+  { s: 59, d: 8, f: sceneSummary },
+];
+const XF = 0.35; // クロスフェード秒
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.fire, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
