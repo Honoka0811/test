@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Physics Discoveries</title>
+<style>
+  html,body{margin:0;background:#0b1020;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timings.js"></script>
+<script>
+// ------------------------------------------------------------
+// 世界を変えた物理学の大発見 5選 (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン尺と字幕タイミングは voice.py が書き出す output/timings.js(実際のナレーション長)に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic","DejaVu Sans",sans-serif';
+const MATH = '"DejaVu Serif","IPAPMincho","IPAPGothic",serif';
+const C = { bg0: '#0b1020', bg1: '#161d3a', panel: 'rgba(255,255,255,0.07)', line: 'rgba(255,255,255,0.16)',
+  ink: '#f5f6fa', ink2: '#c3c8d8', ink3: '#8a91a8', gold: '#F5C451' };
+const TM = window.TIMINGS;
+const FPS = 30, DURATION = TM.total;
+window.FPS = FPS; window.DURATION = DURATION;
+
+const D = [
+  { no: 1, title: '万有引力', who: 'アイザック・ニュートン', year: '1687年', formula: 'F = G·Mm / r²',
+    impact: '人工衛星・ロケット・惑星探査', color: '#F5A524' },
+  { no: 2, title: '電磁誘導', who: 'マイケル・ファラデー', year: '1831年', formula: 'V = −dΦ/dt',
+    impact: '発電機・モーター・送電網', color: '#3DD6C3' },
+  { no: 3, title: '電磁波', who: 'J.C.マクスウェル', year: '1864年 予言 → 1888年 実証', formula: 'c = 1/√(ε₀μ₀)',
+    impact: 'ラジオ・テレビ・スマホ・Wi-Fi', color: '#A78BFA' },
+  { no: 4, title: '相対性理論', who: 'アルベルト・アインシュタイン', year: '1905年・1915年', formula: 'E = mc²',
+    impact: 'GPS・ブラックホール・宇宙論', color: '#F472B6' },
+  { no: 5, title: '量子力学', who: 'プランク、ボーア、ハイゼンベルクほか', year: '1900〜1920年代', formula: 'iħ ∂ψ/∂t = Ĥψ',
+    impact: '半導体・コンピューター・レーザー', color: '#5BA8FF' },
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeOutBack = t => { t = clamp(t); const c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const TAU = Math.PI * 2;
+function hash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, font = FONT, shadow = 0 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = base;
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = shadow; ctx.shadowOffsetY = 3; }
+  ctx.fillText(str, x, y); ctx.restore();
+}
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2); ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, fill, alpha = 1, stroke = null) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; rrectPath(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, fill, alpha = 1) { ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore(); }
+function glow(x, y, r, color, a = 1) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, hexA(color, 0.9 * a)); g.addColorStop(0.35, hexA(color, 0.35 * a)); g.addColorStop(1, hexA(color, 0));
+  ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.restore();
+}
+function arrow(x1, y1, x2, y2, color, w = 6, head = 22) {
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - Math.cos(a) * head * 0.7, y2 - Math.sin(a) * head * 0.7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - Math.cos(a - 0.45) * head, y2 - Math.sin(a - 0.45) * head);
+  ctx.lineTo(x2 - Math.cos(a + 0.45) * head, y2 - Math.sin(a + 0.45) * head); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+// 日本語の折り返し: 英数字の並びは分割しない・行頭禁則(、。)・あふれる時は直前の読点で改行
+function wrap(str, maxW, size) {
+  ctx.save(); ctx.font = `bold ${size}px ${FONT}`;
+  const toks = str.match(/[A-Za-z0-9.\-]+|./gu);
+  const lines = []; let cur = [];
+  const width = a => ctx.measureText(a.join('')).width;
+  for (const tk of toks) {
+    if (cur.length && width([...cur, tk]) > maxW && !'、。'.includes(tk)) {
+      // 行の後半 45% 以降に読点があればそこで切る
+      let k = -1;
+      for (let j = cur.length - 1; j >= 0; j--) if ('、'.includes(cur[j])) { k = j; break; }
+      if (k >= 0 && width(cur.slice(0, k + 1)) > maxW * 0.45) { lines.push(cur.slice(0, k + 1).join('')); cur = cur.slice(k + 1); }
+      else { lines.push(cur.join('')); cur = []; }
+    }
+    cur.push(tk);
+  }
+  if (cur.length) lines.push(cur.join(''));
+  ctx.restore();
+  return lines;
+}
+
+// ---------- 背景 ----------
+const STARS = Array.from({ length: 140 }, (_, i) => ({ x: hash(i) * W, y: hash(i + 500) * H, r: 0.8 + hash(i + 900) * 2.2, p: hash(i + 1300) * TAU }));
+function background(t, accent) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg0); g.addColorStop(1, C.bg1);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (accent) {
+    const r = ctx.createRadialGradient(W / 2, 860, 0, W / 2, 860, 900);
+    r.addColorStop(0, hexA(accent, 0.16)); r.addColorStop(1, hexA(accent, 0));
+    ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+  }
+  for (const s of STARS) circle(s.x, (s.y + t * 6) % H, s.r, '#ffffff', 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(t * 1.5 + s.p)));
+}
+
+// ---------- 上部バー ----------
+function topbar(active, alpha) {
+  text('世界を変えた 物理学の大発見', 70, 150, { size: 38, weight: 'bold', color: C.ink2, alpha });
+  for (let i = 0; i < 5; i++) {
+    const x = W - 330 + i * 56, on = i + 1 === active, done = i + 1 < active;
+    circle(x, 137, on ? 18 : 13, on ? D[i].color : done ? hexA(D[i].color, 0.65) : 'rgba(255,255,255,0.18)', alpha);
+    if (on) text(String(i + 1), x, 149, { size: 26, weight: 'bold', color: C.bg0, align: 'center', alpha });
+  }
+}
+
+// ---------- 字幕 ----------
+function subtitles(t) {
+  const c = TM.cues.find(c => t >= c.s - 0.08 && t <= c.e + 0.3);
+  if (!c) return;
+  const a = Math.min(seg(t, c.s - 0.08, 0.15), 1 - seg(t, c.e + 0.15, 0.15));
+  const size = 52, lines = c.text.includes('|') ? c.text.split('|') : wrap(c.text, 900, size), lh = 74;
+  const h = lines.length * lh + 44, y = 1600 - h;
+  rrect(50, y, W - 100, h, 26, 'rgba(8,10,22,0.78)', a);
+  lines.forEach((l, i) => text(l, W / 2, y + 22 + lh * i + 56, { size, weight: 'bold', align: 'center', alpha: a }));
+}
+
+// ---------- イラスト ----------
+// 1. 万有引力: 落ちるリンゴと地球を回る月
+function drawGravity(lt, cx, cy, col) {
+  const ex = cx + 70, ey = cy + 60;
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 3; ctx.setLineDash([10, 12]);
+  ctx.beginPath(); ctx.ellipse(ex, ey, 300, 210, -0.15, 0, TAU); ctx.stroke(); ctx.restore();
+  // 地球
+  glow(ex, ey, 200, '#3F8DE8', 0.6);
+  circle(ex, ey, 105, '#2F6FD1');
+  ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, 105, 0, TAU); ctx.clip();
+  ctx.fillStyle = '#3BB273';
+  [[-40, -30, 45, 30], [35, 25, 50, 34], [-10, 60, 30, 20], [55, -55, 26, 18]].forEach(([dx, dy, rx, ry]) => {
+    ctx.beginPath(); ctx.ellipse(ex + dx + Math.sin(lt * 0.4) * 8, ey + dy, rx, ry, 0.5, 0, TAU); ctx.fill(); });
+  ctx.restore();
+  // 月(公転)
+  const th = lt * 0.85 + 2.2;
+  const mx = ex + Math.cos(th) * 300 * Math.cos(-0.15) - Math.sin(th) * 210 * Math.sin(-0.15);
+  const my = ey + Math.cos(th) * 300 * Math.sin(-0.15) + Math.sin(th) * 210 * Math.cos(-0.15);
+  circle(mx, my, 40, '#D9DCE3'); circle(mx - 10, my - 8, 8, '#B5BAC6'); circle(mx + 12, my + 10, 6, '#B5BAC6');
+  const dx = ex - mx, dy = ey - my, dl = Math.hypot(dx, dy);
+  arrow(mx + dx / dl * 50, my + dy / dl * 50, mx + dx / dl * 140, my + dy / dl * 140, col, 6, 22);
+  // リンゴ(繰り返し落下)
+  const ax = cx - 330, period = 2.4, ph = (lt % period) / period;
+  const ay = cy - 300 + 330 * Math.pow(clamp(ph / 0.7), 2);
+  const fade = ph > 0.85 ? 1 - (ph - 0.85) / 0.15 : 1;
+  ctx.save(); ctx.globalAlpha *= fade;
+  circle(ax, ay, 34, '#E5484D'); circle(ax - 11, ay - 10, 9, 'rgba(255,255,255,0.35)');
+  ctx.strokeStyle = '#7a4a24'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(ax, ay - 32); ctx.lineTo(ax + 4, ay - 50); ctx.stroke();
+  ctx.fillStyle = '#3BB273'; ctx.beginPath(); ctx.ellipse(ax + 18, ay - 46, 14, 7, -0.5, 0, TAU); ctx.fill();
+  ctx.restore();
+  arrow(ax + 100, cy - 250, ax + 100, cy - 90, col, 6, 22);
+  text('同じ力', ax + 100, cy - 30, { size: 36, weight: 'bold', color: col, align: 'center' });
+}
+
+// 2. 電磁誘導: 磁石を動かすとコイルに電流 → 電球が光る
+function drawInduction(lt, cx, cy, col) {
+  const coilX0 = cx - 40, coilX1 = cx + 230, loops = 7;
+  const off = Math.sin(lt * 2.6), vel = Math.abs(Math.cos(lt * 2.6));
+  const mx = cx - 170 + 130 * off;  // 磁石の右端の x
+  // 電球と導線
+  const bx = cx + 95, by = cy - 270;
+  ctx.save(); ctx.strokeStyle = '#d9a35b'; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(coilX0, cy - 110); ctx.lineTo(coilX0, by); ctx.lineTo(bx - 30, by); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(coilX1, cy - 110); ctx.lineTo(coilX1, by); ctx.lineTo(bx + 30, by); ctx.stroke();
+  ctx.restore();
+  glow(bx, by - 40, 190, '#FFD95A', vel);
+  circle(bx, by - 40, 52, `rgba(255,${200 + 40 * vel | 0},${90 + 80 * vel | 0},${0.35 + 0.65 * vel})`);
+  rrect(bx - 26, by - 8, 52, 30, 6, '#9aa3b5');
+  // 電流の流れ(導線上の点)
+  for (let k = 0; k < 6; k++) {
+    const p = ((lt * 0.9 * (0.3 + vel) + k / 6) % 1);
+    const yy = lerp(cy - 110, by, p);
+    circle(coilX1, yy, 7, col, vel); circle(coilX0, lerp(by, cy - 110, p), 7, col, vel);
+  }
+  // コイル(奥の半分 → 磁石 → 手前の半分)
+  const coil = (front) => {
+    ctx.save(); ctx.strokeStyle = front ? '#e8b46a' : '#8a6a3c'; ctx.lineWidth = 9;
+    for (let i = 0; i < loops; i++) {
+      const x = lerp(coilX0, coilX1, i / (loops - 1));
+      ctx.beginPath(); ctx.ellipse(x, cy, 34, 110, 0, front ? -Math.PI / 2 : Math.PI / 2, front ? Math.PI / 2 : Math.PI * 1.5); ctx.stroke();
+    }
+    ctx.restore();
+  };
+  coil(false);
+  // 磁力線
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 3;
+  for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.ellipse(mx - 110, cy, 150 + k * 25, 55 + k * 45, 0, 0, TAU); ctx.stroke(); }
+  ctx.restore();
+  // 棒磁石
+  rrect(mx - 220, cy - 40, 110, 80, 10, '#3F8DE8'); rrect(mx - 110, cy - 40, 110, 80, 10, '#E5484D');
+  ctx.fillStyle = '#E5484D'; ctx.fillRect(mx - 110, cy - 40, 30, 80);
+  text('S', mx - 165, cy + 18, { size: 50, weight: 'bold', align: 'center' });
+  text('N', mx - 55, cy + 18, { size: 50, weight: 'bold', align: 'center' });
+  coil(true);
+  arrow(mx - 220 + (off > 0 ? 40 : 180), cy + 130, mx - 220 + (off > 0 ? 180 : 40), cy + 130, C.ink2, 5, 18);
+  text('動かすと電気が流れる', cx + 20, cy + 230, { size: 38, weight: 'bold', color: col, align: 'center' });
+}
+
+// 3. 電磁波: 電場(E)と磁場(B)の波が光速で進む
+function drawWave(lt, cx, cy, col) {
+  const x0 = cx - 380, x1 = cx + 400, amp = 150, k = TAU / 300, ph = lt * 5;
+  // アンテナ
+  ctx.save(); ctx.strokeStyle = C.ink2; ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(x0 - 20, cy + 210); ctx.lineTo(x0 + 10, cy - 40); ctx.lineTo(x0 + 40, cy + 210); ctx.stroke();
+  for (let r = 0; r < 3; r++) {
+    const rr = 30 + ((lt * 60 + r * 40) % 120);
+    ctx.globalAlpha = 1 - rr / 150; ctx.beginPath(); ctx.arc(x0 + 10, cy - 50, rr, -Math.PI / 2 - 0.7, -Math.PI / 2 + 0.7); ctx.stroke();
+  }
+  ctx.restore();
+  // 進行軸
+  arrow(x0 + 40, cy, x1 + 30, cy, 'rgba(255,255,255,0.4)', 3, 18);
+  const pts = []; for (let x = x0 + 40; x <= x1; x += 6) pts.push(x);
+  const env = x => clamp((x - x0 - 40) / 120);
+  // B(横方向、斜め投影)
+  ctx.save(); ctx.strokeStyle = '#3DD6C3'; ctx.lineWidth = 5; ctx.beginPath();
+  pts.forEach((x, i) => { const v = Math.sin(k * x - ph) * amp * 0.75 * env(x); const X = x - v * 0.45, Y = cy + v * 0.45; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+  ctx.stroke(); ctx.restore();
+  // E(縦方向) と縦線
+  ctx.save(); ctx.strokeStyle = hexA('#FFD95A', 0.35); ctx.lineWidth = 2;
+  for (let x = x0 + 52; x <= x1; x += 24) { const v = Math.sin(k * x - ph) * amp * env(x); ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x, cy - v); ctx.stroke(); }
+  ctx.strokeStyle = '#FFD95A'; ctx.lineWidth = 6; ctx.beginPath();
+  pts.forEach((x, i) => { const v = Math.sin(k * x - ph) * amp * env(x); i ? ctx.lineTo(x, cy - v) : ctx.moveTo(x, cy - v); });
+  ctx.stroke(); ctx.restore();
+  text('電場 E', x0 + 90, cy - 200, { size: 36, weight: 'bold', color: '#FFD95A' });
+  text('磁場 B', x0 + 150, cy + 200, { size: 36, weight: 'bold', color: '#3DD6C3' });
+  text('秒速 約30万km', x1 - 10, cy - 200, { size: 36, weight: 'bold', color: col, align: 'right' });
+}
+
+// 4. 相対性理論: 重力でゆがむ時空と GPS 衛星の時計
+function drawRelativity(lt, cx, cy, col) {
+  const R2 = 160 * 160, S = 0.55;
+  const warp = (x, y) => {
+    const dx = x - cx, dy = y - cy, d2 = dx * dx + dy * dy;
+    const f = S * R2 / (d2 + R2);
+    return [x - dx * f, y - dy * f + f * 120];
+  };
+  ctx.save(); ctx.strokeStyle = hexA(col, 0.45); ctx.lineWidth = 2.5;
+  for (let g = -5; g <= 5; g++) {
+    ctx.beginPath();
+    for (let s = -5; s <= 5.01; s += 0.25) { const [X, Y] = warp(cx + g * 72, cy + s * 46); s === -5 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y); }
+    ctx.stroke(); ctx.beginPath();
+    for (let s = -5; s <= 5.01; s += 0.25) { const [X, Y] = warp(cx + s * 72, cy + g * 46); s === -5 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y); }
+    ctx.stroke();
+  }
+  ctx.restore();
+  glow(cx, cy + 50, 170, '#3F8DE8', 0.7); circle(cx, cy + 50, 70, '#2F6FD1');
+  // 衛星の軌道
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.setLineDash([8, 10]); ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(cx, cy + 50, 300, 120, 0, 0, TAU); ctx.stroke(); ctx.restore();
+  const th = lt * 1.1; const sx = cx + Math.cos(th) * 300, sy = cy + 50 + Math.sin(th) * 120;
+  rrect(sx - 16, sy - 16, 32, 32, 4, '#d6dae3'); rrect(sx - 62, sy - 10, 40, 20, 3, '#5BA8FF'); rrect(sx + 22, sy - 10, 40, 20, 3, '#5BA8FF');
+  // 2 つの時計
+  const clock = (x, y, label, rate, c) => {
+    circle(x, y, 52, 'rgba(255,255,255,0.08)');
+    ctx.save(); ctx.strokeStyle = c; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(x, y, 52, 0, TAU); ctx.stroke();
+    const a = lt * rate * 2 - Math.PI / 2;
+    ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 38, y + Math.sin(a) * 38); ctx.stroke();
+    ctx.restore(); circle(x, y, 7, c);
+    text(label, x, y + 92, { size: 32, weight: 'bold', color: C.ink2, align: 'center' });
+  };
+  clock(cx - 320, cy - 180, '地上の時計', 1.0, C.ink2);
+  clock(cx + 320, cy - 180, '衛星の時計', 1.06, col);
+  text('1日に約38マイクロ秒ずれる', cx, cy + 268, { size: 38, weight: 'bold', color: col, align: 'center' });
+}
+
+// 5. 量子力学: 二重スリット実験(電子 1 個ずつでも干渉縞ができる)
+const HITS = (() => {
+  const out = []; let i = 0;
+  while (out.length < 900) {
+    const y = (hash(i * 3 + 1) - 0.5) * 2, u = hash(i * 3 + 2); i++;
+    const p = Math.pow(Math.cos(y * 7.5), 2) * Math.exp(-y * y * 1.6);
+    if (u < p) out.push({ y, j: hash(i * 7 + 5) });
+  }
+  return out;
+})();
+function drawQuantum(lt, cx, cy, col) {
+  const wx = cx - 170, sx = cx + 330, half = 205;
+  // 電子銃
+  rrect(cx - 470, cy - 34, 90, 68, 12, '#5a6378');
+  const ex = lerp(cx - 380, wx, (lt * 1.6) % 1);
+  glow(ex, cy, 30, col, 1); circle(ex, cy, 9, '#ffffff');
+  // スリット板
+  ctx.fillStyle = '#7d8599';
+  ctx.fillRect(wx - 10, cy - half, 20, half - 70); ctx.fillRect(wx - 10, cy - 40, 20, 80); ctx.fillRect(wx - 10, cy + 70, 20, half - 70);
+  // 波の広がり
+  ctx.save(); ctx.beginPath(); ctx.rect(wx + 10, cy - half, sx - wx - 10, half * 2); ctx.clip();
+  ctx.lineWidth = 3;
+  for (const oy of [-55, 55]) for (let r = 0; r < 7; r++) {
+    const rr = ((lt * 70 + r * 50) % 350);
+    ctx.strokeStyle = hexA(col, 0.5 * (1 - rr / 350)); ctx.beginPath(); ctx.arc(wx, cy + oy, rr, -1.2, 1.2); ctx.stroke();
+  }
+  ctx.restore();
+  // スクリーンと着弾点(時間とともに増え、干渉縞が浮かぶ)
+  rrect(sx, cy - half, 26, half * 2, 6, 'rgba(255,255,255,0.12)');
+  const n = Math.floor(clamp(lt / 8) * HITS.length);
+  for (let i = 0; i < n; i++) circle(sx + 4 + HITS[i].j * 18, cy + HITS[i].y * half, 3.2, i > n - 8 ? '#ffffff' : col, 0.9);
+  text('粒なのに', cx - 330, cy + 262, { size: 38, weight: 'bold', color: C.ink2, align: 'center' });
+  text('波の模様ができる', sx - 40, cy + 262, { size: 38, weight: 'bold', color: col, align: 'center' });
+}
+const DRAW = [drawGravity, drawInduction, drawWave, drawRelativity, drawQuantum];
+
+// ---------- シーン ----------
+function sceneTitle(lt, dur) {
+  const a = 1 - seg(lt, dur - 0.4, 0.4);
+  const cx = W / 2, cy = 560;
+  // 原子のロゴ
+  const s = easeOutBack(seg(lt, 0, 0.9));
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(cx, cy); ctx.scale(s, s);
+  glow(0, 0, 330, '#5BA8FF', 0.6);
+  ctx.lineWidth = 6;
+  for (let k = 0; k < 3; k++) {
+    const rot = k * Math.PI / 3 + lt * 0.15;
+    ctx.save(); ctx.rotate(rot); ctx.strokeStyle = hexA(D[k * 2 % 5].color, 0.9);
+    ctx.beginPath(); ctx.ellipse(0, 0, 270, 92, 0, 0, TAU); ctx.stroke();
+    const e = lt * (1.6 + k * 0.3) + k * 2;
+    glow(Math.cos(e) * 270, Math.sin(e) * 92, 34, D[k * 2 % 5].color, 1); circle(Math.cos(e) * 270, Math.sin(e) * 92, 13, '#fff');
+    ctx.restore();
+  }
+  circle(0, 0, 42, C.gold); circle(-12, -12, 12, 'rgba(255,255,255,0.5)');
+  ctx.restore();
+  const t1 = easeOut(seg(lt, 0.3, 0.6)), t2 = easeOut(seg(lt, 0.55, 0.6));
+  text('世界を変えた', cx, 990 + 40 * (1 - t1), { size: 96, weight: 'bold', align: 'center', alpha: t1 * a, shadow: 12 });
+  text('物理学の大発見', cx, 1115 + 40 * (1 - t2), { size: 118, weight: 'bold', align: 'center', alpha: t2 * a, shadow: 12, color: C.gold });
+  const t3 = easeOutBack(seg(lt, 1.0, 0.6));
+  ctx.save(); ctx.globalAlpha = a * clamp(t3); ctx.translate(cx, 1180); ctx.scale(t3, t3); ctx.rotate(-0.06);
+  rrect(-120, -10, 240, 96, 48, '#E5484D'); text('5選', 0, 66, { size: 72, weight: 'bold', align: 'center' });
+  ctx.restore();
+}
+
+function sceneDiscovery(i, lt, dur) {
+  const d = D[i], col = d.color;
+  const a = 1 - seg(lt, dur - 0.35, 0.35);
+  ctx.save(); ctx.globalAlpha = a;
+  topbar(d.no, 1);
+  const p1 = easeOut(seg(lt, 0, 0.5)), p2 = easeOut(seg(lt, 0.15, 0.5)), p3 = easeOut(seg(lt, 0.3, 0.6));
+  // 番号バッジ + タイトル
+  const bs = easeOutBack(seg(lt, 0, 0.55));
+  ctx.save(); ctx.translate(140, 330); ctx.scale(bs, bs);
+  circle(0, 0, 70, col); text(String(d.no), 0, 30, { size: 88, weight: 'bold', color: C.bg0, align: 'center', font: MATH });
+  ctx.restore();
+  text(d.title, 240 - 30 * (1 - p1), 365, { size: 104, weight: 'bold', alpha: p1, shadow: 10 });
+  text(d.who, 80, 490, { size: 42, weight: 'bold', color: C.ink2, alpha: p2 });
+  text(d.year, 80, 548, { size: 38, color: col, alpha: p2, weight: 'bold' });
+  // イラスト
+  ctx.save(); ctx.globalAlpha *= p3; ctx.translate(0, 30 * (1 - p3));
+  DRAW[i](lt, W / 2, 860, col);
+  ctx.restore();
+  // 数式と影響
+  const p4 = easeOut(seg(lt, 0.8, 0.5)), p5 = easeOutBack(seg(lt, dur * 0.55, 0.5));
+  if (i === 3) {
+    // E=mc² は大きく
+    text(d.formula, W / 2, 1225, { size: 76, color: C.ink, align: 'center', alpha: p4, font: MATH, weight: 'bold' });
+  } else {
+    text(d.formula, W / 2, 1215, { size: 60, color: C.ink, align: 'center', alpha: p4, font: MATH });
+  }
+  ctx.save(); ctx.globalAlpha *= clamp(p5); ctx.translate(W / 2, 1300); ctx.scale(lerp(0.8, 1, p5), lerp(0.8, 1, p5));
+  ctx.font = `bold 40px ${FONT}`; const tw = ctx.measureText('→ ' + d.impact).width + 70;
+  rrect(-tw / 2, -40, tw, 76, 38, hexA(col, 0.22), 1, col);
+  text('→ ' + d.impact, 0, 12, { size: 40, weight: 'bold', align: 'center' });
+  ctx.restore();
+  ctx.restore();
+}
+
+function sceneOutro(lt, dur) {
+  const cx = W / 2;
+  const h = easeOut(seg(lt, 0, 0.6));
+  text('まとめ', cx, 260, { size: 60, weight: 'bold', align: 'center', alpha: h, color: C.ink2 });
+  D.forEach((d, i) => {
+    const p = easeOut(seg(lt, 0.2 + i * 0.18, 0.5)), y = 360 + i * 150;
+    ctx.save(); ctx.globalAlpha = p; ctx.translate(60 * (1 - p), 0);
+    rrect(80, y, W - 160, 124, 24, C.panel);
+    circle(160, y + 62, 40, d.color); text(String(d.no), 160, y + 80, { size: 50, weight: 'bold', color: C.bg0, align: 'center', font: MATH });
+    text(d.title, 230, y + 60, { size: 50, weight: 'bold' });
+    text(d.impact, 230, y + 104, { size: 30, color: C.ink2 });
+    text(d.year.replace(/ .*$/, ''), W - 120, y + 60, { size: 34, color: d.color, align: 'right', weight: 'bold' });
+    ctx.restore();
+  });
+  const q = easeOutBack(seg(lt, 1.6, 0.6));
+  ctx.save(); ctx.globalAlpha = clamp(q); ctx.translate(cx, 1190); ctx.scale(lerp(0.85, 1, q), lerp(0.85, 1, q));
+  text('次の大発見は、', 0, 0, { size: 64, weight: 'bold', align: 'center', shadow: 10 });
+  text('あなたかも。', 0, 92, { size: 76, weight: 'bold', align: 'center', color: C.gold, shadow: 10 });
+  ctx.restore();
+  const c = seg(lt, 2.0, 0.5);
+  text('ナレーション  VOICEVOX:四国めたん', cx, 1640, { size: 30, color: C.ink3, align: 'center', alpha: c });
+  text('BGM  オリジナル(自作)', cx, 1684, { size: 30, color: C.ink3, align: 'center', alpha: c });
+}
+
+function render(t) {
+  const si = Math.max(0, TM.scenes.findIndex(s => t >= s.start && t < s.start + s.dur));
+  const sc = TM.scenes[t >= TM.total ? TM.scenes.length - 1 : si], lt = t - sc.start;
+  const idx = t >= TM.total ? TM.scenes.length - 1 : si;
+  background(t, idx >= 1 && idx <= 5 ? D[idx - 1].color : null);
+  ctx.save(); ctx.globalAlpha = seg(lt, 0, 0.3);
+  if (idx === 0) sceneTitle(lt, sc.dur);
+  else if (idx <= 5) sceneDiscovery(idx - 1, lt, sc.dur);
+  else sceneOutro(lt, sc.dur);
+  ctx.restore();
+  subtitles(t);
+  // 全体の冒頭フェードイン・最後のフェードアウト
+  const fade = Math.min(seg(t, 0, 0.3), 1 - seg(t, TM.total - 0.6, 0.6));
+  if (fade < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで開いた場合はプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
