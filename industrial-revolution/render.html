@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Industrial Revolution</title>
+<style>
+  html,body{margin:0;background:#121014;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 産業革命 — 世界を変えた100年  (9:16 ショート動画 / 約67秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#121014', panel: '#1d1a20', grid: '#2f2b33',
+  ink: '#f4f1ec', ink2: '#bdb6ad', ink3: '#857e76',
+  old: '#5E9FD6',   // 以前・世界・手作業 = 青
+  new: '#E5793B',   // イギリス・機械・産業革命後 = 銅色
+  oldSoft: 'rgba(94,159,214,0.22)', newSoft: 'rgba(229,121,59,0.22)',
+  accent: '#F2C14E'
+};
+const FPS = 30, DURATION = 67.5;
+
+// ---------- データ(概数) ----------
+// 1人あたりGDP(1990年国際ドル) Maddison (2001)
+const GDP_YEARS = [1000, 1500, 1600, 1700, 1820, 1870, 1913];
+const GDP_WORLD = [436, 566, 596, 615, 667, 873, 1525];
+const GDP_UK = [400, 714, 974, 1250, 1706, 3190, 4921];
+// イギリスの石炭生産(百万トン/年)
+const COAL_YEARS = [1700, 1750, 1800, 1830, 1850];
+const COAL = [3, 5, 15, 30, 60];
+// 綿100ポンドを紡ぐのに必要な時間(時間) Allen / Catling ほか
+const SPIN = [
+  { label: 'インドの手紡ぎ', year: '18世紀', h: 50000, c: 'old' },
+  { label: 'クロンプトンのミュール', year: '1780年', h: 2000, c: 'new' },
+  { label: '動力ミュール', year: '1795年', h: 300, c: 'new' },
+  { label: 'ロバーツの自動ミュール', year: '1825年', h: 135, c: 'new' },
+];
+// イギリスの鉄道営業距離(km)
+const RAIL_YEARS = [1830, 1840, 1850, 1860, 1870];
+const RAIL = [160, 2400, 9800, 14600, 21800];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+function fmtInt(n) { return Math.round(n).toLocaleString('en-US'); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width;
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function dot(x, y, r, color, alpha = 1, ring = true) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  if (ring) { ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+function polyline(pts, color, p, width = 5, alpha = 1) {
+  if (pts.length < 2) return;
+  const total = pts.length - 1, prog = p * total;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i <= total; i++) {
+    if (i <= prog) ctx.lineTo(pts[i][0], pts[i][1]);
+    else { const f = prog - (i - 1); ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], f), lerp(pts[i - 1][1], pts[i][1], f)); break; }
+  }
+  ctx.stroke(); ctx.restore();
+}
+function legend2(x, y, a, la, b, alpha = 1) {
+  rrect(x, y - 14, 28, 28, 6, C.old, alpha); text(a, x + 40, y + 14, { size: 34, color: C.ink2, alpha });
+  rrect(x + la, y - 14, 28, 28, 6, C.new, alpha); text(b, x + la + 40, y + 14, { size: 34, color: C.ink2, alpha });
+}
+function header(title, sub, alpha) {
+  text(title, 80, 300, { size: 64, weight: 'bold', alpha });
+  if (sub) text(sub, 80, 370, { size: 36, color: C.ink2, alpha });
+}
+function caption(str, y, alpha, color = C.accent, size = 44) {
+  rrect(60, y - size - 22, W - 120, size + 48, 18, C.panel, alpha);
+  text(str, W / 2, y, { size, weight: 'bold', color, align: 'center', alpha });
+}
+function footnote(str, alpha) { text(str, W / 2, 1640, { size: 28, color: C.ink3, align: 'center', alpha }); }
+
+// 上部の時代タイムライン(1700〜1900)
+function timeline(year, alpha) {
+  const x0 = 110, x1 = W - 110, y = 200, ys = [1700, 1750, 1800, 1850, 1900];
+  line(x0, y, x1, y, C.grid, 4, alpha);
+  ys.forEach((yr, i) => {
+    const x = lerp(x0, x1, i / 4);
+    dot(x, y, 7, C.grid, alpha, false);
+    const near = year != null && Math.abs(year - yr) < 22;
+    text(String(yr), x, y - 28, { size: 28, color: C.ink3, align: 'center', alpha: near ? 0 : alpha });
+  });
+  if (year != null) {
+    const x = lerp(x0, x1, clamp((year - 1700) / 200));
+    dot(x, y, 14, C.accent, alpha, false);
+    text(String(year), x, y - 26, { size: 36, weight: 'bold', color: C.accent, align: 'center', alpha });
+  }
+}
+
+// 歯車(装飾)
+function gear(cx, cy, r, teeth, rot, color, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, cy); ctx.rotate(rot); ctx.fillStyle = color;
+  ctx.beginPath();
+  const n = teeth * 2;
+  for (let i = 0; i <= n * 2; i++) {
+    const ang = i / (n * 2) * Math.PI * 2;
+    const rr = (Math.floor(i / 2) % 2 === 0) ? r : r * 0.82;
+    ctx.lineTo(Math.cos(ang) * rr, Math.sin(ang) * rr);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.38, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// 煙(決定論的な粒子)
+function smoke(x, y, t, alpha, n = 10, rise = 300) {
+  for (let i = 0; i < n; i++) {
+    const ph = ((t * 0.35 + i / n) % 1);
+    const sx = x + Math.sin(i * 2.3 + t * 0.8) * 30 * ph + ph * 90;
+    const sy = y - ph * rise;
+    const r = 18 + ph * 60 * rise / 300;
+    ctx.save(); ctx.globalAlpha = alpha * (1 - ph) * 0.35; ctx.fillStyle = '#8a8580';
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+
+// 工場のシルエット
+function factory(x, y, s, t, alpha, rise = 300) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = '#2a252c';
+  ctx.beginPath(); ctx.moveTo(x, y);
+  for (let i = 0; i < 4; i++) { ctx.lineTo(x + i * 120 * s, y - 80 * s); ctx.lineTo(x + (i + 1) * 120 * s, y - 80 * s); ctx.lineTo(x + (i + 1) * 120 * s, y - 30 * s); ctx.lineTo(x + (i + 1) * 120 * s, y - 30 * s); }
+  ctx.lineTo(x + 480 * s, y); ctx.closePath(); ctx.fill();
+  ctx.fillRect(x + 380 * s, y - 260 * s, 40 * s, 230 * s);
+  ctx.fillRect(x + 60 * s, y - 200 * s, 34 * s, 170 * s);
+  ctx.fillStyle = C.accent; ctx.globalAlpha = alpha * 0.55;
+  for (let i = 0; i < 4; i++) ctx.fillRect(x + (40 + i * 110) * s, y - 26 * s, 26 * s, 16 * s);
+  ctx.restore();
+  if (rise > 0) {
+    smoke(x + 400 * s, y - 270 * s, t, alpha, 10, rise);
+    smoke(x + 77 * s, y - 210 * s, t + 1.3, alpha, 7, rise * 0.8);
+  }
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  const p = easeOut(t / 1.2);
+  gear(W / 2 - 200, 520, 120, 10, t * 0.6, '#2a252c', a);
+  gear(W / 2 + 40, 470, 80, 8, -t * 0.9 + 0.2, '#2a252c', a);
+  gear(W / 2 + 220, 560, 100, 9, t * 0.72, '#2a252c', a);
+  rrect(140, 720, 800 * p, 10, 5, C.new, a);
+  text('産業革命', W / 2, 900, { size: 170, weight: 'bold', align: 'center', alpha: a * easeOut(t / .8), ls: 10 });
+  text('世界を変えた100年', W / 2, 1040, { size: 84, weight: 'bold', align: 'center', alpha: a * easeOut((t - .3) / .8) });
+  text('1760 → 1860', W / 2, 1150, { size: 66, color: C.accent, align: 'center', alpha: a * easeOut((t - .6) / .8) });
+  rrect(140, 1210, 800 * p, 10, 5, C.old, a);
+  text('数字で見る「機械の時代」のはじまり', W / 2, 1320, { size: 42, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.0) / .8) });
+  factory(300, 1700, 1, t, a * easeOut((t - 1.4) / 1.0), 140);
+}
+
+function sceneGDP(t, a) {
+  timeline(null, a);
+  header('何千年も「横ばい」だった豊かさ', '1人あたりGDP(1990年国際ドル)', a);
+  legend2(80, 450, '世界平均', 230, 'イギリス', a);
+  const px0 = 150, px1 = W - 80, py0 = 560, py1 = 1300, maxV = 5000;
+  for (let v = 0; v <= maxV; v += 1000) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(fmtInt(v), px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const xOf = yr => lerp(px0, px1, (yr - 1000) / 913);
+  [1000, 1200, 1400, 1600, 1800].forEach(yr => text(String(yr), xOf(yr), py1 + 44, { size: 28, color: C.ink2, align: 'center', alpha: a }));
+  // 産業革命の帯
+  const ba = a * easeOut((t - 3.0) / .6);
+  rrect(xOf(1760), py0, xOf(1860) - xOf(1760), py1 - py0, 0, C.newSoft, ba);
+  text('産業革命', (xOf(1760) + xOf(1860)) / 2, py0 + 40, { size: 30, weight: 'bold', color: C.accent, align: 'center', alpha: ba });
+  const toPt = arr => arr.map((v, i) => [xOf(GDP_YEARS[i]), lerp(py1, py0, v / maxV)]);
+  const prog = easeInOut((t - .5) / 4.0);
+  polyline(toPt(GDP_WORLD), C.old, prog, 6, a);
+  polyline(toPt(GDP_UK), C.new, prog, 6, a);
+  const ea = a * easeOut((t - 4.4) / .5);
+  const pu = toPt(GDP_UK), pw = toPt(GDP_WORLD);
+  dot(pu[6][0], pu[6][1], 10, C.new, ea); text('4,921', pu[6][0] - 16, pu[6][1] - 22, { size: 30, color: C.ink2, align: 'right', alpha: ea });
+  dot(pw[6][0], pw[6][1], 10, C.old, ea); text('1,525', pw[6][0] - 16, pw[6][1] + 48, { size: 30, color: C.ink2, align: 'right', alpha: ea });
+  text('1913年', pu[6][0], py1 + 44, { size: 28, color: C.accent, align: 'center', alpha: ea });
+  const na = a * easeOut((t - 5.4) / .6);
+  rrect(60, 1350, W - 120, 120, 22, C.panel, na);
+  text('世界平均: 1000年→1700年の700年で わずか1.4倍', 100, 1425, { size: 34, alpha: na });
+  caption('19世紀、グラフが急に「上を向く」', 1560, a * easeOut((t - 6.2) / .6));
+  footnote('出典: Maddison, The World Economy (2001) / 概数', na);
+}
+
+function sceneCoal(t, a) {
+  const idx = clamp(Math.floor((t - .6) / 1.0), 0, 4);
+  timeline(COAL_YEARS[idx], a);
+  header('始まりはイギリスの石炭', 'イギリスの石炭生産量(年間)', a);
+  const px0 = 120, px1 = W - 60, py0 = 560, py1 = 1240, maxV = 60;
+  for (let v = 0; v <= maxV; v += 20) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v === 0 ? '0' : v * 100 + '万t', px0 - 14, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const gw = (px1 - px0) / 5, bw = 110;
+  COAL_YEARS.forEach((yr, i) => {
+    const p = easeOut((t - .6 - i * 1.0) / .8);
+    const cx = px0 + gw * i + gw / 2;
+    text(String(yr), cx, py1 + 44, { size: 32, color: i === idx ? C.accent : C.ink2, align: 'center', weight: i === idx ? 'bold' : 'normal', alpha: a });
+    const h = (py1 - py0) * COAL[i] / maxV * p;
+    rrect(cx - bw / 2, py1 - h, bw, h, 6, i === 4 ? C.new : '#6b625c', a);
+    if (p > 0) text(Math.round(COAL[i] * 100 * p) + '万t', cx, py1 - h - 14, { size: 28, color: C.ink2, align: 'center', alpha: a * p });
+  });
+  const sa = a * easeOut((t - 5.4) / .5);
+  rrect(560, 590, 440, 150, 22, C.panel, sa);
+  text('150年で', 600, 650, { size: 32, color: C.ink3, alpha: sa });
+  text('約20倍', 600, 720, { size: 70, weight: 'bold', color: C.accent, alpha: sa });
+  const ca = a * easeOut((t - 6.0) / .6);
+  rrect(60, 1310, W - 120, 160, 22, C.panel, ca);
+  text('木材不足 → 石炭へ。豊富な炭田・資本・', 100, 1375, { size: 34, alpha: ca });
+  text('海外市場がそろったのがイギリスだった', 100, 1430, { size: 34, alpha: ca });
+  caption('エネルギーが「人と馬」から「石炭」へ', 1560, ca);
+  footnote('出典: Wrigley (2010), Flinn (1984) ほか / 概数', ca);
+}
+
+// 蒸気機関のアニメーション
+function engine(cx, cy, t, alpha) {
+  const ang = t * 4;
+  const r = 70;
+  ctx.save(); ctx.globalAlpha = alpha;
+  // シリンダー
+  rrect(cx - 360, cy - 50, 220, 100, 10, '#4a4248', alpha);
+  // ピストン棒
+  const crankX = cx + 120 + Math.cos(ang) * r, crankY = cy + Math.sin(ang) * r;
+  const pistonX = cx - 190 + Math.cos(ang) * r * 0.9;
+  rrect(pistonX - 20, cy - 40, 40, 80, 6, C.accent, alpha);
+  line(pistonX, cy, crankX, crankY, '#c8bfb6', 12, alpha);
+  ctx.restore();
+  gear(cx + 120, cy, 150, 12, ang, C.new, alpha * 0.9);
+  dot(crankX, crankY, 16, C.accent, alpha);
+  smoke(cx - 300, cy - 60, t, alpha, 8, 150);
+}
+
+function sceneSteam(t, a) {
+  timeline(t < 2.5 ? 1712 : 1769, a);
+  header('鍵は「蒸気機関」', '石炭の熱を、回転する力に変える', a);
+  engine(W / 2 + 40, 690, t, a * easeOut((t - .2) / .6));
+  const r1 = a * easeOut((t - 1.0) / .6), r2 = a * easeOut((t - 2.6) / .6);
+  rrect(60, 920, W - 120, 150, 22, C.panel, r1);
+  text('1712年 ニューコメン', 100, 985, { size: 42, weight: 'bold', color: C.old, alpha: r1 });
+  text('炭鉱の排水用。燃費が悪く、炭鉱の外では使いにくい', 100, 1040, { size: 30, color: C.ink2, alpha: r1 });
+  rrect(60, 1100, W - 120, 150, 22, C.panel, r2);
+  text('1769年 ワットの改良', 100, 1165, { size: 42, weight: 'bold', color: C.new, alpha: r2 });
+  text('分離凝縮器で 燃料はおよそ4分の1に', 100, 1220, { size: 30, color: C.ink2, alpha: r2 });
+  // 燃料比較バー
+  const p = easeOut((t - 3.6) / 1.0), ba = a * easeOut((t - 3.4) / .5);
+  text('同じ仕事に必要な石炭', 100, 1320, { size: 30, color: C.ink3, alpha: ba });
+  rrect(100, 1345, 760 * p, 34, 4, C.old, ba); text('ニューコメン 100', 100 + 760 * p + 14, 1373, { size: 26, color: C.ink2, alpha: ba });
+  rrect(100, 1395, 190 * p, 34, 4, C.new, ba); text('ワット 約25', 100 + 190 * p + 14, 1423, { size: 26, color: C.ink2, alpha: ba });
+  const ca = a * easeOut((t - 6.0) / .6);
+  caption('工場・機関車・船を動かす「万能の動力」に', 1560, ca, C.accent, 40);
+  footnote('出典: 各種技術史資料 / 燃費は概数', ca);
+}
+
+function sceneCotton(t, a) {
+  timeline(1825, a);
+  header('最も劇的だったのは綿糸', '綿100ポンドを紡ぐのにかかる時間', a);
+  const x0 = 100, bwMax = W - 200;
+  const logMax = Math.log10(50000), logMin = Math.log10(50);
+  SPIN.forEach((s, i) => {
+    const y0 = 500 + i * 230;
+    const la = a * easeOut((t - .4 - i * 1.2) / .5);
+    const p = easeOut((t - .6 - i * 1.2) / 1.0);
+    rrect(60, y0 - 50, W - 120, 200, 22, C.panel, la);
+    text(s.label, x0, y0 + 10, { size: 42, weight: 'bold', alpha: la });
+    text(s.year, W - 100, y0 + 10, { size: 32, color: C.ink3, align: 'right', alpha: la });
+    const w = bwMax * (Math.log10(s.h) - logMin) / (logMax - logMin);
+    rrect(x0, y0 + 40, w * p, 40, 6, C[s.c], la);
+    const v = Math.round(s.h * p);
+    text(fmtInt(v) + '時間', x0, y0 + 125, { size: 38, weight: 'bold', color: s.c === 'old' ? C.old : C.ink, alpha: la });
+  });
+  const sa = a * easeOut((t - 5.6) / .5);
+  rrect(600, 1395, 420, 90, 18, C.accent, sa);
+  text('約370分の1', 810, 1455, { size: 48, weight: 'bold', color: '#1a1a1a', align: 'center', alpha: sa });
+  text('※ バーの長さは対数目盛', 100, 1450, { size: 26, color: C.ink3, alpha: sa });
+  const ca = a * easeOut((t - 6.6) / .6);
+  caption('人の手を機械が置きかえ、布は安く大量に', 1560, ca, C.accent, 40);
+  footnote('出典: Allen (2009), Catling (1970) ほか / 概数', ca);
+}
+
+// 汽車(シルエット)
+function train(x, y, alpha, t) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  rrect(x, y - 90, 200, 90, 10, C.new, alpha);
+  rrect(x + 130, y - 150, 70, 60, 8, C.new, alpha);
+  rrect(x + 20, y - 140, 34, 50, 4, C.new, alpha);
+  for (let i = 0; i < 3; i++) {
+    rrect(x - 230 * (i + 1) + 20, y - 80, 200, 80, 10, '#6b625c', alpha);
+  }
+  ctx.restore();
+  for (let i = 0; i < 5; i++) dot(x - 690 + i * 0 + i * 180 + 40, y + 8, 18, '#2a252c', alpha, false);
+  smoke(x + 30, y - 150, t * 2, alpha, 8);
+}
+
+function sceneRail(t, a) {
+  const idx = clamp(Math.floor((t - .6) / 1.1), 0, 4);
+  timeline(RAIL_YEARS[idx], a);
+  header('鉄道が距離を縮めた', 'イギリスの鉄道営業距離', a);
+  const px0 = 160, px1 = W - 100, py0 = 520, py1 = 1120, maxV = 24000;
+  for (let v = 0; v <= 20000; v += 5000) {
+    const y = lerp(py1, py0, v / maxV);
+    line(px0, y, px1, y, C.grid, 2, a);
+    text(v === 0 ? '0' : (v % 10000 ? (v / 1000) + '千km' : (v / 10000) + '万km'), px0 - 16, y + 10, { size: 26, color: C.ink3, align: 'right', alpha: a });
+  }
+  const xs = RAIL_YEARS.map((_, i) => lerp(px0, px1, i / 4));
+  RAIL_YEARS.forEach((yr, i) => text(String(yr), xs[i], py1 + 44, { size: 30, color: C.ink2, align: 'center', alpha: a }));
+  const pts = RAIL.map((v, i) => [xs[i], lerp(py1, py0, v / maxV)]);
+  const prog = easeInOut((t - .6) / 4.4);
+  polyline(pts, C.new, prog, 6, a);
+  RAIL.forEach((v, i) => {
+    if (prog * 4 < i - 0.01) return;
+    dot(pts[i][0], pts[i][1], 10, C.new, a);
+    text(fmtInt(v) + 'km', pts[i][0] + (i === 4 ? -20 : 0), pts[i][1] - 24, { size: 26, color: C.ink2, align: i === 4 ? 'right' : 'center', alpha: a });
+  });
+  const ta = a * easeOut((t - .3) / .5);
+  text('1830年 リヴァプール・マンチェスター鉄道 開業', 80, 470, { size: 30, color: C.accent, alpha: ta });
+  // 速度の比較
+  const sa = a * easeOut((t - 5.2) / .5);
+  rrect(60, 1200, (W - 140) / 2, 230, 22, C.panel, sa);
+  text('馬車', 100, 1260, { size: 30, color: C.ink3, alpha: sa });
+  text('時速 約10km', 100, 1335, { size: 50, weight: 'bold', color: C.old, alpha: sa });
+  text('長距離は休みながら', 100, 1390, { size: 28, color: C.ink2, alpha: sa });
+  rrect(60 + (W - 140) / 2 + 20, 1200, (W - 140) / 2, 230, 22, C.panel, sa);
+  text('蒸気機関車(1850年頃)', 100 + (W - 140) / 2 + 20, 1260, { size: 30, color: C.ink3, alpha: sa });
+  text('時速 約50km', 100 + (W - 140) / 2 + 20, 1335, { size: 50, weight: 'bold', color: C.new, alpha: sa });
+  text('昼夜を問わず大量輸送', 100 + (W - 140) / 2 + 20, 1390, { size: 28, color: C.ink2, alpha: sa });
+  const ca = a * easeOut((t - 6.6) / .6);
+  caption('開業から30年で 1万4千km超', 1560, ca);
+  footnote('出典: 英国鉄道統計 ほか / 概数', ca);
+}
+
+function sceneShadow(t, a) {
+  timeline(1840, a);
+  header('光だけではなかった', '急成長した工業都市の現実', a);
+  // マンチェスター人口
+  const la = a * easeOut((t - .3) / .5);
+  rrect(60, 450, W - 120, 420, 22, C.panel, la);
+  text('マンチェスター(周辺含む)の人口', 100, 520, { size: 36, weight: 'bold', alpha: la });
+  const p = easeOut((t - .6) / 1.6);
+  const bx = 100, bw = 820;
+  rrect(bx, 570, bw * 2.5 / 30 * p, 60, 6, C.old, la);
+  text('1770年代 約2.5万人', bx + bw * 2.5 / 30 * p + 18, 612, { size: 32, color: C.ink2, alpha: la });
+  rrect(bx, 670, bw * p, 60, 6, C.new, la);
+  text('1850年頃 約30万人', bx, 790, { size: 40, weight: 'bold', color: C.ink, alpha: la * easeOut((t - 2.0) / .5) });
+  text('約12倍', W - 100, 790, { size: 60, weight: 'bold', color: C.accent, align: 'right', alpha: la * easeOut((t - 2.0) / .5) });
+  // 2カード
+  const sa = a * easeOut((t - 3.0) / .5);
+  const cw = (W - 140) / 2;
+  rrect(60, 920, cw, 300, 22, C.panel, sa);
+  text('労働者の平均死亡年齢', 100, 980, { size: 28, color: C.ink3, alpha: sa });
+  text('約17歳', 100, 1070, { size: 72, weight: 'bold', color: C.new, alpha: sa });
+  text('1842年 マンチェスター', 100, 1130, { size: 26, color: C.ink2, alpha: sa });
+  text('(乳幼児死亡を含む)', 100, 1172, { size: 26, color: C.ink2, alpha: sa });
+  const sb = a * easeOut((t - 4.0) / .5);
+  rrect(60 + cw + 20, 920, cw, 300, 22, C.panel, sb);
+  text('子どもの労働', 100 + cw + 20, 980, { size: 28, color: C.ink3, alpha: sb });
+  text('1日12時間超', 100 + cw + 20, 1070, { size: 56, weight: 'bold', color: C.new, alpha: sb });
+  text('1833年 工場法で', 100 + cw + 20, 1130, { size: 26, color: C.ink2, alpha: sb });
+  text('9歳未満の雇用を禁止', 100 + cw + 20, 1172, { size: 26, color: C.ink2, alpha: sb });
+  factory(320, 1470, 0.7, t, a * 0.5 * easeOut((t - 1.0) / 1.0), 0);
+  const ca = a * easeOut((t - 5.6) / .6);
+  caption('煙・過密・長時間労働 → 労働運動と改革へ', 1560, ca, C.accent, 40);
+  footnote('出典: Chadwick 報告 (1842)、1833年工場法 ほか / 概数', ca);
+}
+
+function sceneSummary(t, a) {
+  text('まとめ', W / 2, 330, { size: 80, weight: 'bold', align: 'center', alpha: a });
+  const items = [
+    ['①', '石炭 × 蒸気機関', '人と馬の力を、機械の力が超えた'],
+    ['②', '生産と移動が桁違いに', '綿糸は約370分の1の時間、鉄道は30年で1万km超'],
+    ['③', '豊かさと引きかえの痛み', '過密な都市と長時間労働が改革を生んだ'],
+  ];
+  items.forEach((it, i) => {
+    const la = a * easeOut((t - .3 - i * .7) / .5);
+    const y = 480 + i * 300;
+    rrect(60, y, W - 120, 240, 22, C.panel, la);
+    text(it[0], 100, y + 95, { size: 60, weight: 'bold', color: C.accent, alpha: la });
+    text(it[1], 190, y + 95, { size: 50, weight: 'bold', alpha: la });
+    text(it[2], 190, y + 170, { size: 30, color: C.ink2, alpha: la });
+  });
+  const ca = a * easeOut((t - 2.6) / .6);
+  rrect(140, 1420, 800 * ca, 10, 5, C.old, ca);
+  rrect(140, 1450, 800 * ca, 10, 5, C.new, ca);
+  text('今の暮らしの出発点は、ここにある', W / 2, 1560, { size: 46, weight: 'bold', color: C.accent, align: 'center', alpha: ca });
+  text('出典: Maddison (2001), Allen (2009), Chadwick (1842) ほか / 数値は概数', W / 2, 1640, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+  text('音声: VOICEVOX:四国めたん  BGM: 自作', W / 2, 1690, { size: 26, color: C.ink3, align: 'center', alpha: ca });
+}
+
+// ---------- タイムライン(開始秒, 長さ秒) ----------
+const SCENES = [
+  { s: 0, d: 7, f: sceneTitle },
+  { s: 7, d: 9, f: sceneGDP },
+  { s: 16, d: 8.5, f: sceneCoal },
+  { s: 24.5, d: 9, f: sceneSteam },
+  { s: 33.5, d: 10, f: sceneCotton },
+  { s: 43.5, d: 9, f: sceneRail },
+  { s: 52.5, d: 9.5, f: sceneShadow },
+  { s: 62, d: 5.5, f: sceneSummary },
+];
+const XF = 0.35; // クロスフェード秒
+
+function render(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  for (const sc of SCENES) {
+    const lt = t - sc.s;
+    if (lt < -XF || lt > sc.d + XF) continue;
+    const a = Math.min(easeOut((lt + XF) / XF), easeOut((sc.d - lt) / XF));
+    if (a <= 0) continue;
+    sc.f(Math.max(lt, 0), clamp(a));
+  }
+  rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.accent, 1);
+  rrect(0, H - 10, W, 10, 0, C.grid, 0.35);
+}
+window.render = render;
+window.FPS = FPS; window.DURATION = DURATION;
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
