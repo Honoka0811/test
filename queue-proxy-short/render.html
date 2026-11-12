@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Queue Proxy Short</title>
+<style>
+  @font-face { font-family: "MR"; font-weight: 500; src: url("fonts/mplus-rounded-500.woff2") format("woff2"); }
+  @font-face { font-family: "MR"; font-weight: 800; src: url("fonts/mplus-rounded-800.woff2") format("woff2"); }
+  html,body{margin:0;background:#FFF4E6;}
+  canvas{display:block;}
+  #warm{position:absolute;left:-999px;font-family:MR}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<span id="warm"><b style="font-weight:800">あ</b><span style="font-weight:500">あ</span></span>
+<script src="output/subs.js"></script>
+<script>
+// ------------------------------------------------------------
+// 行列代行のお仕事 (9:16 ショート / 約58秒)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する
+// 字幕は narrate.py が書き出す output/subs.js (window.SUBS) を使う
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"MR","IPAPGothic",sans-serif';
+const C = {
+  bg: '#FFF4E6', bg2: '#FFE8D1', ink: '#2E2438', ink2: '#5E5268', ink3: '#9A8FA3',
+  pink: '#E8508A', pinkSoft: '#FBD3E2', purple: '#7558E8', purpleSoft: '#E2DBFF',
+  yellow: '#FFC23D', mint: '#2FB79A', mintSoft: '#CDEFE6', red: '#E5533D', card: '#FFFFFF',
+  crowd: ['#8CA4C8', '#A7B48C', '#C79F8A', '#9C93C4', '#C4A86E', '#86B5B0']
+};
+const FPS = 30, DURATION = 58.5;
+// シーン (開始, 長さ) — narrate.py の SCRIPT と一致させる
+const SCENES = [
+  [0, 6, sceneTitle], [6, 10, sceneWhat], [16, 9.5, sceneFlow], [25.5, 8, scenePay],
+  [33.5, 9.5, sceneFit], [43, 8, sceneCaution], [51, 7.5, sceneEnd],
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function text(str, x, y, { size = 48, weight = 500, color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, stroke = null, sw = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, shadow = false) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color;
+  if (shadow) { ctx.shadowColor = 'rgba(46,36,56,0.12)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8; }
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2)); ctx.fill();
+  ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (alpha <= 0 || r <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+// 拡大しながら出てくる要素
+function pop(x, y, p, fn) {
+  if (p <= 0) return;
+  const s = backOut(p);
+  ctx.save(); ctx.globalAlpha *= clamp(p * 2); ctx.translate(x, y); ctx.scale(s, s); fn(); ctx.restore();
+}
+function header(label, a, color = C.pink) {
+  const p = easeOut(a);
+  ctx.save(); ctx.globalAlpha = clamp(a * 2);
+  ctx.font = `800 70px ${FONT}`;
+  const w = ctx.measureText(label).width + 90;
+  ctx.restore();
+  rrect(W / 2 - w / 2, 230 - 20 * (1 - p), w, 120, 60, color, clamp(a * 2), true);
+  text(label, W / 2, 312 - 20 * (1 - p), { size: 70, weight: 800, color: '#fff', align: 'center', alpha: clamp(a * 2) });
+}
+
+// ---------- 人物(行列の人) ----------
+function person(x, y, s, color, { bob = 0, face = true, tag = null, alpha = 1 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y - bob); ctx.scale(s, s);
+  // 影
+  ctx.fillStyle = 'rgba(46,36,56,0.10)'; ctx.beginPath(); ctx.ellipse(0, bob / s, 34, 8, 0, 0, Math.PI * 2); ctx.fill();
+  // 体
+  ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(-30, -92, 60, 92, [30, 30, 10, 10]); ctx.fill();
+  // 頭
+  ctx.fillStyle = '#FBE0C8'; ctx.beginPath(); ctx.arc(0, -122, 28, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4A3B4F'; ctx.beginPath(); ctx.arc(0, -128, 28, Math.PI * 1.05, Math.PI * 1.95); ctx.fill();
+  if (face) { // 左向き(先頭方向)
+    ctx.fillStyle = '#2E2438';
+    ctx.beginPath(); ctx.arc(-12, -120, 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2, -120, 3.2, 0, Math.PI * 2); ctx.fill();
+  }
+  if (tag) {
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(-26, -66, 52, 30, 8); ctx.fill();
+    ctx.fillStyle = color; ctx.font = `800 20px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(tag, 0, -50);
+  }
+  ctx.restore();
+}
+
+// 画面下部に常駐する行列: 4 秒ごとに 1 人ずつ前へ進む。ピンクの「代行」さんが終盤に先頭へ
+const Q_Y = 1300, Q_X0 = 250, Q_SP = 112, PROXY = 13, STEP = 3.9;
+function queueStrip(t, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  // 地面
+  rrect(40, Q_Y - 4, W - 80, 14, 7, C.bg2);
+  // お店
+  const sx = 70, sy = Q_Y - 250;
+  rrect(sx, sy + 40, 150, 210, 14, '#fff', 1, true);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i % 2 ? '#fff' : C.pink;
+    ctx.beginPath(); ctx.moveTo(sx - 10 + i * 34, sy + 30); ctx.lineTo(sx + 24 + i * 34, sy + 30);
+    ctx.lineTo(sx + 24 + i * 34, sy + 70); ctx.arc(sx + 7 + i * 34, sy + 70, 17, 0, Math.PI); ctx.closePath(); ctx.fill();
+  }
+  rrect(sx - 10, sy, 170, 36, 10, C.pink);
+  text('OPEN', sx + 75, sy + 28, { size: 26, weight: 800, color: '#fff', align: 'center' });
+  rrect(sx + 45, sy + 130, 60, 120, 8, C.bg2);
+  ctx.restore();
+
+  const raw = Math.floor(t / STEP), steps = Math.min(raw, PROXY);
+  const frac = raw >= PROXY ? 0 : easeInOut((t % STEP) / 1.0);
+  const shift = steps + frac;
+  const moving = raw < PROXY && (t % STEP) < 1.0;
+  const arrived = t - PROXY * STEP - 1.0;          // 代行さんが先頭に着いてからの秒数
+  for (let i = Math.max(0, Math.floor(shift) - 1); i < shift + 9; i++) {
+    const slot = i - shift;
+    const x = Q_X0 + slot * Q_SP;
+    if (x > W + 60) continue;
+    const enter = clamp(1 + slot);                    // 先頭からお店に入るとフェードアウト
+    const isProxy = i === PROXY;
+    const col = isProxy ? C.pink : C.crowd[(i * 7) % C.crowd.length];
+    const bob = moving ? Math.abs(Math.sin((t * 9) + i)) * 10 : Math.sin(t * 2 + i * 1.3) * 2 + 2;
+    const hop = isProxy && arrived > 0 ? Math.abs(Math.sin(arrived * 6)) * 22 * clamp(1 - (arrived - 1.5) / 1) : 0;
+    person(x, Q_Y, isProxy ? 1.12 : 1, col, { bob: bob + hop, tag: isProxy ? '代行' : null, alpha: a * enter });
+  }
+  if (arrived > 0) pop(Q_X0 + 40, Q_Y - 250, arrived / 0.4, () => {
+    rrect(-20, -50, 280, 84, 42, C.pink, 1, true);
+    ctx.fillStyle = C.pink; ctx.beginPath(); ctx.moveTo(10, 28); ctx.lineTo(50, 28); ctx.lineTo(0, 62); ctx.fill();
+    text('順番きた!', 120, 8, { size: 44, weight: 800, color: '#fff', align: 'center' });
+  });
+}
+
+// ---------- 字幕 ----------
+function chunks() {
+  // 各キューを文単位に分け、文字数比で表示時間を配分する
+  const out = [];
+  for (const s of (window.SUBS || [])) {
+    const parts = s.text.match(/[^。!?]+[。!?]?/g) || [s.text];
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    let t0 = s.a;
+    for (const p of parts) { const d = (s.b - s.a) * p.length / total; out.push({ a: t0, b: t0 + d, text: p }); t0 += d; }
+  }
+  return out;
+}
+const CHUNKS = chunks();
+function wrap(str, size, maxW) {
+  ctx.font = `800 ${size}px ${FONT}`;
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      // 句読点を行頭に置かない
+      if ('、。!?)」'.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function subtitle(t) {
+  const c = CHUNKS.find(c => t >= c.a && t < c.b + 0.25);
+  if (!c) return;
+  const a = clamp((t - c.a) / 0.12) * clamp((c.b + 0.25 - t) / 0.12);
+  const size = 54, lines = wrap(c.text, size, 900);
+  const lh = 74, h = lines.length * lh + 44, y0 = 1420;
+  rrect(60, y0, W - 120, h, 28, 'rgba(46,36,56,0.86)', a);
+  lines.forEach((ln, i) => text(ln, W / 2, y0 + 22 + lh * i + 56, { size, weight: 800, color: '#fff', align: 'center', alpha: a }));
+}
+
+// ---------- アイコン ----------
+function iconCake(s = 1) {
+  ctx.save(); ctx.scale(s, s);
+  rrect(-50, -10, 100, 50, 10, '#F7C8A0'); rrect(-50, -10, 100, 14, 6, '#fff');
+  rrect(-40, -45, 80, 38, 10, '#FBD3E2'); rrect(-40, -45, 80, 10, 5, '#fff');
+  circle(0, -58, 12, C.red); ctx.restore();
+}
+function iconBag(s = 1) {
+  ctx.save(); ctx.scale(s, s);
+  ctx.strokeStyle = C.purple; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(0, -30, 22, Math.PI, 0); ctx.stroke();
+  rrect(-48, -32, 96, 80, 12, C.purple);
+  ctx.fillStyle = C.yellow; ctx.beginPath();
+  for (let k = 0; k < 10; k++) { const r = k % 2 ? 9 : 20, an = -Math.PI / 2 + k * Math.PI / 5; ctx.lineTo(Math.cos(an) * r, 8 + Math.sin(an) * r); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function iconTicket(s = 1) {
+  ctx.save(); ctx.scale(s, s); ctx.rotate(-0.12);
+  rrect(-58, -34, 116, 68, 10, C.yellow);
+  circle(-58, 0, 12, C.card); circle(58, 0, 12, C.card);
+  ctx.setLineDash([6, 6]); ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(22, -28); ctx.lineTo(22, 28); ctx.stroke(); ctx.setLineDash([]);
+  text('No.1', -14, 12, { size: 30, weight: 800, color: '#8A5A00', align: 'center' });
+  ctx.restore();
+}
+function iconCoin(s = 1) {
+  ctx.save(); ctx.scale(s, s);
+  circle(0, 0, 46, '#E3A21A'); circle(0, -4, 46, C.yellow); circle(0, -4, 34, '#FFD772');
+  text('¥', 0, 12, { size: 50, weight: 800, color: '#B07A00', align: 'center' }); ctx.restore();
+}
+function iconClock(s = 1, t = 0) {
+  ctx.save(); ctx.scale(s, s);
+  circle(0, 0, 50, C.purple); circle(0, 0, 40, '#fff');
+  ctx.strokeStyle = C.ink; ctx.lineCap = 'round'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t * 2 - 1.57) * 28, Math.sin(t * 2 - 1.57) * 28); ctx.stroke();
+  ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(t * 0.3) * 18, Math.sin(t * 0.3) * 18); ctx.stroke();
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  // 吹き出し
+  pop(W / 2, 560, t / 0.6, () => {
+    rrect(-420, -150, 840, 260, 60, C.card, 1, true);
+    ctx.fillStyle = C.card; ctx.beginPath(); ctx.moveTo(-40, 105); ctx.lineTo(40, 105); ctx.lineTo(-10, 170); ctx.fill();
+    text('並ぶだけで', 0, -40, { size: 84, weight: 800, align: 'center' });
+    text('お金がもらえる!?', 0, 70, { size: 84, weight: 800, color: C.pink, align: 'center' });
+  });
+  const p = easeOut((t - 1.4) / 0.7);
+  text('行列代行の', W / 2, 900 + 30 * (1 - p), { size: 120, weight: 800, align: 'center', alpha: p, stroke: '#fff', sw: 18 });
+  const p2 = easeOut((t - 1.8) / 0.7);
+  text('お仕事', W / 2, 1050 + 30 * (1 - p2), { size: 150, weight: 800, color: C.pink, align: 'center', alpha: p2, stroke: '#fff', sw: 20 });
+}
+
+function sceneWhat(t, a) {
+  header('行列代行とは?', t / 0.5);
+  pop(W / 2, 560, (t - 0.5) / 0.5, () => {
+    rrect(-450, -120, 900, 240, 40, C.card, 1, true);
+    text('依頼者の代わりに', 0, -20, { size: 64, weight: 800, align: 'center' });
+    text('行列に並ぶ仕事', 0, 70, { size: 76, weight: 800, color: C.pink, align: 'center' });
+  });
+  const items = [[iconCake, '人気店の\nスイーツ', 4.0], [iconBag, '限定\nグッズ', 5.3], [iconTicket, 'イベントの\n整理券', 6.6]];
+  items.forEach(([ic, label, at], i) => {
+    const x = 210 + i * 330;
+    pop(x, 900, (t - at) / 0.5, () => {
+      rrect(-145, -140, 290, 300, 36, C.card, 1, true);
+      ctx.save(); ctx.translate(0, -50); ic(1.1); ctx.restore();
+      label.split('\n').forEach((l, k) => text(l, 0, 70 + k * 52, { size: 42, weight: 800, align: 'center', color: C.ink }));
+    });
+  });
+}
+
+function sceneFlow(t, a) {
+  header('お仕事の流れ', t / 0.5, C.purple);
+  const steps = [['依頼を受ける', '日時・場所・欲しい物を確認', 1.6], ['現地で並ぶ', 'ひたすら順番を待つ', 2.9],
+                 ['交代 or 受け取り', '依頼者と交代/代わりに購入', 4.6], ['報酬GET!', '依頼者に渡して完了', 6.6]];
+  steps.forEach(([ttl, sub, at], i) => {
+    const y = 450 + i * 152, p = easeOut((t - at) / 0.5);
+    if (p <= 0) return;
+    const x = 80 - 60 * (1 - p);
+    if (i < 3) rrect(x + 52, y + 70, 12, 90, 6, C.purpleSoft, p);
+    rrect(x, y - 2, W - 160, 134, 34, i === 3 ? C.pink : C.card, p, true);
+    circle(x + 58, y + 65, 40, i === 3 ? '#fff' : C.purple, p);
+    text(String(i + 1), x + 58, y + 84, { size: 52, weight: 800, align: 'center', color: i === 3 ? C.pink : '#fff', alpha: p });
+    text(ttl, x + 130, y + 62, { size: 54, weight: 800, color: i === 3 ? '#fff' : C.ink, alpha: p });
+    text(sub, x + 130, y + 112, { size: 34, color: i === 3 ? '#FFE3EE' : C.ink2, alpha: p });
+  });
+}
+
+function scenePay(t, a) {
+  header('報酬の目安', t / 0.5, C.mint);
+  pop(W / 2, 680, (t - 0.4) / 0.5, () => {
+    rrect(-450, -230, 900, 470, 50, C.card, 1, true);
+    ctx.save(); ctx.translate(-300, -110); iconCoin(1.1); ctx.restore();
+    text('1時間あたり', 80, -90, { size: 56, weight: 800, align: 'center', color: C.ink2 });
+    const c = easeOut((t - 1.4) / 1.6);
+    const lo = Math.round(lerp(0, 1000, c) / 10) * 10, hi = Math.round(lerp(0, 2000, c) / 10) * 10;
+    const num = `${lo.toLocaleString('en-US')}〜${hi.toLocaleString('en-US')}`;
+    ctx.font = `800 116px ${FONT}`; const nw = ctx.measureText('1,000〜2,000').width;
+    ctx.font = `800 64px ${FONT}`; const yw = ctx.measureText('円').width;
+    const x0 = -(nw + 12 + yw) / 2;
+    text(num, x0, 70, { size: 116, weight: 800, color: C.mint });
+    text('円', x0 + nw + 12, 70, { size: 64, weight: 800, color: C.mint });
+    text('※依頼内容・地域・会社によって変わります', 0, 170, { size: 30, color: C.ink3, align: 'center' });
+  });
+  pop(W / 2, 1000, (t - 4.2) / 0.5, () => {
+    rrect(-380, -60, 760, 120, 60, C.yellow);
+    text('早朝・悪天候は 割増 も!', 0, 20, { size: 54, weight: 800, align: 'center', color: C.ink });
+  });
+}
+
+function sceneFit(t, a) {
+  header('向き・不向き', t / 0.5, C.purple);
+  const col = (x, title, color, soft, mark, rows, at) => {
+    pop(x, 720, (t - at) / 0.5, () => {
+      rrect(-235, -290, 470, 600, 40, C.card, 1, true);
+      rrect(-235, -290, 470, 110, [40, 40, 0, 0], color);
+      text(title, 0, -215, { size: 50, weight: 800, align: 'center', color: '#fff' });
+    });
+    rows.forEach(([l1, l2, rt], k) => {
+      const p = easeOut((t - rt) / 0.45); if (p <= 0) return;
+      const y = 600 + k * 230;
+      rrect(x - 205, y - 70, 410, 200, 26, soft, p);
+      circle(x - 150, y + 30, 34, color, p);
+      text(mark, x - 150, y + 48, { size: 44, weight: 800, color: '#fff', align: 'center', alpha: p });
+      text(l1, x - 98, y + 12, { size: 42, weight: 800, alpha: p });
+      text(l2, x - 98, y + 66, { size: 42, weight: 800, alpha: p });
+    });
+  };
+  col(290, '向いている人', C.mint, C.mintSoft, '◯', [['待つのが', '苦にならない', 0.9], ['時間を', 'きっちり守れる', 2.3]], 0.5);
+  col(790, '大変なところ', C.red, '#FBDAD3', '!', [['夏の暑さ', '冬の寒さ', 5.0], ['長時間の', '立ちっぱなし', 6.4]], 4.4);
+}
+
+function sceneCaution(t, a) {
+  header('ここに注意!', t / 0.5, C.red);
+  pop(W / 2, 590, (t - 0.4) / 0.5, () => {
+    const sh = Math.sin(t * 14) * 4 * clamp(1 - (t - 0.9) / 0.6) * (t > 0.9 ? 1 : 0);
+    ctx.save(); ctx.rotate(sh * 0.01);
+    ctx.fillStyle = C.yellow; ctx.lineJoin = 'round'; ctx.strokeStyle = C.yellow; ctx.lineWidth = 30;
+    ctx.beginPath(); ctx.moveTo(0, -170); ctx.lineTo(170, 120); ctx.lineTo(-170, 120); ctx.closePath(); ctx.fill(); ctx.stroke();
+    text('!', 0, 95, { size: 210, weight: 800, align: 'center', color: C.ink });
+    ctx.restore();
+  });
+  pop(W / 2, 890, (t - 1.6) / 0.5, () => {
+    rrect(-460, -80, 920, 160, 40, C.card, 1, true);
+    text('代行での行列を', 0, -10, { size: 50, weight: 800, align: 'center' });
+    text('禁止しているお店・イベントもある', 0, 55, { size: 50, weight: 800, align: 'center', color: C.red });
+  });
+  pop(W / 2, 1040, (t - 4.6) / 0.5, () => {
+    rrect(-320, -55, 640, 110, 55, C.red);
+    text('事前にルールを確認!', 0, 20, { size: 56, weight: 800, align: 'center', color: '#fff' });
+  });
+}
+
+function sceneEnd(t, a) {
+  ctx.save(); ctx.translate(W / 2, 380); iconClock(1.4, t + 51); ctx.restore();
+  const p = easeOut((t - 0.3) / 0.7);
+  text('誰かの待ち時間を', W / 2, 600 + 20 * (1 - p), { size: 76, weight: 800, align: 'center', alpha: p });
+  text('引き受ける仕事', W / 2, 710 + 20 * (1 - p), { size: 96, weight: 800, align: 'center', color: C.pink, alpha: p });
+  pop(W / 2, 830, (t - 2.6) / 0.5, () => {
+    rrect(-400, -60, 800, 120, 60, C.purple);
+    text('まずは近所の募集をチェック!', 0, 18, { size: 50, weight: 800, align: 'center', color: '#fff' });
+  });
+  text('ナレーション VOICEVOX:四国めたん / BGM 自作', W / 2, 950, { size: 30, color: C.ink3, align: 'center', alpha: easeOut((t - 3.5) / 0.8) });
+}
+
+// ---------- 背景 ----------
+function background(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // ゆっくり流れる水玉
+  ctx.save(); ctx.globalAlpha = 0.5;
+  for (let i = 0; i < 26; i++) {
+    const x = ((i * 173 + t * (12 + (i % 5) * 4)) % (W + 200)) - 100;
+    const y = ((i * 311) % 1500) + 80 + Math.sin(t * 0.6 + i) * 14;
+    circle(x, y, 10 + (i % 4) * 7, i % 3 === 0 ? C.pinkSoft : i % 3 === 1 ? C.purpleSoft : '#FFE3B0');
+  }
+  ctx.restore();
+  // 進行バー
+  rrect(0, 0, W * (t / DURATION), 12, 0, C.pink);
+}
+
+function render(t) {
+  background(t);
+  for (const [s, d, fn] of SCENES) {
+    if (t >= s && t < s + d) {
+      const lt = t - s;
+      const a = clamp(lt / 0.3) * clamp((d - lt) / 0.3);
+      ctx.save(); ctx.globalAlpha = a; fn(lt, a); ctx.restore();
+    }
+  }
+  queueStrip(t, 1);
+  subtitle(t);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  const loop = () => { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+  document.fonts.ready.then(loop);
+}
+</script>
+</body>
+</html>
