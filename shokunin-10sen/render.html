@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>職人系の仕事10選</title>
+<style>
+@font-face{font-family:MPL;font-weight:800;src:url(fonts/m-plus-rounded-1c-latin-800-normal.woff2)}
+@font-face{font-family:MPL;font-weight:900;src:url(fonts/m-plus-rounded-1c-latin-900-normal.woff2)}
+@font-face{font-family:MPJ;font-weight:800;src:url(fonts/m-plus-rounded-1c-japanese-800-normal.woff2)}
+@font-face{font-family:MPJ;font-weight:900;src:url(fonts/m-plus-rounded-1c-japanese-900-normal.woff2)}
+@font-face{font-family:DGL;src:url(fonts/dela-gothic-one-latin-400-normal.woff2)}
+@font-face{font-family:DGJ;src:url(fonts/dela-gothic-one-japanese-400-normal.woff2)}
+html,body{margin:0;background:#111;height:100%;display:flex;align-items:center;justify-content:center}
+canvas{height:100vh;aspect-ratio:9/16}
+</style></head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+const W = 1080, H = 1920, FPS = 30, TL = window.TIMELINE, C = window.CONTENT, DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+const RND = (w, px) => `${w} ${px}px MPL, MPJ, sans-serif`;
+const DELA = px => `${px}px DGL, DGJ, MPJ, sans-serif`;
+const EMO = px => `${px}px "Noto Color Emoji"`;
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const prog = (t, t0, d) => clamp((t - t0) / d);
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const outBack = x => 1 + 2.4 * Math.pow(x - 1, 3) + 1.4 * Math.pow(x - 1, 2);
+const INK = '#1d2330';
+
+function shade(hex, k) {            // k<0 で暗く、k>0 で明るく
+  const n = parseInt(hex.slice(1), 16), c = [n >> 16, n >> 8 & 255, n & 255]
+    .map(v => Math.round(k < 0 ? v * (1 + k) : v + (255 - v) * k));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function text(s, x, y, font, fill, o = {}) {
+  g.save(); g.font = font; g.textAlign = o.align || 'center'; g.textBaseline = o.base || 'alphabetic';
+  if (o.maxW) { const w = g.measureText(s).width; if (w > o.maxW) { g.translate(x, y); g.scale(o.maxW / w, 1); x = 0; y = 0; } }
+  if (o.stroke) { g.lineJoin = 'round'; g.lineWidth = o.sw || 16; g.strokeStyle = o.stroke; g.strokeText(s, x, y); }
+  g.fillStyle = fill; g.fillText(s, x, y); g.restore();
+}
+function bg(color, t) {
+  const gr = g.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, shade(color, -0.15)); gr.addColorStop(1, shade(color, -0.62));
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  g.save(); g.globalAlpha = 0.07; g.fillStyle = '#fff';            // 流れる斜めストライプ
+  g.translate(0, (t * 40) % 240); g.rotate(-0.35);
+  for (let y = -600; y < H + 900; y += 240) g.fillRect(-400, y, W + 900, 90);
+  g.restore();
+}
+function rays(cx, cy, r, t, alpha) {
+  g.save(); g.translate(cx, cy); g.rotate(t * 0.25); g.globalAlpha = alpha; g.fillStyle = '#fff';
+  for (let i = 0; i < 12; i++) { g.rotate(Math.PI / 6); g.beginPath(); g.moveTo(0, 0); g.lineTo(r, -r * 0.09); g.lineTo(r, r * 0.09); g.fill(); }
+  g.restore();
+}
+function tatami(cx, cy, s) {       // 畳の絵文字が無いので自前で描く
+  g.save(); g.translate(cx, cy); g.rotate(-0.12);
+  const w = s * 1.25, h = s * 0.78;
+  g.fillStyle = '#3d5220'; rr(-w / 2 - 14, -h / 2 - 14, w + 28, h + 28, 14); g.fill();
+  const mat = (x, y, mw, mh, horiz) => {
+    g.fillStyle = '#b9cf7a'; g.fillRect(x, y, mw, mh);
+    g.strokeStyle = 'rgba(80,110,40,.35)'; g.lineWidth = 2;
+    for (let k = 6; k < (horiz ? mh : mw); k += 9) { g.beginPath(); horiz ? (g.moveTo(x, y + k), g.lineTo(x + mw, y + k)) : (g.moveTo(x + k, y), g.lineTo(x + k, y + mh)); g.stroke(); }
+    g.strokeStyle = '#3d5220'; g.lineWidth = 9; g.strokeRect(x, y, mw, mh);
+  };
+  mat(-w / 2, -h / 2, w / 2, h / 2, true); mat(-w / 2, 0, w / 2, h / 2, true); mat(0, -h / 2, w / 2, h, false);
+  g.restore();
+}
+function icon(ic, cx, cy, px) {
+  if (ic === 'tatami') return tatami(cx, cy, px);
+  g.save(); g.font = EMO(px); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ic, cx, cy + px * 0.04); g.restore();
+}
+function header(i) {               // i: 現在の番号(0始まり)、-1 なら全消灯
+  g.save();
+  rr(W / 2 - 250, 118, 500, 76, 38); g.fillStyle = 'rgba(0,0,0,.32)'; g.fill();
+  text('職人系の仕事10選', W / 2, 172, RND(800, 42), '#fff');
+  for (let k = 0; k < 10; k++) {
+    const x = W / 2 + (k - 4.5) * 62;
+    g.beginPath(); g.arc(x, 250, k === i ? 17 : 12, 0, 7);
+    g.fillStyle = k <= i ? '#fff' : 'rgba(255,255,255,.28)'; g.fill();
+  }
+  g.restore();
+}
+function chip(label, value, y, a, dx) {
+  g.save(); g.globalAlpha = a; g.translate(dx, 0);
+  g.font = RND(800, 44); const vw = g.measureText(value).width, lw = 210, w = lw + vw + 78, x = W / 2 - w / 2;
+  rr(x, y, w, 84, 42); g.fillStyle = 'rgba(0,0,0,.38)'; g.fill();
+  rr(x + 8, y + 8, lw, 68, 34); g.fillStyle = '#fff'; g.fill();
+  text(label, x + 8 + lw / 2, y + 57, RND(900, 36), INK);
+  text(value, x + lw + 34, y + 59, RND(800, 44), '#fff', { align: 'left' });
+  g.restore();
+}
+
+function jobScene(i, lt, sc) {
+  const j = C.jobs[i], [p1, p2] = sc.parts;
+  bg(j.color, lt + i * 3); header(i);
+  // 番号
+  const an = outCubic(prog(lt, 0.05, 0.35));
+  g.save(); g.globalAlpha = an; g.translate(-60 * (1 - an), 0);
+  text(String(i + 1).padStart(2, '0'), 96, 500, DELA(210), 'rgba(255,255,255,.95)', { align: 'left', stroke: shade(j.color, -0.7), sw: 14 });
+  g.restore();
+  // アイコン
+  const cx = W / 2 + 120, cy = 600, ai = prog(lt, 0.12, 0.45), s = ai <= 0 ? 0 : outBack(ai), bob = Math.sin(lt * 2.6) * 10;
+  rays(cx, cy, 520, lt, 0.10 * ai);
+  if (s > 0) {
+    g.save(); g.translate(cx, cy + bob); g.scale(s, s); g.rotate(Math.sin(lt * 1.7) * 0.04);
+    g.shadowColor = 'rgba(0,0,0,.35)'; g.shadowBlur = 50; g.shadowOffsetY = 18;
+    g.beginPath(); g.arc(0, 0, 215, 0, 7); g.fillStyle = '#fff'; g.fill();
+    g.shadowColor = 'transparent';
+    g.beginPath(); g.arc(0, 0, 190, 0, 7); g.fillStyle = shade(j.color, 0.82); g.fill();
+    icon(j.icon, 0, 0, 230); g.restore();
+  }
+  // 職種名(ナレーションの読み上げに合わせて)
+  const a2 = prog(lt, p1[0] + 0.45, 0.3), s2 = a2 <= 0 ? 0 : outBack(a2);
+  if (s2 > 0) {
+    g.save(); g.translate(W / 2, 1050); g.scale(s2, s2);
+    text(j.name, 0, 0, DELA(j.name.length >= 5 ? 168 : 200), '#fff', { stroke: shade(j.color, -0.72), sw: 26, maxW: 940 });
+    text(j.ruby, 0, -198, RND(900, 46), '#fff', { stroke: shade(j.color, -0.72), sw: 12 });
+    g.restore();
+  }
+  // 説明カード
+  const a3 = outCubic(prog(lt, p2[0] - 0.05, 0.35));
+  if (a3 > 0) {
+    g.save(); g.globalAlpha = a3; g.translate(0, 50 * (1 - a3));
+    g.shadowColor = 'rgba(0,0,0,.3)'; g.shadowBlur = 36; g.shadowOffsetY = 12;
+    rr(90, 1130, 900, 218, 40); g.fillStyle = '#fff'; g.fill(); g.shadowColor = 'transparent';
+    rr(90, 1130, 22, 218, [40, 0, 0, 40]); g.fillStyle = j.color; g.fill();
+    text(j.tag[0], W / 2 + 8, 1222, RND(900, 62), INK, { maxW: 820 });
+    text(j.tag[1], W / 2 + 8, 1308, RND(900, 62), shade(j.color, -0.28), { maxW: 820 });
+    g.restore();
+  }
+  const a4 = outCubic(prog(lt, p2[0] + 0.55, 0.35)), a5 = outCubic(prog(lt, p2[0] + 0.85, 0.35));
+  if (a4 > 0) chip('関連資格', j.license, 1386, a4, -40 * (1 - a4));
+  if (a5 > 0) chip('向いてる人', j.fit, 1486, a5, 40 * (1 - a5));
+}
+
+function introScene(lt, sc) {
+  const [p1, p2] = sc.parts;
+  bg('#E07A2F', lt);
+  rays(W / 2, 900, 1300, lt, 0.08);
+  C.jobs.forEach((j, k) => {       // 周回するアイコン
+    const a = k / 10 * Math.PI * 2 + lt * 0.5, ap = outBack(prog(lt, 0.1 + k * 0.05, 0.4));
+    const x = W / 2 + Math.cos(a) * 400, y = 880 + Math.sin(a) * 620;
+    g.save(); g.translate(x, y); g.scale(ap, ap); g.globalAlpha = 0.95;
+    g.beginPath(); g.arc(0, 0, 78, 0, 7); g.fillStyle = '#fff'; g.fill(); icon(j.icon, 0, 0, 86); g.restore();
+  });
+  const a1 = outBack(prog(lt, p1[0], 0.35));
+  if (a1 > 0) {
+    g.save(); g.translate(W / 2, 560); g.scale(a1, a1); g.rotate(-0.04);
+    rr(-330, -62, 660, 124, 62); g.fillStyle = '#fff'; g.fill();
+    text('手に職をつけたい人 必見!', 0, 20, RND(900, 50), '#c2410c'); g.restore();
+  }
+  const a2 = outBack(prog(lt, p2[0] - 0.1, 0.35));
+  if (a2 > 0) { g.save(); g.translate(W / 2, 800); g.scale(a2, a2); text('職人系の仕事', 0, 0, DELA(118), '#fff', { stroke: '#4a1d05', sw: 26 }); g.restore(); }
+  const a3 = prog(lt, p2[0] + 0.95, 0.35), s3 = a3 <= 0 ? 0 : outBack(a3) * (1 + Math.sin(lt * 7) * 0.015);
+  if (s3 > 0) {
+    g.save(); g.translate(W / 2, 1130); g.scale(s3, s3); g.rotate(-0.05);
+    text('10選', 0, 0, DELA(330), '#FFE14D', { stroke: '#4a1d05', sw: 40 }); g.restore();
+  }
+}
+
+function outroScene(lt, sc) {
+  const [p1, p2] = sc.parts;
+  bg('#2F6FD0', lt); header(9);
+  const a1 = outBack(prog(lt, p1[0], 0.35));
+  if (a1 > 0) { g.save(); g.translate(W / 2, 450); g.scale(a1, a1); text('気になる仕事は', 0, 0, DELA(96), '#fff', { stroke: '#0c2552', sw: 22 }); text('ありましたか?', 0, 125, DELA(96), '#FFE14D', { stroke: '#0c2552', sw: 22 }); g.restore(); }
+  C.jobs.forEach((j, k) => {
+    const a = outCubic(prog(lt, 0.5 + k * 0.07, 0.3)), col = k % 2, row = k >> 1, x = 100 + col * 450, y = 680 + row * 112;
+    g.save(); g.globalAlpha = a; g.translate(0, 30 * (1 - a));
+    rr(x, y, 430, 94, 47); g.fillStyle = '#fff'; g.fill();
+    g.beginPath(); g.arc(x + 47, y + 47, 37, 0, 7); g.fillStyle = j.color; g.fill();
+    text(String(k + 1), x + 47, y + 63, RND(900, 42), '#fff');
+    text(j.name, x + 104, y + 63, RND(900, 46), INK, { align: 'left', maxW: 300 }); g.restore();
+  });
+  const a2 = outBack(prog(lt, p2[0], 0.35));
+  if (a2 > 0) {
+    g.save(); g.translate(W / 2, 1340); g.scale(a2 * (1 + Math.sin(lt * 6) * 0.012), a2);
+    rr(-400, -70, 800, 140, 70); g.fillStyle = '#FFE14D'; g.fill();
+    text('💬', -318, 0, EMO(64), '#000', { base: 'middle' });
+    text('コメントで教えてね!', 38, 22, RND(900, 62), INK); g.restore();
+  }
+  const a3 = prog(lt, p2[0] + 0.6, 0.4);
+  text('音声:VOICEVOX:四国めたん / BGM:オリジナル', W / 2, 1490, RND(800, 32), `rgba(255,255,255,${0.85 * a3})`);
+}
+
+function scene(k, lt) {
+  const sc = TL.scenes[k];
+  if (k === 0) introScene(lt, sc); else if (k === TL.scenes.length - 1) outroScene(lt, sc); else jobScene(k - 1, lt, sc);
+}
+function render(t) {
+  t = clamp(t, 0, DURATION - 1e-4);
+  let k = TL.scenes.findIndex(s => t < s.start + s.dur); if (k < 0) k = TL.scenes.length - 1;
+  const lt = t - TL.scenes[k].start, TR = 0.3;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1;
+  if (k > 0 && lt < TR) {            // 前のシーンを左へ押し出すスライド
+    const e = outCubic(lt / TR), prev = TL.scenes[k - 1];
+    g.save(); g.translate(-W * e, 0); g.beginPath(); g.rect(0, 0, W, H); g.clip(); scene(k - 1, prev.dur + lt); g.restore();
+    g.save(); g.translate(W * (1 - e), 0); g.beginPath(); g.rect(0, 0, W, H); g.clip(); scene(k, lt); g.restore();
+  } else scene(k, lt);
+  if (t > DURATION - 0.5) { g.fillStyle = `rgba(0,0,0,${(t - (DURATION - 0.5)) / 0.5})`; g.fillRect(0, 0, W, H); }
+}
+window.render = render;
+window.ready = Promise.all(['900 40px MPL', '900 40px MPJ', '800 40px MPL', '800 40px MPJ', '40px DGL', '40px DGJ', '40px "Noto Color Emoji"']
+  .map(f => document.fonts.load(f, '職A1🔨'))).then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
