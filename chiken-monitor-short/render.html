@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>治験モニターのお仕事</title>
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/800.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/900.css">
+<style>
+  :root {
+    --ink: #2a1f3d; --sub: #6b5f80; --pink: #e6447f; --pink-soft: #ffe3ee;
+    --teal: #0f9d8f; --teal-soft: #d9f5f0; --amber: #f2a100; --amber-soft: #fff1cf; --paper: #fffaf6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #111; }
+  body { font-family: 'M PLUS Rounded 1c', 'IPAPGothic', sans-serif; font-weight: 800; color: var(--ink);
+         word-break: auto-phrase; line-break: strict; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: var(--paper); transform-origin: 0 0; }
+  #bg, #bg i { position: absolute; inset: 0; }
+  #bg i { width: 1100px; height: 1100px; border-radius: 50%; inset: auto; }
+  #bar { position: absolute; left: 0; top: 0; height: 14px; background: linear-gradient(90deg, var(--pink), #ff8fb5); border-radius: 0 7px 7px 0; }
+  #head { position: absolute; left: 60px; right: 60px; top: 70px; display: flex; justify-content: space-between; align-items: center; }
+  #head .chip { background: var(--ink); color: #fff; font-size: 34px; padding: 12px 30px 14px; border-radius: 99px; letter-spacing: .04em; }
+  #head .credit { font-size: 28px; font-weight: 500; color: var(--sub); }
+  #dots { position: absolute; left: 0; right: 0; top: 176px; display: flex; gap: 12px; justify-content: center; }
+  #dots b { width: 44px; height: 10px; border-radius: 5px; background: #e6dbe6; }
+  #dots b.on { background: var(--pink); }
+
+  .scene { position: absolute; left: 0; right: 0; top: 230px; height: 1090px; padding: 0 70px;
+           display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; text-align: center; }
+  h1 { font-weight: 900; font-size: 124px; line-height: 1.22; letter-spacing: .01em; }
+  h2 { font-weight: 900; font-size: 92px; line-height: 1.25; }
+  .label { font-size: 44px; color: #fff; background: var(--pink); padding: 10px 38px 14px; border-radius: 99px; }
+  .label.teal { background: var(--teal); color: #fff; } .label.amber { background: var(--amber); }
+  .pink { color: var(--pink); } .teal { color: var(--teal); } .sub { color: var(--sub); }
+  .card { width: 100%; background: #fff; border-radius: 44px; padding: 40px 48px; box-shadow: 0 14px 0 rgba(42,31,61,.08); border: 5px solid var(--ink);
+          display: flex; align-items: center; gap: 36px; text-align: left; font-size: 58px; line-height: 1.3; }
+  .card small { display: block; font-size: 38px; font-weight: 500; color: var(--sub); margin-top: 6px; }
+  .card .ico { flex: none; width: 150px; height: 150px; border-radius: 36px; display: grid; place-items: center; background: var(--pink-soft); }
+  .card .ico.teal { background: var(--teal-soft); } .card .ico.amber { background: var(--amber-soft); }
+  .card .ico svg { width: 100px; height: 100px; }
+  .num { flex: none; width: 96px; height: 96px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 56px; font-weight: 900; display: grid; place-items: center; }
+  .steps { width: 100%; display: flex; flex-direction: column; gap: 26px; }
+  .steps .card { padding: 30px 40px; font-size: 56px; }
+  .steps.tight { gap: 20px; } .steps.tight .card { padding: 20px 36px; font-size: 54px; } .steps.tight .ico { width: 120px; height: 120px; } .steps.tight .ico svg { width: 82px; height: 82px; }
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; }
+  .pill { font-size: 62px; padding: 22px 54px 26px; border-radius: 36px; background: #fff; border: 5px solid var(--ink); min-width: 620px; }
+  .pill.hot { background: var(--pink); color: #fff; }
+  .arrow { font-size: 60px; color: var(--pink); line-height: 1; }
+  .vs { display: flex; align-items: center; justify-content: center; gap: 30px; width: 100%; }
+  .vs .old { position: relative; font-size: 64px; color: var(--sub); padding: 0 10px; }
+  .vs .old .strike { position: absolute; left: -6px; right: -6px; top: 54%; height: 10px; border-radius: 5px; background: var(--pink); transform-origin: 0 50%; }
+  .vs .new { font-size: 84px; font-weight: 900; background: var(--pink); color: #fff; padding: 14px 40px 20px; border-radius: 30px; }
+  .vs .new.teal { background: var(--teal); }
+  .vs .to { font-size: 64px; color: var(--ink); }
+  .big { font-weight: 900; font-size: 150px; line-height: 1.1; letter-spacing: -.01em; }
+  .big span { font-size: 70px; }
+  .note { font-size: 34px; font-weight: 500; color: var(--sub); line-height: 1.5; }
+  .hero svg { width: 300px; height: 300px; }
+
+  #cap { position: absolute; left: 60px; right: 60px; top: 1350px; height: 250px; display: flex; align-items: center; justify-content: center; }
+  #cap div { background: var(--ink); color: #fff; font-size: 54px; line-height: 1.38; padding: 26px 44px 32px; border-radius: 36px; text-align: center;
+             text-wrap: balance; max-width: 960px; box-shadow: 0 12px 0 rgba(42,31,61,.18); }
+  #voice { position: absolute; left: 0; right: 0; top: 1630px; display: flex; gap: 10px; justify-content: center; align-items: center; height: 60px; }
+  #voice i { width: 12px; border-radius: 6px; background: var(--pink); }
+  #preload { position: absolute; left: 0; top: 0; opacity: 0; pointer-events: none; font-size: 20px; width: 1px; height: 1px; overflow: hidden; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-capsule" viewBox="0 0 100 100"><g transform="rotate(-40 50 50)">
+      <rect x="8" y="30" width="84" height="40" rx="20" fill="#fff" stroke="#2a1f3d" stroke-width="6"/>
+      <path d="M50 30H72a20 20 0 0 1 0 40H50z" fill="#e6447f" stroke="#2a1f3d" stroke-width="6"/></g></symbol>
+    <symbol id="i-doc" viewBox="0 0 100 100">
+      <rect x="20" y="10" width="60" height="80" rx="10" fill="#fff" stroke="#2a1f3d" stroke-width="6"/>
+      <path d="M33 32h34M33 48h34" stroke="#2a1f3d" stroke-width="6" stroke-linecap="round"/>
+      <path d="M34 68l10 9 20-20" fill="none" stroke="#e6447f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 100 100">
+      <path d="M50 86C16 62 8 44 14 30c6-14 26-16 36 0 10-16 30-14 36 0 6 14-2 32-36 56z" fill="#e6447f" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M18 50h18l7-14 12 26 7-12h20" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 100 100">
+      <path d="M50 10C34 34 22 48 22 62a28 28 0 0 0 56 0c0-14-12-28-28-52z" fill="#e6447f" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M38 62a12 12 0 0 0 12 12" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/></symbol>
+    <symbol id="i-yen" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="40" fill="#f2a100" stroke="#2a1f3d" stroke-width="6"/>
+      <path d="M36 28l14 22 14-22M50 50v24M36 54h28M36 66h28" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-bed" viewBox="0 0 100 100">
+      <path d="M10 24v56M10 62h80v18M90 62V50a10 10 0 0 0-10-10H44v22" fill="none" stroke="#2a1f3d" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="27" cy="48" r="9" fill="#0f9d8f" stroke="#2a1f3d" stroke-width="6"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 100 100">
+      <path d="M50 12l42 72H8z" fill="#f2a100" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M50 38v22" stroke="#fff" stroke-width="9" stroke-linecap="round"/><circle cx="50" cy="72" r="5.5" fill="#fff"/></symbol>
+    <symbol id="i-no" viewBox="0 0 100 100">
+      <path d="M32 30h30v40a8 8 0 0 1-8 8H40a8 8 0 0 1-8-8z" fill="#fff" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M62 40h8a8 8 0 0 1 8 8v8a8 8 0 0 1-8 8h-8" fill="none" stroke="#2a1f3d" stroke-width="6"/>
+      <path d="M32 44h30v26a8 8 0 0 1-8 8H40a8 8 0 0 1-8-8z" fill="#f2a100" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M14 14l72 72" stroke="#e6447f" stroke-width="10" stroke-linecap="round"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 100 100">
+      <rect x="12" y="20" width="76" height="68" rx="12" fill="#fff" stroke="#2a1f3d" stroke-width="6"/>
+      <path d="M12 40h76" stroke="#2a1f3d" stroke-width="6"/><path d="M32 10v18M68 10v18" stroke="#2a1f3d" stroke-width="7" stroke-linecap="round"/>
+      <path d="M30 54h10M45 54h10M60 54h10M30 70h10M45 70h10" stroke="#f2a100" stroke-width="8" stroke-linecap="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 100 100">
+      <path d="M50 8l36 12v26c0 22-14 36-36 46C28 82 14 68 14 46V20z" fill="#0f9d8f" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M32 50l13 13 24-26" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-exit" viewBox="0 0 100 100">
+      <path d="M56 14H24a6 6 0 0 0-6 6v60a6 6 0 0 0 6 6h32" fill="#fff" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M44 50h44M72 32l18 18-18 18" fill="none" stroke="#0f9d8f" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-talk" viewBox="0 0 100 100">
+      <path d="M14 18h72a6 6 0 0 1 6 6v40a6 6 0 0 1-6 6H46L28 88V70H14a6 6 0 0 1-6-6V24a6 6 0 0 1 6-6z" fill="#fff" stroke="#2a1f3d" stroke-width="6" stroke-linejoin="round"/>
+      <path d="M28 36h44M28 52h30" stroke="#e6447f" stroke-width="7" stroke-linecap="round"/></symbol>
+    <symbol id="i-zzz" viewBox="0 0 100 100">
+      <path d="M12 58h30L12 90h32" fill="none" stroke="#2a1f3d" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M48 30h22L48 54h24" fill="none" stroke="#6b5f80" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M74 8h14L74 24h16" fill="none" stroke="#b9aecb" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<div id="stage">
+  <div id="bg"><i></i><i></i><i></i></div>
+  <div id="bar"></div>
+  <div id="head"><span class="chip">治験モニターって？</span><span class="credit">VOICEVOX:四国めたん</span></div>
+  <div id="dots"></div>
+
+  <!-- 0: つかみ -->
+  <section class="scene">
+    <div class="hero" data-cue="0"><svg><use href="#i-zzz"/></svg></div>
+    <h1 data-cue="0" data-delay=".15">寝てるだけで<br><span class="pink">高収入</span>？</h1>
+    <div class="label" data-cue="1">本当のところを解説</div>
+    <h2 data-cue="1" data-delay=".25">治験モニターの<br>お仕事</h2>
+  </section>
+
+  <!-- 1: 治験とは -->
+  <section class="scene" style="gap:28px">
+    <div class="label" data-cue="0">治験とは？</div>
+    <div class="flow">
+      <div class="pill" data-cue="0" data-delay=".5">新しい薬</div>
+      <div class="arrow" data-cue="0" data-delay="1.3">▼</div>
+      <div class="pill hot" data-cue="0" data-delay="1.5">治験（臨床試験）</div>
+      <div class="arrow" data-cue="0" data-delay="2.1">▼</div>
+      <div class="pill" data-cue="0" data-delay="2.3">国の承認</div>
+    </div>
+    <div class="card" data-cue="1" data-delay=".3">
+      <div class="ico"><svg><use href="#i-capsule"/></svg></div>
+      <div><span class="pink">効き目</span>と<span class="pink">安全性</span>の<br>確認に協力<small>＝ 治験モニター</small></div>
+    </div>
+  </section>
+
+  <!-- 2: ボランティア -->
+  <section class="scene" style="gap:70px">
+    <div class="label" data-cue="0">実は…</div>
+    <div class="vs" data-cue="0" data-delay=".5">
+      <div class="old">アルバイト<i class="strike" data-strike="0" data-delay="1.0"></i></div>
+    </div>
+    <div class="vs" data-cue="0" data-delay="1.2" style="margin-top:-40px">
+      <div class="to">▶</div><div class="new">ボランティア</div>
+    </div>
+    <div class="vs" data-cue="1" data-delay=".4">
+      <div class="old">給料<i class="strike" data-strike="1" data-delay="1.2"></i></div>
+    </div>
+    <div class="vs" data-cue="1" data-delay="1.5" style="margin-top:-40px">
+      <div class="to">▶</div><div class="new teal">負担軽減費</div>
+    </div>
+    <div class="note" data-cue="1" data-delay="2.2">時間的な拘束や通院などの負担に対して支払われるお金</div>
+  </section>
+
+  <!-- 3: 流れ -->
+  <section class="scene" style="gap:30px">
+    <div class="label" data-cue="0">参加の流れ</div>
+    <div class="steps tight">
+      <div class="card" data-cue="1"><div class="num">1</div><div class="ico"><svg><use href="#i-talk"/></svg></div><div>説明を受ける</div></div>
+      <div class="card" data-cue="1" data-delay="1.2"><div class="num">2</div><div class="ico"><svg><use href="#i-doc"/></svg></div><div>納得したら<span class="pink">同意書</span>にサイン</div></div>
+      <div class="card" data-cue="2"><div class="num">3</div><div class="ico teal"><svg><use href="#i-heart"/></svg></div><div>事前の健康診断</div></div>
+      <div class="card" data-cue="2" data-delay="1.4"><div class="num">4</div><div class="ico teal"><svg><use href="#i-drop"/></svg></div><div>入院・通院で<br><span class="teal">服薬と検査</span></div></div>
+    </div>
+  </section>
+
+  <!-- 4: お金 -->
+  <section class="scene">
+    <div class="label amber" data-cue="0">負担軽減費の目安</div>
+    <div class="hero" data-cue="0" data-delay=".2"><svg style="width:210px;height:210px"><use href="#i-yen"/></svg></div>
+    <div data-cue="0" data-delay="1.2">
+      <div style="font-size:54px">通院タイプ　<span class="sub">1回あたり</span></div>
+      <div class="big"><span>約</span>7千〜1万<span>円</span></div>
+    </div>
+    <div class="card" data-cue="1">
+      <div class="ico teal"><svg><use href="#i-bed"/></svg></div>
+      <div>入院タイプ<small>拘束時間が長いぶん、まとまった金額になることも</small></div>
+    </div>
+    <div class="note" data-cue="1" data-delay=".8">※金額は試験の内容や期間によって異なります</div>
+  </section>
+
+  <!-- 5: 注意点 -->
+  <section class="scene">
+    <div class="label amber" data-cue="0">ただし、注意点も</div>
+    <div class="steps">
+      <div class="card" data-cue="1"><div class="ico amber"><svg><use href="#i-warn"/></svg></div><div>副作用のリスクは<br><span class="pink">ゼロではない</span></div></div>
+      <div class="card" data-cue="1" data-delay="1.9"><div class="ico amber"><svg><use href="#i-no"/></svg></div><div>お酒・タバコなど<br>生活に制限</div></div>
+      <div class="card" data-cue="2"><div class="ico amber"><svg><use href="#i-cal"/></svg></div><div>参加後 <span class="pink">3〜4か月</span>は<br>次の治験に参加不可</div></div>
+    </div>
+  </section>
+
+  <!-- 6: 安心 -->
+  <section class="scene">
+    <div class="label teal" data-cue="0">でも安心して</div>
+    <div class="hero" data-cue="0" data-delay=".15"><svg style="width:230px;height:230px"><use href="#i-shield"/></svg></div>
+    <div class="steps">
+      <div class="card" data-cue="1"><div class="ico teal"><svg><use href="#i-shield"/></svg></div><div>国のルールで<span class="teal">厳しく審査</span><small>GCP省令・治験審査委員会</small></div></div>
+      <div class="card" data-cue="2"><div class="ico teal"><svg><use href="#i-exit"/></svg></div><div>やめるのは<br><span class="teal">いつでも自由</span></div></div>
+    </div>
+  </section>
+
+  <!-- 7: まとめ -->
+  <section class="scene">
+    <div class="hero" data-cue="0"><svg style="width:220px;height:220px"><use href="#i-capsule"/></svg></div>
+    <h2 data-cue="0" data-delay=".2">未来の薬づくりを<br>支える<span class="pink">治験モニター</span></h2>
+    <div class="card" data-cue="1" style="justify-content:center;text-align:center"><div>説明をよく聞いて、<br><span class="pink">納得してから</span>参加を</div></div>
+    <div class="note" data-cue="1" data-delay="1.0">一般的な内容の紹介です。条件は試験ごとに異なります。<br>音声 VOICEVOX:四国めたん ／ BGM オリジナル</div>
+  </section>
+
+  <div id="cap"><div></div></div>
+  <div id="voice"></div>
+  <div id="preload"></div>
+</div>
+
+<script src="timeline.js"></script>
+<script>
+const TL = window.TIMELINE;
+window.FPS = 30;
+window.DURATION = TL.total;
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const easeOut = p => 1 - Math.pow(1 - p, 3);
+const easeBack = p => { const c = 1.6; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+
+const scenes = $$('.scene');
+const dots = $('#dots'); TL.scenes.forEach(() => dots.appendChild(document.createElement('b')));
+const voice = $('#voice'); for (let i = 0; i < 9; i++) voice.appendChild(document.createElement('i'));
+$('#preload').textContent = TL.scenes.flatMap(s => s.cues.map(c => c.text)).join('');
+const blobs = $$('#bg i');
+const BLOB = [['#ffd9e6', 0.9], ['#d3f3ee', 1.3], ['#ffeec9', 1.7]];
+
+window.render = function (t) {
+  // 背景
+  blobs.forEach((b, i) => {
+    const x = 540 + Math.cos(t * 0.11 * BLOB[i][1] + i * 2.1) * 520 - 550;
+    const y = 900 + Math.sin(t * 0.09 * BLOB[i][1] + i * 1.3) * 820 - 550;
+    b.style.transform = `translate(${x}px,${y}px)`;
+    b.style.background = `radial-gradient(closest-side, ${BLOB[i][0]}, ${BLOB[i][0]}00)`;
+  });
+  $('#bar').style.width = (clamp(t / TL.total) * 1080) + 'px';
+
+  let cur = TL.scenes.findIndex(s => t >= s.start && t < s.end);
+  if (cur < 0) cur = TL.scenes.length - 1;
+  $$('b', dots).forEach((d, i) => d.classList.toggle('on', i <= cur));
+
+  scenes.forEach((el, i) => {
+    const s = TL.scenes[i];
+    if (i !== cur) { el.style.visibility = 'hidden'; return; }
+    el.style.visibility = 'visible';
+    const last = i === TL.scenes.length - 1;
+    const out = last ? 0 : clamp((t - (s.end - 0.22)) / 0.22);
+    el.style.opacity = 1 - out;
+    el.style.transform = `translateY(${-30 * out}px)`;
+    $$('[data-cue]', el).forEach(e => {
+      const t0 = s.cues[+e.dataset.cue].start - 0.12 + (+e.dataset.delay || 0);
+      const p = clamp((t - t0) / 0.45);
+      e.style.opacity = clamp(p * 2.2);
+      e.style.transform = `translateY(${(1 - easeOut(p)) * 46}px) scale(${0.9 + 0.1 * easeBack(p)})`;
+    });
+    $$('[data-strike]', el).forEach(e => {
+      const t0 = s.cues[+e.dataset.strike].start + (+e.dataset.delay || 0);
+      e.style.transform = `scaleX(${easeOut(clamp((t - t0) / 0.3))})`;
+    });
+  });
+
+  // 字幕
+  const cue = TL.scenes[cur].cues.find(c => t >= c.start - 0.08 && t < c.end + 0.14);
+  const cap = $('#cap div');
+  if (cue) {
+    if (cap.textContent !== cue.text) cap.textContent = cue.text;
+    const p = clamp((t - (cue.start - 0.08)) / 0.16);
+    cap.style.opacity = p; cap.style.transform = `scale(${0.96 + 0.04 * easeOut(p)})`;
+    cap.style.visibility = 'visible';
+  } else cap.style.visibility = 'hidden';
+
+  // 話しているあいだ動くバー
+  $$('i', voice).forEach((b, i) => {
+    const a = cue ? 0.5 + 0.5 * Math.sin(t * (9 + i * 1.7) + i * 2.4) * Math.sin(t * 3.1 + i) : 0;
+    b.style.height = (12 + 44 * Math.abs(a)) + 'px';
+    b.style.opacity = cue ? 1 : 0.3;
+  });
+};
+
+// プレビュー: ブラウザで開くと音声付きで再生(?t=秒 で静止)
+const q = new URLSearchParams(location.search);
+if (q.has('t')) window.render(+q.get('t'));
+else if (!navigator.webdriver) {
+  const k = Math.min(innerWidth / 1080, innerHeight / 1920);
+  $('#stage').style.transform = `scale(${k})`;
+  const a = new Audio('output/mix.wav'); a.play().catch(() => {});
+  const t0 = performance.now();
+  (function loop() { const t = a.paused ? (performance.now() - t0) / 1000 : a.currentTime; window.render(Math.min(t, TL.total - 0.01)); requestAnimationFrame(loop); })();
+} else window.render(0);
+</script>
+</body>
+</html>

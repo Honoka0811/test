@@ -1,0 +1,7 @@
+{
+  "name": "chiken-monitor-short",
+  "private": true,
+  "dependencies": {
+    "@fontsource/m-plus-rounded-1c": "^5.0.0"
+  }
+}
