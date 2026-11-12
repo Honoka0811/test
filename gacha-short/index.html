@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/800.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/900.css">
+<style>
+:root { --ink:#2b2140; --pink:#ff4f8b; --yellow:#ffd23f; --cyan:#58d5f0; --green:#7be07f; --purple:#a99bff; --orange:#ff9f45; --red:#ff5d5d; --white:#fffdf7; }
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { width:1080px; height:1920px; overflow:hidden; background:#000; }
+body { font-family:"M PLUS Rounded 1c", sans-serif; font-weight:800; color:var(--ink); }
+#stage { position:absolute; inset:0; width:1080px; height:1920px; overflow:hidden; }
+.scene { position:absolute; inset:0; overflow:hidden; visibility:hidden; animation:reveal .45s cubic-bezier(.3,.9,.3,1) both; }
+@keyframes reveal { from { clip-path:circle(0px at 540px 760px); } to { clip-path:circle(2100px at 540px 760px); } }
+.bg { position:absolute; inset:-200px; background-image:radial-gradient(rgba(255,255,255,.38) 14px, transparent 15px); background-size:120px 120px; animation:drift 12s linear infinite; }
+@keyframes drift { to { transform:translate(120px,120px); } }
+.abs { position:absolute; }
+.pop { animation:pop .5s cubic-bezier(.2,1.7,.4,1) both; animation-delay:calc(var(--d,0) * 1s); }
+@keyframes pop { from { transform:scale(0); opacity:0; } 30% { opacity:1; } to { transform:scale(1); opacity:1; } }
+.slide { animation:slide .5s cubic-bezier(.2,1.3,.4,1) both; animation-delay:calc(var(--d,0) * 1s); }
+@keyframes slide { from { transform:translateX(-140px); opacity:0; } to { transform:none; opacity:1; } }
+.float { animation:float 2.4s ease-in-out infinite alternate; animation-delay:calc(var(--fd,0) * -1s); }
+@keyframes float { from { transform:translateY(-14px) rotate(-2deg); } to { transform:translateY(14px) rotate(2deg); } }
+.spin { animation:spin var(--sp,10s) linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.shake { animation:shake .5s ease-in-out both; animation-delay:calc(var(--d,0) * 1s); }
+@keyframes shake { 0%{transform:scale(2.4) rotate(-12deg);opacity:0} 35%{transform:scale(.9) rotate(-12deg);opacity:1} 50%{transform:scale(1.06) rotate(-9deg)} 65%{transform:scale(.98) rotate(-13deg)} 100%{transform:scale(1) rotate(-11deg);opacity:1} }
+.big { font-weight:900; color:var(--white); -webkit-text-stroke:18px var(--ink); paint-order:stroke fill; line-height:1.1; letter-spacing:.02em; white-space:nowrap; }
+.tag { display:inline-block; background:var(--white); border:7px solid var(--ink); border-radius:999px; padding:8px 34px 12px; font-size:46px; font-weight:900; box-shadow:0 9px 0 var(--ink); white-space:nowrap; }
+.card { background:var(--white); border:8px solid var(--ink); border-radius:40px; box-shadow:0 14px 0 var(--ink); }
+svg { overflow:visible; display:block; }
+.o { stroke:var(--ink); stroke-width:8; stroke-linejoin:round; stroke-linecap:round; }
+
+/* 常時表示のUI */
+#chip { position:absolute; top:150px; left:0; right:0; text-align:center; z-index:50; }
+#chip span { display:inline-block; background:var(--ink); color:var(--white); font-size:40px; font-weight:800; padding:10px 40px 14px; border-radius:999px; letter-spacing:.06em; }
+#credit { position:absolute; top:240px; left:0; right:0; text-align:center; z-index:50; font-size:26px; font-weight:700; color:var(--ink); opacity:.75; }
+#bar { position:absolute; top:0; left:0; height:14px; background:var(--pink); z-index:60; border-right:5px solid var(--ink); border-bottom:5px solid var(--ink); }
+#cap { position:absolute; left:60px; right:60px; top:1330px; z-index:40; display:flex; justify-content:center; align-items:center; height:0; }
+#capbox { background:var(--white); border:8px solid var(--ink); border-radius:40px; box-shadow:0 14px 0 var(--ink); padding:26px 44px 34px; font-size:60px; line-height:1.38; font-weight:800; text-align:center; white-space:pre; }
+#capbox em { font-style:normal; color:var(--pink); font-weight:900; }
+
+/* シーン別 */
+.rot-crank { transform-box:fill-box; transform-origin:center; animation:crank 1.2s cubic-bezier(.5,0,.3,1) both; animation-delay:calc(var(--d,0) * 1s); }
+@keyframes crank { to { transform:rotate(360deg); } }
+.drop { animation:drop .9s cubic-bezier(.3,0,.6,1) both; animation-delay:calc(var(--d,0) * 1s); }
+@keyframes drop { 0%{transform:translate(0,-120px) scale(.3);opacity:0} 20%{opacity:1} 55%{transform:translate(0,0) scale(1)} 70%{transform:translate(60px,-40px) rotate(120deg)} 100%{transform:translate(150px,0) rotate(300deg);opacity:1} }
+.jig { animation:jig .5s ease-in-out infinite alternate; animation-delay:calc(var(--fd,0) * -1s); transform-box:fill-box; transform-origin:center; }
+@keyframes jig { from{transform:translateY(-5px) rotate(-5deg)} to{transform:translateY(5px) rotate(5deg)} }
+.rays { position:absolute; left:540px; top:720px; width:0; height:0; }
+.rays::before { content:""; position:absolute; left:-900px; top:-900px; width:1800px; height:1800px; border-radius:50%; background:repeating-conic-gradient(rgba(255,255,255,.42) 0 12deg, transparent 12deg 30deg); animation:spin 26s linear infinite; }
+.orbit { position:absolute; left:540px; top:775px; width:0; height:0; animation:spin 7s linear infinite; }
+.orbit > div { position:absolute; left:0; top:0; width:0; height:0; }
+.counter { animation:spin 7s linear infinite reverse; }
+.step { display:flex; align-items:center; gap:26px; }
+.step .num { width:92px; height:92px; border-radius:50%; background:var(--ink); color:var(--white); font-size:50px; font-weight:900; display:flex; align-items:center; justify-content:center; padding-bottom:6px; flex:none; }
+.step .lbl { font-size:62px; font-weight:900; }
+.grow { transform-origin:top; animation:grow 3.2s linear both; animation-delay:calc(var(--d,0) * 1s); }
+@keyframes grow { from{transform:scaleY(0)} to{transform:scaleY(1)} }
+.fall { animation:fall var(--ft,2.2s) linear infinite; animation-delay:calc(var(--fd,0) * -1s); }
+@keyframes fall { from{transform:translateY(-260px) rotate(0)} to{transform:translateY(2200px) rotate(var(--fr,360deg))} }
+.lid { animation:lid .7s cubic-bezier(.2,1.5,.4,1) both; animation-delay:calc(var(--d,0) * 1s); transform-box:fill-box; transform-origin:0% 100%; }
+@keyframes lid { from{transform:none} to{transform:translate(-50px,-100px) rotate(-26deg)} }
+.twinkle { animation:twinkle 1s ease-in-out infinite alternate; animation-delay:calc(var(--fd,0) * -1s); transform-box:fill-box; transform-origin:center; }
+@keyframes twinkle { from{transform:scale(.55) rotate(0)} to{transform:scale(1.15) rotate(25deg)} }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const T = window.TIMINGS;
+const INK = '#2b2140';
+const COLORS = ['#ff4f8b', '#58d5f0', '#7be07f', '#a99bff', '#ff9f45', '#ffd23f', '#ff5d5d'];
+
+// カプセル(オリジナル図形)
+function capsule(r, color, rot = 0, extra = '') {
+  return `<g transform="rotate(${rot})" ${extra}>
+    <circle r="${r}" fill="#fffdf7" fill-opacity=".82"/>
+    <path d="M ${-r} 0 A ${r} ${r} 0 0 1 ${r} 0 Z" fill="${color}"/>
+    <rect x="${-r}" y="${-r * .07}" width="${2 * r}" height="${r * .14}" fill="${INK}" fill-opacity=".18"/>
+    <circle r="${r}" fill="none" stroke="${INK}" stroke-width="${Math.max(5, r * .1)}"/>
+    <path d="M ${-r * .62} ${-r * .38} A ${r * .72} ${r * .72} 0 0 1 ${-r * .12} ${-r * .7}" fill="none" stroke="#fff" stroke-width="${r * .13}" stroke-linecap="round" opacity=".9"/>
+  </g>`;
+}
+const capSvg = (r, color, rot = 0) => `<svg width="${2 * r}" height="${2 * r}" viewBox="${-r} ${-r} ${2 * r} ${2 * r}">${capsule(r, color, rot)}</svg>`;
+
+// 人物(汎用のシンプルなキャラクター)
+function person(scale = 1) {
+  return `<svg width="${420 * scale}" height="${520 * scale}" viewBox="-210 -260 420 520">
+    <path class="o" d="M -170 260 C -170 90 -110 40 0 40 C 110 40 170 90 170 260 Z" fill="#58d5f0"/>
+    <path class="o" d="M -46 44 L 0 110 L 46 44" fill="#fffdf7"/>
+    <path d="M -40 60 L 0 190 L 40 60" fill="none" stroke="${INK}" stroke-width="7"/>
+    <rect class="o" x="-42" y="170" width="84" height="64" rx="10" fill="#ffd23f"/>
+    <rect x="-24" y="190" width="48" height="8" rx="4" fill="${INK}"/><rect x="-24" y="208" width="30" height="8" rx="4" fill="${INK}"/>
+    <circle class="o" cx="0" cy="-90" r="128" fill="#ffe0c2"/>
+    <path class="o" d="M -128 -96 C -140 -250 140 -250 128 -96 C 90 -150 30 -176 -30 -170 C -70 -150 -110 -130 -128 -96 Z" fill="${INK}"/>
+    <circle cx="-46" cy="-66" r="13" fill="${INK}"/><circle cx="46" cy="-66" r="13" fill="${INK}"/>
+    <circle cx="-78" cy="-30" r="20" fill="#ff4f8b" opacity=".45"/><circle cx="78" cy="-30" r="20" fill="#ff4f8b" opacity=".45"/>
+    <path d="M -32 -22 Q 0 14 32 -22" fill="none" stroke="${INK}" stroke-width="9" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function star(r, fill = '#fffdf7') {
+  const p = []; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? r * .38 : r; p.push(`${(Math.sin(a) * rr).toFixed(1)},${(-Math.cos(a) * rr).toFixed(1)}`); }
+  return `<svg width="${2 * r}" height="${2 * r}" viewBox="${-r} ${-r} ${2 * r} ${2 * r}"><polygon class="o" points="${p.join(' ')}" fill="${fill}" stroke-width="6"/></svg>`;
+}
+
+// ガチャマシン
+function machine() {
+  let caps = '';
+  const pos = [[-150, 60, 0], [-52, 84, 3], [50, 80, 1], [150, 56, 4], [-108, -28, 5], [-4, -10, 2], [104, -26, 6], [-58, -112, 1], [54, -108, 0]];
+  pos.forEach(([x, y, c], i) => caps += `<g transform="translate(${x} ${y})"><g class="jig" style="--fd:${i * .13}">${capsule(56, COLORS[c], i * 47)}</g></g>`);
+  return `<svg width="620" height="900" viewBox="-310 -330 620 900">
+    <rect class="o" x="-250" y="150" width="500" height="390" rx="46" fill="#ff5d5d"/>
+    <rect class="o" x="-280" y="500" width="560" height="60" rx="26" fill="${INK}"/>
+    <rect class="o" x="-250" y="-290" width="500" height="460" rx="60" fill="#dff6ff"/>
+    <clipPath id="dome"><rect x="-244" y="-284" width="488" height="448" rx="54"/></clipPath>
+    <g clip-path="url(#dome)">${caps}</g>
+    <path d="M -200 -230 L -200 -60" stroke="#fff" stroke-width="20" stroke-linecap="round" opacity=".8"/>
+    <rect class="o" x="-270" y="-320" width="540" height="60" rx="28" fill="#ffd23f"/>
+    <rect class="o" x="-270" y="140" width="540" height="50" rx="24" fill="#ffd23f"/>
+    <g transform="translate(-90 320)"><circle class="o" r="88" fill="#fffdf7"/><g class="rot-crank" style="--d:1.0"><rect class="o" x="-76" y="-22" width="152" height="44" rx="22" fill="#ffd23f"/><circle r="14" fill="${INK}"/></g></g>
+    <rect class="o" x="60" y="250" width="150" height="50" rx="14" fill="${INK}"/>
+    <rect class="o" x="50" y="360" width="170" height="130" rx="24" fill="${INK}"/>
+    <g transform="translate(135 430)"><g class="drop" style="--d:1.9">${capsule(54, '#ff4f8b', 20)}</g></g>
+  </svg>`;
+}
+
+const S = {};
+S.hook = `<div class="bg"></div>
+  <div class="abs" style="left:230px;top:330px"><div class="pop" style="--d:.05">${machine()}</div></div>
+  <div class="abs big pop" style="--d:.5;left:60px;top:400px;font-size:200px;color:var(--pink);transform-origin:center"><div class="float">?</div></div>
+  <div class="abs big pop" style="--d:.7;left:860px;top:330px;font-size:150px;color:var(--cyan)"><div class="float" style="--fd:1">?</div></div>
+  <div class="abs big pop" style="--d:.9;left:880px;top:820px;font-size:120px;color:var(--white)"><div class="float" style="--fd:.5">?</div></div>`;
+
+S.planner = `<div class="bg"></div><div class="rays"></div>
+  <div class="abs" style="left:330px;top:440px"><div class="pop" style="--d:.15">${person(1)}</div></div>
+  <div class="abs" style="left:0;right:0;top:330px;text-align:center"><div class="pop" style="--d:.9"><span class="tag" style="font-size:40px">カプセルトイメーカーの…</span></div></div>
+  <div class="abs" style="left:0;right:0;top:940px;text-align:center"><div class="pop big" style="--d:1.25;font-size:132px;color:var(--yellow)">企画担当者</div></div>
+  <div class="abs pop" style="--d:.6;left:150px;top:520px"><div class="twinkle">${star(60, '#ffd23f')}</div></div>
+  <div class="abs pop" style="--d:.75;left:820px;top:470px"><div class="twinkle" style="--fd:.4">${star(46)}</div></div>
+  <div class="abs pop" style="--d:.9;left:850px;top:780px"><div class="twinkle" style="--fd:.7">${star(34, '#ff4f8b')}</div></div>`;
+
+S.idea = `<div class="bg"></div>
+  <div class="abs" style="left:0;right:0;top:330px;text-align:center"><div class="pop big" style="--d:.5;font-size:124px;color:var(--yellow)">ネタ探し</div></div>
+  <div class="abs" style="left:90px;top:500px"><div class="pop" style="--d:calc(var(--c1) + .15)"><div class="float"><div class="card" style="width:410px;height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+    <svg width="210" height="290" viewBox="-105 -145 210 290"><rect class="o" x="-90" y="-140" width="180" height="280" rx="30" fill="#58d5f0"/><rect x="-66" y="-108" width="132" height="190" rx="10" fill="#fffdf7" stroke="${INK}" stroke-width="6"/><circle cx="0" cy="110" r="12" fill="${INK}"/>
+      <path class="o" stroke-width="6" d="M 0 -20 C -50 -70 -60 0 0 40 C 60 0 50 -70 0 -20 Z" fill="#ff4f8b"/></svg>
+    <div style="font-size:50px;font-weight:900">SNSの流行</div></div></div></div></div>
+  <div class="abs" style="left:580px;top:540px"><div class="pop" style="--d:calc(var(--c1) + 1.35)"><div class="float" style="--fd:1.2"><div class="card" style="width:410px;height:420px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+    <svg width="270" height="250" viewBox="-135 -125 270 250"><path class="o" d="M -120 -110 H 120 Q 130 -110 130 -100 V 40 Q 130 50 120 50 H -20 L -70 110 L -60 50 H -120 Q -130 50 -130 40 V -100 Q -130 -110 -120 -110 Z" fill="#ffd23f"/>
+      <text x="0" y="-8" text-anchor="middle" font-size="66" font-weight="900" fill="${INK}" font-family="M PLUS Rounded 1c">わかる!</text></svg>
+    <div style="font-size:50px;font-weight:900">日常のあるある</div></div></div></div></div>
+  <div class="abs" style="left:400px;top:985px"><div class="pop" style="--d:calc(var(--c2) + .05)"><div class="float" style="--fd:.6">
+    <svg width="280" height="250" viewBox="-140 -150 280 250"><g class="twinkle"><circle r="130" cy="-20" fill="#fffdf7" opacity=".55"/></g><path class="o" d="M 0 -130 C -90 -130 -110 -30 -52 20 C -40 34 -40 50 -40 60 H 40 C 40 50 40 34 52 20 C 110 -30 90 -130 0 -130 Z" fill="#ffd23f"/><rect class="o" x="-40" y="60" width="80" height="34" rx="12" fill="${INK}"/></svg></div></div></div>`;
+
+S.limit = `<div class="bg"></div>
+  <div class="abs" style="left:0;right:0;top:330px;text-align:center"><div class="shake big" style="--d:.45;display:inline-block;font-size:112px;color:var(--yellow)">条件が厳しい!</div></div>
+  <div class="abs" style="left:110px;top:560px"><div class="pop" style="--d:calc(var(--c1) + .1)"><div class="float">
+    <svg width="440" height="520" viewBox="-220 -210 440 520">${capsule(180, '#58d5f0', -14)}
+      <path d="M -180 240 H 180 M -180 215 V 265 M 180 215 V 265" stroke="${INK}" stroke-width="10" stroke-linecap="round" fill="none"/></svg></div></div></div>
+  <div class="abs" style="left:70px;top:1010px"><div class="pop" style="--d:calc(var(--c1) + .5)"><span class="tag" style="font-size:56px">直径 約5cm</span></div></div>
+  <div class="abs" style="left:590px;top:600px"><div class="pop" style="--d:calc(var(--c2) + .1)"><div class="float" style="--fd:1.1">
+    <svg width="400" height="400" viewBox="-200 -200 400 400"><circle class="o" r="170" cy="16" fill="#d99a1c"/><circle class="o" r="170" fill="#ffd23f"/><circle r="128" fill="none" stroke="${INK}" stroke-width="6" stroke-dasharray="4 16" stroke-linecap="round"/>
+      <text x="0" y="56" text-anchor="middle" font-size="170" font-weight="900" fill="${INK}" font-family="M PLUS Rounded 1c">¥</text></svg></div></div></div>
+  <div class="abs" style="left:570px;top:1010px"><div class="pop" style="--d:calc(var(--c2) + .5)"><span class="tag" style="font-size:54px;background:var(--yellow)">300〜500円</span></div></div>`;
+
+const steps = [['企画', 'var(--pink)', '.2'], ['会議', 'var(--orange)', '.75'], ['試作', 'var(--green)', 'calc(var(--c1) + .15)'], ['工場で量産', 'var(--cyan)', 'calc(var(--c1) + 1.0)'], ['発売!', 'var(--yellow)', 'calc(var(--c2) + .2)']];
+S.flow = `<div class="bg"></div>
+  <div class="abs" style="left:171px;top:400px;width:14px;height:640px;background:var(--ink);border-radius:7px"><div class="grow" style="--d:.2;width:100%;height:100%;background:var(--white);border-radius:7px;border:3px solid var(--ink)"></div></div>
+  ${steps.map(([l, c, d], i) => `<div class="abs" style="left:132px;top:${350 + i * 150}px"><div class="slide step" style="--d:${d}"><div class="num">${i + 1}</div><div class="tag lbl" style="background:${c};font-size:60px;padding:8px 40px 14px">${l}</div></div></div>`).join('')}
+  <div class="abs" style="left:600px;top:420px"><div class="pop" style="--d:calc(var(--c2) + .7)"><div class="float"><div class="card" style="width:400px;padding:18px 0 30px;text-align:center;transform:rotate(5deg)">
+    <div style="font-size:46px;font-weight:900">発売まで</div><div style="font-size:92px;font-weight:900;color:var(--pink);line-height:1.15">半年〜<br>1年</div></div></div></div></div>
+  <div class="abs" style="left:900px;top:300px"><div class="pop" style="--d:calc(var(--c2) + 1.0)"><svg width="130" height="130" viewBox="-65 -65 130 130"><circle class="o" r="56" fill="#fffdf7"/><g class="spin" style="--sp:3s;transform-box:fill-box;transform-origin:50% 100%"><path d="M 0 0 V -36" stroke="${INK}" stroke-width="9" stroke-linecap="round"/></g><path d="M 0 0 H 24" stroke="${INK}" stroke-width="9" stroke-linecap="round"/></svg></div></div>`;
+
+S.solo = `<div class="bg"></div><div class="rays"></div>
+  <div class="abs" style="left:0;right:0;top:320px;text-align:center"><div class="pop big" style="--d:.5;font-size:108px;color:var(--yellow)">ひとりで全部!</div></div>
+  <div class="abs" style="left:372px;top:570px"><div class="pop" style="--d:.15">${person(.8)}</div></div>
+  <div class="orbit">${[0, 1, 2, 3, 4, 5].map(i => `<div style="transform:rotate(${i * 60}deg) translate(0,-262px)"><div class="pop" style="--d:calc(var(--c1) - ${(.9 - i * .12).toFixed(2)})"><div class="counter" style="margin:-60px 0 0 -60px;width:120px;height:120px">${capSvg(60, COLORS[i], 20)}</div></div></div>`).join('')}</div>
+  <div class="abs" style="left:0;right:0;top:1105px;text-align:center"><div class="pop" style="--d:calc(var(--c1) + .15)"><span class="tag" style="font-size:60px;background:var(--pink);color:var(--white)">何本も同時進行</span></div></div>`;
+
+let rain = '';
+for (let i = 0; i < 26; i++) { const x = (i * 211) % 1000, r = 44 + (i * 17) % 40, ft = 1.5 + ((i * 7) % 10) / 9, fd = ((i * 37) % 30) / 10; rain += `<div class="abs" style="left:${x}px;top:0"><div class="fall" style="--ft:${ft.toFixed(2)}s;--fd:${fd};--fr:${i % 2 ? 420 : -380}deg">${capSvg(r, COLORS[i % 7], i * 31)}</div></div>`; }
+S.rush = `<div class="bg"></div>${rain}
+  <div class="abs" style="left:0;right:0;top:420px;z-index:5;text-align:center"><div class="pop" style="--d:.2"><span class="tag" style="font-size:64px">毎月の新作</span></div></div>
+  <div class="abs" style="left:0;right:0;top:540px;z-index:5;text-align:center"><div class="pop big" style="--d:.55;font-size:190px;color:var(--yellow)">数百種類</div></div>
+  <div class="abs" style="left:0;right:0;top:820px;z-index:5;text-align:center"><div class="shake big" style="--d:calc(var(--c1) + .1);display:inline-block;font-size:150px;color:var(--white);-webkit-text-stroke:20px var(--ink)">超激戦区</div></div>`;
+
+S.end = `<div class="bg"></div><div class="rays"></div>
+  <div class="abs" style="left:290px;top:590px"><div class="pop" style="--d:.1"><div class="float">
+    <svg width="500" height="500" viewBox="-250 -250 500 500">
+      <g class="pop" style="--d:calc(var(--c1) + .35);transform-box:fill-box;transform-origin:center"><g class="twinkle"><path class="o" d="M 0 30 C -110 -80 -130 60 0 150 C 130 60 110 -80 0 30 Z" fill="#ff4f8b" transform="translate(0 -110)"/></g></g>
+      <path class="o" d="M -200 0 A 200 200 0 0 0 200 0 Z" fill="#fffdf7" stroke-width="18"/>
+      <g class="lid" style="--d:calc(var(--c1) + .05)"><path class="o" d="M -200 0 A 200 200 0 0 1 200 0 Z" fill="#58d5f0" stroke-width="18"/><path d="M -130 -80 A 150 150 0 0 1 -40 -150" fill="none" stroke="#fff" stroke-width="24" stroke-linecap="round" opacity=".9"/></g>
+    </svg></div></div></div>
+  <div class="abs" style="left:0;right:0;top:340px;text-align:center"><div class="pop big" style="--d:calc(var(--c1) + .5);font-size:118px;color:var(--yellow)">企画のこだわり</div></div>
+  <div class="abs pop" style="--d:calc(var(--c1) + .6);left:170px;top:600px"><div class="twinkle">${star(56)}</div></div>
+  <div class="abs pop" style="--d:calc(var(--c1) + .75);left:800px;top:560px"><div class="twinkle" style="--fd:.5">${star(70, '#ffd23f')}</div></div>
+  <div class="abs pop" style="--d:calc(var(--c1) + .9);left:820px;top:900px"><div class="twinkle" style="--fd:.8">${star(40, '#ff4f8b')}</div></div>
+  <div class="abs" style="left:0;right:0;top:1120px;text-align:center"><div class="pop" style="--d:calc(var(--c1) + 1.6)"><span class="tag" style="font-size:38px">音声 VOICEVOX:四国めたん / BGM オリジナル</span></div></div>`;
+
+const BG = { hook: '#ffd23f', planner: '#58d5f0', idea: '#7be07f', limit: '#ff8fb3', flow: '#a99bff', solo: '#ff9f45', rush: '#ff5d5d', end: '#58d5f0' };
+
+// シーン構築
+const stage = document.getElementById('stage');
+const scenes = T.lines.map((line, i) => {
+  const el = document.createElement('div');
+  el.className = 'scene'; el.style.background = BG[line.id]; el.style.zIndex = i + 1;
+  const start = i === 0 ? 0 : line.start - 0.14;
+  line.chunks.forEach((c, k) => { if (k > 0) el.style.setProperty(`--c${k}`, (c.start - start).toFixed(3)); });
+  el.innerHTML = S[line.id];
+  stage.appendChild(el);
+  return { el, start, line };
+});
+scenes.forEach((s, i) => s.end = i + 1 < scenes.length ? scenes[i + 1].start + 0.5 : T.total + 1);
+stage.insertAdjacentHTML('beforeend', `<div id="bar"></div><div id="chip"><span>ガチャガチャの裏側</span></div><div id="credit">VOICEVOX:四国めたん</div><div id="cap"><div id="capbox"></div></div>`);
+const capbox = document.getElementById('capbox'), bar = document.getElementById('bar');
+const chunks = T.lines.flatMap(l => l.chunks.map((c, k) => ({ ...c, last: k === l.chunks.length - 1 })));
+const fmt = s => s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+const easeOutBack = x => { const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+
+let anims = null, curCap = null;
+window.seek = (t) => {
+  if (!anims) {
+    anims = document.getAnimations().map(a => ({ a, s: scenes.find(s => s.el.contains(a.effect.target)) }));
+    anims.forEach(x => x.a.pause());
+  }
+  for (const s of scenes) s.el.style.visibility = (t >= s.start && t < s.end) ? 'visible' : 'hidden';
+  for (const { a, s } of anims) a.currentTime = Math.max(0, (t - (s ? s.start : 0)) * 1000);
+  const c = chunks.find(c => t >= c.start - 0.04 && t < c.end + (c.last ? 0.22 : -0.04));
+  if (c !== curCap) { curCap = c; capbox.innerHTML = c ? fmt(c.caption) : ''; }
+  if (c) { const x = Math.min(1, (t - (c.start - 0.04)) / 0.2); capbox.style.transform = `scale(${0.8 + 0.2 * easeOutBack(x)})`; capbox.style.opacity = Math.min(1, x * 3); }
+  else capbox.style.opacity = 0;
+  bar.style.width = (t / T.total * 1080) + 'px';
+};
+// フォント読み込みのため全字幕を一度レイアウトさせる
+capbox.innerHTML = chunks.map(c => fmt(c.caption)).join('\n'); capbox.style.opacity = 0;
+window.ready = document.fonts.ready.then(() => Promise.all([...document.fonts].map(f => f.load().catch(() => {})))).then(() => true);
+</script>
+</body>
+</html>
