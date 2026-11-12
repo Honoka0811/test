@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Track Maintenance Short</title>
+<style>
+  html,body{margin:0;background:#0b1226;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 保線作業員のお仕事 (9:16 ショート動画 / 約64秒)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  night0: '#0b1226', night1: '#1a2650', panel: 'rgba(255,255,255,0.07)', panelLine: 'rgba(255,255,255,0.14)',
+  ink: '#f5f6fa', ink2: '#c3c9d9', ink3: '#8790a8',
+  orange: '#FF8A1F', yellow: '#FFD23F', rail: '#c9ced8', railDark: '#7b8292', sleeper: '#8a6a4a', ballast: '#6f747e',
+  green: '#46D39A', red: '#FF5A5A', sky: '#7cc4ff'
+};
+const FPS = 30, DURATION = 64.5;
+
+// シーン構成(narrate.py の SCRIPT と対応)
+const SCENES = [
+  { s: 0,    d: 8,   fn: sceneTitle },
+  { s: 8,    d: 9.5, fn: sceneWhat },
+  { s: 17.5, d: 8,   fn: sceneNight },
+  { s: 25.5, d: 10,  fn: sceneInspect },
+  { s: 35.5, d: 8.5, fn: sceneRepair },
+  { s: 44,   d: 11.5,fn: sceneSafety },
+  { s: 55.5, d: 9,   fn: sceneDawn },
+];
+// 画面字幕(表示用の表記)
+const SUBS = [
+  '毎日あたりまえのように走る電車。その安全を、夜の線路で支えているのが、保線作業員です。',
+  '保線とは、レールや枕木、その下に敷かれた砂利「バラスト」を点検して、整えるお仕事。いわば、線路のお医者さんです。',
+  '作業の多くは、終電が終わってから始発が来るまでの、わずか数時間。夜の間に行われます。',
+  'まずは点検。線路を歩いて目で確かめ、ハンマーでボルトをたたいて、音でゆるみを見つけます。検測車では、ミリ単位のゆがみも測ります。',
+  'ゆがみが見つかれば補修です。大型の機械でバラストを突き固めたり、すり減ったレールや枕木を交換したりします。',
+  '安全も第一。列車の接近を見張る「見張り員」を置き、指差し確認を徹底。作業のあとは工具の数まで数えて、線路に何も残しません。',
+  'そして朝、始発列車がいつも通り走り出す。みんなのあたりまえは、夜の線路で守られているのですわ。',
+];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const pop = t => { t = clamp(t); return t < 1 ? 1 + 0.12 * Math.sin(t * Math.PI) * (1 - t) * 3 : 1; };
+function rand(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0, stroke = 0 } = {}) {
+  ctx.save();
+  ctx.globalAlpha = clamp(alpha);
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineWidth = stroke; ctx.strokeStyle = 'rgba(5,10,25,0.85)'; ctx.lineJoin = 'round'; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, strokeColor = null) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (strokeColor) { ctx.strokeStyle = strokeColor; ctx.lineWidth = 2; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 2, alpha = 1, dash = null) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  if (dash) ctx.setLineDash(dash);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha); ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+// 文字列を幅 maxW で折り返す(句読点の直後を優先)
+function wrap(str, maxW, size, weight = 'bold') {
+  ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`;
+  const lines = []; let cur = '';
+  const chars = [...str];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ctx.measureText(cur + ch).width > maxW) {
+      // 行頭禁則: 句読点・閉じ括弧は前の行に追い込む
+      if ('、。」）'.includes(ch)) { cur += ch; lines.push(cur); cur = ''; continue; }
+      // 直前 6 文字以内に句読点があればそこで切る
+      const k = Math.max(cur.lastIndexOf('、'), cur.lastIndexOf('。'));
+      if (k >= 0 && cur.length - k <= 6 && k < cur.length - 1) { lines.push(cur.slice(0, k + 1)); cur = cur.slice(k + 1); }
+      else { lines.push(cur); cur = ''; }
+    }
+    cur += ch;
+  }
+  if (cur) lines.push(cur);
+  ctx.restore();
+  return lines;
+}
+
+// ---------- 背景 ----------
+function background(t, dawn = 0) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  const top = mix('#0b1226', '#3a5ea8', dawn), mid = mix('#1a2650', '#f7a46b', dawn), bot = mix('#0e1630', '#ffd9a0', dawn);
+  g.addColorStop(0, top); g.addColorStop(0.62, mid); g.addColorStop(1, bot);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 星
+  for (let i = 0; i < 70; i++) {
+    const x = rand(i) * W, y = rand(i + 99) * 1100;
+    const tw = 0.5 + 0.5 * Math.sin(t * (1 + rand(i + 7) * 2) + i);
+    circle(x, y, 1.2 + rand(i + 3) * 2.2, '#ffffff', (0.25 + 0.6 * tw) * (1 - dawn));
+  }
+}
+function hex(c) { return [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)); }
+function mix(a, b, t) { const A = hex(a), B = hex(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp(t)))).join(',')})`; }
+
+// 上部の見出し
+function header(no, title, alpha) {
+  rrect(70, 150, 150, 58, 29, C.orange, alpha);
+  text(no, 145, 191, { size: 32, weight: 'bold', color: '#1b1200', align: 'center', alpha });
+  text(title, 245, 196, { size: 58, weight: 'bold', alpha });
+}
+// 字幕(画面下部・Shorts の UI に重ならない位置)
+function subtitle(str, alpha) {
+  const size = 46, lh = 66;
+  const lines = wrap(str, W - 200, size);
+  const y0 = 1430 - (lines.length - 1) * lh / 2;
+  rrect(60, y0 - 70, W - 120, lines.length * lh + 50, 26, 'rgba(5,10,25,0.62)', alpha);
+  lines.forEach((l, i) => text(l, W / 2, y0 + i * lh, { size, weight: 'bold', align: 'center', alpha }));
+}
+
+// ---------- イラスト部品 ----------
+// 作業員(足元 x,y / 倍率 s)。opts: walk(歩行位相), arm(右腕角度), lamp(ヘッドライト)
+function worker(x, y, s, { walk = null, arm = -0.3, armL = 0.25, lamp = false, flag = false, flip = 1 } = {}) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s * flip, s);
+  const legA = walk == null ? 0.08 : Math.sin(walk) * 0.45;
+  // 脚
+  ctx.lineCap = 'round'; ctx.strokeStyle = '#2b3550'; ctx.lineWidth = 26;
+  ctx.beginPath(); ctx.moveTo(-8, -150); ctx.lineTo(-8 + Math.sin(legA) * 150, -150 + Math.cos(legA) * 150); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(8, -150); ctx.lineTo(8 - Math.sin(legA) * 150, -150 + Math.cos(legA) * 150); ctx.stroke();
+  // 胴体(オレンジのベスト + 反射材)
+  ctx.fillStyle = '#2b3550'; ctx.beginPath(); ctx.roundRect(-38, -300, 76, 160, 24); ctx.fill();
+  ctx.fillStyle = C.orange; ctx.beginPath(); ctx.roundRect(-40, -298, 80, 128, 20); ctx.fill();
+  ctx.fillStyle = '#e8f0ff'; ctx.fillRect(-40, -262, 80, 12); ctx.fillRect(-40, -225, 80, 12);
+  // 腕
+  ctx.strokeStyle = '#2b3550'; ctx.lineWidth = 20;
+  const sh = [0, -285];
+  ctx.beginPath(); ctx.moveTo(sh[0] - 30, sh[1]); ctx.lineTo(sh[0] - 30 - Math.sin(armL) * 120, sh[1] + Math.cos(armL) * 120); ctx.stroke();
+  // arm: 真下を 0 として前方(+x)へ回転する角度
+  const ax = sh[0] + 30 + Math.sin(arm) * 120, ay = sh[1] + Math.cos(arm) * 120;
+  ctx.beginPath(); ctx.moveTo(sh[0] + 30, sh[1]); ctx.lineTo(ax, ay); ctx.stroke();
+  if (flag) { // 手旗
+    line(ax, ay, ax + 10, ay - 110, '#ddd', 6);
+    ctx.fillStyle = C.red; ctx.beginPath(); ctx.moveTo(ax + 10, ay - 110); ctx.lineTo(ax + 90, ay - 90); ctx.lineTo(ax + 10, ay - 60); ctx.fill();
+  }
+  // 頭 + ヘルメット
+  ctx.fillStyle = '#f2c9a0'; ctx.beginPath(); ctx.arc(0, -340, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.arc(0, -350, 40, Math.PI, 0); ctx.fill();
+  ctx.fillRect(-48, -354, 96, 10);
+  if (lamp) { ctx.fillStyle = '#fffbe0'; ctx.beginPath(); ctx.arc(30, -366, 8, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  return { hand: [x + (ax) * s * flip, y + ay * s] };
+}
+// 横から見た線路(y=レール上面, x0..x1)
+function trackSide(x0, x1, y, alpha = 1, bend = null) {
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  // バラスト
+  ctx.fillStyle = C.ballast;
+  ctx.beginPath(); ctx.moveTo(x0, y + 70); ctx.lineTo(x1, y + 70); ctx.lineTo(x1, y + 130); ctx.lineTo(x0, y + 130); ctx.fill();
+  for (let i = 0; i < 160; i++) {
+    const px = x0 + rand(i + 500) * (x1 - x0), py = y + 40 + rand(i + 800) * 85;
+    circle(px, py, 5 + rand(i) * 6, i % 3 ? '#8a8f99' : '#5d626b', 1);
+  }
+  // 枕木
+  for (let x = x0 + 20; x < x1; x += 70) {
+    const dy = bend ? bend(x) : 0;
+    ctx.fillStyle = C.sleeper; ctx.fillRect(x, y + 22 + dy, 46, 28);
+  }
+  // レール
+  ctx.strokeStyle = C.rail; ctx.lineWidth = 18; ctx.lineCap = 'butt';
+  ctx.beginPath();
+  for (let x = x0; x <= x1; x += 6) { const dy = bend ? bend(x) : 0; x === x0 ? ctx.moveTo(x, y + 10 + dy) : ctx.lineTo(x, y + 10 + dy); }
+  ctx.stroke();
+  ctx.strokeStyle = '#eef1f6'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  for (let x = x0; x <= x1; x += 6) { const dy = bend ? bend(x) : 0; x === x0 ? ctx.moveTo(x, y + 3 + dy) : ctx.lineTo(x, y + 3 + dy); }
+  ctx.stroke();
+  ctx.restore();
+}
+// 透視図の線路(タイトル用)
+function trackPerspective(t, alpha) {
+  const vx = W / 2, vy = 930, by = 1920;
+  ctx.save(); ctx.globalAlpha = clamp(alpha);
+  // 道床
+  ctx.fillStyle = '#2a3046';
+  ctx.beginPath(); ctx.moveTo(vx - 30, vy); ctx.lineTo(vx + 30, vy); ctx.lineTo(W + 300, by); ctx.lineTo(-300, by); ctx.fill();
+  // 枕木(手前に流れてくる)
+  for (let k = 0; k < 26; k++) {
+    let z = ((k + t * 1.6) % 26) / 26; // 0 奥 → 1 手前
+    const p = Math.pow(z, 2.2);
+    const y = lerp(vy, by, p), hw = lerp(20, 760, p), th = lerp(1, 42, p);
+    ctx.fillStyle = mix('#3a2f28', '#7a5a3c', p); ctx.fillRect(vx - hw, y, hw * 2, th);
+  }
+  // レール
+  [-1, 1].forEach(sd => {
+    const g = ctx.createLinearGradient(0, vy, 0, by);
+    g.addColorStop(0, 'rgba(200,210,230,0.2)'); g.addColorStop(1, '#e8eef8');
+    ctx.strokeStyle = g; ctx.lineWidth = 14;
+    ctx.beginPath(); ctx.moveTo(vx + sd * 8, vy); ctx.lineTo(vx + sd * 470, by); ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, a) {
+  trackPerspective(t, a);
+  // 作業員のシルエット + ライトの光
+  const wa = a * easeOut((t - 0.6) / 0.8);
+  ctx.save(); ctx.globalAlpha = wa * 0.35;
+  const g = ctx.createRadialGradient(760, 1050, 10, 760, 1050, 380);
+  g.addColorStop(0, '#fff6c8'); g.addColorStop(1, 'rgba(255,246,200,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(735, 1035); ctx.lineTo(380, 1250); ctx.lineTo(560, 1350); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = wa; worker(800, 1290, 0.75, { lamp: true, arm: 0.4, flip: -1 }); ctx.restore();
+  const p = easeOut(t / 0.9);
+  rrect(W / 2 - 230, 380, 460, 72, 36, C.orange, a * p);
+  text('線路のお医者さん', W / 2, 430, { size: 40, weight: 'bold', color: '#1b1200', align: 'center', alpha: a * p });
+  text('保線作業員', W / 2, 610, { size: 140, weight: 'bold', align: 'center', alpha: a * easeOut((t - .25) / .8), ls: 6, stroke: 10 });
+  text('のお仕事', W / 2, 760, { size: 96, weight: 'bold', color: C.yellow, align: 'center', alpha: a * easeOut((t - .5) / .8), stroke: 8 });
+}
+
+function sceneWhat(t, a) {
+  header('01', '保線ってなに?', a * easeOut(t / .6));
+  // 断面図: バラスト(台形) → 枕木 → レール
+  const cx = W / 2, by = 1090;
+  const pB = easeOut((t - 0.3) / 0.8), pS = easeOut((t - 1.3) / 0.7), pR = easeOut((t - 2.2) / 0.7);
+  ctx.save(); ctx.globalAlpha = a;
+  // バラスト(積み上がる)
+  ctx.save(); ctx.beginPath(); ctx.rect(0, by - 230 * pB, W, 240); ctx.clip();
+  ctx.fillStyle = '#4f545d';
+  ctx.beginPath(); ctx.moveTo(cx - 440, by); ctx.lineTo(cx - 330, by - 200); ctx.lineTo(cx + 330, by - 200); ctx.lineTo(cx + 440, by); ctx.fill();
+  for (let i = 0; i < 260; i++) {
+    const v = rand(i + 40), u = rand(i + 70) * 2 - 1;
+    const yy = by - v * 195, half = lerp(440, 330, v);
+    circle(cx + u * (half - 12), yy - 6, 7 + rand(i + 9) * 8, i % 4 ? '#8b9099' : '#6c717a');
+  }
+  ctx.restore();
+  // 枕木(上から落ちてくる)
+  const sy = by - 200 - 60 + (1 - pS) * -120;
+  if (pS > 0) rrect(cx - 360, sy, 720, 60, 6, C.sleeper, pS);
+  // レール2本(I 形断面)
+  [-230, 230].forEach(dx => {
+    if (pR <= 0) return;
+    const ry = by - 260 + (1 - pR) * -120, x = cx + dx;
+    ctx.save(); ctx.globalAlpha = pR; ctx.fillStyle = C.rail;
+    ctx.fillRect(x - 50, ry - 16, 100, 16);        // 底部
+    ctx.fillRect(x - 11, ry - 110, 22, 96);        // 腹部
+    ctx.beginPath(); ctx.roundRect(x - 34, ry - 140, 68, 34, 8); ctx.fill(); // 頭部
+    ctx.restore();
+  });
+  ctx.restore();
+  // ラベル
+  const lab = (str, x, y, lx, ly, p) => {
+    if (p <= 0) return;
+    line(x, y, lx, ly, C.yellow, 4, a * p);
+    circle(x, y, 9, C.yellow, a * p);
+    rrect(lx - 130, ly - 54, 260, 72, 18, 'rgba(255,210,63,0.15)', a * p, 'rgba(255,210,63,0.6)');
+    text(str, lx, ly, { size: 42, weight: 'bold', color: C.yellow, align: 'center', alpha: a * p });
+  };
+  lab('レール', cx + 230, by - 390, cx + 300, by - 500, easeOut((t - 2.6) / .5));
+  lab('枕木', cx - 300, by - 230, cx - 310, by - 470, easeOut((t - 1.8) / .5));
+  lab('バラスト', cx + 360, by - 60, cx + 320, by + 100, easeOut((t - 0.9) / .5));
+  text('(砂利)', cx + 320, by + 150, { size: 32, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.1) / .5) });
+  // 線路のお医者さん(聴診器アイコン)
+  const pD = easeOut((t - 5.6) / .6);
+  if (pD > 0) {
+    ctx.save(); ctx.globalAlpha = a * pD; ctx.translate(cx - 200, 400); ctx.scale(pop((t - 5.6) / .6), pop((t - 5.6) / .6));
+    circle(0, 0, 70, '#ffffff');
+    ctx.strokeStyle = '#2d6cdf'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-26, -38); ctx.quadraticCurveTo(-30, 22, 0, 24); ctx.quadraticCurveTo(30, 22, 26, -38); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 24); ctx.quadraticCurveTo(4, 50, 30, 46); ctx.stroke();
+    circle(34, 38, 13, '#2d6cdf'); circle(34, 38, 6, '#fff');
+    ctx.restore();
+    text('線路の', cx - 80, 388, { size: 44, color: C.ink2, alpha: a * pD });
+    text('お医者さん', cx - 80, 452, { size: 60, weight: 'bold', color: C.ink, alpha: a * pD });
+  }
+}
+
+function sceneNight(t, a) {
+  header('02', '仕事は夜', a * easeOut(t / .6));
+  // 月
+  circle(880, 420, 62, '#fff4c9', a * 0.95); circle(905, 400, 56, mix('#0b1226', '#1a2650', 0.2), a);
+  // 時計
+  const cx = W / 2, cy = 820, R = 300;
+  ctx.save(); ctx.globalAlpha = a;
+  circle(cx, cy, R + 18, 'rgba(255,255,255,0.08)');
+  circle(cx, cy, R, '#101a3a');
+  // 作業時間帯 0:30 → 4:30 (12時間文字盤)
+  const ang = h => (h / 12) * Math.PI * 2 - Math.PI / 2;
+  const pA = easeInOut((t - 1.0) / 2.6);
+  if (pA > 0) {
+    ctx.fillStyle = 'rgba(255,138,31,0.55)';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R - 10, ang(0.5), ang(lerp(0.5, 4.5, pA))); ctx.closePath(); ctx.fill();
+  }
+  for (let i = 0; i < 12; i++) {
+    const an = ang(i), r1 = R - 26, r2 = R - (i % 3 ? 44 : 62);
+    line(cx + Math.cos(an) * r1, cy + Math.sin(an) * r1, cx + Math.cos(an) * r2, cy + Math.sin(an) * r2, C.ink2, i % 3 ? 4 : 8);
+    if (i % 3 === 0) text(String(i || 12), cx + Math.cos(an) * (R - 100), cy + Math.sin(an) * (R - 100) + 16, { size: 46, weight: 'bold', color: C.ink2, align: 'center' });
+  }
+  // 針
+  const hh = lerp(0.5, 4.5, pA), hA = ang(hh), mA = (hh % 1) * Math.PI * 2 - Math.PI / 2;
+  line(cx, cy, cx + Math.cos(hA) * 160, cy + Math.sin(hA) * 160, C.ink, 14);
+  line(cx, cy, cx + Math.cos(mA) * 230, cy + Math.sin(mA) * 230, C.ink, 8);
+  circle(cx, cy, 16, C.orange);
+  ctx.restore();
+  // ラベル
+  const p1 = easeOut((t - 0.7) / .5), p2 = easeOut((t - 3.2) / .5);
+  rrect(140, 1170, 360, 110, 20, 'rgba(255,255,255,0.08)', a * p1);
+  text('終電', 320, 1215, { size: 36, color: C.ink2, align: 'center', alpha: a * p1 });
+  text('0:30ごろ', 320, 1265, { size: 48, weight: 'bold', align: 'center', alpha: a * p1 });
+  rrect(580, 1170, 360, 110, 20, 'rgba(255,255,255,0.08)', a * p2);
+  text('始発', 760, 1215, { size: 36, color: C.ink2, align: 'center', alpha: a * p2 });
+  text('4:30ごろ', 760, 1265, { size: 48, weight: 'bold', align: 'center', alpha: a * p2 });
+  const p3 = easeOut((t - 3.8) / .5);
+  ctx.save(); ctx.translate(cx, 830); ctx.scale(pop((t - 3.8) / .5), pop((t - 3.8) / .5));
+  rrect(-190, -60, 380, 110, 55, C.orange, a * p3);
+  text('わずか数時間', 0, 15, { size: 50, weight: 'bold', color: '#1b1200', align: 'center', alpha: a * p3 });
+  ctx.restore();
+  text('※時刻は一例。路線によって異なります', cx, 1330, { size: 28, color: C.ink3, align: 'center', alpha: a * p2 });
+}
+
+// カード(点検・安全で共通)
+function card(y, h, p, a) {
+  const off = (1 - easeOut(p)) * 80;
+  rrect(70, y + off, W - 140, h, 30, C.panel, a * easeOut(p), C.panelLine);
+  return off;
+}
+function sceneInspect(t, a) {
+  header('03', '点検', a * easeOut(t / .6));
+  const H1 = 300, ys = [300, 630, 960];
+  // 1) 歩いて目視
+  let p = (t - 0.4) / .6;
+  if (p > 0) {
+    const off = card(ys[0], H1, p, a);
+    ctx.save(); ctx.beginPath(); ctx.roundRect(70, ys[0] + off, W - 140, H1, 30); ctx.clip();
+    trackSide(80, W - 70, ys[0] + off + 190, a);
+    const wx = 150 + ((t * 70) % 260);
+    ctx.save(); ctx.globalAlpha = a; worker(wx, ys[0] + off + 215, 0.48, { walk: t * 6, lamp: true, arm: 0.9 }); ctx.restore();
+    ctx.restore();
+    text('歩いて目で確認', 600, ys[0] + off + 110, { size: 46, weight: 'bold', alpha: a * easeOut(p) });
+    text('徒歩巡回', 600, ys[0] + off + 165, { size: 34, color: C.ink2, alpha: a * easeOut(p) });
+  }
+  // 2) ハンマーで打音検査
+  p = (t - 2.6) / .6;
+  if (p > 0) {
+    const off = card(ys[1], H1, p, a), y = ys[1] + off;
+    const bx = 260, by = y + 190;
+    // ボルトとレール
+    rrect(110, by - 10, 330, 46, 6, C.rail, a);
+    rrect(bx - 28, by - 46, 56, 40, 8, '#aab1be', a);
+    circle(bx, by - 26, 10, '#5d6370', a);
+    // ハンマーの振り
+    const ph = ((t - 2.6) * 2.2) % 1, sw = ph < 0.25 ? -ph / 0.25 : ph < 0.35 ? -1 + (ph - 0.25) / 0.1 : 0;
+    const ang = -0.2 + sw * -0.9;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(bx + 150, by - 150); ctx.rotate(ang);
+    ctx.fillStyle = '#8a6a4a'; ctx.fillRect(-8, 0, 16, 150);
+    ctx.fillStyle = '#c9ced8'; ctx.beginPath(); ctx.roundRect(-40, 130, 80, 36, 6); ctx.fill();
+    ctx.restore();
+    const hit = ph >= 0.35 && ph < 0.75 ? (ph - 0.35) / 0.4 : -1;
+    if (hit >= 0) {
+      for (let k = 0; k < 3; k++) {
+        ctx.save(); ctx.globalAlpha = a * (1 - hit) * (1 - k * 0.25); ctx.strokeStyle = C.yellow; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(bx, by - 30, 40 + hit * 60 + k * 26, -2.6, -0.5); ctx.stroke(); ctx.restore();
+      }
+      text('コン!', bx - 70, y + 80, { size: 44, weight: 'bold', color: C.yellow, alpha: a * (1 - hit), align: 'center' });
+    }
+    text('ハンマーで', 600, y + 110, { size: 46, weight: 'bold', alpha: a * easeOut(p) });
+    text('音でゆるみを発見', 600, y + 170, { size: 46, weight: 'bold', alpha: a * easeOut(p) });
+    text('打音検査', 600, y + 225, { size: 34, color: C.ink2, alpha: a * easeOut(p) });
+  }
+  // 3) 検測車でミリ単位
+  p = (t - 5.6) / .6;
+  if (p > 0) {
+    const off = card(ys[2], H1, p, a), y = ys[2] + off;
+    // ゆがみグラフ
+    const gx0 = 110, gx1 = 500, gy = y + 150;
+    line(gx0, gy, gx1, gy, C.ink3, 2, a, [6, 8]);
+    const pr = easeInOut((t - 6.0) / 2.5);
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = C.green; ctx.lineWidth = 5; ctx.beginPath();
+    for (let x = gx0; x <= lerp(gx0, gx1, pr); x += 3) {
+      const u = (x - gx0) / (gx1 - gx0);
+      const yv = gy - (Math.sin(u * 18) * 10 + Math.exp(-Math.pow((u - 0.68) * 9, 2)) * 70);
+      x === gx0 ? ctx.moveTo(x, yv) : ctx.lineTo(x, yv);
+    }
+    ctx.stroke(); ctx.restore();
+    const pm = easeOut((t - 7.6) / .4);
+    if (pm > 0) {
+      const mx = lerp(gx0, gx1, 0.68);
+      ctx.save(); ctx.globalAlpha = a * pm; ctx.strokeStyle = C.red; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(mx, gy - 60, 34, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      text('±mm', mx + 50, gy - 95, { size: 34, weight: 'bold', color: C.red, alpha: a * pm });
+    }
+    // 黄色い検測車(右から入ってくる)
+    text('検測車で', 600, y + 110, { size: 46, weight: 'bold', alpha: a * easeOut(p) });
+    text('ミリ単位のゆがみ', 600, y + 170, { size: 46, weight: 'bold', color: C.yellow, alpha: a * easeOut(p) });
+    text('まで測定', 600, y + 225, { size: 46, weight: 'bold', alpha: a * easeOut(p) });
+  }
+}
+
+function sceneRepair(t, a) {
+  header('04', '補修', a * easeOut(t / .6));
+  // 突き固め: 機械が左→右へ進み、通過後の線路はまっすぐになる
+  const y = 760;
+  const mx = lerp(-120, W - 330, easeInOut((t - 0.6) / 5.0));
+  const bend = x => (x > mx + 120 ? Math.sin((x - 60) / 90) * 9 + Math.sin((x - 60) / 37) * 4 : 0);
+  trackSide(0, W, y, a, bend);
+  // ゆがみ表示
+  text('ゆがみ', W - 150, y - 60, { size: 38, weight: 'bold', color: C.red, align: 'center', alpha: a * easeOut(t / .5) * clamp((W - 260 - (mx + 420)) / 100) });
+  text('まっすぐ!', mx - 140, y - 50, { size: 38, weight: 'bold', color: C.green, align: 'center', alpha: a * clamp((mx - 260) / 150) });
+  // マルチプルタイタンパー
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(mx, y);
+  ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.roundRect(-20, -230, 420, 170, 18); ctx.fill();
+  ctx.fillStyle = '#e0b52c'; ctx.fillRect(-20, -100, 420, 40);
+  ctx.fillStyle = '#1d2a4a'; ctx.beginPath(); ctx.roundRect(280, -210, 100, 70, 10); ctx.fill(); // 運転室の窓
+  ctx.fillStyle = '#fff7c8'; ctx.beginPath(); ctx.arc(392, -90, 10, 0, Math.PI * 2); ctx.fill();
+  text('マルタイ', 120, -150, { size: 44, weight: 'bold', color: '#3a2a00', align: 'center' });
+  // 車輪
+  [30, 340].forEach(wx => { ctx.fillStyle = '#333a48'; ctx.beginPath(); ctx.arc(wx, -18, 24, 0, Math.PI * 2); ctx.fill(); });
+  // ツール(上下に振動してバラストへ突っ込む)
+  const vib = Math.max(0, Math.sin(t * 9)) * 40 + Math.sin(t * 80) * 3;
+  ctx.fillStyle = '#9aa2b1';
+  [140, 200].forEach(tx => { ctx.fillRect(tx - 6, -60, 12, 70 + vib); ctx.fillRect(tx - 14, 0 + vib, 28, 16); });
+  ctx.restore();
+  // 砂利の飛び散り
+  for (let i = 0; i < 6; i++) {
+    const ph = (t * 2.2 + i / 6) % 1;
+    circle(mx + 170 + (rand(i) - 0.5) * 120 * ph, y + 60 - Math.sin(ph * Math.PI) * 50, 5, '#a3a8b2', a * (1 - ph));
+  }
+  text('マルチプルタイタンパー', W / 2, 1010, { size: 44, weight: 'bold', align: 'center', alpha: a * easeOut((t - 1.2) / .5) });
+  text('バラストを突き固めて、線路のゆがみを直す', W / 2, 1068, { size: 34, color: C.ink2, align: 'center', alpha: a * easeOut((t - 1.4) / .5) });
+  // 交換アイコン
+  const chips = [['レール交換', 4.6], ['枕木交換', 5.3]];
+  chips.forEach(([s, t0], i) => {
+    const p = easeOut((t - t0) / .5);
+    const x = 120 + i * 440;
+    ctx.save(); ctx.translate(x + 200, 1200); ctx.scale(pop((t - t0) / .5), pop((t - t0) / .5));
+    rrect(-200, -55, 400, 110, 24, 'rgba(255,138,31,0.18)', a * p, 'rgba(255,138,31,0.8)');
+    // 交換の矢印
+    ctx.save(); ctx.globalAlpha = a * p; ctx.strokeStyle = C.orange; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(-135, 0, 28, Math.PI * 0.15, Math.PI * 1.75); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-112, -30); ctx.lineTo(-108, -6); ctx.lineTo(-132, -10); ctx.stroke(); ctx.restore();
+    text(s, 30, 16, { size: 44, weight: 'bold', align: 'center', alpha: a * p });
+    ctx.restore();
+  });
+}
+
+function sceneSafety(t, a) {
+  header('05', '安全第一', a * easeOut(t / .6));
+  const H1 = 300, ys = [300, 630, 960];
+  // 1) 見張り員
+  let p = (t - 0.6) / .6;
+  if (p > 0) {
+    const off = card(ys[0], H1, p, a), y = ys[0] + off;
+    const wave = Math.sin(t * 6) * 0.25;
+    ctx.save(); ctx.globalAlpha = a; worker(220, y + 275, 0.6, { arm: Math.PI - 0.5 + wave, flag: true }); ctx.restore();
+    // 笛の音符
+    const ph = (t * 1.5) % 1;
+    text('♪', 300 + ph * 40, y + 90 - ph * 40, { size: 44, color: C.yellow, alpha: a * (1 - ph) });
+    text('見張り員', 470, y + 120, { size: 52, weight: 'bold', alpha: a * easeOut(p) });
+    text('列車の接近をいち早く知らせる', 470, y + 185, { size: 34, color: C.ink2, alpha: a * easeOut(p) });
+  }
+  // 2) 指差し確認
+  p = (t - 3.4) / .6;
+  if (p > 0) {
+    const off = card(ys[1], H1, p, a), y = ys[1] + off;
+    // 指差しの手
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(230, y + 150);
+    const jab = Math.max(0, Math.sin((t - 3.4) * 4)) * 14;
+    ctx.translate(jab, 0);
+    ctx.fillStyle = '#f2c9a0';
+    ctx.beginPath(); ctx.roundRect(-110, -45, 120, 90, 30); ctx.fill();   // こぶし
+    ctx.beginPath(); ctx.roundRect(0, -42, 120, 30, 15); ctx.fill();     // 人差し指
+    ctx.fillStyle = '#2b3550'; ctx.fillRect(-170, -40, 70, 80);           // 袖
+    ctx.restore();
+    const ok = easeOut((t - 4.6) / .4);
+    ctx.save(); ctx.translate(300, y + 75); ctx.scale(pop((t - 4.6) / .4), pop((t - 4.6) / .4));
+    text('ヨシ!', 0, 20, { size: 58, weight: 'bold', color: C.green, align: 'center', alpha: a * ok });
+    ctx.restore();
+    text('指差し確認', 520, y + 120, { size: 52, weight: 'bold', alpha: a * easeOut(p) });
+    text('目と声と指で、確実に', 520, y + 185, { size: 34, color: C.ink2, alpha: a * easeOut(p) });
+  }
+  // 3) 工具の数を確認
+  p = (t - 6.6) / .6;
+  if (p > 0) {
+    const off = card(ys[2], H1, p, a), y = ys[2] + off;
+    const items = [['ハンマー', 3], ['スパナ', 5], ['ゲージ', 2]];
+    items.forEach(([name, n], i) => {
+      const ty = y + 85 + i * 75, pc = easeOut((t - 7.2 - i * 0.6) / .35);
+      text(name, 120, ty, { size: 40, weight: 'bold', alpha: a * easeOut(p) });
+      text(`${pc > 0.5 ? n : Math.floor(n * pc * 2) || 0}/${n}`, 380, ty, { size: 40, weight: 'bold', color: C.ink2, align: 'right', alpha: a * easeOut(p) });
+      if (pc > 0) {
+        ctx.save(); ctx.globalAlpha = a * pc; ctx.strokeStyle = C.green; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(410, ty - 16); ctx.lineTo(428, ty); ctx.lineTo(458, ty - 34); ctx.stroke(); ctx.restore();
+      }
+    });
+    text('工具の数まで', 560, y + 120, { size: 48, weight: 'bold', alpha: a * easeOut(p) });
+    text('数えて確認', 560, y + 180, { size: 48, weight: 'bold', alpha: a * easeOut(p) });
+    text('線路に何も残さない', 560, y + 235, { size: 34, color: C.ink2, alpha: a * easeOut(p) });
+  }
+}
+
+function sceneDawn(t, a) {
+  // 朝日
+  const sp = easeOut(t / 3);
+  ctx.save(); ctx.globalAlpha = a;
+  const g = ctx.createRadialGradient(W / 2, 1000, 20, W / 2, 1000, 520);
+  g.addColorStop(0, 'rgba(255,240,190,0.95)'); g.addColorStop(0.25, 'rgba(255,190,110,0.6)'); g.addColorStop(1, 'rgba(255,170,90,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 300, W, 1100);
+  circle(W / 2, lerp(1080, 960, sp), 110, '#fff2c4', 1);
+  ctx.restore();
+  // 地面 + 線路
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#2a2a3a'; ctx.fillRect(0, 1040, W, 400); ctx.restore();
+  trackSide(0, W, 1020, a);
+  // 始発列車が走り抜ける
+  const tx = lerp(W + 40, -1500, easeInOut((t - 0.8) / 4.2));
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(tx, 1020);
+  for (let k = 0; k < 3; k++) {
+    const x = k * 500;
+    ctx.fillStyle = '#e9eef6'; ctx.beginPath(); ctx.roundRect(x, -230, 480, 210, k === 0 ? [90, 18, 18, 18] : 18); ctx.fill();
+    ctx.fillStyle = '#2d6cdf'; ctx.fillRect(x, -95, 480, 22);
+    ctx.fillStyle = '#ffb35c'; ctx.fillRect(x, -70, 480, 10);
+    ctx.fillStyle = '#1d2a4a';
+    for (let w = 0; w < 4; w++) { ctx.beginPath(); ctx.roundRect(x + 60 + w * 105, -200, 80, 70, 8); ctx.fill(); }
+    ['#333a48'].forEach(c => { ctx.fillStyle = c; [70, 410].forEach(wx => { ctx.beginPath(); ctx.arc(x + wx, -12, 20, 0, Math.PI * 2); ctx.fill(); }); });
+  }
+  ctx.fillStyle = '#fff6c8'; ctx.beginPath(); ctx.arc(20, -60, 12, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  // 作業員が見送る
+  ctx.save(); ctx.globalAlpha = a * easeOut((t - 4.6) / .8); worker(880, 1030, 0.5, { arm: Math.PI - 0.4 + Math.sin(t * 5) * 0.2, flip: -1 }); ctx.restore();
+  // メッセージ
+  const p1 = easeOut((t - 1.0) / .8), p2 = easeOut((t - 3.6) / .8);
+  text('あたりまえの毎朝は、', W / 2, 400, { size: 64, weight: 'bold', align: 'center', alpha: a * p1, stroke: 8 });
+  text('夜の線路でつくられる。', W / 2, 500, { size: 64, weight: 'bold', align: 'center', color: C.yellow, alpha: a * p2, stroke: 8 });
+  const pc = easeOut((t - 6.0) / .6);
+  text('ナレーション: VOICEVOX:四国めたん / BGM: 自作', W / 2, 1720, { size: 28, color: '#fff', align: 'center', alpha: a * pc, stroke: 5 });
+}
+
+// ---------- メイン ----------
+function render(t) {
+  ctx.clearRect(0, 0, W, H);
+  const last = SCENES[SCENES.length - 1];
+  const dawn = clamp((t - last.s) / 2.5);
+  background(t, dawn);
+  SCENES.forEach((sc, i) => {
+    const lt = t - sc.s;
+    if (lt < -0.01 || lt > sc.d + 0.01) return;
+    const fin = i === 0 ? 1 : clamp(lt / 0.35);
+    const fout = i === SCENES.length - 1 ? clamp((sc.d - lt) / 0.6) : clamp((sc.d - lt) / 0.3);
+    const a = Math.min(fin, fout);
+    sc.fn(lt, a);
+    // 字幕(ナレーション開始 0.4 秒後から)
+    const sa = Math.min(clamp((lt - 0.4) / 0.2), clamp((sc.d - 0.1 - lt) / 0.2));
+    if (sa > 0) subtitle(SUBS[i], sa * (i === SCENES.length - 1 ? clamp((sc.d - 2.2 - lt) / 0.3) : 1));
+  });
+  // 進行バー
+  rrect(0, H - 8, W * clamp(t / DURATION), 8, 0, C.orange, 0.9);
+}
+window.render = render; window.FPS = FPS; window.DURATION = DURATION;
+
+// プレビュー再生(ブラウザで開いたとき)
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
