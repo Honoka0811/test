@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/zen-maru-gothic/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/zen-maru-gothic/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/dela-gothic-one/index.css">
+<style>
+:root{
+  --bg:#0d1222; --bg2:#1b2440; --card:#1c2643; --line:rgba(255,255,255,.14);
+  --cream:#f6ecd6; --yellow:#ffc83a; --red:#ff4b4b; --mute:#9aa6c4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1080px;height:1920px;overflow:hidden;background:var(--bg)}
+body{font-family:"Zen Maru Gothic",sans-serif;font-weight:900;color:var(--cream);position:relative}
+.display{font-family:"Dela Gothic One","Zen Maru Gothic",sans-serif;font-weight:400}
+#bg,#blinds,#spot,#vignette{position:absolute;inset:0}
+#bg{background:radial-gradient(1200px 1100px at 50% 38%,var(--bg2),var(--bg) 70%)}
+#spot{background:radial-gradient(520px 620px at var(--sx) 760px,rgba(255,200,58,.16),transparent 70%)}
+#blinds{background:repeating-linear-gradient(168deg,transparent 0 92px,rgba(0,0,0,.26) 92px 150px);opacity:.75}
+#vignette{background:radial-gradient(900px 1300px at 50% 45%,transparent 55%,rgba(0,0,0,.55))}
+
+#head{position:absolute;top:118px;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:26px}
+#tag{display:flex;align-items:center;gap:16px;padding:14px 38px 14px 28px;border-radius:999px;
+  background:var(--yellow);color:#151a2c;font-size:46px;letter-spacing:.04em}
+#tag svg{width:50px;height:50px}
+#prog{display:flex;gap:10px}
+#prog i{display:block;width:118px;height:10px;border-radius:5px;background:rgba(255,255,255,.16);overflow:hidden}
+#prog i b{display:block;height:100%;background:var(--yellow);width:0}
+
+.scene{position:absolute;left:70px;top:310px;width:940px;height:990px;opacity:0}
+.abs{position:absolute}
+.center{left:0;right:0;text-align:center}
+.card{position:absolute;background:var(--card);border:3px solid var(--line);border-radius:36px;
+  display:flex;align-items:center;gap:36px;padding:0 48px;box-shadow:0 18px 40px rgba(0,0,0,.35)}
+.card svg{flex:none;color:var(--yellow)}
+.card .t{font-size:78px;line-height:1.15}
+.card .s{font-size:38px;color:var(--mute);font-weight:700;margin-top:6px}
+.num{flex:none;width:92px;height:92px;border-radius:50%;background:var(--yellow);color:#151a2c;
+  font-size:58px;display:flex;align-items:center;justify-content:center}
+.stamp{position:absolute;border:10px solid var(--red);color:var(--red);border-radius:22px;padding:2px 34px 10px;
+  font-size:150px;line-height:1.1;background:rgba(13,18,34,.82);white-space:nowrap}
+.badge{position:absolute;background:var(--red);color:#fff;border-radius:18px;padding:6px 26px 10px;font-size:54px}
+.label{font-size:52px;color:var(--mute);letter-spacing:.08em}
+svg.ic{fill:none;stroke:currentColor;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+
+#cap{position:absolute;left:40px;right:40px;top:1335px;height:230px;display:flex;align-items:center;justify-content:center;
+  text-align:center;font-size:62px;line-height:1.38;white-space:pre-line;color:#fff;
+  -webkit-text-stroke:16px #080b16;paint-order:stroke fill;letter-spacing:.01em}
+#credit{position:absolute;left:0;right:0;top:1590px;text-align:center;font-size:30px;font-weight:700;color:rgba(255,255,255,.55);letter-spacing:.06em}
+</style>
+</head>
+<body>
+<div id="bg"></div><div id="spot"></div><div id="blinds"></div><div id="vignette"></div>
+<div id="head">
+  <div id="tag" class="display"><svg class="ic" viewBox="0 0 100 100" style="stroke-width:11"><circle cx="42" cy="42" r="26"/><path d="M62 62 88 88"/></svg>探偵のお仕事</div>
+  <div id="prog"></div>
+</div>
+<div id="stage"></div>
+<div id="cap"></div>
+<div id="credit">VOICEVOX：四国めたん</div>
+
+<script>
+const TL = window.TIMELINE;
+const SCENES = ["hook","truth","requests","methods","limits","license","outro"];
+const clamp = (x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const easeOut = p=>1-Math.pow(1-p,3);
+const easeBack = p=>{const c=1.9;return 1+(c+1)*Math.pow(p-1,3)+c*Math.pow(p-1,2)};
+// 読み(カナ)の先頭一致でキュー時刻を引く
+const cue = (scene,kana)=>{
+  for(const l of TL.lines) if(l.scene===scene) for(const p of l.phrases) if(p.kana.startsWith(kana)) return p.t;
+  throw new Error("cue not found: "+scene+" "+kana);
+};
+const range = {};
+SCENES.forEach((s,i)=>{
+  const ls = TL.lines.filter(l=>l.scene===s);
+  range[s] = {s: i===0?0:ls[0].start-0.18};
+});
+SCENES.forEach((s,i)=>{ range[s].e = i<SCENES.length-1 ? range[SCENES[i+1]].s : TL.duration+1; });
+
+const I = {
+  mag:`<circle cx="42" cy="42" r="26"/><path d="M62 62 88 88"/>`,
+  cam:`<rect x="10" y="28" width="80" height="54" rx="10"/><circle cx="50" cy="55" r="16"/><path d="M34 28l6-10h20l6 10"/>`,
+  doc:`<path d="M26 10h34l18 18v62H26z"/><path d="M60 10v18h18M38 48h26M38 62h26M38 76h16"/>`,
+  heart:`<path d="M50 86C20 64 10 46 10 34a20 20 0 0 1 40-6 20 20 0 0 1 40 6c0 12-10 30-40 52z"/><path d="M50 28l-9 16 15 8-10 17"/>`,
+  person:`<circle cx="40" cy="30" r="15"/><path d="M12 84c0-22 12-32 28-32 5 0 9 1 13 3"/><circle cx="68" cy="68" r="13"/><path d="M78 78l12 12"/>`,
+  bldg:`<path d="M24 90V14h52v76M12 90h76M40 90V72h20v18"/><path d="M38 30h6M56 30h6M38 46h6M56 46h6M38 60h6M56 60h6"/>`,
+  foot:`<g fill="currentColor" stroke="none"><ellipse cx="32" cy="58" rx="12" ry="19" transform="rotate(-8 32 58)"/><ellipse cx="35" cy="88" rx="9" ry="7"/><ellipse cx="68" cy="24" rx="12" ry="19" transform="rotate(8 68 24)"/><ellipse cx="66" cy="54" rx="9" ry="7"/></g>`,
+  eye:`<path d="M6 50Q50 10 94 50 50 90 6 50z"/><circle cx="50" cy="50" r="15" fill="currentColor"/>`,
+  talk:`<path d="M20 14h60a10 10 0 0 1 10 10v32a10 10 0 0 1-10 10H50L32 84V66H20a10 10 0 0 1-10-10V24a10 10 0 0 1 10-10z"/><path d="M32 40h.1M50 40h.1M68 40h.1" stroke-width="10"/>`,
+  house:`<path d="M10 50 50 14l40 36M22 42v46h56V42M42 88V62h16v26"/>`,
+  mic:`<rect x="37" y="8" width="26" height="48" rx="13"/><path d="M22 44a28 28 0 0 0 56 0M50 72v16M32 88h36"/>`,
+  hat:`<path d="M6 68q44 20 88 0-14-6-18-8L70 28q-20-12-40 0l-6 32q-4 2-18 8z"/><path d="M26 52q24 10 48 0"/>`,
+  check:`<path d="M16 54l22 22 46-52" stroke-width="12"/>`,
+};
+const ic = (k,size,extra="")=>`<svg class="ic" viewBox="0 0 100 100" width="${size}" height="${size}" style="${extra}">${I[k]}</svg>`;
+// a = アニメ種別, at = 開始時刻
+const el = (a,at,style,html,cls="abs")=>`<div class="${cls}" data-a="${a}" data-at="${at.toFixed(3)}" style="${style}">${html}</div>`;
+
+const H = {};
+{ // ---- 1. フック
+  const c = k=>cue("hook",k);
+  H.hook =
+    el("pop",0.15,"left:320px;top:0;color:var(--yellow)",ic("hat",300,"stroke-width:4.5")) +
+    el("rise",c("タンテエノ")-0.1,"top:310px;font-size:118px;","探偵の仕事","abs center display") +
+    el("rise",c("シゴトッテ")+0.1,"top:455px;font-size:64px;color:var(--mute)","＝","abs center") +
+    el("pop",c("ジツワ")-0.25,"top:520px;font-size:290px;line-height:1.1;color:var(--yellow)","推理<span style='font-size:200px'>？</span>","abs center display") +
+    `<div class="abs" id="strike" style="left:120px;top:690px;height:30px;width:0;background:var(--red);border-radius:15px;transform:rotate(-7deg);transform-origin:left center;box-shadow:0 6px 0 rgba(0,0,0,.35)"></div>` +
+    el("slam",c("スイリジャナイノヨ")+0.5,"left:290px;top:835px;--r:-6deg;font-size:110px","じゃない！","stamp display");
+}
+{ // ---- 2. 本当の仕事
+  const c = k=>cue("truth",k);
+  const row = (i,at,icon,t,s)=>el("rise",at,`left:0;top:${150+i*285}px;width:940px;height:230px`,
+    `<div class="num display">${i+1}</div>${ic(icon,120)}<div><div class="t">${t}</div><div class="s">${s}</div></div>`,"card");
+  H.truth =
+    el("rise",c("ホントオノ")-0.1,"top:10px","本当の仕事は…","abs center label display") +
+    row(0,c("ジジツオ")-0.1,"mag","事実を調べる","依頼人に代わって") +
+    row(1,c("ショオコオ")-0.1,"cam","証拠を集める","写真・記録に残す") +
+    row(2,c("ホオコク")-0.1,"doc","報告する","調査報告書にまとめる");
+}
+{ // ---- 3. 依頼内容
+  const c = k=>cue("requests",k);
+  H.requests =
+    el("rise",c("イライデ")-0.1,"top:10px","どんな依頼が多い？","abs center label display") +
+    el("pop",c("ウワキチョオサ")-0.2,"left:0;top:130px;width:940px;height:400px;flex-direction:column;justify-content:center;gap:10px;border-color:var(--yellow)",
+      `${ic("heart",170,"color:var(--red)")}<div class="t display" style="font-size:112px">浮気調査</div>`,"card") +
+    el("slam",c("ウワキチョオサ")+0.25,"left:-18px;top:92px;--r:-9deg;background:var(--yellow);color:#151a2c;font-size:60px","No.1","badge display") +
+    el("pop",c("ヒトサガシヤ")-0.1,"left:0;top:580px;width:455px;height:380px;flex-direction:column;justify-content:center;gap:14px;padding:0",
+      `${ic("person",150)}<div class="t" style="font-size:70px">人探し</div>`,"card") +
+    el("pop",c("キギョオノ")-0.1,"left:485px;top:580px;width:455px;height:380px;flex-direction:column;justify-content:center;gap:14px;padding:0",
+      `${ic("bldg",150)}<div class="t" style="font-size:58px;text-align:center">企業の<br>信用調査</div>`,"card");
+}
+{ // ---- 4. 調査方法
+  const c = k=>cue("methods",k);
+  const row = (i,at,icon,t)=>el("pop",at,`left:0;top:${150+i*215}px;width:940px;height:185px`,
+    `<div class="num display">${i+1}</div>${ic(icon,110)}<div class="t display" style="font-size:92px">${t}</div>`,"card");
+  H.methods =
+    el("rise",c("チョオサノ")-0.1,"top:0;font-size:64px;color:var(--cream)","調査の基本は <span style='color:var(--yellow);font-size:96px'>3</span> つ","abs center display") +
+    row(0,c("ビコオ")-0.12,"foot","尾行") +
+    row(1,c("ハリコミ")-0.12,"eye","張り込み") +
+    row(2,c("キキコミ")-0.12,"talk","聞き込み") +
+    el("rise",c("ナンジカンモ")-0.1,"left:120px;top:800px;width:700px;height:170px;border-radius:999px;border-color:var(--yellow);gap:28px;padding:0 44px",
+      `<svg class="ic" viewBox="0 0 100 100" width="110" height="110"><circle cx="50" cy="50" r="42"/><path id="hh" d="M50 50V28"/><path id="mh" d="M50 50V16" stroke-width="4"/></svg>
+       <div style="font-size:54px;line-height:1.2">何時間も<br>じっと待つ…</div>`,"card");
+}
+{ // ---- 5. できないこと
+  const c = k=>cue("limits",k);
+  const box = (x,at,icon,t)=>el("pop",at,`left:${x}px;top:300px;width:455px;height:400px;flex-direction:column;justify-content:center;gap:22px;padding:0`,
+    `${ic(icon,190,"color:var(--cream)")}<div class="t" style="font-size:76px">${t}</div>`,"card");
+  H.limits =
+    el("rise",c("タンテエニ")-0.3,"left:60px;top:0;font-size:76px;line-height:1.3","探偵に<br>特別な権限は","abs display") +
+    el("slam",c("ナイワ")-0.1,"left:590px;top:70px;--r:-6deg;font-size:120px;padding:0 30px 8px","ない","stamp display") +
+    box(0,c("ジュウキョシンニュウヤ")-0.1,"house","住居侵入") +
+    box(485,c("トオチョオワ")-0.1,"mic","盗聴") +
+    el("slam",c("イホオヨ")-0.05,"left:215px;top:700px;--r:-7deg;font-size:210px;padding:0 40px 14px","違法","stamp display");
+}
+{ // ---- 6. 資格・届け出
+  const c = k=>cue("license",k);
+  H.license =
+    el("rise",c("ニホンデワ")-0.1,"top:10px","探偵になるには？","abs center label display") +
+    el("rise",c("シカクワ")-0.15,"left:0;top:140px;width:940px;height:300px",
+      `${ic("doc",150)}<div><div class="t display" style="font-size:88px">資格・免許</div></div>`,"card") +
+    el("slam",c("イラナイケレド")-0.05,"left:620px;top:95px;--r:8deg;font-size:110px;border-color:var(--yellow);color:var(--yellow);padding:0 30px 8px","不要","stamp display") +
+    el("rise",c("コオアンイインカイエノ")-0.1,"left:0;top:540px;width:940px;height:360px",
+      `${ic("bldg",150)}<div><div class="s" style="font-size:44px">都道府県の</div><div class="t display" style="font-size:74px">公安委員会へ<br>届け出</div></div>`,"card") +
+    el("slam",c("ヒツヨオナノ")-0.05,"left:600px;top:800px;--r:-9deg;font-size:130px;padding:0 30px 8px","必要","stamp display");
+}
+{ // ---- 7. まとめ
+  const c = k=>cue("outro",k);
+  H.outro =
+    el("pop",c("ジミチデ")-0.12,"left:20px;top:60px;width:400px;height:260px;justify-content:center;padding:0",`<div class="t display" style="font-size:130px">地道</div>`,"card") +
+    el("pop",c("ニンタイノ")-0.3,"left:420px;top:120px;width:100px;text-align:center;font-size:100px;color:var(--yellow)","×","abs display") +
+    el("pop",c("ニンタイノ")-0.12,"left:520px;top:60px;width:400px;height:260px;justify-content:center;padding:0",`<div class="t display" style="font-size:130px">忍耐</div>`,"card") +
+    el("pop",c("ソレガ")-0.1,"left:350px;top:380px;color:var(--yellow)",ic("hat",240,"stroke-width:4.5")) +
+    el("rise",c("ホントオノ")-0.15,"top:625px;font-size:76px;color:var(--cream)","それが、本当の","abs center display") +
+    el("pop",c("タンテエヨ")-0.15,"top:720px;font-size:230px;line-height:1.15;color:var(--yellow)","探偵","abs center display");
+}
+
+const stage = document.getElementById("stage");
+stage.innerHTML = SCENES.map(s=>`<div class="scene" id="s-${s}">${H[s]}</div>`).join("");
+document.getElementById("prog").innerHTML = SCENES.map(()=>"<i><b></b></i>").join("");
+const bars = [...document.querySelectorAll("#prog b")];
+const anims = [...document.querySelectorAll("[data-a]")].map(n=>({n,a:n.dataset.a,at:+n.dataset.at,r:n.style.getPropertyValue("--r")||"0deg"}));
+const capEl = document.getElementById("cap");
+const strikeAt = cue("hook","スイリジャナイノヨ")+0.35;
+
+window.renderAt = t=>{
+  document.getElementById("spot").style.setProperty("--sx",(540+Math.sin(t*0.35)*190)+"px");
+  document.getElementById("blinds").style.backgroundPositionY=(t*14)+"px";
+  SCENES.forEach((s,i)=>{
+    const r = range[s], n = document.getElementById("s-"+s);
+    const a = clamp((t-r.s)/0.28), b = i===SCENES.length-1?1:clamp((r.e-t)/0.2);
+    n.style.opacity = Math.min(a,b);
+    n.style.transform = `translateY(${(1-easeOut(a))*40 - (1-b)*30}px)`;
+    n.style.visibility = (t<r.s||t>r.e)?"hidden":"visible";
+    bars[i].style.width = (clamp((t-r.s)/(Math.min(r.e,TL.duration)-r.s))*100)+"%";
+  });
+  for(const {n,a,at,r} of anims){
+    const dur = a==="slam"?0.22:0.42, p = clamp((t-at)/dur);
+    n.style.opacity = a==="slam" ? (p>0?1:0) : clamp(p*2.2);
+    if(a==="pop") n.style.transform = `scale(${0.55+0.45*easeBack(p)})`;
+    else if(a==="rise") n.style.transform = `translateY(${(1-easeOut(p))*70}px)`;
+    else { // slam: 大きく → ドンと着地して少し揺れる
+      const shake = p>=1 ? Math.sin((t-at-dur)*38)*Math.exp(-(t-at-dur)*9)*5 : 0;
+      n.style.transform = `rotate(calc(${r} + ${shake}deg)) scale(${1+(1-easeOut(p))*2.2})`;
+    }
+  }
+  document.getElementById("strike").style.width = (clamp((t-strikeAt)/0.18)*820)+"px";
+  // 時計の針
+  const k = Math.max(0,t-cue("methods","ナンジカンモ"));
+  document.getElementById("mh").setAttribute("transform",`rotate(${k*720} 50 50)`);
+  document.getElementById("hh").setAttribute("transform",`rotate(${k*60} 50 50)`);
+  // 字幕
+  let cap = "", co = 0;
+  TL.lines.forEach((l,i)=>{
+    const next = TL.lines[i+1], end = next ? Math.min(next.start-0.04, l.end+0.45) : l.end+0.9;
+    if(t>=l.start-0.06 && t<end){ cap = l.caption; co = Math.min(clamp((t-l.start+0.06)/0.12), clamp((end-t)/0.1)); }
+  });
+  if(capEl.textContent!==cap) capEl.textContent = cap;
+  capEl.style.opacity = co;
+  capEl.style.transform = `translateY(${(1-co)*14}px)`;
+  // クレジットは最後に強調
+  const o = clamp((t-(TL.duration-2.2))/0.4);
+  const cr = document.getElementById("credit");
+  cr.style.color = `rgba(255,255,255,${0.55+0.4*o})`;
+  cr.textContent = o>0 ? "音声 VOICEVOX：四国めたん ／ BGM オリジナル" : "VOICEVOX：四国めたん";
+};
+window.renderAt(0);
+window.READY = document.fonts.ready.then(()=>true);
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+node_modules/
+output/frames/
+output/preview_*
+__pycache__/
