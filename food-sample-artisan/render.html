@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>食品サンプル職人</title>
+<style>
+@font-face { font-family: ZMG; src: url(fonts/ZenMaruGothic-500.ttf); font-weight: 500; }
+@font-face { font-family: ZMG; src: url(fonts/ZenMaruGothic-900.ttf); font-weight: 900; }
+html, body { margin: 0; background: #222; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const W = 1080, H = 1920;
+window.FPS = 30;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+window.fontsReady = Promise.all([document.fonts.load('900 40px ZMG'), document.fonts.load('500 40px ZMG')]);
+
+// ---------- 色 ----------
+const C = {
+  bg: '#FFF4E3', bg2: '#FBE6C8', ink: '#3B2416', red: '#C8352B', red2: '#E0584A',
+  cream: '#FFFDF7', gold: '#E9A93B', green: '#5E9E4B', blue: '#6FB4D8', gray: '#9C8E80',
+};
+
+// ---------- シーン(narrate.py の SCRIPT と開始秒・長さを揃える) ----------
+const SCENES = [
+  { start: 0,  dur: 7, draw: sceneTitle,   chip: null,
+    sub: 'お店の前に並ぶ、本物そっくりの料理。じつはこれ、職人さんの手作りですのよ。' },
+  { start: 7,  dur: 8, draw: sceneOrigin,  chip: 'はじまり',
+    sub: '食品サンプルは、昭和のはじめごろ日本で生まれた文化。最初は「ろう」で作られていましたわ。' },
+  { start: 15, dur: 8, draw: sceneGujo,    chip: '一大産地',
+    sub: '「食品サンプルの父」岩崎瀧三の故郷、岐阜県郡上市は、いまも国内生産の約6割を担いますの。' },
+  { start: 23, dur: 7, draw: sceneMold,    chip: 'STEP 1',
+    sub: '作り方を見てみましょう。まずは本物の料理から、シリコンで型を取ります。' },
+  { start: 30, dur: 7, draw: scenePour,    chip: 'STEP 2',
+    sub: '型に液体の樹脂を流し込み、オーブンで加熱して固めます。' },
+  { start: 37, dur: 8, draw: scenePaint,   chip: 'STEP 3',
+    sub: '色付けは職人の腕の見せどころ。エアブラシと筆で、焼き目や照りを重ねていきますわ。' },
+  { start: 45, dur: 8, draw: sceneAssemble, chip: 'STEP 4',
+    sub: '最後に盛り付け。立ちのぼる湯気も、持ち上げた麺も、まるで時間が止まったよう。' },
+  { start: 53, dur: 9, draw: sceneLettuce, chip: '職人ワザ',
+    sub: 'レタスは、お湯にろうを垂らし、手でふわっと広げて作るんですの。一瞬の勝負ですわね。' },
+  { start: 62, dur: 7, draw: sceneEnd,     chip: null,
+    sub: '店先のサンプルは、食欲をそそる小さな芸術作品。今度、じっくり眺めてみてくださいね。' },
+];
+window.DURATION = SCENES[SCENES.length - 1].start + SCENES[SCENES.length - 1].dur;
+const LEAD = 0.45;
+
+// ---------- 汎用 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => { k = clamp(k); return k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const easeOut = k => 1 - Math.pow(1 - clamp(k), 3);
+const back = k => { k = clamp(k); const c = 1.70158, c3 = c + 1; return 1 + c3 * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function ell(x, y, rx, ry, fill, stroke, lw) {
+  ctx.beginPath(); ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), 0, 0, Math.PI * 2);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 4; ctx.stroke(); }
+}
+function font(px, w = 900) { ctx.font = `${w} ${px}px ZMG, IPAGothic, sans-serif`; }
+function text(s, x, y, px, color, w = 900, align = 'center') {
+  font(px, w); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+}
+function outlined(s, x, y, px, fill, stroke, lw) {
+  font(px); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.strokeText(s, x, y);
+  ctx.fillStyle = fill; ctx.fillText(s, x, y);
+}
+// 日本語の折り返し(行頭禁則の簡易版)
+function wrap(s, maxW, px, w = 500) {
+  font(px, w);
+  const NG = '、。」』）)!?！？ーぁぃぅぇぉっゃゅょ・';
+  const lines = []; let cur = '';
+  for (const ch of s) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      if (NG.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+// ---------- 背景・共通UI ----------
+function background(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  // 水玉
+  ctx.fillStyle = 'rgba(232,170,110,0.13)';
+  for (let r = 0; r < 22; r++) for (let c = 0; c < 9; c++) {
+    const x = c * 130 + (r % 2) * 65 + 20, y = r * 95 - ((t * 12) % 190) + 40;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+  }
+  // 上部ののれん
+  ctx.fillStyle = C.red; ctx.fillRect(0, 0, W, 150);
+  for (const sx of [180, 900]) { ctx.fillStyle = C.bg; ctx.fillRect(sx - 4, 70, 8, 80); }
+  text('食品サンプル職人', W / 2, 82, 54, '#fff');
+}
+function chip(label, t) {
+  if (!label) return;
+  const k = back(prog(t, 0.1, 0.6));
+  font(46); const w = ctx.measureText(label).width + 70;
+  ctx.save(); ctx.translate(W / 2, 230); ctx.scale(k, k);
+  rr(-w / 2, -38, w, 76, 38); ctx.fillStyle = C.ink; ctx.fill();
+  text(label, 0, 2, 46, '#fff'); ctx.restore();
+}
+function headline(s, t, y = 1340, px = 92, color = C.ink) {
+  const k = easeOut(prog(t, 0.25, 0.85));
+  ctx.save(); ctx.globalAlpha *= k; ctx.translate(0, (1 - k) * 40);
+  outlined(s, W / 2, y, px, color, '#fff', 22);
+  ctx.restore();
+}
+function subtitle(s, t, dur) {
+  const k = prog(t, LEAD - 0.1, LEAD + 0.2) * (1 - prog(t, dur - 0.2, dur));
+  if (k <= 0) return;
+  let lines = wrap(s, 860, 50);
+  // 行長をそろえる(最後の行だけ短く残らないように)
+  for (let w = 600; w < 860; w += 10) { const l2 = wrap(s, w, 50); if (l2.length === lines.length) { lines = l2; break; } }
+  const lh = 72, h = lines.length * lh + 50, y0 = 1470;
+  ctx.save(); ctx.globalAlpha *= k;
+  rr(70, y0, W - 140, h, 30); ctx.fillStyle = 'rgba(59,36,22,0.88)'; ctx.fill();
+  lines.forEach((l, i) => text(l, W / 2, y0 + 25 + lh / 2 + i * lh, 50, '#fff', 500));
+  ctx.restore();
+}
+
+// ---------- 料理イラスト ----------
+function plate(x, y, rx) {
+  ell(x, y + 8, rx, rx * 0.3, 'rgba(0,0,0,0.12)');
+  ell(x, y, rx, rx * 0.3, '#fff', '#E3D8CB', 4);
+  ell(x, y, rx * 0.72, rx * 0.2, null, '#EFE7DD', 3);
+}
+function omurice(x, y, s) {
+  plate(x, y + 30 * s, 190 * s);
+  const g = ctx.createLinearGradient(0, y - 80 * s, 0, y + 40 * s);
+  g.addColorStop(0, '#FFE07A'); g.addColorStop(1, '#F0B53A');
+  ctx.beginPath(); ctx.ellipse(x, y + 10 * s, 140 * s, 80 * s, 0, Math.PI, 0); ctx.ellipse(x, y + 10 * s, 140 * s, 30 * s, 0, 0, Math.PI);
+  ctx.fillStyle = g; ctx.fill();
+  ell(x - 40 * s, y - 35 * s, 40 * s, 14 * s, 'rgba(255,255,255,0.45)');
+  ctx.beginPath(); ctx.moveTo(x - 100 * s, y - 20 * s);
+  for (let i = 0; i <= 20; i++) { const k = i / 20; ctx.lineTo(x - 100 * s + 200 * s * k, y - 30 * s - Math.sin(k * Math.PI) * 30 * s + Math.sin(k * 28) * 12 * s); }
+  ctx.strokeStyle = '#C8231B'; ctx.lineWidth = 14 * s; ctx.lineCap = 'round'; ctx.stroke();
+  ell(x + 110 * s, y + 25 * s, 18 * s, 12 * s, C.green);
+}
+function parfait(x, y, s) {
+  // y はグラスの底
+  ctx.save();
+  const top = y - 330 * s, rw = 95 * s;
+  ctx.beginPath(); ctx.moveTo(x - rw, top); ctx.bezierCurveTo(x - rw, top + 200 * s, x - 40 * s, top + 240 * s, x - 22 * s, top + 260 * s);
+  ctx.lineTo(x + 22 * s, top + 260 * s); ctx.bezierCurveTo(x + 40 * s, top + 240 * s, x + rw, top + 200 * s, x + rw, top); ctx.closePath();
+  ctx.save(); ctx.clip();
+  const layers = [['#F7F0E2', 0], ['#E04B5A', 50], ['#FFF8EE', 90], ['#D9A35A', 140], ['#F3C3C8', 190]];
+  layers.forEach(([c, o]) => { ctx.fillStyle = c; ctx.fillRect(x - rw, top + o * s, rw * 2, 260 * s); });
+  for (let i = 0; i < 14; i++) ell(x - 70 * s + rnd(i) * 140 * s, top + 150 * s + rnd(i + 9) * 30 * s, 10 * s, 6 * s, '#B97A35');
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(160,190,210,0.9)'; ctx.lineWidth = 5 * s; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(x - rw + 14 * s, top + 20 * s, 12 * s, 150 * s);
+  // 脚
+  ctx.fillStyle = 'rgba(190,215,230,0.95)'; ctx.fillRect(x - 10 * s, top + 258 * s, 20 * s, 60 * s);
+  ell(x, y - 6 * s, 70 * s, 14 * s, 'rgba(190,215,230,0.95)');
+  // クリーム・いちご・さくらんぼ
+  for (const [dx, dy, r] of [[-55, -5, 42], [0, -25, 50], [55, -5, 42], [0, -65, 34]]) ell(x + dx * s, top + dy * s, r * s, r * 0.8 * s, '#FFFDF8', '#EADFD0', 3);
+  for (const dx of [-70, 70]) { ctx.beginPath(); ctx.moveTo(x + dx * s, top - 40 * s); ctx.lineTo(x + (dx * 1.25) * s, top + 15 * s); ctx.lineTo(x + dx * 0.7 * s, top + 15 * s); ctx.closePath(); ctx.fillStyle = '#E8343F'; ctx.fill(); }
+  ctx.fillStyle = '#E2B771'; ctx.save(); ctx.translate(x + 40 * s, top - 90 * s); ctx.rotate(0.35); ctx.fillRect(-12 * s, -70 * s, 24 * s, 110 * s); ctx.restore();
+  ctx.beginPath(); ctx.moveTo(x, top - 100 * s); ctx.quadraticCurveTo(x + 10 * s, top - 150 * s, x + 30 * s, top - 160 * s); ctx.strokeStyle = '#5A7A2E'; ctx.lineWidth = 5 * s; ctx.stroke();
+  ell(x, top - 92 * s, 24 * s, 24 * s, '#D6202C'); ell(x - 8 * s, top - 100 * s, 7 * s, 5 * s, 'rgba(255,255,255,0.7)');
+  ctx.restore();
+}
+// ラーメン。o.k: トッピングごとの出現度(0..1)、o.lift: 持ち上げ麺、o.steam: 湯気
+function ramen(x, y, s, t, o = {}) {
+  const K = n => (o[n] === undefined ? 1 : o[n]);
+  ell(x, y + 250 * s, 160 * s, 30 * s, 'rgba(0,0,0,0.13)');
+  // 丼
+  ctx.beginPath(); ctx.moveTo(x - 300 * s, y);
+  ctx.bezierCurveTo(x - 290 * s, y + 160 * s, x - 190 * s, y + 230 * s, x - 120 * s, y + 235 * s);
+  ctx.lineTo(x + 120 * s, y + 235 * s);
+  ctx.bezierCurveTo(x + 190 * s, y + 230 * s, x + 290 * s, y + 160 * s, x + 300 * s, y);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(x - 300 * s, 0, x + 300 * s, 0);
+  g.addColorStop(0, '#A92A22'); g.addColorStop(0.45, C.red2); g.addColorStop(1, '#9B241D');
+  ctx.fillStyle = g; ctx.fill();
+  // 雷文の帯
+  ctx.save(); ctx.clip();
+  ctx.fillStyle = '#FFF7EC'; ctx.fillRect(x - 320 * s, y + 40 * s, 640 * s, 46 * s);
+  ctx.strokeStyle = C.red; ctx.lineWidth = 5 * s;
+  for (let i = -7; i < 7; i++) {
+    const bx = x + i * 46 * s, by = y + 50 * s;
+    ctx.beginPath(); ctx.moveTo(bx, by + 26 * s); ctx.lineTo(bx, by); ctx.lineTo(bx + 30 * s, by); ctx.lineTo(bx + 30 * s, by + 18 * s); ctx.lineTo(bx + 12 * s, by + 18 * s); ctx.lineTo(bx + 12 * s, by + 8 * s); ctx.stroke();
+  }
+  ctx.restore();
+  ell(x, y, 300 * s, 82 * s, '#FFF7EC');
+  // スープ
+  const kb = K('broth');
+  if (kb > 0) {
+    const gb = ctx.createRadialGradient(x - 60 * s, y - 20 * s, 10, x, y, 280 * s);
+    gb.addColorStop(0, '#F2BC62'); gb.addColorStop(1, '#C97A2E');
+    ctx.save(); ctx.globalAlpha *= kb; ell(x, y + 4 * s, 272 * s, 68 * s, gb); ctx.restore();
+  }
+  ctx.save(); ctx.beginPath(); ctx.ellipse(x, y + 4 * s, 272 * s, 68 * s, 0, 0, Math.PI * 2); ctx.clip();
+  // 麺
+  const kn = K('noodles');
+  if (kn > 0) {
+    ctx.strokeStyle = '#F6DA7A'; ctx.lineWidth = 7 * s; ctx.lineCap = 'round';
+    for (let i = 0; i < 9; i++) {
+      ctx.globalAlpha = kn; ctx.beginPath();
+      for (let j = 0; j <= 30; j++) { const k = j / 30; const px = x - 230 * s + k * 460 * s; const py = y - 30 * s + i * 8 * s + Math.sin(k * 18 + i) * 7 * s; j ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  const drop = (n) => { const k = K(n); return { a: clamp(k * 3), dy: (1 - easeOut(k)) * -260 * s }; };
+  // のり
+  let d = drop('nori');
+  if (d.a > 0) { ctx.save(); ctx.globalAlpha *= d.a; ctx.translate(x - 200 * s, y - 60 * s + d.dy); ctx.rotate(-0.25); rr(-48 * s, -70 * s, 96 * s, 110 * s, 6 * s); ctx.fillStyle = '#1F3324'; ctx.fill(); ctx.restore(); }
+  // チャーシュー
+  d = drop('chashu');
+  if (d.a > 0) { ctx.save(); ctx.globalAlpha *= d.a; ctx.translate(0, d.dy);
+    ell(x - 90 * s, y - 10 * s, 78 * s, 34 * s, '#B5643A'); ell(x - 90 * s, y - 14 * s, 66 * s, 26 * s, '#E8A487'); ell(x - 100 * s, y - 18 * s, 20 * s, 8 * s, '#F6D2C0'); ctx.restore(); }
+  // なると
+  d = drop('naruto');
+  if (d.a > 0) { ctx.save(); ctx.globalAlpha *= d.a; ctx.translate(0, d.dy);
+    ell(x + 70 * s, y - 25 * s, 46 * s, 20 * s, '#FFFDF8', '#F2D9DE', 3);
+    ctx.beginPath(); for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 5, r = (i / 60) * 34 * s; ctx.lineTo(x + 70 * s + Math.cos(a) * r, y - 25 * s + Math.sin(a) * r * 0.42); }
+    ctx.strokeStyle = '#E86A8A'; ctx.lineWidth = 4 * s; ctx.stroke(); ctx.restore(); }
+  // 煮卵
+  d = drop('egg');
+  if (d.a > 0) { ctx.save(); ctx.globalAlpha *= d.a; ctx.translate(0, d.dy);
+    ell(x + 170 * s, y + 5 * s, 52 * s, 32 * s, '#F4E2C2'); ell(x + 170 * s, y + 3 * s, 28 * s, 17 * s, '#F09A2A'); ell(x + 165 * s, y, 10 * s, 5 * s, '#FFC75A'); ctx.restore(); }
+  // ねぎ
+  d = drop('negi');
+  if (d.a > 0) { ctx.save(); ctx.globalAlpha *= d.a; ctx.translate(0, d.dy);
+    for (let i = 0; i < 12; i++) ell(x - 10 * s + (rnd(i) - 0.5) * 120 * s, y + 25 * s + (rnd(i + 3) - 0.5) * 30 * s, 9 * s, 5 * s, '#7DBA4C', '#4E8A2C', 2 * s);
+    ctx.restore(); }
+  // 持ち上げ麺 + 箸
+  const kl = K('lift');
+  if (kl > 0) {
+    const bob = Math.sin(t * 2) * 4 * s;
+    const hy = y - 60 * s - 240 * s * easeOut(kl) + bob;
+    ctx.save(); ctx.globalAlpha *= clamp(kl * 3);
+    ctx.strokeStyle = '#F6DA7A'; ctx.lineWidth = 8 * s; ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) {
+      ctx.beginPath(); const sx = x + 10 * s + i * 9 * s;
+      for (let j = 0; j <= 30; j++) { const k = j / 30; const py = lerp(hy, y - 10 * s, k); const px = sx + Math.sin(k * 14 + i * 1.3) * 10 * s + k * (i - 2.5) * 10 * s; j ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#8A5A33'; ctx.lineWidth = 11 * s;
+    for (const off of [-14, 14]) { ctx.beginPath(); ctx.moveTo(x + 30 * s + off * s, hy + 4 * s); ctx.lineTo(x + 260 * s + off * s, hy - 230 * s); ctx.stroke(); }
+    ctx.restore();
+  }
+  // 湯気
+  const ks = K('steam');
+  if (ks > 0) {
+    ctx.save(); ctx.lineCap = 'round';
+    for (let i = 0; i < 4; i++) {
+      const ph = (t * 0.45 + i * 0.25) % 1;
+      ctx.globalAlpha = ks * Math.sin(ph * Math.PI) * 0.7;
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 16 * s;
+      ctx.beginPath();
+      for (let j = 0; j <= 20; j++) { const k = j / 20; const px = x - 150 * s + i * 95 * s + Math.sin(k * 6 + t * 2 + i) * 22 * s; const py = y - 70 * s - ph * 120 * s - k * 170 * s; j ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+// サーモンのにぎり。paint: 0=真っ白, 1=色付き / sear: 炙り / gloss: 照り
+function nigiri(x, y, s, o = {}) {
+  const white = o.white || 0;
+  ell(x, y + 70 * s, 170 * s, 30 * s, 'rgba(0,0,0,0.12)');
+  // シャリ
+  ell(x, y + 25 * s, 150 * s, 55 * s, '#FDFBF4', '#E7E0D2', 3);
+  if (!white) for (let i = 0; i < 26; i++) ell(x + (rnd(i) - 0.5) * 260 * s, y + 30 * s + (rnd(i + 5) - 0.5) * 70 * s, 11 * s, 6 * s, null, '#ECE5D6', 2);
+  // ネタの形
+  const neta = () => { ctx.beginPath(); ctx.moveTo(x - 185 * s, y + 5 * s); ctx.bezierCurveTo(x - 160 * s, y - 70 * s, x + 120 * s, y - 75 * s, x + 190 * s, y - 15 * s); ctx.bezierCurveTo(x + 170 * s, y + 30 * s, x - 120 * s, y + 45 * s, x - 185 * s, y + 5 * s); ctx.closePath(); };
+  neta(); ctx.fillStyle = '#FBF8F2'; ctx.fill(); ctx.strokeStyle = '#E3DBCF'; ctx.lineWidth = 3; ctx.stroke();
+  if (white) return;
+  const kp = o.paint === undefined ? 1 : o.paint;
+  if (kp > 0) {
+    ctx.save(); neta(); ctx.clip();
+    // 左から塗られていく
+    ctx.beginPath(); ctx.rect(x - 200 * s, y - 100 * s, 400 * s * kp, 200 * s); ctx.clip();
+    const g = ctx.createLinearGradient(0, y - 70 * s, 0, y + 40 * s);
+    g.addColorStop(0, '#FF8C5A'); g.addColorStop(1, '#F06A3A');
+    ctx.fillStyle = g; ctx.fillRect(x - 200 * s, y - 100 * s, 400 * s, 200 * s);
+    ctx.strokeStyle = 'rgba(255,240,228,0.9)'; ctx.lineWidth = 9 * s;
+    for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(x - 150 * s + i * 60 * s, y - 70 * s); ctx.quadraticCurveTo(x - 120 * s + i * 60 * s, y - 10 * s, x - 160 * s + i * 60 * s, y + 50 * s); ctx.stroke(); }
+    // 炙り
+    const kse = o.sear || 0;
+    if (kse > 0) {
+      const gs = ctx.createLinearGradient(0, y - 75 * s, 0, y + 10 * s);
+      gs.addColorStop(0, `rgba(90,40,15,${0.75 * kse})`); gs.addColorStop(1, 'rgba(120,50,20,0)');
+      ctx.fillStyle = gs; ctx.fillRect(x - 200 * s, y - 100 * s, 400 * s, 200 * s);
+      for (let i = 0; i < 18; i++) ell(x + (rnd(i * 3) - 0.5) * 300 * s, y - 50 * s + rnd(i * 7) * 30 * s, 14 * s, 7 * s, `rgba(70,30,10,${0.5 * kse})`);
+    }
+    ctx.restore();
+  }
+  const kg = o.gloss || 0;
+  if (kg > 0) {
+    ctx.save(); ctx.globalAlpha = kg * 0.85;
+    ctx.beginPath(); ctx.ellipse(x - 30 * s, y - 40 * s, 110 * s, 12 * s, -0.08, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    star(x + 120 * s, y - 70 * s, 26 * s * kg); ctx.restore();
+  }
+}
+function star(x, y, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr2 = i % 2 ? r * 0.25 : r; ctx.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); }
+  ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill();
+}
+function priceTag(x, y, label, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  rr(-80, -32, 160, 64, 10); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#D9CBB8'; ctx.lineWidth = 3; ctx.stroke();
+  text(label, 0, 2, 36, C.ink); ctx.restore();
+}
+function showcase(t, y0 = 350) {
+  const x0 = 90, w = W - 180, h = 820;
+  // 枠
+  rr(x0 - 20, y0 - 20, w + 40, h + 40, 26); ctx.fillStyle = '#6B4329'; ctx.fill();
+  rr(x0, y0, w, h, 14);
+  const g = ctx.createLinearGradient(0, y0, 0, y0 + h); g.addColorStop(0, '#FFFBF2'); g.addColorStop(1, '#F4E3C8');
+  ctx.fillStyle = g; ctx.fill();
+  // 照明
+  ctx.save(); ctx.clip();
+  const lg = ctx.createRadialGradient(W / 2, y0, 10, W / 2, y0, 700); lg.addColorStop(0, 'rgba(255,240,190,0.7)'); lg.addColorStop(1, 'rgba(255,240,190,0)');
+  ctx.fillStyle = lg; ctx.fillRect(x0, y0, w, h);
+  // 棚
+  ctx.fillStyle = '#D9C3A2'; ctx.fillRect(x0, y0 + 440, w, 16); ctx.fillRect(x0, y0 + h - 30, w, 30);
+  ramen(W / 2, y0 + 205, 0.6, t, {});
+  omurice(x0 + 215, y0 + 650, 0.82);
+  parfait(x0 + w - 200, y0 + h - 40, 0.95);
+  priceTag(W / 2 + 230, y0 + 380, '850円', 0.05);
+  priceTag(x0 + 215, y0 + 755, '980円', -0.04);
+  priceTag(x0 + w - 330, y0 + 745, '720円', 0.06);
+  // ガラスの反射
+  const sh = ((t * 0.25) % 1.6) - 0.3;
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.moveTo(x0 + w * sh, y0); ctx.lineTo(x0 + w * sh + 90, y0); ctx.lineTo(x0 + w * sh - 260, y0 + h); ctx.lineTo(x0 + w * sh - 350, y0 + h); ctx.fill();
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, d) {
+  const k = easeOut(prog(t, 0, 0.9));
+  ctx.save(); ctx.globalAlpha *= k; ctx.translate(0, (1 - k) * 60); showcase(t); ctx.restore();
+  // タイトル
+  const kt = back(prog(t, 0.7, 1.4));
+  ctx.save(); ctx.translate(W / 2, 1320); ctx.scale(kt, kt);
+  outlined('本物より、', 0, -70, 110, C.red, '#fff', 26);
+  outlined('おいしそう。', 0, 60, 110, C.red, '#fff', 26);
+  ctx.restore();
+  text('ナレーション  VOICEVOX:四国めたん', W - 40, 186, 28, 'rgba(59,36,22,0.6)', 500, 'right');
+}
+function sceneOrigin(t) {
+  // セピアの古写真
+  const k1 = easeOut(prog(t, 0, 0.8));
+  ctx.save(); ctx.globalAlpha *= k1; ctx.translate(W / 2, 560); ctx.rotate(-0.04 * k1);
+  rr(-300, -230, 600, 440, 10); ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.2)'; ctx.shadowBlur = 30; ctx.fill(); ctx.shadowBlur = 0;
+  rr(-270, -200, 540, 340, 4); ctx.fillStyle = '#E8D7B5'; ctx.fill();
+  ctx.save(); ctx.clip(); ctx.filter = 'sepia(1) saturate(0.7)'; omurice(0, -30, 0.95); ctx.filter = 'none'; ctx.restore();
+  text('昭和のはじめごろ', 0, 178, 40, '#6B5642', 900);
+  ctx.restore();
+  // ろう → 樹脂
+  const k2 = easeOut(prog(t, 2.2, 3.0)), k3 = easeOut(prog(t, 3.6, 4.4));
+  const y = 1020;
+  ctx.save(); ctx.globalAlpha *= k2;
+  // ろうのかたまり
+  rr(160, y - 90, 200, 150, 24); ctx.fillStyle = '#FFF3D6'; ctx.fill(); ctx.strokeStyle = '#E5CF9F'; ctx.lineWidth = 5; ctx.stroke();
+  for (const [dx, h] of [[30, 50], [90, 80], [150, 40]]) { rr(160 + dx, y - 90, 26, h, 13); ctx.fillStyle = '#FFF3D6'; ctx.fill(); }
+  text('ろう(蝋)', 260, y + 120, 48, C.ink);
+  text('当時の主流', 260, y + 175, 34, C.gray, 500);
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= k3;
+  // 矢印
+  ctx.fillStyle = C.red; ctx.beginPath(); ctx.moveTo(470, y - 40); ctx.lineTo(560, y - 40); ctx.lineTo(560, y - 70); ctx.lineTo(620, y - 15); ctx.lineTo(560, y + 40); ctx.lineTo(560, y + 10); ctx.lineTo(470, y + 10); ctx.fill();
+  // 樹脂ボトル
+  rr(740, y - 140, 170, 210, 30); ctx.fillStyle = '#EAF4FA'; ctx.fill(); ctx.strokeStyle = C.blue; ctx.lineWidth = 5; ctx.stroke();
+  rr(785, y - 180, 80, 50, 10); ctx.fillStyle = C.blue; ctx.fill();
+  rr(760, y - 60, 130, 100, 10); ctx.fillStyle = '#fff'; ctx.fill(); text('PVC', 825, y - 10, 40, C.blue);
+  text('樹脂', 825, y + 120, 48, C.ink);
+  text('いまの主流', 825, y + 175, 34, C.gray, 500);
+  ctx.restore();
+  headline('はじまりは「ろう」', t - 1.2);
+}
+function sceneGujo(t) {
+  // 山と川の風景
+  const k = easeOut(prog(t, 0, 0.8));
+  ctx.save(); ctx.globalAlpha *= k;
+  const by = 640;
+  ctx.fillStyle = '#9CC58A'; ctx.beginPath(); ctx.moveTo(60, by); ctx.lineTo(260, by - 230); ctx.lineTo(430, by - 90); ctx.lineTo(600, by - 280); ctx.lineTo(820, by - 120); ctx.lineTo(1020, by - 200); ctx.lineTo(1020, by); ctx.fill();
+  ctx.fillStyle = '#6FA35C'; ctx.beginPath(); ctx.moveTo(60, by); ctx.lineTo(200, by - 120); ctx.lineTo(380, by - 30); ctx.lineTo(700, by - 160); ctx.lineTo(1020, by - 40); ctx.lineTo(1020, by); ctx.fill();
+  ctx.fillStyle = C.blue; ctx.beginPath(); ctx.moveTo(60, by); ctx.lineTo(1020, by); ctx.lineTo(1020, by + 50); ctx.lineTo(60, by + 50); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 5;
+  for (let i = 0; i < 6; i++) { ctx.beginPath(); const xx = 100 + ((i * 170 + t * 60) % 900); ctx.moveTo(xx, by + 25); ctx.lineTo(xx + 60, by + 25); ctx.stroke(); }
+  text('岐阜県 郡上市', W / 2, 340, 66, C.ink);
+  ctx.restore();
+  // ドーナツグラフ
+  const cx = W / 2, cy = 960, R = 230, kp = ease(prog(t, 1.0, 3.0)) * 0.6;
+  ctx.lineWidth = 80; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.strokeStyle = '#EAD9C0'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx, cy, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * kp); ctx.strokeStyle = C.red; ctx.stroke();
+  text('国内生産', cx, cy - 60, 40, C.gray, 500);
+  text(`約${Math.round(kp * 10)}割`, cx, cy + 20, 110, C.red);
+  text('※郡上市などの紹介による概数', W - 70, 1240, 28, C.gray, 500, 'right');
+  headline('郡上市で 約6割', t - 1.5);
+}
+function moldBox(x, y, fill, cavity) {
+  // 型の箱(断面)
+  rr(x - 260, y - 220, 520, 360, 12); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill(); ctx.strokeStyle = '#8F7F70'; ctx.lineWidth = 8; ctx.stroke();
+}
+function sceneMold(t) {
+  const x = W / 2, y = 860;
+  const kIn = easeOut(prog(t, 0, 0.6));
+  ctx.save(); ctx.globalAlpha *= kIn;
+  moldBox(x, y);
+  // 本物の寿司(取り出すと型が残る)
+  const out = ease(prog(t, 4.6, 5.8));
+  const lvl = ease(prog(t, 1.2, 4.0));
+  // シリコン
+  ctx.save(); rr(x - 256, y - 216, 512, 352, 10); ctx.clip();
+  const top = lerp(y + 136, y - 150, lvl);
+  ctx.fillStyle = 'rgba(120,190,230,0.75)';
+  ctx.beginPath(); ctx.moveTo(x - 260, y + 140);
+  for (let i = 0; i <= 40; i++) ctx.lineTo(x - 260 + i * 13, top + Math.sin(i * 0.8 + t * 5) * 5 * (1 - lvl * 0.7));
+  ctx.lineTo(x + 260, y + 140); ctx.fill();
+  ctx.restore();
+  // 型のくぼみ(取り出し後)
+  if (out > 0) { ctx.save(); ctx.globalAlpha *= out; ctx.filter = 'brightness(0.55) saturate(0.5)'; nigiri(x, y + 40, 1, { white: 1 }); ctx.filter = 'none'; ctx.restore(); }
+  ctx.save(); ctx.translate(0, -out * 520); ctx.globalAlpha *= 1 - out * 0.2;
+  nigiri(x, y + 40, 1, { paint: 1 });
+  // シリコンに埋まっている部分を青く
+  if (lvl > 0.3 && out < 1) { ctx.save(); ctx.globalAlpha *= clamp((lvl - 0.3) * 2) * 0.45 * (1 - out); ctx.fillStyle = 'rgb(120,190,230)'; ctx.fillRect(x - 210, y - 60, 420, 180); ctx.restore(); }
+  ctx.restore();
+  ctx.restore();
+  // ラベル
+  ctx.save(); ctx.globalAlpha *= prog(t, 1.4, 1.9) * (1 - prog(t, 4.4, 4.7));
+  text('シリコン', x + 330, y + 60, 40, '#3C87B3', 900, 'center'); ctx.restore();
+  ctx.save(); ctx.globalAlpha *= prog(t, 5.4, 5.9);
+  text('型のできあがり!', x, y + 220, 46, '#3C87B3'); ctx.restore();
+  headline('型取り', t - 0.4, 1340, 110);
+}
+function scenePour(t) {
+  const x = W / 2;
+  const toOven = ease(prog(t, 3.4, 4.3));
+  // 型(縮みながらオーブンへ)
+  const s = lerp(1, 0.55, toOven), my = lerp(900, 850, toOven);
+  // オーブン
+  if (toOven > 0) {
+    ctx.save(); ctx.globalAlpha *= toOven;
+    rr(x - 380, 520, 760, 620, 40); ctx.fillStyle = '#5B5B60'; ctx.fill();
+    rr(x - 330, 600, 560, 460, 24); ctx.fillStyle = '#2D2A2A'; ctx.fill();
+    const heat = prog(t, 4.3, 6.5);
+    const og = ctx.createRadialGradient(x - 50, 830, 20, x - 50, 830, 360); og.addColorStop(0, `rgba(255,170,60,${0.85 * heat})`); og.addColorStop(1, `rgba(255,90,20,${0.15 * heat})`);
+    ctx.fillStyle = og; rr(x - 330, 600, 560, 460, 24); ctx.fill();
+    for (let i = 0; i < 2; i++) ell(x + 300, 680 + i * 120, 30, 30, '#C9C9CF');
+    ell(x + 300, 990, 22, 22, heat > 0.1 ? '#FF6A3A' : '#888');
+    ctx.restore();
+  }
+  ctx.save(); ctx.translate(x - 50 * toOven, my); ctx.scale(s, s); ctx.translate(-x, -900);
+  moldBox(x, 900);
+  ctx.save(); ctx.filter = 'brightness(0.55) saturate(0.5)'; nigiri(x, 940, 1, { white: 1 }); ctx.filter = 'none'; ctx.restore();
+  // 流し込まれた樹脂(下から)
+  const fill = ease(prog(t, 0.9, 3.2));
+  ctx.save(); ctx.beginPath(); ctx.rect(x - 260, lerp(1020, 860, fill), 520, 400); ctx.clip();
+  nigiri(x, 940, 1, { white: 1 }); ctx.restore();
+  ctx.restore();
+  // カップと液だれ
+  const cupA = (1 - toOven) * easeOut(prog(t, 0, 0.6));
+  if (cupA > 0) {
+    ctx.save(); ctx.globalAlpha *= cupA;
+    const tilt = ease(prog(t, 0.4, 1.0)) * 1.1;
+    ctx.translate(x + 250, 470); ctx.rotate(-tilt);
+    rr(-80, -110, 160, 200, 18); ctx.fillStyle = '#EAF4FA'; ctx.fill(); ctx.strokeStyle = C.blue; ctx.lineWidth = 6; ctx.stroke();
+    ctx.fillStyle = '#FFFDF7'; ctx.fillRect(-74, -10, 148, 94);
+    ctx.restore();
+    const flow = prog(t, 0.9, 1.1) * (1 - prog(t, 3.0, 3.3));
+    if (flow > 0) {
+      ctx.save(); ctx.globalAlpha *= cupA;
+      ctx.strokeStyle = '#FFFDF7'; ctx.lineWidth = 22 * flow; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x + 150, 420); ctx.quadraticCurveTo(x + 40, 480, x + 20 + Math.sin(t * 9) * 4, 880); ctx.stroke();
+      ctx.strokeStyle = '#E3DBCF'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+    }
+    ctx.save(); ctx.globalAlpha *= cupA * prog(t, 1.0, 1.4); text('液体の樹脂', x - 260, 520, 42, C.ink); ctx.restore();
+  }
+  // 温度の波
+  const heat = prog(t, 4.5, 6.5);
+  if (heat > 0) {
+    ctx.save(); ctx.globalAlpha *= heat; ctx.strokeStyle = C.red2; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); for (let j = 0; j <= 20; j++) { const k = j / 20; const px = x - 200 + i * 150 + Math.sin(k * 10 + t * 6) * 12; const py = 500 - k * 120 - ((t * 40) % 30); j ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } ctx.stroke(); }
+    text('加熱して固める', x, 1210, 46, C.red);
+    ctx.restore();
+  }
+  headline('流し込み・加熱', t - 0.4, 1340, 100);
+}
+function scenePaint(t) {
+  const x = W / 2, y = 860;
+  const paint = ease(prog(t, 0.6, 3.4));
+  const sear = ease(prog(t, 3.8, 5.6));
+  const gloss = easeOut(prog(t, 6.0, 6.8));
+  ctx.save(); ctx.translate(x, y); ctx.scale(1.35, 1.35); ctx.translate(-x, -y);
+  nigiri(x, y, 1, { paint, sear, gloss });
+  ctx.restore();
+  // エアブラシ
+  if (t < 3.8) {
+    const bx = x - 270 + 540 * paint, by = y - 260;
+    ctx.save(); ctx.globalAlpha *= prog(t, 0.2, 0.6) * (1 - prog(t, 3.4, 3.8));
+    ctx.translate(bx, by); ctx.rotate(0.6);
+    rr(-30, -170, 60, 150, 20); ctx.fillStyle = '#B9BFC6'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-14, -22); ctx.lineTo(14, -22); ctx.lineTo(0, 20); ctx.fillStyle = '#8E959D'; ctx.fill();
+    ctx.restore();
+    for (let i = 0; i < 40; i++) {
+      const ph = (t * 3 + rnd(i)) % 1;
+      ctx.fillStyle = `rgba(255,120,70,${0.7 * (1 - ph)})`;
+      ctx.beginPath(); ctx.arc(bx + 20 + (rnd(i + 7) - 0.5) * 120 * ph, by + 40 + ph * 180, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    text('エアブラシ', x, 470, 46, '#E06A3A');
+  } else if (t < 6.0) {
+    // 筆で炙り目
+    const k = (t - 3.8) / 2.2;
+    const bx = x - 200 + 400 * k, by = y - 120 + Math.sin(k * 20) * 15;
+    ctx.save(); ctx.translate(bx, by); ctx.rotate(-0.7);
+    ctx.fillStyle = '#C79A5A'; ctx.fillRect(-9, -260, 18, 220);
+    ctx.fillStyle = '#9A9A9A'; ctx.fillRect(-12, -60, 24, 30);
+    ctx.beginPath(); ctx.moveTo(-12, -30); ctx.quadraticCurveTo(-14, 10, 0, 34); ctx.quadraticCurveTo(14, 10, 12, -30); ctx.fillStyle = '#4A2A14'; ctx.fill();
+    ctx.restore();
+    text('筆で焼き目', x, 470, 46, '#7A3D18');
+  } else {
+    text('照り', x, 470, 46, '#C08A1E');
+  }
+  headline('色付け', t - 0.4, 1340, 110);
+}
+function sceneAssemble(t) {
+  const o = {
+    broth: prog(t, 0.2, 0.8), noodles: prog(t, 0.6, 1.2),
+    nori: prog(t, 1.2, 1.9), chashu: prog(t, 1.6, 2.3), naruto: prog(t, 2.0, 2.7), egg: prog(t, 2.4, 3.1), negi: prog(t, 2.8, 3.5),
+    steam: prog(t, 3.6, 4.6), lift: prog(t, 4.4, 5.6),
+  };
+  ramen(W / 2, 900, 1.15, t, o);
+  ctx.save(); ctx.globalAlpha *= prog(t, 4.0, 4.5);
+  text('湯気', 200, 520, 48, '#8A7A6A'); ctx.restore();
+  ctx.save(); ctx.globalAlpha *= prog(t, 5.4, 5.9);
+  text('持ち上げた麺', 840, 470, 44, '#8A7A6A'); ctx.restore();
+  headline('盛り付け', t - 0.4, 1340, 110);
+}
+function lettuceBlob(x, y, r, wav, t, seed) {
+  ctx.beginPath();
+  for (let i = 0; i <= 80; i++) {
+    const a = i / 80 * Math.PI * 2;
+    const rr2 = r * (1 + wav * (0.12 * Math.sin(a * 9 + seed) + 0.07 * Math.sin(a * 17 + seed * 2)));
+    ctx.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2 * 0.95);
+  }
+  ctx.closePath();
+}
+function sceneLettuce(t) {
+  const x = W / 2, y = 860;
+  // 桶(上から)
+  ell(x, y + 10, 430, 400, '#B88A5A'); ell(x, y, 400, 370, '#9ED3EA');
+  ctx.save(); ctx.beginPath(); ctx.ellipse(x, y, 400, 370, 0, 0, Math.PI * 2); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 4;
+  for (let i = 0; i < 5; i++) { const r = ((t * 70 + i * 90) % 450); ell(x, y, r, r * 0.92, null, 'rgba(255,255,255,' + (0.5 * (1 - r / 450)) + ')', 4); }
+  // 湯気
+  for (let i = 0; i < 6; i++) { const ph = (t * 0.3 + i / 6) % 1; ell(x - 300 + i * 120, y + 250 - ph * 500, 50, 30, `rgba(255,255,255,${0.25 * Math.sin(ph * Math.PI)})`); }
+  // 広がるろう
+  const spread = easeOut(prog(t, 1.0, 3.4));
+  const gather = ease(prog(t, 4.8, 6.4));
+  if (spread > 0) {
+    const r = lerp(30, 300, spread) * lerp(1, 0.55, gather);
+    // 外側の葉: 広げた膜がまとまってフリルに
+    for (let L = 0; L < 1 + Math.round(gather * 3); L++) {
+      const rL = r * (1 - L * 0.22);
+      lettuceBlob(x, y, rL, lerp(0.3, 1.4, gather), t, L * 2.1 + 1);
+      const g = ctx.createRadialGradient(x, y, 10, x, y, rL);
+      g.addColorStop(0, `rgba(235,248,210,${lerp(0.55, 1, gather)})`); g.addColorStop(1, `rgba(170,215,130,${lerp(0.4, 1, gather)})`);
+      ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle = `rgba(95,160,70,${lerp(0.4, 1, gather)})`; ctx.lineWidth = 5; ctx.stroke();
+    }
+    if (gather > 0.3) {
+      ctx.strokeStyle = `rgba(240,250,225,${gather})`; ctx.lineWidth = 6;
+      for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a + 0.4) * r * 0.5, y + Math.sin(a + 0.4) * r * 0.5, x + Math.cos(a) * r * 0.9, y + Math.sin(a) * r * 0.9); ctx.stroke(); }
+    }
+  }
+  ctx.restore();
+  // 垂らすカップ
+  const cupA = easeOut(prog(t, 0.1, 0.6)) * (1 - prog(t, 3.4, 3.9));
+  if (cupA > 0) {
+    ctx.save(); ctx.globalAlpha *= cupA; ctx.translate(x + 170, 380); ctx.rotate(-0.9);
+    rr(-70, -90, 140, 170, 16); ctx.fillStyle = '#EDEDED'; ctx.fill(); ctx.strokeStyle = '#9A9A9A'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.fillStyle = '#CFE8B4'; ctx.fillRect(-64, 0, 128, 74); ctx.restore();
+    const f = prog(t, 0.8, 1.0) * (1 - prog(t, 3.0, 3.3));
+    if (f > 0) { ctx.save(); ctx.globalAlpha *= cupA; ctx.strokeStyle = '#CFE8B4'; ctx.lineWidth = 16 * f; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + 90, 350); ctx.quadraticCurveTo(x + 20, 400, x, y); ctx.stroke(); ctx.restore(); }
+    ctx.save(); ctx.globalAlpha *= cupA * prog(t, 1.0, 1.4); text('お湯にろうを垂らす', x, 330, 48, C.ink); ctx.restore();
+  }
+  // 手(押し広げてまとめる)
+  const hand = prog(t, 3.9, 4.4) * (1 - prog(t, 6.6, 7.1));
+  if (hand > 0) {
+    const hy = lerp(380, 560, ease(prog(t, 4.4, 5.6)));
+    ctx.save(); ctx.globalAlpha *= hand;
+    ctx.fillStyle = '#F2C8A4'; ctx.strokeStyle = '#D9A47C'; ctx.lineWidth = 5;
+    rr(x - 110, hy - 200, 220, 170, 70); ctx.fill(); ctx.stroke();
+    for (let i = 0; i < 4; i++) { rr(x - 105 + i * 54, hy - 60, 48, 120, 24); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha *= hand; text('ふわっ', x + 300, 560, 64, C.green); ctx.restore();
+  }
+  ctx.save(); ctx.globalAlpha *= prog(t, 6.6, 7.1);
+  outlined('レタスの完成!', x, 330, 60, C.green, '#fff', 14); ctx.restore();
+  headline('レタスづくり', t - 0.4, 1340, 110);
+}
+function sceneEnd(t) {
+  showcase(t + 62);
+  const k = back(prog(t, 0.3, 1.0));
+  ctx.save(); ctx.translate(W / 2, 1320); ctx.scale(k, k);
+  outlined('食べられないけど、', 0, -55, 78, C.ink, '#fff', 20);
+  outlined('小さな芸術作品。', 0, 50, 96, C.red, '#fff', 24);
+  ctx.restore();
+  // クレジット(ショート UI と重ならない上部に置く)
+  ctx.save(); ctx.globalAlpha *= prog(t, 1.0, 1.6);
+  rr(140, 182, W - 280, 140, 20); ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.fill();
+  text('ナレーション  VOICEVOX:四国めたん', W / 2, 226, 36, C.ink, 900);
+  text('BGM  オリジナル(自作)', W / 2, 280, 32, C.gray, 500);
+  ctx.restore();
+}
+
+// ---------- 合成 ----------
+function drawScene(i, t, alpha) {
+  const sc = SCENES[i]; const lt = t - sc.start;
+  ctx.save(); ctx.globalAlpha = alpha;
+  sc.draw(lt, sc.dur);
+  chip(sc.chip, lt);
+  ctx.restore();
+}
+window.render = function (t) {
+  background(t);
+  let i = SCENES.findIndex(s => t < s.start + s.dur); if (i < 0) i = SCENES.length - 1;
+  const lt = t - SCENES[i].start, X = 0.4;
+  if (i > 0 && lt < X) {
+    const k = ease(lt / X);
+    drawScene(i - 1, SCENES[i].start - 0.001, 1 - k);
+    drawScene(i, t, k);
+  } else drawScene(i, t, 1);
+  // 最終フェードアウト
+  const end = prog(t, window.DURATION - 0.8, window.DURATION);
+  subtitle(SCENES[i].sub, lt, SCENES[i].dur + (i === SCENES.length - 1 ? 0 : 0.2));
+  if (end > 0) { ctx.fillStyle = `rgba(255,244,227,${end})`; ctx.fillRect(0, 0, W, H); }
+};
+window.SCENES_META = SCENES.map(s => ({ start: s.start, dur: s.dur, sub: s.sub }));
+window.render(0);
+</script>
+</body>
+</html>
