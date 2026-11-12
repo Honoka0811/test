@@ -1,0 +1,8 @@
+{
+  "name": "landscape-architect-short",
+  "private": true,
+  "description": "ランドスケープアーキテクト紹介ショート動画の生成スクリプト",
+  "dependencies": {
+    "@fontsource/noto-sans-jp": "5.1.0"
+  }
+}

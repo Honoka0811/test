@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ランドスケープアーキテクト紹介ショート</title>
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<style>
+  :root {
+    --bg1: #0c3527; --bg2: #17573f; --leaf: #8fd694; --lime: #d9f27e; --cream: #fbf7ea;
+    --ink: #12261d; --muted: #5d7468; --accent: #ffb84d; --card: rgba(251, 247, 234, .97);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #000; }
+  body { font-family: 'Noto Sans JP', 'IPAPGothic', sans-serif; font-weight: 500; color: var(--cream); }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden;
+    background: linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 62%, #1f6a4b 100%); }
+  #sky, #hills { position: absolute; left: 0; width: 100%; }
+  #sky { top: 0; height: 100%; }
+  #hills { bottom: 0; height: 620px; }
+  .scene { position: absolute; inset: 0; padding: 170px 70px 0 70px; opacity: 0; }
+  .chip { display: inline-block; font-weight: 900; font-size: 34px; letter-spacing: .08em; color: var(--ink);
+    background: var(--lime); padding: 10px 28px; border-radius: 999px; }
+  h1 { font-weight: 900; font-size: 92px; line-height: 1.18; margin-top: 26px; letter-spacing: .01em; }
+  h1 em { font-style: normal; color: var(--lime); }
+  .card { background: var(--card); color: var(--ink); border-radius: 36px; padding: 36px 42px; margin-top: 30px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, .28); }
+  .card .lbl { font-size: 30px; font-weight: 700; color: #1d7a52; letter-spacing: .06em; }
+  .card .big { font-size: 58px; font-weight: 900; line-height: 1.25; margin-top: 4px; }
+  .card .txt { font-size: 36px; font-weight: 700; line-height: 1.5; margin-top: 8px; }
+  .card .note { font-size: 26px; color: var(--muted); margin-top: 10px; line-height: 1.45; }
+  .row { display: flex; gap: 24px; }
+  .row > * { flex: 1; }
+
+  /* タイトル */
+  #s-title { padding-top: 330px; text-align: center; }
+  #s-title .kicker { font-size: 44px; font-weight: 700; color: var(--leaf); letter-spacing: .12em; }
+  #s-title h1 { font-size: 128px; line-height: 1.12; margin-top: 30px; }
+  #s-title .tags { display: flex; justify-content: center; gap: 20px; margin-top: 70px; }
+  #s-title .tags span { font-size: 46px; font-weight: 900; color: var(--ink); background: var(--cream);
+    padding: 18px 34px; border-radius: 24px; box-shadow: 0 10px 28px rgba(0, 0, 0, .25); }
+  #s-title .tags span:nth-child(2) { background: var(--lime); }
+
+  /* 仕事 */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; }
+  .tile { background: var(--card); color: var(--ink); border-radius: 32px; padding: 26px 20px 22px; text-align: center;
+    font-size: 46px; font-weight: 900; box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+  .tile svg { display: block; width: 150px; height: 120px; margin: 0 auto 6px; }
+
+  /* ステップ */
+  .step { display: flex; align-items: center; gap: 30px; }
+  .step .num { flex: none; width: 128px; height: 128px; border-radius: 50%; background: #1d7a52; color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: 900; line-height: 1; }
+  .step .num small { font-size: 22px; letter-spacing: .1em; }
+  .step .num b { font-size: 64px; }
+  .step .big { font-size: 50px; }
+  .step .txt { font-size: 32px; margin-top: 2px; }
+
+  /* 年収 */
+  .money { text-align: center; }
+  .money .big { font-size: 112px; letter-spacing: -.01em; }
+  .money .big small { font-size: 54px; }
+  .warn { background: rgba(255, 184, 77, .16); border: 3px solid var(--accent); color: #ffe1a8; border-radius: 28px;
+    padding: 20px 30px; margin-top: 30px; font-size: 34px; font-weight: 700; text-align: center; }
+
+  /* 会社・人物 */
+  .list { list-style: none; margin-top: 10px; }
+  .list li { font-size: 48px; font-weight: 900; padding: 14px 0; border-bottom: 2px dashed #c9cfbd; line-height: 1.3; }
+  .list li:last-child { border-bottom: 0; padding-bottom: 0; }
+  .list li small { display: block; font-size: 27px; font-weight: 500; color: var(--muted); }
+  .person { padding: 26px 36px; margin-top: 22px; display: flex; align-items: center; gap: 28px; }
+  .person .ava { flex: none; width: 104px; height: 104px; border-radius: 50%; background: #1d7a52; color: #fff;
+    font-size: 50px; font-weight: 900; display: flex; align-items: center; justify-content: center; }
+  .person .big { font-size: 46px; margin: 0; }
+  .person .txt { font-size: 31px; margin-top: 2px; line-height: 1.35; }
+  .person .note { font-size: 24px; margin-top: 2px; }
+
+  /* まとめ */
+  #s-outro { padding-top: 250px; }
+  #s-outro h1 { font-size: 104px; }
+  .recap { font-size: 38px; font-weight: 700; line-height: 1.5; }
+  .recap b { color: #1d7a52; }
+  .credit { margin-top: 34px; font-size: 30px; line-height: 1.6; color: #dfeedd; }
+
+  /* 字幕・進行バー(ショート動画の下部UIに隠れない高さに配置) */
+  #cap { position: absolute; left: 60px; right: 60px; top: 1392px; height: 168px; display: flex; align-items: center;
+    justify-content: center; text-align: center; background: rgba(8, 28, 20, .88); border-radius: 30px;
+    padding: 0 34px; font-size: 41px; font-weight: 700; line-height: 1.42; color: #fff;
+    border: 2px solid rgba(143, 214, 148, .45); word-break: auto-phrase; text-wrap: balance; }
+  #bar { position: absolute; left: 60px; right: 60px; top: 96px; height: 12px; display: flex; gap: 8px; }
+  #bar i { flex: 1; background: rgba(255, 255, 255, .22); border-radius: 6px; overflow: hidden; }
+  #bar i b { display: block; height: 100%; width: 0; background: var(--lime); }
+  #vv { position: absolute; left: 64px; top: 1580px; font-size: 26px; color: rgba(255, 255, 255, .78); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg id="sky" viewBox="0 0 1080 1920" preserveAspectRatio="none">
+    <circle id="sun" cx="900" cy="250" r="150" fill="#d9f27e" opacity=".13"/>
+    <circle cx="900" cy="250" r="96" fill="#d9f27e" opacity=".16"/>
+  </svg>
+  <svg id="hills" viewBox="0 0 1080 620" preserveAspectRatio="none">
+    <path id="h1" d="M-200 330 Q 150 150 480 300 T 1280 250 V620 H-200Z" fill="#1d6f4d"/>
+    <path id="h2" d="M-200 420 Q 240 260 620 400 T 1280 380 V620 H-200Z" fill="#268a5c"/>
+    <g id="trees" fill="#17573f">
+      <g transform="translate(150 360)"><rect x="-5" y="0" width="10" height="46"/><circle r="38" cy="-18"/></g>
+      <g transform="translate(232 386)"><rect x="-4" y="0" width="8" height="34"/><circle r="27" cy="-12"/></g>
+      <g transform="translate(820 372)"><rect x="-5" y="0" width="10" height="44"/><path d="M0 -92 L36 4 H-36Z"/></g>
+      <g transform="translate(895 392)"><rect x="-4" y="0" width="8" height="32"/><path d="M0 -66 L27 4 H-27Z"/></g>
+    </g>
+    <path id="h3" d="M-200 520 Q 300 400 700 500 T 1280 470 V620 H-200Z" fill="#34a36c"/>
+  </svg>
+
+  <!-- 0 タイトル -->
+  <section class="scene" id="s-title">
+    <div class="kicker in" data-at="0">公園・広場をデザインする仕事</div>
+    <h1 class="in" data-at="0" data-delay=".25">ランドスケープ<br><em>アーキテクト</em></h1>
+    <div class="tags">
+      <span class="in" data-at="1">なり方</span><span class="in" data-at="1" data-delay=".7">年収</span><span class="in" data-at="1" data-delay="1.4">会社と人</span>
+    </div>
+  </section>
+
+  <!-- 1 仕事 -->
+  <section class="scene" id="s-work">
+    <span class="chip">どんな仕事?</span>
+    <h1 class="in" data-at="0">屋外空間の<br><em>計画・設計</em>の専門家</h1>
+    <div class="tiles">
+      <div class="tile in" data-at="0" data-delay=".1"><svg viewBox="0 0 150 120"><rect x="69" y="70" width="12" height="40" fill="#7a5a3a"/><circle cx="75" cy="50" r="40" fill="#34a36c"/><circle cx="52" cy="66" r="24" fill="#268a5c"/></svg>公園</div>
+      <div class="tile in" data-at="0" data-delay=".8"><svg viewBox="0 0 150 120"><rect x="15" y="62" width="120" height="46" rx="6" fill="#d8cfb6"/><path d="M15 85H135M55 62V108M95 62V108" stroke="#b7ad92" stroke-width="4"/><circle cx="75" cy="36" r="22" fill="#34a36c"/><rect x="71" y="50" width="8" height="18" fill="#7a5a3a"/></svg>広場</div>
+      <div class="tile in" data-at="0" data-delay="1.5"><svg viewBox="0 0 150 120"><path d="M55 110 L68 20 H82 L95 110Z" fill="#6f7a78"/><path d="M75 30V46M75 60V78M75 90V108" stroke="#fff" stroke-width="4"/><circle cx="30" cy="62" r="18" fill="#34a36c"/><circle cx="120" cy="62" r="18" fill="#34a36c"/><rect x="27" y="76" width="6" height="26" fill="#7a5a3a"/><rect x="117" y="76" width="6" height="26" fill="#7a5a3a"/></svg>街路</div>
+      <div class="tile in" data-at="0" data-delay="2.1"><svg viewBox="0 0 150 120"><path d="M10 50 Q30 30 50 50 T90 50 T130 50 T170 50" fill="none" stroke="#3f9bd8" stroke-width="9" stroke-linecap="round"/><path d="M-10 78 Q10 58 30 78 T70 78 T110 78 T150 78" fill="none" stroke="#6bb8ea" stroke-width="9" stroke-linecap="round"/><path d="M10 104 Q30 84 50 104 T90 104 T130 104" fill="none" stroke="#3f9bd8" stroke-width="9" stroke-linecap="round"/></svg>水辺</div>
+    </div>
+    <div class="card in" data-at="1">
+      <div class="lbl">ここが特徴</div>
+      <div class="txt">植物・地形・水を扱い、<br><span style="color:#1d7a52">数十年先の風景</span>まで考える</div>
+    </div>
+  </section>
+
+  <!-- 2 なり方 -->
+  <section class="scene" id="s-path">
+    <span class="chip">なり方</span>
+    <h1 class="in" data-at="0">道のりは <em>3ステップ</em></h1>
+    <div class="card step in" data-at="1">
+      <div class="num"><small>STEP</small><b>1</b></div>
+      <div><div class="big">学ぶ</div><div class="txt">大学・専門学校で<br>造園/建築/都市計画など</div></div>
+    </div>
+    <div class="card step in" data-at="2">
+      <div class="num"><small>STEP</small><b>2</b></div>
+      <div><div class="big">就職する</div><div class="txt">設計事務所/建設コンサルタント<br>造園会社 など</div></div>
+    </div>
+    <div class="card step in" data-at="3">
+      <div class="num"><small>STEP</small><b>3</b></div>
+      <div><div class="big">実務+資格</div><div class="txt">経験を積みながら資格に挑戦</div></div>
+    </div>
+  </section>
+
+  <!-- 3 資格 -->
+  <section class="scene" id="s-license">
+    <span class="chip">主な資格</span>
+    <div class="card in" data-at="0" style="margin-top:40px">
+      <div class="lbl">代表的な資格(民間資格)</div>
+      <div class="big">登録ランドスケープ<br>アーキテクト<span style="color:#1d7a52">(RLA)</span></div>
+      <div class="note">認定:一般社団法人ランドスケープコンサルタンツ協会</div>
+    </div>
+    <div class="card in" data-at="1">
+      <div class="lbl">受験に必要な実務経験</div>
+      <div class="big">指定学科の大卒 → <span style="color:#1d7a52">3年以上</span></div>
+      <div class="note">※学歴により3〜12年。出典:2024年 RLA資格認定試験 受験の手引き</div>
+    </div>
+    <div class="warn in" data-at="2">資格は必須ではない(なくても働ける)</div>
+    <div class="card in" data-at="2" data-delay=".5" style="padding:26px 42px">
+      <div class="lbl">ほかの関連資格</div>
+      <div class="txt" style="font-size:33px">技術士(建設部門)/1級造園施工管理技士</div>
+    </div>
+  </section>
+
+  <!-- 4 年収 -->
+  <section class="scene" id="s-salary">
+    <span class="chip">年収の目安</span>
+    <div class="warn in" data-at="0" data-delay="1.6" style="margin-top:40px">日本には、この職種だけの公的統計がない</div>
+    <div class="card money in" data-at="1">
+      <div class="lbl">日本:設計職の求人での目安</div>
+      <div class="big">400〜600<small>万円台</small></div>
+      <div class="note">公的統計ではなく求人ベースの概算です</div>
+    </div>
+    <div class="card in" data-at="2" style="padding:26px 42px">
+      <div class="txt" style="margin:0">経験・会社の規模で大きく変わる</div>
+      <div class="note">参考:造園工の平均 約352万円(令和6年 賃金構造基本統計調査)</div>
+    </div>
+    <div class="card money in" data-at="3" style="padding:28px 42px">
+      <div class="lbl">アメリカ:年収の中央値</div>
+      <div class="big" style="font-size:92px">約8<small>万ドル</small></div>
+      <div class="note">$79,320(米労働統計局 BLS・2023年5月)</div>
+    </div>
+  </section>
+
+  <!-- 5 会社 -->
+  <section class="scene" id="s-firms">
+    <span class="chip">有名な会社</span>
+    <h1 class="in" data-at="0" style="font-size:84px">どんな会社がある?</h1>
+    <div class="card in" data-at="1">
+      <div class="lbl">日本</div>
+      <ul class="list">
+        <li>日建設計<small>国内最大級の組織設計事務所</small></li>
+        <li>オンサイト計画設計事務所</li>
+        <li>E-DESIGN</li>
+      </ul>
+    </div>
+    <div class="card in" data-at="2">
+      <div class="lbl">海外</div>
+      <ul class="list">
+        <li>SWA Group<small>アメリカ</small></li>
+        <li>Sasaki<small>アメリカ</small></li>
+        <li>Field Operations<small>アメリカ</small></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 6 人物 -->
+  <section class="scene" id="s-people">
+    <span class="chip">有名な人物</span>
+    <div class="card person in" data-at="0" style="margin-top:36px">
+      <div class="ava">O</div>
+      <div><div class="big">F・L・オルムステッド</div><div class="txt">セントラルパーク(ニューヨーク)</div><div class="note">「ランドスケープアーキテクトの父」</div></div>
+    </div>
+    <div class="card person in" data-at="1">
+      <div class="ava">C</div>
+      <div><div class="big">ジェームズ・コーナー</div><div class="txt">ハイライン(ニューヨーク)</div><div class="note">Field Operations 創設者</div></div>
+    </div>
+    <div class="card person in" data-at="2">
+      <div class="ava">長</div>
+      <div><div class="big">長谷川 浩己</div><div class="txt">星のや軽井沢</div><div class="note">オンサイト計画設計事務所</div></div>
+    </div>
+    <div class="card person in" data-at="3">
+      <div class="ava">忽</div>
+      <div><div class="big">忽那 裕樹</div><div class="txt">大阪・関西万博<br>ランドスケープデザインディレクター</div><div class="note">E-DESIGN</div></div>
+    </div>
+  </section>
+
+  <!-- 7 まとめ -->
+  <section class="scene" id="s-outro">
+    <h1 class="in" data-at="0">風景を<br><em>未来に残す</em>仕事</h1>
+    <div class="card in" data-at="0" data-delay=".5">
+      <div class="recap"><b>なり方</b> 学ぶ → 就職 → 実務+資格<br><b>年収</b> 400〜600万円台が目安<br><b>資格</b> RLA(必須ではない)</div>
+    </div>
+    <div class="credit in" data-at="0" data-delay="1.2">音声:VOICEVOX:四国めたん<br>BGM:オリジナル(プログラム合成)<br>※金額・要件は概数。最新情報は公式資料をご確認ください</div>
+  </section>
+
+  <div id="bar"></div>
+  <div id="cap"></div>
+  <div id="vv">VOICEVOX:四国めたん</div>
+</div>
+
+<script src="timings.js"></script>
+<script>
+// render(t) が時刻 t 秒の画面を決定論的に描く。capture.js が 1 フレームずつ呼び出す。
+const T = window.TIMINGS, FPS = 30, DURATION = T.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const clamp = (x) => Math.max(0, Math.min(1, x));
+const ease = (x) => 1 - Math.pow(1 - clamp(x), 3);
+const scenes = T.scenes.map((s) => ({ ...s, el: document.getElementById('s-' + s.id) }));
+const bar = document.getElementById('bar'), cap = document.getElementById('cap');
+scenes.forEach(() => bar.appendChild(document.createElement('i')).appendChild(document.createElement('b')));
+const FADE = 0.3;
+
+window.render = function (t) {
+  scenes.forEach((s, i) => {
+    const local = t - s.start, last = i === scenes.length - 1;
+    const on = local >= 0 && local < s.dur;
+    let op = 0;
+    if (on) op = Math.min(ease(local / FADE), last ? 1 : ease((s.dur - local) / FADE));
+    s.el.style.opacity = op;
+    s.el.style.visibility = on ? 'visible' : 'hidden';
+    bar.children[i].firstChild.style.width = (clamp(local / s.dur) * 100) + '%';
+    if (!on) return;
+    s.el.querySelectorAll('.in').forEach((el) => {
+      const at = s.lines[+el.dataset.at].start + (+el.dataset.delay || 0) - 0.15;
+      const p = ease((t - at) / 0.45);
+      el.style.opacity = p;
+      el.style.transform = `translateY(${(1 - p) * 40}px) scale(${0.96 + 0.04 * p})`;
+    });
+  });
+  // 字幕: 読み上げ中の文を表示(文間の短い無音では直前の文を保持)
+  let text = '', op = 0;
+  for (const s of scenes) for (const l of s.lines) {
+    if (t >= l.start - 0.1 && t < l.end + 0.25) { text = l.text; op = Math.min(ease((t - l.start + 0.1) / 0.15), 1); }
+  }
+  cap.textContent = text; cap.style.opacity = op;
+  // 背景のゆっくりした動き
+  const k = t / DURATION;
+  document.getElementById('h1').setAttribute('transform', `translate(${k * 60} 0)`);
+  document.getElementById('h2').setAttribute('transform', `translate(${-k * 90} 0)`);
+  document.getElementById('trees').setAttribute('transform', `translate(${-k * 90} 0)`);
+  document.getElementById('h3').setAttribute('transform', `translate(${k * 140 - 70} 0)`);
+  document.getElementById('sun').setAttribute('r', 150 + 14 * Math.sin(t * 0.8));
+};
+
+// ブラウザで直接開いたときはプレビュー再生(?t=秒 で静止表示)
+const q = new URLSearchParams(location.search);
+if (q.has('t')) render(+q.get('t'));
+else if (!navigator.webdriver) { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); }
+else render(0);
+</script>
+</body>
+</html>
