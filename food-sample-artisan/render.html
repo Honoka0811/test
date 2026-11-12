@@ -43,7 +43,15 @@ const SCENES = [
     sub: '最後に盛り付け。立ちのぼる湯気も、持ち上げた麺も、まるで時間が止まったよう。' },
   { start: 53, dur: 9, draw: sceneLettuce, chip: '職人ワザ',
     sub: 'レタスは、お湯にろうを垂らし、手でふわっと広げて作るんですの。一瞬の勝負ですわね。' },
-  { start: 62, dur: 7, draw: sceneEnd,     chip: null,
+  { start: 62, dur: 9, draw: sceneExport,  chip: '世界へ',
+    sub: '食品サンプルは海外にも。香港やシンガポールの日本食レストランへ輸出され、訪日客のお土産としても大人気ですわ。' },
+  { start: 71, dur: 9, draw: sceneCompany, chip: '大手企業',
+    sub: '業界最大手は、創業者の流れをくむ「いわさきグループ」。郡上市に本社を置く、トップシェアの企業ですの。' },
+  { start: 80, dur: 9, draw: sceneSalary,  chip: '年収',
+    sub: '気になる年収は、会社員の職人で約300万〜500万円が目安。求人では月給20万円台が多いようですわ。' },
+  { start: 89, dur: 11, draw: sceneBecome, chip: 'なるには',
+    sub: '職人になるのに資格はいりません。メーカーに就職し、見習いとして何年も腕を磨くのが王道。まずは体験教室で作ってみるのもおすすめですわ。' },
+  { start: 100, dur: 7, draw: sceneEnd,     chip: null,
     sub: '店先のサンプルは、食欲をそそる小さな芸術作品。今度、じっくり眺めてみてくださいね。' },
 ];
 window.DURATION = SCENES[SCENES.length - 1].start + SCENES[SCENES.length - 1].dur;
@@ -79,7 +87,7 @@ function wrap(s, maxW, px, w = 500) {
   for (const ch of s) {
     if (ctx.measureText(cur + ch).width > maxW && cur) {
       if (NG.includes(ch)) { cur += ch; continue; }
-      lines.push(cur); cur = ch;
+      if (cur.endsWith('「')) { lines.push(cur.slice(0, -1)); cur = '「' + ch; } else { lines.push(cur); cur = ch; }
     } else cur += ch;
   }
   if (cur) lines.push(cur);
@@ -606,8 +614,151 @@ function sceneLettuce(t) {
   outlined('レタスの完成!', x, 330, 60, C.green, '#fff', 14); ctx.restore();
   headline('レタスづくり', t - 0.4, 1340, 110);
 }
+
+function sceneExport(t) {
+  const cx = W / 2, cy = 640, R = 330;
+  const k = easeOut(prog(t, 0, 0.7));
+  ctx.save(); ctx.globalAlpha *= k;
+  // 地球(東アジア〜東南アジアを抽象化)
+  ell(cx, cy, R, R, '#8CC8E6', '#5A9CC0', 6);
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = '#9CCB7E';
+  const land = [[-330, -260, 260, 200], [-200, -120, 170, 130], [-260, 40, 120, 90], [-120, 150, 150, 70], [40, 210, 210, 90]];
+  for (const [x, y, w, h] of land) { ctx.beginPath(); ctx.ellipse(cx + x + w / 2, cy + y + h / 2, w / 2, h / 2, 0.3, 0, Math.PI * 2); ctx.fill(); }
+  // 日本列島
+  ctx.strokeStyle = '#9CCB7E'; ctx.lineWidth = 26; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx + 120, cy - 230); ctx.quadraticCurveTo(cx + 150, cy - 120, cx + 60, cy - 40); ctx.stroke();
+  ctx.restore();
+  ctx.restore();
+  const JP = [cx + 110, cy - 130], dests = [[cx - 90, cy + 80, '香港'], [cx - 40, cy + 260, 'シンガポール']];
+  ell(JP[0], JP[1], 18, 18, C.red, '#fff', 5);
+  ctx.save(); ctx.globalAlpha *= prog(t, 0.6, 1.0); outlined('日本', JP[0] + 110, JP[1] - 10, 48, C.red, '#fff', 12); ctx.restore();
+  dests.forEach(([x, y, name], i) => {
+    const a = ease(prog(t, 1.0 + i * 0.8, 2.6 + i * 0.8));
+    if (a <= 0) return;
+    const mx = (JP[0] + x) / 2 + 160, my = (JP[1] + y) / 2;
+    ctx.save(); ctx.setLineDash([16, 14]); ctx.strokeStyle = C.red; ctx.lineWidth = 7;
+    ctx.beginPath();
+    for (let j = 0; j <= 40 * a; j++) { const u = j / 40; const px = (1 - u) * (1 - u) * JP[0] + 2 * (1 - u) * u * mx + u * u * x; const py = (1 - u) * (1 - u) * JP[1] + 2 * (1 - u) * u * my + u * u * y; j ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.stroke(); ctx.restore();
+    // 荷物(ラーメン)
+    const u = a, px = (1 - u) * (1 - u) * JP[0] + 2 * (1 - u) * u * mx + u * u * x, py = (1 - u) * (1 - u) * JP[1] + 2 * (1 - u) * u * my + u * u * y;
+    if (a < 1) ramen(px, py - 20, 0.13, t, { steam: 0 });
+    if (a >= 1) {
+      ell(x, y, 16, 16, C.ink, '#fff', 5);
+      const kb = back(prog(t, 2.6 + i * 0.8, 3.1 + i * 0.8));
+      ctx.save(); ctx.translate(x - 30, y); ctx.scale(kb, kb);
+      font(42); const w = ctx.measureText(name).width + 40;
+      rr(-w - 10, -32, w, 64, 32); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+      text(name, -10 - w / 2, 2, 42, C.ink); ctx.restore();
+    }
+  });
+  // お土産キーホルダー
+  const kk = easeOut(prog(t, 4.6, 5.3));
+  if (kk > 0) {
+    ctx.save(); ctx.globalAlpha *= kk;
+    rr(110, 1030, W - 220, 190, 30); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#EAD9C0'; ctx.lineWidth = 4; ctx.stroke();
+    const sw = Math.sin(t * 3) * 0.15;
+    ctx.save(); ctx.translate(270, 1060); ctx.rotate(sw);
+    ell(0, 0, 26, 26, null, '#B7B7B7', 8); ctx.strokeStyle = '#B7B7B7'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(0, 26); ctx.lineTo(0, 70); ctx.stroke();
+    nigiri(0, 110, 0.42, { gloss: 1 }); ctx.restore();
+    text('訪日客のお土産にも人気', 640, 1125, 48, C.ink);
+    ctx.restore();
+  }
+  headline('海外へも輸出', t - 0.4, 1340, 100);
+}
+function sceneCompany(t) {
+  const x = W / 2;
+  // 表彰台
+  const kp = easeOut(prog(t, 0, 0.7));
+  ctx.save(); ctx.globalAlpha *= kp; ctx.translate(0, (1 - kp) * 80);
+  rr(x - 380, 820, 240, 150, 10); ctx.fillStyle = '#D9C3A2'; ctx.fill();
+  rr(x + 140, 860, 240, 110, 10); ctx.fillStyle = '#E6D3B6'; ctx.fill();
+  rr(x - 140, 740, 280, 230, 10); ctx.fillStyle = C.gold; ctx.fill();
+  text('1', x, 860, 110, '#fff');
+  ctx.restore();
+  // 王冠 + 社名
+  const kc = back(prog(t, 0.8, 1.4));
+  ctx.save(); ctx.translate(x, 610); ctx.scale(kc, kc);
+  ctx.beginPath(); ctx.moveTo(-110, 60); ctx.lineTo(-130, -50); ctx.lineTo(-60, 0); ctx.lineTo(0, -80); ctx.lineTo(60, 0); ctx.lineTo(130, -50); ctx.lineTo(110, 60); ctx.closePath();
+  ctx.fillStyle = '#F2C230'; ctx.fill(); ctx.strokeStyle = '#C9961A'; ctx.lineWidth = 6; ctx.stroke();
+  for (const dx of [-60, 0, 60]) ell(dx, 30, 12, 12, C.red);
+  ctx.restore();
+  const kn = easeOut(prog(t, 1.4, 2.0));
+  ctx.save(); ctx.globalAlpha *= kn;
+  outlined('いわさきグループ', x, 420, 84, C.red, '#fff', 20);
+  ctx.restore();
+  // 3社
+  const names = ['株式会社いわさき', '株式会社岩崎', '岩崎模型製造'];
+  names.forEach((n, i) => {
+    const a = back(prog(t, 2.6 + i * 0.35, 3.1 + i * 0.35));
+    if (a <= 0) return;
+    const bx = 200 + i * 340, by = 1080;
+    ctx.save(); ctx.translate(bx, by); ctx.scale(a, a);
+    rr(-160, -50, 320, 100, 20); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 4; ctx.stroke();
+    text(n, 0, 2, n.length > 7 ? 36 : 40, C.ink); ctx.restore();
+  });
+  ctx.save(); ctx.globalAlpha *= prog(t, 3.8, 4.3);
+  text('1932年創業 ・ 本社 岐阜県郡上市', x, 1185, 40, C.gray, 500);
+  ctx.restore();
+  headline('業界最大手', t - 0.4, 1340, 110);
+}
+function sceneSalary(t) {
+  const x0 = 150, x1 = W - 150, y = 700;
+  const vx = v => lerp(x0, x1, v / 800);
+  const k = easeOut(prog(t, 0, 0.6));
+  ctx.save(); ctx.globalAlpha *= k;
+  text('会社員の職人の年収(目安)', W / 2, 400, 52, C.ink);
+  // 軸
+  rr(x0, y - 30, x1 - x0, 60, 30); ctx.fillStyle = '#EAD9C0'; ctx.fill();
+  for (const v of [0, 200, 400, 600, 800]) { text(v + '万', vx(v), y + 80, 36, C.gray, 500); }
+  // 範囲
+  const a = ease(prog(t, 0.8, 2.4));
+  if (a > 0) { const l = vx(300), r = lerp(l, vx(500), a); rr(l, y - 30, r - l, 60, 30); ctx.fillStyle = C.red; ctx.fill(); }
+  ctx.restore();
+  const kb = back(prog(t, 2.2, 2.8));
+  ctx.save(); ctx.translate(W / 2, y - 150); ctx.scale(kb, kb);
+  outlined('約300万〜500万円', 0, 0, 96, C.red, '#fff', 22); ctx.restore();
+  // 月給カード
+  const kc = easeOut(prog(t, 3.6, 4.2));
+  ctx.save(); ctx.globalAlpha *= kc; ctx.translate(0, (1 - kc) * 40);
+  rr(170, 900, W - 340, 200, 30); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#EAD9C0'; ctx.lineWidth = 4; ctx.stroke();
+  text('求人の月給', W / 2, 950, 42, C.gray, 500);
+  text('20万円台が中心', W / 2 + 50, 1035, 68, C.ink);
+  // コイン
+  for (let i = 0; i < 3; i++) { ell(235, 1060 - i * 18, 44, 15, '#E9B94A', '#C9961A', 4); }
+  text('¥', 235, 1008, 36, '#8A6410');
+  ctx.restore();
+  text('※求人情報などからの概数。会社・経験・地域で差があります', W / 2, 1220, 28, C.gray, 500);
+  headline('年収の目安', t - 0.4, 1340, 110);
+}
+function sceneBecome(t) {
+  const steps = [['体験教室で作ってみる', '#F2C230'], ['メーカーに就職', '#7DBA4C'], ['見習いで何年も修業', C.blue], ['一人前の職人に!', C.red]];
+  const x = 200;
+  ctx.save(); ctx.globalAlpha *= prog(t, 0, 0.5);
+  rr(W / 2 - 220, 300, 440, 80, 40); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = C.red; ctx.lineWidth = 5; ctx.stroke();
+  text('資格は不要!', W / 2, 342, 48, C.red);
+  ctx.restore();
+  steps.forEach(([label, col], i) => {
+    const y = 480 + i * 180;
+    const a = easeOut(prog(t, 0.8 + i * 1.3, 1.4 + i * 1.3));
+    if (i > 0) { const la = prog(t, 0.5 + i * 1.3, 0.9 + i * 1.3); ctx.fillStyle = '#D9C3A2'; ctx.fillRect(x - 8, y - 180 + 60, 16, 120 * la); }
+    if (a <= 0) return;
+    ctx.save(); ctx.globalAlpha *= a; ctx.translate((1 - a) * -60, 0);
+    ell(x, y, 60, 60, col, '#fff', 8);
+    text(String(i + 1), x, y + 3, 60, '#fff');
+    rr(x + 90, y - 55, 640, 110, 24); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.stroke();
+    text(label, x + 120, y + 2, i === 3 ? 54 : 50, C.ink, 900, 'left');
+    ctx.restore();
+  });
+  const kt = easeOut(prog(t, 6.4, 7.0));
+  ctx.save(); ctx.globalAlpha *= kt;
+  text('求められる力:観察力 ・ 手先の器用さ ・ 色彩感覚', W / 2, 1210, 36, C.gray, 500);
+  ctx.restore();
+  headline('職人になるには', t - 0.4, 1340, 100);
+}
 function sceneEnd(t) {
-  showcase(t + 62);
+  showcase(t + 100);
   const k = back(prog(t, 0.3, 1.0));
   ctx.save(); ctx.translate(W / 2, 1320); ctx.scale(k, k);
   outlined('食べられないけど、', 0, -55, 78, C.ink, '#fff', 20);
