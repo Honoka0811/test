@@ -101,7 +101,7 @@ def generate(total, seed=3):
     return (mix / (np.max(np.abs(mix)) + 1e-9) * 0.9).astype(np.float32)
 
 if __name__ == '__main__':
-    total = float(sys.argv[1]) if len(sys.argv) > 1 else 64.5
+    total = float(sys.argv[1]) if len(sys.argv) > 1 else 92
     out = sys.argv[2] if len(sys.argv) > 2 else 'bgm.wav'
     x = generate(total)
     with wave.open(out, 'wb') as w:

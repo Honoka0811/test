@@ -25,7 +25,7 @@ const C = {
   orange: '#FF8A1F', yellow: '#FFD23F', rail: '#c9ced8', railDark: '#7b8292', sleeper: '#8a6a4a', ballast: '#6f747e',
   green: '#46D39A', red: '#FF5A5A', sky: '#7cc4ff'
 };
-const FPS = 30, DURATION = 64.5;
+const FPS = 30, DURATION = 92;
 
 // シーン構成(narrate.py の SCRIPT と対応)
 const SCENES = [
@@ -35,7 +35,9 @@ const SCENES = [
   { s: 25.5, d: 10,  fn: sceneInspect },
   { s: 35.5, d: 8.5, fn: sceneRepair },
   { s: 44,   d: 11.5,fn: sceneSafety },
-  { s: 55.5, d: 9,   fn: sceneDawn },
+  { s: 55.5, d: 12.5,fn: sceneSalary },
+  { s: 68,   d: 15,  fn: sceneHowTo },
+  { s: 83,   d: 9,   fn: sceneDawn },
 ];
 // 画面字幕(表示用の表記)
 const SUBS = [
@@ -45,6 +47,8 @@ const SUBS = [
   'まずは点検。線路を歩いて目で確かめ、ハンマーでボルトをたたいて、音でゆるみを見つけます。検測車では、ミリ単位のゆがみも測ります。',
   'ゆがみが見つかれば補修です。大型の機械でバラストを突き固めたり、すり減ったレールや枕木を交換したりします。',
   '安全も第一。列車の接近を見張る「見張り員」を置き、指差し確認を徹底。作業のあとは工具の数まで数えて、線路に何も残しません。',
+  '気になる年収は、20代でおよそ250万〜350万円。経験を積むと、40代以上では500万円を超えることも。夜間の手当がつく会社もあります。',
+  '保線作業員になるには、鉄道会社や、保線を請け負う軌道工事の会社に就職するのが一般的。学歴不問の求人も多く、入社後に見張り員や工事管理者などの資格を取って、ステップアップしていきます。',
   'そして朝、始発列車がいつも通り走り出す。みんなのあたりまえは、夜の線路で守られているのですわ。',
 ];
 
@@ -515,6 +519,87 @@ function sceneSafety(t, a) {
     text('工具の数まで', 560, y + 120, { size: 48, weight: 'bold', alpha: a * easeOut(p) });
     text('数えて確認', 560, y + 180, { size: 48, weight: 'bold', alpha: a * easeOut(p) });
     text('線路に何も残さない', 560, y + 235, { size: 34, color: C.ink2, alpha: a * easeOut(p) });
+  }
+}
+
+
+function sceneSalary(t, a) {
+  header('06', '年収の目安', a * easeOut(t / .6));
+  // 年代別のレンジバー(0〜700万円の軸)
+  const x0 = 300, x1 = 960, max = 700, ax = v => lerp(x0, x1, v / max);
+  const rows = [['20代', 250, 350, 0.8], ['30代', 350, 500, 3.2], ['40代以上', 500, 650, 5.0]];
+  const yTop = 420, gap = 190;
+  // 目盛り
+  [0, 100, 200, 300, 400, 500, 600, 700].forEach(v => {
+    line(ax(v), yTop - 40, ax(v), yTop + gap * 2 + 70, 'rgba(255,255,255,0.10)', 2, a);
+    if (v % 200 === 0) text(v === 0 ? '0' : v + '万', ax(v), yTop + gap * 2 + 120, { size: 30, color: C.ink3, align: 'center', alpha: a });
+  });
+  rows.forEach(([lab, lo, hi, t0], i) => {
+    const y = yTop + i * gap, p = easeOut((t - t0) / .9);
+    text(lab, 80, y + 18, { size: 44, weight: 'bold', alpha: a * easeOut((t - t0 + .3) / .4) });
+    if (p <= 0) return;
+    const open = i === 2; // 40代以上は上限なし
+    const xa = ax(lo), xb = lerp(xa, ax(hi), p);
+    ctx.save(); ctx.globalAlpha = a;
+    const g = ctx.createLinearGradient(xa, 0, ax(hi), 0);
+    g.addColorStop(0, C.orange); g.addColorStop(1, open ? 'rgba(255,138,31,0)' : C.yellow);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(xa, y - 30, xb - xa, 60, open ? [30, 0, 0, 30] : 30); ctx.fill();
+    ctx.restore();
+    const lbl = open ? `${lo}万円〜` : `${lo}〜${hi}万円`;
+    text(lbl, open ? xa + 10 : (xa + ax(hi)) / 2, y - 50, { size: 42, weight: 'bold', color: C.ink, align: open ? 'left' : 'center', alpha: a * easeOut((t - t0 - .5) / .4) });
+  });
+  // 夜間手当
+  const pn = easeOut((t - 8.4) / .5);
+  ctx.save(); ctx.translate(W / 2, 1060); ctx.scale(pop((t - 8.4) / .5), pop((t - 8.4) / .5));
+  rrect(-260, -55, 520, 100, 50, 'rgba(124,196,255,0.16)', a * pn, 'rgba(124,196,255,0.7)');
+  circle(-195, -5, 26, '#fff4c9', a * pn); circle(-183, -15, 23, '#1d2a52', a * pn);
+  text('+ 夜間の手当', 25, 12, { size: 46, weight: 'bold', color: C.sky, align: 'center', alpha: a * pn });
+  ctx.restore();
+  text('※職業情報サイト等による目安。会社・地域・手当で大きく異なります', W / 2, 1170, { size: 27, color: C.ink3, align: 'center', alpha: a * easeOut((t - 1) / .5) });
+}
+
+function sceneHowTo(t, a) {
+  header('07', 'なるには?', a * easeOut(t / .6));
+  const step = (n, y, p) => {
+    ctx.save(); ctx.translate(140, y); ctx.scale(pop(p), pop(p));
+    circle(0, 0, 44, C.orange, a * easeOut(p));
+    text(String(n), 0, 17, { size: 48, weight: 'bold', color: '#1b1200', align: 'center', alpha: a * easeOut(p) });
+    ctx.restore();
+  };
+  // STEP1 就職先
+  let p = (t - 0.6) / .5;
+  if (p > 0) {
+    step(1, 350, p);
+    text('就職する', 210, 368, { size: 50, weight: 'bold', alpha: a * easeOut(p) });
+    [['鉄道会社', '施設・保線部門', 1.4], ['軌道工事の会社', '保線を請け負う', 2.6]].forEach(([h, sub, t0], i) => {
+      const q = easeOut((t - t0) / .5), x = 120 + i * 430, y = 420 + (1 - q) * 40;
+      rrect(x, y, 400, 140, 24, C.panel, a * q, C.panelLine);
+      text(h, x + 200, y + 66, { size: 44, weight: 'bold', align: 'center', alpha: a * q });
+      text(sub, x + 200, y + 112, { size: 30, color: C.ink2, align: 'center', alpha: a * q });
+    });
+  }
+  // 学歴不問チップ
+  const pc = easeOut((t - 5.6) / .5);
+  ctx.save(); ctx.translate(W / 2, 640); ctx.scale(pop((t - 5.6) / .5), pop((t - 5.6) / .5));
+  rrect(-230, -42, 460, 78, 39, 'rgba(70,211,154,0.16)', a * pc, 'rgba(70,211,154,0.8)');
+  text('学歴不問の求人も多い', 0, 12, { size: 38, weight: 'bold', color: C.green, align: 'center', alpha: a * pc });
+  ctx.restore();
+  // STEP2 資格でステップアップ(階段)
+  p = (t - 7.4) / .5;
+  if (p > 0) {
+    step(2, 770, p);
+    text('資格でステップアップ', 210, 788, { size: 50, weight: 'bold', alpha: a * easeOut(p) });
+    const stairs = [['現場で経験', 7.8], ['見張り員', 8.8], ['工事管理者など', 9.8]];
+    stairs.forEach(([lab, t0], i) => {
+      const q = easeOut((t - t0) / .5);
+      const x = 120 + i * 285, h = 90 + i * 80, yb = 1190;
+      rrect(x, yb - h * q, 270, h * q, 14, i === 2 ? 'rgba(255,210,63,0.35)' : 'rgba(255,138,31,0.25)', a, i === 2 ? 'rgba(255,210,63,0.9)' : 'rgba(255,138,31,0.7)');
+      text(lab, x + 135, yb - h * q + 58, { size: 36, weight: 'bold', color: i === 2 ? C.yellow : C.ink, align: 'center', alpha: a * q });
+    });
+    // 階段を上る作業員
+    const k = clamp((t - 8.3) / 3.0), si = Math.min(2, Math.floor(k * 3 + 0.0001));
+    const wx = 255 + si * 285, wy = 1190 - (90 + si * 80) + 4;
+    ctx.save(); ctx.globalAlpha = a * easeOut((t - 8.0) / .4); worker(wx, wy, 0.32, { arm: si === 2 ? Math.PI - 0.3 : 0.3 }); ctx.restore();
   }
 }
 
