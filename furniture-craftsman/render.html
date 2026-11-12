@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>家具職人って、どんな仕事? — ショート動画</title>
+<style>
+@font-face { font-family: 'MPR'; font-weight: 500; src: url('fonts/MPLUSRounded1c-Medium.ttf'); }
+@font-face { font-family: 'MPR'; font-weight: 700; src: url('fonts/MPLUSRounded1c-Bold.ttf'); }
+@font-face { font-family: 'MPR'; font-weight: 800; src: url('fonts/MPLUSRounded1c-ExtraBold.ttf'); }
+html, body { margin: 0; background: #222; }
+canvas { display: block; height: 100vh; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timing.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描画する。タイミングは narrate.py が書き出す output/timing.js に従う。
+const W = 1080, H = 1920;
+const T = window.TIMING;
+window.FPS = 30;
+window.DURATION = T.total;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+const C = {
+  bg: '#F6ECDC', bg2: '#EFDFC6', ink: '#3A281C', sub: '#7A6352',
+  wood1: '#E8C48E', wood2: '#D3A066', wood3: '#B07A45', wood4: '#8A5A33',
+  accent: '#D9662B', green: '#6E9A5B', blue: '#4E8FC7', white: '#FFFDF8',
+  steel: '#C9D1D6', steelD: '#8D989F', gold: '#F0B93B',
+};
+const FONT = "'MPR', 'IPAGothic', sans-serif";
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, p) => a + (b - a) * p;
+const prog = (t, s, d) => clamp((t - s) / d);
+const eOut = p => 1 - Math.pow(1 - p, 3);
+const eInOut = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+const eBack = p => { const c = 1.9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y); ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
+}
+function box(x, y, w, h, r, fill, stroke, lw = 6) {
+  rr(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke(); }
+}
+// 木目つきの板
+function wood(x, y, w, h, r, fill, seed = 1, vertical = false, lw = 6) {
+  rr(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill();
+  ctx.save(); rr(x, y, w, h, r); ctx.clip();
+  ctx.strokeStyle = 'rgba(90,50,20,0.17)'; ctx.lineWidth = Math.max(2, Math.min(w, h) / 40); ctx.lineCap = 'round';
+  const n = Math.max(2, Math.round((vertical ? w : h) / 26));
+  for (let i = 0; i < n; i++) {
+    const p = (i + .5) / n, a = rnd(seed * 13 + i) * 8 - 4, ph = rnd(seed * 7 + i) * 6;
+    ctx.beginPath();
+    if (vertical) {
+      const xx = x + w * p;
+      ctx.moveTo(xx, y - 5);
+      for (let k = 0; k <= 8; k++) ctx.lineTo(xx + Math.sin(k * .9 + ph) * a, y + h * k / 8);
+    } else {
+      const yy = y + h * p;
+      ctx.moveTo(x - 5, yy);
+      for (let k = 0; k <= 8; k++) ctx.lineTo(x + w * k / 8, yy + Math.sin(k * .9 + ph) * a);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (lw) { rr(x, y, w, h, r); ctx.strokeStyle = C.ink; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke(); }
+}
+function text(s, x, y, size, weight = 700, color = C.ink, align = 'center') {
+  ctx.font = `${weight} ${size}px ${FONT}`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function textW(s, size, weight = 700) { ctx.font = `${weight} ${size}px ${FONT}`; return ctx.measureText(s).width; }
+// 禁則つき・行長をそろえる折り返し(読点の直後や、ひらがな→漢字/カタカナの境目を優先して改行)
+function wrap(s, size, weight, maxW) {
+  const total = textW(s, size, weight);
+  const n = Math.max(1, Math.ceil(total / maxW));
+  const noHead = '、。」』)!?ー・っゃゅょん', noTail = '「『(';
+  const isHira = ch => ch >= 'ぁ' && ch <= 'ん';
+  const lines = []; let rest = s;
+  for (let k = n; k > 1; k--) {
+    const ideal = textW(rest, size, weight) / k;
+    let best = -1, bestScore = 1e9;
+    for (let i = 1; i < rest.length; i++) {
+      const w = textW(rest.slice(0, i), size, weight);
+      if (w > maxW) break;
+      const prev = rest[i - 1], next = rest[i];
+      if (noHead.includes(next) || noTail.includes(prev)) continue;
+      const head = rest.slice(0, i), inQuote = head.split('「').length > head.split('」').length;
+      const pen = inQuote ? size * 8 : '、。'.includes(prev) ? 0 : (isHira(prev) && !isHira(next)) ? size * .8 : size * 4;
+      const score = Math.abs(w - ideal) + pen;
+      if (score < bestScore) { bestScore = score; best = i; }
+    }
+    if (best < 0) break;
+    lines.push(rest.slice(0, best)); rest = rest.slice(best);
+  }
+  lines.push(rest);
+  return lines;
+}
+// (cx, cy) を中心に拡大・回転・透明度をつけて描画
+function at(cx, cy, scale, alpha, fn, rot = 0) {
+  if (alpha <= 0 || scale <= 0) return;
+  ctx.save(); ctx.globalAlpha *= clamp(alpha); ctx.translate(cx, cy); if (rot) ctx.rotate(rot); ctx.scale(scale, scale);
+  fn(); ctx.restore();
+}
+const pop = (t, s, d = .45) => { const p = prog(t, s, d); return { s: p <= 0 ? 0 : eBack(p), a: clamp(p * 3) }; };
+function shadow(on) { ctx.shadowColor = on ? 'rgba(80,45,15,0.22)' : 'transparent'; ctx.shadowBlur = on ? 28 : 0; ctx.shadowOffsetY = on ? 10 : 0; }
+function card(x, y, w, h, r = 36, fill = C.white) { shadow(true); box(x, y, w, h, r, fill); shadow(false); box(x, y, w, h, r, null, C.ink, 5); }
+function line(pts, color = C.ink, lw = 6) {
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+}
+function poly(pts, fill, stroke = C.ink, lw = 6) {
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.lineJoin = 'round'; ctx.stroke(); }
+}
+function arrow(x1, y1, x2, y2, color = C.ink, lw = 10, head = 26) {
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  line([[x1, y1], [x2 - Math.cos(a) * head * .6, y2 - Math.sin(a) * head * .6]], color, lw);
+  poly([[x2, y2], [x2 - Math.cos(a - .5) * head, y2 - Math.sin(a - .5) * head], [x2 - Math.cos(a + .5) * head, y2 - Math.sin(a + .5) * head]], color, color, 4);
+}
+function star(cx, cy, r, color) {
+  const pts = [];
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, q = i % 2 ? r * .45 : r; pts.push([cx + Math.cos(a) * q, cy + Math.sin(a) * q]); }
+  poly(pts, color, null);
+}
+function sparkle(cx, cy, r, color = C.gold) {
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, q = i % 2 ? r * .28 : r; ctx.lineTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q); }
+  ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+}
+
+// ---------- アイコン(原点中心・おおよそ ±100 の箱に収まる) ----------
+function iChair() {
+  wood(-62, -100, 16, 110, 5, C.wood3, 1, true); wood(46, -100, 16, 110, 5, C.wood3, 2, true);
+  wood(-66, -104, 132, 26, 8, C.wood2, 3);
+  wood(-22, -78, 12, 80, 3, C.wood1, 4, true, 5); wood(10, -78, 12, 80, 3, C.wood1, 5, true, 5);
+  wood(-64, 22, 16, 80, 5, C.wood3, 6, true); wood(48, 22, 16, 80, 5, C.wood3, 7, true);
+  wood(-50, 62, 100, 12, 4, C.wood3, 8, false, 5);
+  wood(-76, 2, 152, 26, 9, C.wood1, 9);
+}
+function iTable() {
+  wood(-80, -30, 18, 122, 5, C.wood3, 11, true); wood(62, -30, 18, 122, 5, C.wood3, 12, true);
+  wood(-74, -34, 148, 22, 4, C.wood2, 13, false, 5);
+  wood(-98, -56, 196, 26, 9, C.wood1, 14);
+}
+function iChest() {
+  wood(-64, 82, 18, 16, 3, C.wood4, 21, true, 5); wood(46, 82, 18, 16, 3, C.wood4, 22, true, 5);
+  wood(-76, -96, 152, 182, 12, C.wood2, 23, true);
+  for (let i = 0; i < 3; i++) {
+    const y = -84 + i * 56;
+    wood(-64, y, 128, 46, 6, C.wood1, 24 + i, false, 5);
+    ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(-26, y + 23, 6, 0, 7); ctx.arc(26, y + 23, 6, 0, 7); ctx.fill();
+  }
+}
+function iSaw() {
+  ctx.save(); ctx.rotate(-.35);
+  const teeth = [[-96, 14]];
+  for (let i = 0; i < 12; i++) { teeth.push([-90 + i * 11, 24 + i * .9]); teeth.push([-85 + i * 11, 14 + i * .9]); }
+  poly([[-96, -12], [40, -30], [40, 26], ...teeth.reverse()], C.steel);
+  wood(36, -14, 74, 28, 12, C.wood2, 31);
+  ctx.restore();
+}
+function iKanna(t = 0) {
+  // かんなくず
+  ctx.beginPath();
+  for (let i = 0; i <= 40; i++) {
+    const a = i / 40 * Math.PI * 3.2 + Math.sin(t * 2) * .25, r = 10 + i * .85;
+    const x = 22 + Math.cos(a - 1.2) * r * .9, y = -64 - i * .6 + Math.sin(a - 1.2) * r * .55;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.strokeStyle = C.ink; ctx.lineWidth = 15; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.strokeStyle = C.wood1; ctx.lineWidth = 7; ctx.stroke();
+  poly([[-8, -66], [30, -66], [14, 0], [-22, 0]], C.steel);
+  wood(-98, -22, 196, 62, 10, C.wood2, 41);
+  wood(-104, 44, 208, 22, 6, C.wood1, 42, false, 5);
+}
+function iBrush() {
+  ctx.save(); ctx.rotate(.5);
+  poly([[-24, 30], [24, 30], [30, 92], [14, 84], [0, 96], [-14, 84], [-30, 92]], C.wood4);
+  box(-28, 2, 56, 32, 4, C.steel, C.ink);
+  wood(-17, -96, 34, 100, 14, C.wood1, 51, true);
+  ctx.restore();
+}
+function iBook() {
+  poly([[0, -52], [-92, -72], [-92, 56], [0, 76]], C.white);
+  poly([[0, -52], [92, -72], [92, 56], [0, 76]], C.white);
+  for (let i = 0; i < 4; i++) { line([[-74, -42 + i * 26], [-18, -30 + i * 26]], C.wood2, 6); line([[74, -42 + i * 26], [18, -30 + i * 26]], C.wood2, 6); }
+  line([[0, -52], [0, 76]], C.ink, 6);
+}
+function iHammer() {
+  ctx.save(); ctx.rotate(-.6);
+  wood(-12, -40, 24, 140, 8, C.wood2, 61, true);
+  box(-58, -78, 116, 46, 8, C.steel, C.ink);
+  ctx.restore();
+}
+function iMedal() {
+  poly([[-46, -110], [-8, -110], [16, -30], [-22, -30]], C.accent);
+  poly([[46, -110], [8, -110], [-16, -30], [22, -30]], C.blue);
+  ctx.beginPath(); ctx.arc(0, 26, 72, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 6; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 26, 54, 0, 7); ctx.strokeStyle = 'rgba(120,70,0,.45)'; ctx.lineWidth = 4; ctx.stroke();
+  star(0, 28, 36, C.white);
+}
+function iCheck(color = C.green) {
+  ctx.beginPath(); ctx.arc(0, 0, 40, 0, 7); ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.stroke();
+  line([[-18, 2], [-5, 16], [20, -14]], C.white, 10);
+}
+function iDrop(color = C.blue) {
+  ctx.beginPath(); ctx.moveTo(0, -30); ctx.bezierCurveTo(26, 4, 22, 28, 0, 28); ctx.bezierCurveTo(-22, 28, -26, 4, 0, -30); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.lineJoin = 'round'; ctx.stroke();
+}
+function iSun() {
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 8; ctx.lineCap = 'round';
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 40, Math.sin(a) * 40); ctx.lineTo(Math.cos(a) * 56, Math.sin(a) * 56); ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(0, 0, 28, 0, 7); ctx.fillStyle = C.gold; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.stroke();
+}
+
+// ---------- 共通レイヤー ----------
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, C.bg); g.addColorStop(1, C.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // うっすら木目
+  ctx.strokeStyle = 'rgba(160,110,60,0.07)'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  for (let i = 0; i < 26; i++) {
+    const y = i * 78 + 20, ph = rnd(i) * 6;
+    ctx.beginPath(); ctx.moveTo(-10, y);
+    for (let k = 0; k <= 12; k++) ctx.lineTo(W * k / 12, y + Math.sin(k * .7 + ph) * 16);
+    ctx.stroke();
+  }
+  // ただよう木くず
+  for (let i = 0; i < 26; i++) {
+    const sp = 14 + rnd(i + 50) * 22, x = rnd(i + 80) * W + Math.sin(t * .5 + i) * 26;
+    const y = ((rnd(i + 110) * H - t * sp) % H + H) % H, r = 4 + rnd(i + 140) * 7;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * .4 + i);
+    ctx.fillStyle = `rgba(190,130,70,${0.12 + rnd(i + 170) * 0.14})`;
+    rr(-r * 1.6, -r * .5, r * 3.2, r, r * .5); ctx.fill(); ctx.restore();
+  }
+}
+function header(t, si) {
+  // 進行バー
+  ctx.fillStyle = 'rgba(138,90,51,0.18)'; ctx.fillRect(0, 0, W, 12);
+  ctx.fillStyle = C.accent; ctx.fillRect(0, 0, W * clamp(t / T.total), 12);
+  // 番組ラベル
+  const a = eOut(prog(t, .1, .5));
+  ctx.save(); ctx.globalAlpha = a;
+  const w = 420, x = (W - w) / 2, y = 150;
+  box(x, y, w, 72, 36, C.ink);
+  ctx.save(); ctx.translate(x + 50, y + 36); ctx.scale(.26, .26); iChair(); ctx.restore();
+  text('家具職人のひみつ', x + w / 2 + 26, y + 38, 36, 700, C.white);
+  // シーンのドット
+  const n = T.scenes.length, gap = 34, x0 = W / 2 - (n - 1) * gap / 2;
+  for (let i = 0; i < n; i++) {
+    ctx.beginPath(); ctx.arc(x0 + i * gap, y + 106, i === si ? 10 : 7, 0, 7);
+    ctx.fillStyle = i === si ? C.accent : (i < si ? C.wood3 : 'rgba(138,90,51,0.28)'); ctx.fill();
+  }
+  ctx.restore();
+}
+function heading(lt, s, sub) {
+  const p = eOut(prog(lt, .05, .45));
+  ctx.save(); ctx.globalAlpha *= p; ctx.translate(0, (1 - p) * 30);
+  const size = textW(s, 82, 800) > 940 ? 70 : 82;
+  text(s, W / 2, 372, size, 800, C.ink);
+  const w = textW(s, size, 800) * eOut(prog(lt, .25, .5));
+  box(W / 2 - w / 2, 426, w, 12, 6, C.accent);
+  if (sub) text(sub, W / 2, 476, 40, 700, C.sub);
+  ctx.restore();
+}
+function caption(t) {
+  let cur = null;
+  for (const sc of T.scenes) for (const l of sc.lines) if (t >= l.start - .12 && t < l.end + .22) cur = l;
+  if (!cur) return;
+  const a = Math.min(prog(t, cur.start - .12, .18), 1 - prog(t, cur.end + .06, .16));
+  const size = 54, lh = 76, lines = wrap(cur.text, size, 800, 800);
+  const h = lines.length * lh + 52, w = Math.max(...lines.map(l => textW(l, size, 800))) + 96;
+  const cy = 1440, x = (W - w) / 2, y = cy - h / 2;
+  ctx.save(); ctx.globalAlpha = clamp(a); ctx.translate(0, (1 - eOut(clamp(a))) * 16);
+  shadow(true); box(x, y, w, h, 34, 'rgba(58,40,28,0.94)'); shadow(false);
+  lines.forEach((l, i) => text(l, W / 2, y + 26 + lh * (i + .5) + 2, size, 800, C.white));
+  ctx.restore();
+}
+
+// ---------- 各シーン ----------
+const S = {};
+S.title = (lt, sc) => {
+  const p1 = pop(lt, .1, .5);
+  at(W / 2, 430, p1.s, p1.a, () => { box(-190, -42, 380, 84, 42, C.accent, C.ink, 5); text('1分でわかる!', 0, 3, 44, 800, C.white); }, -.04);
+  const chars = '家具職人';
+  for (let i = 0; i < 4; i++) {
+    const p = pop(lt, .3 + i * .1, .5);
+    at(W / 2 - 345 + i * 230, 610 + Math.sin(lt * 2.2 + i * .8) * 6, p.s, p.a, () => {
+      ctx.lineJoin = 'round'; ctx.font = `800 216px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = C.white; ctx.lineWidth = 26; ctx.strokeText(chars[i], 0, 0);
+      ctx.fillStyle = i < 2 ? C.wood4 : C.ink; ctx.fillText(chars[i], 0, 0);
+    });
+  }
+  const p2 = eOut(prog(lt, .8, .5));
+  ctx.save(); ctx.globalAlpha *= p2; ctx.translate(0, (1 - p2) * 24);
+  text('って、どんな仕事?', W / 2, 800, 84, 800, C.ink);
+  ctx.restore();
+  // 作業台と椅子
+  const pb = eOut(prog(lt, 1.0, .6));
+  ctx.save(); ctx.globalAlpha *= pb;
+  wood(140, 1218, 800, 34, 12, C.wood2, 71);
+  ctx.restore();
+  const pc = pop(lt, 1.15, .6);
+  at(W / 2 - 150, 1218 - 152 * pc.s, pc.s * 1.5, pc.a, iChair);
+  const pk = pop(lt, 1.45, .6);
+  at(W / 2 + 190, 1218 - 70 * pk.s, pk.s * 1.05, pk.a, () => iKanna(lt));
+  const l2 = sc.lines[1].start - sc.start;
+  for (let i = 0; i < 3; i++) {
+    const ps = pop(lt, l2 + i * .18, .4), tw = .75 + .25 * Math.sin(lt * 5 + i * 2);
+    at([250, 560, 830][i], [930, 900, 1010][i], ps.s * tw, ps.a, () => sparkle(0, 0, 34));
+  }
+};
+
+S.work = (lt, sc) => {
+  heading(lt, '木材から家具を作る職人');
+  const l1 = sc.lines[0], l2 = sc.lines[1], d1 = l1.end - l1.start;
+  const items = [['椅子', iChair, .0], ['テーブル', iTable, .2], ['たんす', iChest, .4]];
+  items.forEach(([name, icon, f], i) => {
+    const p = pop(lt, (l1.start - sc.start) + d1 * f, .5), cx = 200 + i * 340;
+    at(cx, 720, p.s, p.a, () => {
+      card(-150, -190, 300, 380, 40);
+      ctx.save(); ctx.translate(0, -36 + Math.sin(lt * 2 + i) * 4); ctx.scale(1.05, 1.05); icon(); ctx.restore();
+      text(name, 0, 136, 50, 800, C.ink);
+    });
+  });
+  // 設計 → 加工 → 組立 → 仕上げ
+  const s2 = l2.start - sc.start, steps = ['設計', '加工', '組立', '仕上げ'];
+  const pc = eOut(prog(lt, s2 - .1, .45));
+  ctx.save(); ctx.globalAlpha *= pc; ctx.translate(0, (1 - pc) * 30);
+  card(60, 980, 960, 270, 40);
+  ctx.restore();
+  steps.forEach((s, i) => {
+    const p = pop(lt, s2 + .1 + i * .28, .4), cx = 180 + i * 240;
+    at(cx, 1062, p.s, p.a, () => { box(-92, -46, 184, 92, 46, i === 3 ? C.accent : C.wood1, C.ink, 5); text(s, 0, 3, 46, 800, i === 3 ? C.white : C.ink); });
+    if (i < 3) { const pa = prog(lt, s2 + .3 + i * .28, .25); ctx.save(); ctx.globalAlpha *= pa; arrow(cx + 100, 1062, cx + 140, 1062, C.wood4, 9, 22); ctx.restore(); }
+  });
+  const pt = eOut(prog(lt, s2 + 1.3, .4));
+  ctx.save(); ctx.globalAlpha *= pt;
+  line([[100, 1134], [100, 1150], [980, 1150], [980, 1134]], C.wood4, 6);
+  text('一人で手がけることも', W / 2, 1200, 46, 800, C.accent);
+  ctx.restore();
+};
+
+S.process = (lt, sc) => {
+  heading(lt, '家具ができるまで');
+  const rows = [
+    ['木取り', '木目を見て部材を切り出す', iSaw],
+    ['加工', 'かんな・ノミで形を整える', () => iKanna(lt)],
+    ['組立・仕上げ', '組んで、磨いて、塗装する', iBrush],
+  ];
+  rows.forEach(([ttl, desc, icon], i) => {
+    const ls = sc.lines[i].start - sc.start, le = sc.lines[i].end - sc.start;
+    const enter = eOut(prog(lt, .25 + i * .12, .45));
+    const active = clamp(prog(lt, ls - .1, .3) - (i < 2 ? prog(lt, le + .15, .3) : 0));
+    const done = prog(lt, le + .15, .3);
+    const y = 530 + i * 250;
+    ctx.save();
+    ctx.globalAlpha *= enter * lerp(.45, 1, Math.max(active, done * .75));
+    ctx.translate(W / 2 + (1 - enter) * 80, y + 105); ctx.scale(1 + active * .035, 1 + active * .035);
+    card(-460, -105, 920, 210, 40, active > .5 ? '#FFF6E6' : C.white);
+    if (active > 0) { ctx.save(); ctx.globalAlpha *= active; box(-460, -105, 920, 210, 40, null, C.accent, 10); ctx.restore(); }
+    ctx.beginPath(); ctx.arc(-378, 0, 46, 0, 7); ctx.fillStyle = active > .5 ? C.accent : C.wood3; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.stroke();
+    text(String(i + 1), -378, 4, 58, 800, C.white);
+    text(ttl, -300, -36, 62, 800, C.ink, 'left');
+    text(desc, -300, 44, 38, 700, C.sub, 'left');
+    ctx.save(); ctx.translate(350, 4 + (active ? Math.sin(lt * 6) * 4 * active : 0)); ctx.scale(.78, .78); icon(); ctx.restore();
+    ctx.restore();
+    if (i < 2) { const pa = prog(lt, le, .3); ctx.save(); ctx.globalAlpha *= pa; arrow(W / 2, y + 216, W / 2, y + 246, C.wood4, 10, 24); ctx.restore(); }
+  });
+};
+
+S.joint = (lt, sc) => {
+  heading(lt, '見どころは「ほぞ組み」');
+  const s2 = sc.lines[1].start - sc.start, s3 = sc.lines[2].start - sc.start;
+  const pin = eOut(prog(lt, .3, .5));
+  const join = eInOut(prog(lt, s2 + .5, .9));
+  const gap = lerp(210, 0, join);
+  const hit = prog(lt, s2 + 1.4, .35);
+  const shake = hit > 0 && hit < 1 ? Math.sin(hit * 30) * 6 * (1 - hit) : 0;
+  const px = 230, py = 520, pw = 190, ph = 540, mh = 150, md = 130, my = py + ph / 2 - mh / 2;
+  ctx.save(); ctx.globalAlpha *= pin; ctx.translate(shake, (1 - pin) * 30);
+  // 柱(ほぞ穴つき)
+  wood(px, py, pw, ph, 14, C.wood2, 81, true);
+  box(px + pw - md, my, md + 3, mh, 0, '#5B3A20');
+  line([[px + pw, my], [px + pw - md, my], [px + pw - md, my + mh], [px + pw, my + mh]], C.ink, 6);
+  // 横木(ほぞつき)
+  const rx = px + pw + gap, rh = 250, ry = py + ph / 2 - rh / 2;
+  wood(rx - md, my + 5, md + 20, mh - 10, 6, C.wood1, 82);
+  wood(rx, ry, 470 - gap * .3, rh, 14, C.wood3, 83);
+  ctx.restore();
+  // ラベル
+  const la = eOut(prog(lt, .7, .4)) * (1 - prog(lt, s2 + .3, .3));
+  ctx.save(); ctx.globalAlpha *= la;
+  const tx = px + pw + gap - md / 2;
+  box(tx - 150, 596, 300, 78, 39, C.white, C.ink, 5); text('ほぞ(出っぱり)', tx, 638, 36, 800, C.accent);
+  line([[tx, 676], [tx, my - 4]], C.ink, 5);
+  box(px - 110, 1090, 300, 78, 39, C.white, C.ink, 5); text('ほぞ穴', px + 40, 1132, 40, 800, C.accent);
+  line([[px + 110, 1090], [px + pw - md / 2, my + mh + 4]], C.ink, 5);
+  ctx.restore();
+  // がっちり!
+  const pg = pop(lt, s2 + 1.35, .45);
+  for (let i = 0; i < 6; i++) {
+    const a = -Math.PI / 2 + (i - 2.5) * .5, r1 = 70 + hit * 40, r2 = r1 + 46;
+    ctx.save(); ctx.globalAlpha *= clamp(hit * 4) * (1 - prog(lt, s2 + 2.0, .4));
+    line([[px + pw + Math.cos(a) * r1, my - 20 + Math.sin(a) * r1], [px + pw + Math.cos(a) * r2, my - 20 + Math.sin(a) * r2]], C.accent, 10);
+    ctx.restore();
+  }
+  at(710, 572, pg.s, pg.a, () => { box(-180, -58, 360, 116, 58, C.accent, C.ink, 6); text('がっちり!', 0, 4, 64, 800, C.white); }, .06);
+  // 何十年も使える
+  const p3 = pop(lt, s3 + .2, .5);
+  at(W / 2 + 40, 1170, p3.s, p3.a, () => {
+    card(-330, -70, 660, 140, 70);
+    ctx.save(); ctx.translate(-250, 0); ctx.scale(.5, .5); iChair(); ctx.restore();
+    text('何十年も使える', 44, 4, 60, 800, C.ink);
+  });
+};
+
+S.move = (lt, sc) => {
+  heading(lt, '木は生きている');
+  const s2 = sc.lines[1].start - sc.start;
+  const pin = eOut(prog(lt, .3, .5));
+  const ph = Math.sin((lt - .6) * 2 * Math.PI / 3.0);          // +:吸湿 / -:乾燥
+  const wet = clamp(ph * 2.5, -1, 1);
+  const bw = 600 * (1 + .075 * ph), bh = 210, cy = 800;
+  ctx.save(); ctx.globalAlpha *= pin; ctx.translate(0, (1 - pin) * 30);
+  // 基準の幅を示す点線
+  ctx.setLineDash([14, 14]); line([[W / 2 - 300, cy - 150], [W / 2 - 300, cy + 150]], C.sub, 5); line([[W / 2 + 300, cy - 150], [W / 2 + 300, cy + 150]], C.sub, 5); ctx.setLineDash([]);
+  wood(W / 2 - bw / 2, cy - bh / 2, bw, bh, 18, wet > 0 ? '#DDB57C' : C.wood1, 91);
+  // 左右の矢印
+  const dir = wet > 0 ? 1 : -1, aa = Math.abs(wet);
+  ctx.save(); ctx.globalAlpha *= aa;
+  const col = wet > 0 ? C.blue : C.accent;
+  for (const sgn of [-1, 1]) {
+    const x0 = W / 2 + sgn * (bw / 2 + (dir > 0 ? 22 : 96)), x1 = W / 2 + sgn * (bw / 2 + (dir > 0 ? 96 : 22));
+    arrow(x0, cy, x1, cy, col, 14, 34);
+  }
+  ctx.restore();
+  // 湿気 / 乾燥
+  ctx.save(); ctx.globalAlpha *= clamp(wet);
+  for (let i = 0; i < 5; i++) { const f = ((lt * .9 + i * .37) % 1); at(W / 2 - 220 + i * 110, 560 + f * 110, 1, Math.sin(f * Math.PI), () => iDrop()); }
+  box(W / 2 - 290, 950, 580, 96, 48, C.blue, C.ink, 5); text('湿気を吸う → ふくらむ', W / 2, 1001, 46, 800, C.white);
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha *= clamp(-wet);
+  at(W / 2, 596, 1.25, 1, iSun, lt * .4);
+  box(W / 2 - 290, 950, 580, 96, 48, C.accent, C.ink, 5); text('乾く → ちぢむ', W / 2, 1001, 46, 800, C.white);
+  ctx.restore();
+  ctx.restore();
+  const p2 = pop(lt, s2 + .15, .5);
+  at(W / 2, 1168, p2.s, p2.a, () => {
+    card(-430, -76, 860, 152, 44, '#FFF6E6');
+    text('反りや割れを見こして作る', 0, 4, 58, 800, C.ink);
+  });
+};
+
+S.career = (lt, sc) => {
+  heading(lt, '職人になるには');
+  const s2 = sc.lines[1].start - sc.start, l1 = sc.lines[0], d1 = l1.end - l1.start, s1 = l1.start - sc.start;
+  const items = [['訓練校で学ぶ', iBook, .28], ['工房で修業', iHammer, .55]];
+  items.forEach(([name, icon, f], i) => {
+    const p = pop(lt, s1 + d1 * f, .5);
+    at(290 + i * 500, 690, p.s, p.a, () => {
+      card(-220, -180, 440, 360, 40);
+      ctx.save(); ctx.translate(0, -40 + Math.sin(lt * 2 + i * 2) * 4); ctx.scale(.9, .9); icon(); ctx.restore();
+      text(name, 0, 122, 54, 800, C.ink);
+    });
+  });
+  const pp = pop(lt, s1 + d1 * .55, .4);
+  at(W / 2, 690, pp.s, pp.a, () => { ctx.beginPath(); ctx.arc(0, 0, 38, 0, 7); ctx.fillStyle = C.wood3; ctx.fill(); ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.stroke(); text('や', 0, 3, 40, 800, C.white); });
+  const pa = prog(lt, s2 - .1, .3);
+  ctx.save(); ctx.globalAlpha *= pa; arrow(W / 2, 896, W / 2, 946, C.wood4, 12, 30); ctx.restore();
+  const p2 = pop(lt, s2 + .1, .55);
+  at(W / 2, 1100, p2.s, p2.a, () => {
+    card(-450, -140, 900, 280, 44, '#FFF6E6');
+    ctx.save(); ctx.translate(-320, 14); ctx.scale(.95, .95); iMedal(); ctx.restore();
+    box(-200, -104, 380, 62, 31, C.accent, C.ink, 5); text('国家資格(技能検定)', -10, -71, 34, 800, C.white);
+    text('家具製作技能士', 100, 30, 72, 800, C.ink);
+  });
+  for (let i = 0; i < 3; i++) {
+    const ps = pop(lt, s2 + .5 + i * .15, .4), tw = .75 + .25 * Math.sin(lt * 5 + i * 2);
+    at([120, 950, 880][i], [960, 950, 1250][i], ps.s * tw, ps.a, () => sparkle(0, 0, 30));
+  }
+};
+
+S.outro = (lt, sc) => {
+  heading(lt, 'まとめ');
+  const l1 = sc.lines[0], s1 = l1.start - sc.start, d1 = l1.end - l1.start, s2 = sc.lines[1].start - sc.start;
+  const rows = ['木材から家具を作り上げる', '「ほぞ組み」など木を組む技', '木の動きを読む経験'];
+  rows.forEach((s, i) => {
+    const p = eOut(prog(lt, s1 + d1 * i * .3, .45));
+    ctx.save(); ctx.globalAlpha *= p; ctx.translate(W / 2 + (1 - p) * 90, 560 + i * 150);
+    card(-450, -60, 900, 120, 60);
+    const pc = pop(lt, s1 + d1 * i * .3 + .2, .4);
+    at(-380, 0, pc.s * .95, pc.a, () => iCheck());
+    text(s, -310, 4, 50, 800, C.ink, 'left');
+    ctx.restore();
+  });
+  const pc = pop(lt, s2, .6);
+  at(W / 2, 1066, pc.s * 1.15, pc.a, iChair);
+  for (let i = 0; i < 4; i++) {
+    const ps = pop(lt, s2 + .3 + i * .15, .4), tw = .7 + .3 * Math.sin(lt * 5 + i * 2);
+    at([340, 740, 300, 790][i], [990, 960, 1140, 1120][i], ps.s * tw, ps.a, () => sparkle(0, 0, [34, 28, 24, 32][i]));
+  }
+  const pt = eOut(prog(lt, s2 + .5, .5));
+  ctx.save(); ctx.globalAlpha *= pt;
+  text('音声:VOICEVOX:四国めたん / BGM:オリジナル', W / 2, 1262, 32, 700, C.sub);
+  ctx.restore();
+};
+
+// ---------- メイン ----------
+function render(t) {
+  t = clamp(t, 0, T.total - 1e-4);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; shadow(false); ctx.setLineDash([]);
+  background(t);
+  let si = T.scenes.findIndex(s => t >= s.start && t < s.end); if (si < 0) si = T.scenes.length - 1;
+  header(t, si);
+  const sc = T.scenes[si], lt = t - sc.start, last = si === T.scenes.length - 1;
+  const a = Math.min(prog(lt, 0, .25), last ? 1 : 1 - prog(t, sc.end - .2, .2));
+  ctx.save(); ctx.globalAlpha = clamp(a);
+  S[sc.id](lt, sc);
+  ctx.restore();
+  caption(t);
+  if (last) { const f = prog(t, T.total - .5, .5); if (f > 0) { ctx.fillStyle = `rgba(58,40,28,${f * .9})`; ctx.fillRect(0, 0, W, H); } }
+}
+window.render = render;
+window.ready = Promise.all(['500', '700', '800'].map(w => document.fonts.load(`${w} 40px MPR`, '家具職人あア1'))).then(() => { render(0); return true; });
+
+// ブラウザで直接開いたときはプレビュー再生(?t=秒 で静止画)
+const q = new URLSearchParams(location.search);
+if (!navigator.webdriver) window.ready.then(() => {
+  if (q.has('t')) return render(parseFloat(q.get('t')));
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % T.total); requestAnimationFrame(loop); })();
+});
+</script>
+</body>
+</html>
