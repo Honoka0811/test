@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>戦前「外地」の日本企業工場 — ショート動画</title>
+<style>
+@font-face { font-family: "Noto Sans JP"; src: url("fonts/NotoSansJP.ttf"); font-weight: 100 900; }
+html, body { margin: 0; background: #05090f; }
+canvas { display: block; margin: 0 auto; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="data/geo.js"></script>
+<script src="data/timeline.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。capture.js が 1 フレームずつ撮影する。
+// ブラウザで直接開くとプレビュー再生する。時刻はすべて data/timeline.js(ナレーション)に追従。
+const W = 1080, H = 1920, FPS = 30;
+const DURATION = TIMELINE.duration;
+window.FPS = FPS; window.DURATION = DURATION;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const FONT = '"Noto Sans JP", sans-serif';
+const CY = 900;                       // 地図の中心を置く画面 y
+
+const LINE = Object.fromEntries(TIMELINE.lines.map(l => [l.id, l]));
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const easeOut = x => 1 - Math.pow(1 - clamp(x), 3);
+const backOut = x => { x = clamp(x); const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const ramp = (t, t0, d) => clamp((t - t0) / d);
+const lerp = (a, b, k) => a + (b - a) * k;
+const mercY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)) * 180 / Math.PI;
+
+// ---------- 色 ----------
+const COL = { chosen: '#f4a261', manshu: '#e9c46a', taiwan: '#35c9b8', karafuto: '#8ecae6', naichi: '#d95f4b' };
+const LAND = [38, 52, 68], LAND_STROKE = '#465c74';
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const mix = (a, b, k) => a.map((v, i) => Math.round(lerp(v, b[i], k)));
+const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+// ---------- シーンとカメラ ----------
+const REGION = {
+  chosen:   { name: '朝鮮', sub: '1910年 併合 〜 1945年', cam: { lon: 127.7, lat: 39.3, w: 10.6 } },
+  manshu:   { name: '満洲', sub: '1932年 満洲国 建国 〜 1945年', cam: { lon: 124.4, lat: 43.2, w: 14.5 } },
+  taiwan:   { name: '台湾', sub: '1895年 領有 〜 1945年', cam: { lon: 120.95, lat: 23.6, w: 4.7 } },
+  karafuto: { name: '樺太', sub: '1905年 南樺太 領有 〜 1945年', cam: { lon: 142.75, lat: 48.3, w: 7.6 } },
+};
+const WIDE = { lon: 131.5, lat: 38.6, w: 40 };
+const WIDE_END = { lon: 131.5, lat: 37.0, w: 40 };
+const SCENES = [];
+for (const l of TIMELINE.lines) {
+  if (!SCENES.length || SCENES[SCENES.length - 1].id !== l.scene)
+    SCENES.push({ id: l.scene, start: l.start, first: l.start, cam: (REGION[l.scene] || {}).cam || (l.scene === 'outro' ? WIDE_END : WIDE) });
+  SCENES[SCENES.length - 1].end = l.end;
+}
+SCENES.forEach((s, i) => { if (i) s.start = SCENES[i - 1].end + 0.05; else s.start = 0; });
+const MOVE = 1.25; // カメラ移動にかける秒数
+function camAt(t) {
+  let i = 0;
+  while (i + 1 < SCENES.length && t >= SCENES[i + 1].start) i++;
+  const s = SCENES[i], drift = 1 - 0.035 * clamp((t - s.start) / Math.max(1, s.end - s.start));
+  const cur = { lon: s.cam.lon, lat: s.cam.lat, w: s.cam.w * drift };
+  if (i === 0) return cur;
+  const p = SCENES[i - 1], k = ease((t - s.start) / MOVE);
+  const from = { lon: p.cam.lon, lat: p.cam.lat, w: p.cam.w * (1 - 0.035) };
+  // ズームは対数補間。移動の途中で少し引いて「飛ぶ」感じにする
+  const lift = 1 + 0.35 * Math.sin(Math.PI * k) * (Math.abs(Math.log(from.w / cur.w)) < 0.8 ? 1 : 0.3);
+  return { lon: lerp(from.lon, cur.lon, k), lat: lerp(from.lat, cur.lat, k),
+           w: Math.exp(lerp(Math.log(from.w), Math.log(cur.w), k)) * lift };
+}
+let cam = WIDE, scale = 1;
+const px = (lon, lat) => [(lon - cam.lon) * scale + W / 2, (mercY(cam.lat) - mercY(lat)) * scale + CY];
+
+// ---------- 工場マーカー ----------
+// at: 表示を始める行ID, dt: その行の開始からの遅れ, side: ラベルを出す向き(1=右, -1=左), oy: ラベルの上下オフセット
+const MARKERS = [
+  { r: 'chosen', at: 'k2', lon: 127.62, lat: 39.83, name: '興南', sub: '日本窒素肥料', note: '化学コンビナート', side: 1, oy: 30 },
+  { r: 'chosen', at: 'k3', dt: .5, lon: 124.96, lat: 40.46, name: '水豊ダム', sub: '鴨緑江の水力発電', note: '世界最大級の発電所', side: -1, oy: -120, ox: -150 },
+  { r: 'chosen', at: 'k4', lon: 125.63, lat: 38.75, name: '兼二浦', sub: '日本製鉄', note: '製鉄所', side: -1, oy: 10 },
+  { r: 'chosen', at: 'k4', dt: .75, lon: 129.78, lat: 41.79, name: '清津', sub: '日本製鉄', note: '製鉄所', side: -1, oy: 100, ox: 10 },
+  { r: 'chosen', at: 'k5', lon: 126.98, lat: 37.57, name: '京城', sub: '鐘淵紡績など', note: '紡績工場', side: 1, oy: 60 },
+
+  { r: 'manshu', at: 'm2', lon: 122.99, lat: 41.11, name: '鞍山', sub: '満鉄 → 昭和製鋼所', note: '製鉄所', side: -1, oy: 70, ox: -20 },
+  { r: 'manshu', at: 'm3', lon: 123.96, lat: 41.88, name: '撫順', sub: '満鉄 撫順炭鉱', note: '露天掘り炭鉱', side: 1, oy: 40 },
+  { r: 'manshu', at: 'm4', lon: 125.32, lat: 43.88, name: '新京', sub: '満洲重工業開発', note: '1937年 日産が移転', side: 1, oy: -70, ox: -10 },
+
+  { r: 'taiwan', at: 't2', lon: 120.43, lat: 23.71, name: '虎尾', sub: '大日本製糖', side: -1, oy: -10 },
+  { r: 'taiwan', at: 't2', dt: .6, lon: 120.25, lat: 23.18, name: '総爺', sub: '明治製糖', side: -1, oy: 0 },
+  { r: 'taiwan', at: 't2', dt: 1.2, lon: 120.31, lat: 22.76, name: '橋仔頭', sub: '台湾製糖', side: -1, oy: 30 },
+  { r: 'taiwan', at: 't3', lon: 120.30, lat: 22.62, name: '高雄', sub: '日本アルミニウム', note: '浅野セメント', side: 1, oy: 150, ox: 30 },
+  { r: 'taiwan', at: 't3', dt: .8, lon: 120.91, lat: 23.86, name: '日月潭', sub: '水力発電所', side: 1, oy: -90, ox: -10 },
+
+  { r: 'karafuto', at: 's2', lon: 142.74, lat: 46.96, name: '豊原', sub: '王子製紙', side: 1, oy: 45, ox: 40 },
+  { r: 'karafuto', at: 's2', dt: .7, lon: 142.04, lat: 47.05, name: '真岡', sub: '王子製紙', side: -1, oy: 40 },
+  { r: 'karafuto', at: 's2', dt: 1.35, lon: 142.03, lat: 49.08, name: '恵須取', sub: '王子製紙', side: -1, oy: 0 },
+  // 王子製紙の残り6工場(小さい点+地名のみ)
+  { r: 'karafuto', at: 's2', chunk: 1, dt: .00, lon: 142.78, lat: 46.63, name: '大泊', small: 1, side: 1 },
+  { r: 'karafuto', at: 's2', chunk: 1, dt: .12, lon: 142.80, lat: 47.33, name: '落合', small: 1, side: 1 },
+  { r: 'karafuto', at: 's2', chunk: 1, dt: .24, lon: 142.00, lat: 47.44, name: '野田', small: 1, side: -1 },
+  { r: 'karafuto', at: 's2', chunk: 1, dt: .36, lon: 142.07, lat: 47.76, name: '泊居', small: 1, side: -1 },
+  { r: 'karafuto', at: 's2', chunk: 1, dt: .48, lon: 142.78, lat: 48.63, name: '知取', small: 1, side: 1 },
+  { r: 'karafuto', at: 's2', chunk: 1, dt: .60, lon: 143.10, lat: 49.22, name: '敷香', small: 1, side: 1 },
+];
+for (const m of MARKERS) {
+  const l = LINE[m.at];
+  m.t0 = (m.chunk != null ? l.chunks[m.chunk].start : l.start) + (m.dt || 0) + 0.1;
+}
+const sceneOf = id => SCENES.find(s => s.id === id);
+
+// 広域図での地域名ラベル(イントロで名前が読まれる順に点灯)
+const i2 = LINE.i2, i2d = (i2.chunks[0].end - i2.chunks[0].start) / 4;
+const WIDE_LABELS = [
+  { r: 'chosen', lon: 127.4, lat: 38.6, t0: i2.start + 0.0 * i2d },
+  { r: 'manshu', lon: 126.2, lat: 46.3, t0: i2.start + 1.0 * i2d },
+  { r: 'taiwan', lon: 124.6, lat: 23.6, t0: i2.start + 2.0 * i2d },
+  { r: 'karafuto', lon: 146.2, lat: 48.2, t0: i2.start + 3.0 * i2d },
+];
+
+// ---------- 描画ユーティリティ ----------
+function rings(list) {
+  ctx.beginPath();
+  const x0 = -60, x1 = W + 60;
+  for (const ring of list) {
+    // 画面外のリングは飛ばす
+    let minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+    const pts = ring.map(p => px(p[0], p[1]));
+    for (const p of pts) { if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0]; if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1]; }
+    if (maxx < x0 || minx > x1 || maxy < -60 || miny > H + 60) continue;
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath();
+  }
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(s, x, y, font, fill, o = {}) {
+  ctx.font = font; ctx.textAlign = o.align || 'left'; ctx.textBaseline = o.base || 'alphabetic';
+  if (o.ls) ctx.letterSpacing = o.ls + 'px';
+  if (o.stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = o.sw || 8; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = fill; ctx.fillText(s, x, y);
+  if (o.ls) ctx.letterSpacing = '0px';
+}
+
+// 各地域の「点灯度」(0=暗い, 1=明るい)と敗戦後の退色度
+function regionGlow(r, t) {
+  const o1 = LINE.o1, sc = SCENES.find(s => t >= s.start && t < (SCENES[SCENES.indexOf(s) + 1] || { start: 1e9 }).start) || SCENES[0];
+  let g = 0.32;
+  if (sc.id === 'intro') {
+    const wl = WIDE_LABELS.find(w => w.r === r);
+    g = 0.12 + 0.75 * easeOut(ramp(t, wl.t0, 0.35));
+  } else if (sc.id === 'outro') {
+    g = 0.85;
+  } else {
+    const k = ease(ramp(t, sc.start + 0.2, 0.9));
+    const prevId = SCENES[SCENES.indexOf(sc) - 1].id;
+    const prev = prevId === 'intro' ? 0.87 : (prevId === r ? 0.9 : 0.32);
+    g = lerp(prev, sc.id === r ? 0.9 : 0.32, k);
+  }
+  return g;
+}
+const fadeLost = t => ease(ramp(t, LINE.o1.chunks[0].start + (LINE.o1.end - LINE.o1.start) * 0.45, 1.1));
+
+// ---------- 地図 ----------
+function drawMap(t) {
+  cam = camAt(t); scale = W / cam.w;
+  const g = ctx.createRadialGradient(W / 2, CY, 100, W / 2, CY, 1300);
+  g.addColorStop(0, '#12263a'); g.addColorStop(1, '#070f1a');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // 経緯線
+  const step = cam.w > 20 ? 10 : cam.w > 8 ? 5 : 1;
+  ctx.strokeStyle = 'rgba(140,180,220,0.07)'; ctx.lineWidth = 2; ctx.beginPath();
+  for (let lon = 90; lon <= 170; lon += step) { const x = px(lon, 0)[0]; if (x > 0 && x < W) { ctx.moveTo(x, 0); ctx.lineTo(x, H); } }
+  for (let lat = 0; lat <= 65; lat += step) { const y = px(0, lat)[1]; if (y > 0 && y < H) { ctx.moveTo(0, y); ctx.lineTo(W, y); } }
+  ctx.stroke();
+
+  ctx.lineJoin = 'round';
+  rings(GEO.others); ctx.fillStyle = rgb(LAND); ctx.fill();
+  ctx.strokeStyle = LAND_STROKE; ctx.lineWidth = 1.5; ctx.stroke();
+
+  const lost = fadeLost(t);
+  // 内地
+  rings(GEO.regions.naichi);
+  ctx.fillStyle = rgb(mix(LAND, hex(COL.naichi), 0.62)); ctx.fill();
+  ctx.strokeStyle = rgb(mix(LAND, hex(COL.naichi), 0.95)); ctx.lineWidth = 2; ctx.stroke();
+  // 外地
+  for (const r of ['manshu', 'chosen', 'taiwan', 'karafuto']) {
+    const glow = regionGlow(r, t) * (1 - 0.8 * lost);
+    const c = hex(COL[r]);
+    rings(GEO.regions[r]);
+    ctx.fillStyle = rgb(mix(LAND, c, 0.12 + 0.6 * glow)); ctx.fill();
+    ctx.save();
+    if (glow > 0.6) { ctx.shadowColor = rgb(c, 0.55 * (glow - 0.6) / 0.3); ctx.shadowBlur = 22; }
+    ctx.strokeStyle = rgb(mix(LAND, c, 0.35 + 0.65 * glow)); ctx.lineWidth = 1.5 + 2 * glow; ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// 広域図のラベル
+function drawWideLabels(t) {
+  const intro = SCENES[0], outro = sceneOf('outro');
+  const aIn = 1 - ease(ramp(t, SCENES[1].start, 0.5));
+  const aOut = ease(ramp(t, outro.start + 0.7, 0.6));
+  const a = t < SCENES[1].start + 0.6 ? aIn : aOut;
+  if (a <= 0.01) return;
+  const lost = fadeLost(t);
+  // 海の名前
+  ctx.globalAlpha = a * 0.5;
+  text('日 本 海', ...px(134.5, 40.0), `500 30px ${FONT}`, '#7fa3c7', { align: 'center' });
+  text('太 平 洋', ...px(146.5, 31.5), `500 34px ${FONT}`, '#7fa3c7', { align: 'center' });
+  ctx.globalAlpha = a;
+  const [nx, ny] = px(139.2, 33.0);
+  text('内地', nx, ny, `800 40px ${FONT}`, '#ffd9d0', { stroke: 'rgba(7,15,26,.85)', sw: 9 });
+  for (const wl of WIDE_LABELS) {
+    const k = t < SCENES[1].start + 0.6 ? backOut(ramp(t, wl.t0, 0.4)) : 1;
+    if (k <= 0) continue;
+    const [x, y] = px(wl.lon, wl.lat);
+    const c = rgb(mix(hex(COL[wl.r]), [150, 160, 172], lost * 0.9));
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+    text(REGION[wl.r].name, 0, 0, `900 64px ${FONT}`, c, { align: 'center', base: 'middle', stroke: 'rgba(7,15,26,.92)', sw: 14 });
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ---------- マーカーとラベル ----------
+function drawMarkers(t) {
+  const outro = sceneOf('outro');
+  const inOutro = t >= outro.start;
+  for (const pass of [0, 1]) for (const m of MARKERS) {
+    const sc = sceneOf(m.r), next = SCENES[SCENES.indexOf(sc) + 1];
+    const [x, y] = px(m.lon, m.lat);
+    const c = hex(COL[m.r]);
+    if (inOutro) {
+      // まとめ: 点だけを全部表示。o2 で再び灯る
+      if (pass) continue;
+      const a = ease(ramp(t, outro.start + 0.8, 0.6));
+      const relit = ease(ramp(t, LINE.o2.start + 0.1, 0.9));
+      const lost = fadeLost(t) * (1 - relit);
+      const col = mix(c, [130, 140, 152], lost);
+      const pulse = 0.5 + 0.5 * Math.sin((t - LINE.o2.start) * 3 + m.lon);
+      ctx.globalAlpha = a;
+      ctx.save(); ctx.shadowColor = rgb(col, 0.9 * (1 - lost)); ctx.shadowBlur = 14 + 8 * pulse * relit;
+      ctx.fillStyle = rgb(mix(col, [255, 255, 255], 0.5 * (1 - lost))); ctx.beginPath(); ctx.arc(x, y, m.small ? 4.5 : 7, 0, 7); ctx.fill();
+      ctx.restore(); ctx.globalAlpha = 1;
+      continue;
+    }
+    if (t < m.t0 || t > next.start + 0.5) continue;
+    const a = 1 - ease(ramp(t, next.start, 0.4));
+    const k = backOut(ramp(t, m.t0, 0.45));
+    ctx.globalAlpha = a;
+    if (pass === 0) {
+      // 波紋
+      const R = m.small ? 7 : 13;
+      for (const ph of [0, 0.5]) {
+        const u = ((t - m.t0) / 1.8 + ph) % 1;
+        if (t - m.t0 < 0.9 * ph * 1.8) continue;
+        ctx.strokeStyle = rgb(c, 0.75 * (1 - u)); ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(x, y, R + (m.small ? 18 : 42) * u, 0, 7); ctx.stroke();
+      }
+      ctx.save(); ctx.shadowColor = rgb(c, 0.9); ctx.shadowBlur = 20;
+      ctx.fillStyle = rgb(c); ctx.beginPath(); ctx.arc(x, y, R * k, 0, 7); ctx.fill(); ctx.restore();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, R * k * 0.48, 0, 7); ctx.fill();
+    } else if (m.small) {
+      const la = easeOut(ramp(t, m.t0 + 0.1, 0.3));
+      ctx.globalAlpha = a * la;
+      text(m.name, x + m.side * 18, y + 2, `700 30px ${FONT}`, '#eef4fa',
+        { align: m.side > 0 ? 'left' : 'right', base: 'middle', stroke: 'rgba(7,15,26,.9)', sw: 8 });
+    } else {
+      drawCard(m, x, y, c, a * easeOut(ramp(t, m.t0 + 0.12, 0.35)), easeOut(ramp(t, m.t0 + 0.12, 0.45)));
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+function drawCard(m, x, y, c, alpha, slide) {
+  if (alpha <= 0) return;
+  const fName = `900 50px ${FONT}`, fSub = `700 31px ${FONT}`, fNote = `500 27px ${FONT}`;
+  ctx.font = fName; const wn = ctx.measureText(m.name).width;
+  ctx.font = fSub; const ws = ctx.measureText(m.sub).width;
+  ctx.font = fNote; const wo = m.note ? ctx.measureText(m.note).width : 0;
+  const padX = 22, bw = Math.max(wn, ws, wo) + padX * 2 + 8, bh = m.note ? 164 : 126;
+  const gap = 46;
+  let bx = m.side > 0 ? x + gap + (m.ox || 0) : x - gap - bw + (m.ox || 0);
+  bx = clamp(bx, 20, W - 20 - bw) + m.side * (1 - slide) * 26;
+  const by = y + (m.oy || 0) - bh / 2;
+  ctx.globalAlpha = alpha;
+  // 引き出し線
+  const ex = clamp(x, bx + 14, bx + bw - 14), ey = by + bh < y ? by + bh : by > y ? by : y;
+  const tx = (x >= bx && x <= bx + bw) ? ex : (m.side > 0 ? bx : bx + bw);
+  const ty = (x >= bx && x <= bx + bw) ? ey : clamp(y, by + 20, by + bh - 20);
+  ctx.strokeStyle = rgb(c, 0.9); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(tx, ty); ctx.stroke();
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+  rr(bx, by, bw, bh, 14); ctx.fillStyle = 'rgba(9,17,28,.93)'; ctx.fill(); ctx.restore();
+  rr(bx, by, bw, bh, 14); ctx.strokeStyle = rgb(c, 0.55); ctx.lineWidth = 2; ctx.stroke();
+  rr(bx, by + 14, 7, bh - 28, 3.5); ctx.fillStyle = rgb(c); ctx.fill();
+  text(m.name, bx + padX + 6, by + 60, fName, '#fff');
+  text(m.sub, bx + padX + 6, by + 104, fSub, rgb(c));
+  if (m.note) text(m.note, bx + padX + 6, by + 142, fNote, '#b9c6d4');
+}
+
+// 地域ごとの追加描画
+function drawExtras(t) {
+  // 台湾: 日月潭 → 高雄 の送電イメージ
+  const tw = sceneOf('taiwan'), twNext = SCENES[SCENES.indexOf(tw) + 1];
+  const t3 = LINE.t3.start + 1.1;
+  if (t > t3 && t < twNext.start + 0.5) {
+    const a = 1 - ease(ramp(t, twNext.start, 0.4)), k = ease(ramp(t, t3, 0.9));
+    const [x1, y1] = px(120.91, 23.86), [x2, y2] = px(120.30, 22.62);
+    ctx.globalAlpha = a; ctx.save();
+    ctx.setLineDash([14, 12]); ctx.lineDashOffset = -t * 60;
+    ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 4; ctx.shadowColor = '#ffe9a8'; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(lerp(x1, x2, k), lerp(y1, y2, k)); ctx.stroke(); ctx.restore();
+    if (k > 0.6) {
+      ctx.globalAlpha = a * ramp(k, 0.6, 0.4);
+      text('電力', lerp(x1, x2, 0.42) + 20, lerp(y1, y2, 0.42) - 6, `800 32px ${FONT}`, '#ffe9a8', { stroke: 'rgba(7,15,26,.9)', sw: 8 });
+    }
+    ctx.globalAlpha = 1;
+  }
+  // 樺太: 北緯50度の国境線
+  const kf = sceneOf('karafuto'), kfNext = SCENES[SCENES.indexOf(kf) + 1];
+  if (t > kf.start + 0.9 && t < kfNext.start + 0.5) {
+    const a = ease(ramp(t, kf.start + 0.9, 0.6)) * (1 - ease(ramp(t, kfNext.start, 0.4)));
+    const [x1, y1] = px(141.4, 50), [x2] = px(144.3, 50);
+    ctx.globalAlpha = a; ctx.save(); ctx.setLineDash([16, 10]);
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y1); ctx.stroke(); ctx.restore();
+    text('北緯50度(国境)', x2 + 14, y1, `700 30px ${FONT}`, '#fff', { base: 'middle', stroke: 'rgba(7,15,26,.9)', sw: 8 });
+    text('ソ連領', ...px(143.0, 50.42), `700 30px ${FONT}`, '#93a4b6', { align: 'center', stroke: 'rgba(7,15,26,.9)', sw: 8 });
+    // 工場数バッジ
+    const b = backOut(ramp(t, LINE.s2.chunks[1].start + 0.5, 0.45));
+    if (b > 0) {
+      const [bx, by] = px(144.75, 47.7);
+      ctx.save(); ctx.translate(bx, by); ctx.scale(b, b);
+      rr(-118, -82, 236, 164, 18); ctx.fillStyle = 'rgba(9,17,28,.93)'; ctx.fill();
+      ctx.strokeStyle = rgb(hex(COL.karafuto), 0.6); ctx.lineWidth = 2; ctx.stroke();
+      text('王子製紙', 0, -34, `700 32px ${FONT}`, COL.karafuto, { align: 'center' });
+      text('9', -34, 52, `900 96px ${FONT}`, '#fff', { align: 'center' });
+      text('工場', 48, 46, `800 44px ${FONT}`, '#fff', { align: 'center' });
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- 画面上部: タイトルと地域名 ----------
+function drawHeader(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, 520);
+  g.addColorStop(0, 'rgba(5,10,18,.96)'); g.addColorStop(0.55, 'rgba(5,10,18,.72)'); g.addColorStop(1, 'rgba(5,10,18,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, 520);
+
+  const big = 1 - ease(ramp(t, SCENES[1].start - 0.1, 0.7));   // イントロ中は大きなタイトル
+  const a0 = ease(ramp(t, 0.1, 0.6));
+  // 小タイトル(常時)
+  ctx.globalAlpha = a0 * (1 - big);
+  text('地図で見る', 60, 150, `700 30px ${FONT}`, '#9fb4c9', { ls: 4 });
+  text('戦前「外地」の日本企業工場', 60, 200, `800 40px ${FONT}`, '#fff');
+  // 大タイトル(イントロ)
+  ctx.globalAlpha = a0 * big;
+  const s1 = easeOut(ramp(t, 0.15, 0.6)), s2 = easeOut(ramp(t, 0.4, 0.6));
+  text('地図で見る', W / 2, 190 + (1 - s1) * 20, `700 40px ${FONT}`, '#9fb4c9', { align: 'center', ls: 8 });
+  ctx.globalAlpha = a0 * big * s2;
+  text('戦前「外地」の', W / 2, 290 + (1 - s2) * 24, `900 84px ${FONT}`, '#fff', { align: 'center', stroke: 'rgba(5,10,18,.8)', sw: 12 });
+  text('日本企業の巨大工場', W / 2, 400 + (1 - s2) * 24, `900 92px ${FONT}`, '#ffd166', { align: 'center', stroke: 'rgba(5,10,18,.8)', sw: 12 });
+  ctx.globalAlpha = 1;
+
+  // 地域名カード
+  for (const sc of SCENES) {
+    const R = REGION[sc.id]; if (!R) continue;
+    const next = SCENES[SCENES.indexOf(sc) + 1];
+    const k = easeOut(ramp(t, sc.start + 0.55, 0.5)) * (1 - ease(ramp(t, next.start - 0.05, 0.35)));
+    if (k <= 0) continue;
+    const c = COL[sc.id], x = 60 - (1 - k) * 40;
+    ctx.globalAlpha = k;
+    rr(x, 250, 12, 150, 6); ctx.fillStyle = c; ctx.fill();
+    text(R.name, x + 34, 362, `900 128px ${FONT}`, '#fff', { stroke: 'rgba(5,10,18,.85)', sw: 14 });
+    ctx.font = `900 128px ${FONT}`; const nw = ctx.measureText(R.name).width;
+    text(R.sub, x + 34 + nw + 26, 356, `700 32px ${FONT}`, c, { stroke: 'rgba(5,10,18,.85)', sw: 8 });
+    ctx.globalAlpha = 1;
+  }
+  // 進行バー
+  ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(0, 0, W, 8);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(0, 0, W * clamp(t / DURATION), 8);
+}
+
+// ---------- まとめ ----------
+function drawOutro(t) {
+  const o1 = LINE.o1, o2 = LINE.o2;
+  const tStamp = o1.start + (o1.end - o1.start) * 0.42;
+  if (t < o1.start) return;
+  const k = backOut(ramp(t, tStamp, 0.35)), a = ramp(t, tStamp, 0.15);
+  if (a > 0) {
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(W / 2, 330); ctx.rotate(-0.05); ctx.scale(2.2 - 1.2 * k, 2.2 - 1.2 * k);
+    rr(-330, -98, 660, 196, 16); ctx.fillStyle = 'rgba(40,8,8,.78)'; ctx.fill();
+    ctx.strokeStyle = '#ff6b5e'; ctx.lineWidth = 8; ctx.stroke();
+    text('1945年 敗戦', 0, 4, `900 104px ${FONT}`, '#ff6b5e', { align: 'center', base: 'middle' });
+    ctx.restore();
+  }
+  const k2 = easeOut(ramp(t, tStamp + 0.9, 0.5));
+  if (k2 > 0) {
+    ctx.globalAlpha = k2;
+    text('在外資産はすべて喪失', W / 2, 474, `800 46px ${FONT}`, '#fff', { align: 'center', stroke: 'rgba(5,10,18,.9)', sw: 10 });
+    ctx.globalAlpha = 1;
+  }
+  // クレジット
+  const kc = easeOut(ramp(t, o2.end + 0.3, 0.6));
+  if (kc > 0) {
+    ctx.globalAlpha = kc;
+    rr(90, 1452, W - 180, 216, 20); ctx.fillStyle = 'rgba(9,17,28,.9)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2; ctx.stroke();
+    text('音声  VOICEVOX:四国めたん', W / 2, 1522, `800 40px ${FONT}`, '#fff', { align: 'center' });
+    text('地図  Natural Earth / BGM  自作', W / 2, 1578, `500 30px ${FONT}`, '#b9c6d4', { align: 'center' });
+    text('国境・海岸線は現在のもの。満洲の範囲は概略', W / 2, 1626, `500 27px ${FONT}`, '#8fa1b3', { align: 'center' });
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- 字幕 ----------
+function drawSubtitle(t) {
+  const g = ctx.createLinearGradient(0, 1240, 0, H);
+  g.addColorStop(0, 'rgba(5,10,18,0)'); g.addColorStop(0.35, 'rgba(5,10,18,.78)'); g.addColorStop(1, 'rgba(5,10,18,.96)');
+  ctx.fillStyle = g; ctx.fillRect(0, 1240, W, H - 1240);
+  for (const l of TIMELINE.lines) for (let i = 0; i < l.chunks.length; i++) {
+    const c = l.chunks[i], last = i === l.chunks.length - 1;
+    const end = last ? c.end + 0.12 : c.end;
+    if (t < c.start - 0.02 || t >= end) continue;
+    const a = easeOut(ramp(t, c.start - 0.02, 0.14)), rows = c.text.split('\n');
+    const lh = 84, y0 = 1500 - (rows.length - 1) * lh / 2 + (1 - a) * 10;
+    ctx.globalAlpha = a;
+    rows.forEach((row, j) => text(row, W / 2, y0 + j * lh, `900 62px ${FONT}`, '#fff',
+      { align: 'center', base: 'middle', stroke: 'rgba(5,10,18,.95)', sw: 14 }));
+    ctx.globalAlpha = 1;
+  }
+}
+
+function render(t) {
+  ctx.clearRect(0, 0, W, H);
+  drawMap(t);
+  drawExtras(t);
+  drawWideLabels(t);
+  drawMarkers(t);
+  drawHeader(t);
+  drawSubtitle(t);
+  drawOutro(t);
+  // 冒頭と末尾のフェード
+  const f = Math.max(1 - ramp(t, 0, 0.35), ramp(t, DURATION - 0.5, 0.5));
+  if (f > 0) { ctx.fillStyle = `rgba(3,6,11,${f})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+window.ready = Promise.all(['500', '700', '800', '900'].map(w => document.fonts.load(`${w} 40px "Noto Sans JP"`, '外地')));
+if (!navigator.webdriver) window.ready.then(() => {
+  const q = new URLSearchParams(location.search), t0 = performance.now() - (parseFloat(q.get('t')) || 0) * 1000;
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+});
+</script>
+</body>
+</html>

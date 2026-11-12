@@ -1,0 +1,7 @@
+vendor/
+fonts/
+__pycache__/
+output/stills/
+output/video_silent.mp4
+output/mix.wav
+output/capture.log
