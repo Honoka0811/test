@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Golf Ball Diver</title>
+<style>
+  html,body{margin:0;background:#0b2a3a;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// ゴルフボールダイバー紹介 (9:16 ショート動画 / 約53秒)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する
+// 字幕は window.CUES = [{a, b, text}] (narrate.py が出力、capture.js が注入)
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  sky1: '#8fd3ff', sky2: '#e6f6ff', grass: '#5fb04e', grass2: '#4a9a3c', fair: '#7cc964',
+  water: '#2b8db3', water2: '#1a5f80', deep1: '#14506a', deep2: '#06202d', mud: '#4a3b26', mud2: '#2f2617',
+  ball: '#f8f8f3', ink: '#ffffff', dark: '#0e1c24', accent: '#ffd24a', red: '#ff6b5a', suit: '#1b1f24', tank: '#c9d2d9'
+};
+const FPS = 30, DURATION = 53;
+window.FPS = FPS; window.DURATION = DURATION;
+window.CUES = window.CUES || [];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+// 決定論的な疑似乱数
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 60, weight = 'bold', color = C.ink, align = 'center', alpha = 1, stroke = null, sw = 12, base = 'alphabetic' } = {}) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (stroke) { ctx.lineJoin = 'round'; ctx.strokeStyle = stroke; ctx.lineWidth = sw; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r, fill, alpha = 1, strokeC = null, lw = 4) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (strokeC) { ctx.strokeStyle = strokeC; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.restore();
+}
+function circle(x, y, r, fill, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = fill;
+  ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+
+// ---------- 部品 ----------
+function ball(x, y, r, alpha = 1, rot = 0, tint = null) {
+  if (r <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(x - r * .35, y - r * .4, r * .1, x, y, r);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(.7, tint || C.ball); g.addColorStop(1, '#c9cbc2');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  if (r > 9) { // ディンプル
+    ctx.fillStyle = 'rgba(120,125,115,0.28)';
+    ctx.beginPath(); ctx.arc(x, y, r * .92, 0, Math.PI * 2); ctx.clip();
+    const s = r * .3;
+    for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) {
+      const px = x + i * s + (j % 2 ? s / 2 : 0) + Math.cos(rot) * s * .3, py = y + j * s * .87;
+      if ((px - x) ** 2 + (py - y) ** 2 < (r * .9) ** 2) { ctx.beginPath(); ctx.arc(px, py, r * .07, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  ctx.restore();
+}
+
+function sky() {
+  const g = ctx.createLinearGradient(0, 0, 0, 900);
+  g.addColorStop(0, C.sky1); g.addColorStop(1, C.sky2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function cloud(x, y, s, a = 1) {
+  for (const [dx, dy, r] of [[0, 0, 50], [55, -20, 60], [115, 0, 48], [60, 18, 52]]) circle(x + dx * s, y + dy * s, r * s, '#ffffff', a * .9);
+}
+function flag(x, y, t) {
+  ctx.save();
+  ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 260); ctx.stroke();
+  ctx.fillStyle = C.red; ctx.beginPath(); ctx.moveTo(x, y - 260);
+  const wv = Math.sin(t * 4) * 10;
+  ctx.quadraticCurveTo(x + 60, y - 250 + wv, x + 120, y - 232); ctx.quadraticCurveTo(x + 60, y - 215 - wv, x, y - 205); ctx.fill();
+  ctx.restore();
+}
+// ゴルフ場の全景(池つき)
+function course(t, pondY = 1150) {
+  sky();
+  cloud(140 + t * 8, 300, 1.1); cloud(700 - t * 5, 420, .8);
+  ctx.fillStyle = C.grass2; ctx.beginPath(); ctx.moveTo(0, 860);
+  ctx.bezierCurveTo(300, 780, 700, 820, W, 760); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
+  ctx.fillStyle = C.fair; ctx.beginPath(); ctx.moveTo(0, 960);
+  ctx.bezierCurveTo(400, 900, 700, 940, W, 900); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
+  // 木
+  for (const [x, s] of [[90, 1], [980, 1.2], [860, .8]]) {
+    ctx.fillStyle = '#6b4a2b'; ctx.fillRect(x - 10 * s, 800 - 40 * s, 20 * s, 90 * s);
+    circle(x, 760 - 60 * s, 70 * s, '#3d8a35'); circle(x - 40 * s, 790 - 40 * s, 50 * s, '#3d8a35'); circle(x + 40 * s, 790 - 40 * s, 50 * s, '#3d8a35');
+  }
+  // グリーン + 旗
+  ctx.fillStyle = '#8fdc72'; ctx.beginPath(); ctx.ellipse(800, 960, 190, 50, 0, 0, Math.PI * 2); ctx.fill();
+  flag(830, 960, t);
+  // 池
+  const g = ctx.createLinearGradient(0, pondY - 160, 0, pondY + 160);
+  g.addColorStop(0, C.water); g.addColorStop(1, C.water2);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(470, pondY, 430, 150, -0.05, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 5;
+  for (let i = 0; i < 4; i++) {
+    const xx = 260 + i * 150 + Math.sin(t * 1.3 + i) * 20;
+    ctx.beginPath(); ctx.moveTo(xx, pondY - 40 + i * 22); ctx.lineTo(xx + 70, pondY - 40 + i * 22); ctx.stroke();
+  }
+}
+// 水中の背景
+function underwater(t, murk = 0) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.deep1); g.addColorStop(1, C.deep2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 光の筋
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 5; i++) {
+    const x = 150 + i * 210 + Math.sin(t * .5 + i) * 40;
+    const lg = ctx.createLinearGradient(0, 0, 0, 1300);
+    lg.addColorStop(0, 'rgba(160,230,255,0.16)'); lg.addColorStop(1, 'rgba(160,230,255,0)');
+    ctx.fillStyle = lg; ctx.beginPath(); ctx.moveTo(x - 30, 0); ctx.lineTo(x + 30, 0); ctx.lineTo(x + 160, 1300); ctx.lineTo(x - 40, 1300); ctx.fill();
+  }
+  ctx.restore();
+  // 泥の底
+  ctx.fillStyle = C.mud; ctx.beginPath(); ctx.moveTo(0, 1420);
+  for (let x = 0; x <= W; x += 60) ctx.lineTo(x, 1420 + Math.sin(x * .012) * 25);
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fill();
+  ctx.fillStyle = C.mud2; ctx.fillRect(0, 1560, W, H - 1560);
+  // 漂う粒子
+  for (let i = 0; i < 40; i++) {
+    const x = (rnd(i) * W + t * 12 * (rnd(i + 9) - .5) * 4 + W) % W, y = (rnd(i + 3) * 1400 - t * 15 * rnd(i + 5) + 1400) % 1400;
+    circle(x, y, 2 + rnd(i + 7) * 3, '#bfe8ff', .25);
+  }
+  if (murk > 0) { ctx.fillStyle = `rgba(58,44,24,${0.9 * murk})`; ctx.fillRect(0, 0, W, H); }
+}
+// 底に沈んだボール(seed 固定)
+function bottomBalls(n, t, alpha = 1, startI = 0) {
+  for (let i = startI; i < n; i++) {
+    const x = 40 + rnd(i * 3.1) * (W - 80), y = 1440 + rnd(i * 7.7) * 150 + (rnd(i) - .5) * 20;
+    ball(x, y, 16 + rnd(i * 1.3) * 8, alpha, i);
+  }
+}
+function bubbles(x, y, t, n = 6, a = 1) {
+  for (let i = 0; i < n; i++) {
+    const p = ((t * .6 + i / n) % 1);
+    ctx.save(); ctx.globalAlpha = a * (1 - p) * .8; ctx.strokeStyle = '#d8f4ff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x + Math.sin(p * 9 + i) * 14, y - p * 320, 6 + p * 10, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+}
+// ダイバー(右向き・腹ばい) 中心 x,y, 倍率 s
+function diver(x, y, s, t, a = 1, light = false) {
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y); ctx.scale(s, s);
+  ctx.rotate(Math.sin(t * 1.5) * .04);
+  const kick = Math.sin(t * 6) * .35;
+  // フィン付きの脚
+  for (const [k, dy] of [[kick, -14], [-kick, 14]]) {
+    ctx.save(); ctx.translate(-120, dy); ctx.rotate(k * .4);
+    rrect(-150, -16, 160, 32, 16, C.suit);
+    ctx.translate(-150, 0); ctx.rotate(k);
+    ctx.fillStyle = C.accent; ctx.beginPath(); ctx.moveTo(0, -18); ctx.lineTo(-110, -40); ctx.lineTo(-110, 40); ctx.lineTo(0, 18); ctx.fill();
+    ctx.restore();
+  }
+  // タンク
+  rrect(-110, -78, 190, 48, 24, C.tank); rrect(70, -70, 24, 32, 6, '#8a959d');
+  // 胴体
+  ctx.fillStyle = C.suit; ctx.beginPath(); ctx.ellipse(0, 0, 135, 52, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ff8a3d'; ctx.fillRect(-30, -50, 18, 100);
+  // 伸ばした腕
+  ctx.save(); ctx.translate(90, 20); ctx.rotate(.45 + Math.sin(t * 3) * .15);
+  rrect(0, -14, 150, 28, 14, C.suit); circle(158, 0, 18, '#2a2f36'); ctx.restore();
+  // 頭 + マスク
+  circle(160, -10, 50, C.suit);
+  rrect(165, -38, 52, 40, 12, '#9fe3ff', 1, '#ffd24a', 6);
+  if (light) { // ライトの光
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const lg = ctx.createRadialGradient(220, 0, 10, 420, 60, 300);
+    lg.addColorStop(0, 'rgba(255,240,180,0.55)'); lg.addColorStop(1, 'rgba(255,240,180,0)');
+    ctx.fillStyle = lg; ctx.beginPath(); ctx.moveTo(210, -10); ctx.lineTo(700, -160); ctx.lineTo(700, 300); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+}
+// メッシュバッグ(fill 0..1)
+function meshBag(x, y, w, h, fill, a = 1) {
+  ctx.save(); ctx.globalAlpha = a;
+  const cols = Math.floor(w / 34), rows = Math.floor(h / 30);
+  const n = Math.floor(cols * rows * fill);
+  for (let i = 0; i < n; i++) {
+    const c = i % cols, r = Math.floor(i / cols);
+    ball(x - w / 2 + 20 + c * 34 + (r % 2) * 10, y + h / 2 - 20 - r * 30, 16, a, i);
+  }
+  ctx.strokeStyle = 'rgba(255,210,74,0.9)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x - w / 2, y - h / 2); ctx.lineTo(x - w / 2 + 10, y + h / 2); ctx.lineTo(x + w / 2 - 10, y + h / 2); ctx.lineTo(x + w / 2, y - h / 2); ctx.stroke();
+  for (let i = 1; i < 8; i++) { const yy = y - h / 2 + i * h / 8; ctx.beginPath(); ctx.moveTo(x - w / 2 + i * 1.2, yy); ctx.lineTo(x + w / 2 - i * 1.2, yy); ctx.stroke(); }
+  for (let i = 1; i < 8; i++) { const xx = x - w / 2 + i * w / 8; ctx.beginPath(); ctx.moveTo(xx, y - h / 2); ctx.lineTo(xx, y + h / 2); ctx.stroke(); }
+  ctx.fillStyle = '#ffd24a'; ctx.fillRect(x - w / 2 - 6, y - h / 2 - 14, w + 12, 16);
+  ctx.restore();
+}
+// 上部の見出し(白地ピル)
+function header(label, title, a) {
+  const y = 250 + (1 - easeOut(a)) * -40;
+  ctx.save(); ctx.globalAlpha = clamp(a);
+  if (label) { rrect(W / 2 - 150, y - 120, 300, 64, 32, C.accent); text(label, W / 2, y - 74, { size: 38, color: C.dark }); }
+  text(title, W / 2, y + 20, { size: 84, color: '#ffffff', stroke: C.dark, sw: 16 });
+  ctx.restore();
+}
+function card(x, y, w, h, icon, title, sub, a, col = '#ffffff') {
+  const s = backOut(a);
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = clamp(a * 1.5); ctx.translate(x, y); ctx.scale(s, s);
+  rrect(-w / 2, -h / 2, w, h, 28, 'rgba(10,25,32,0.82)', 1, col, 5);
+  text(icon, -w / 2 + 80, 22, { size: 70, base: 'middle', weight: 'normal' });
+  text(title, -w / 2 + 160, -6, { size: 54, align: 'left', color: col });
+  if (sub) text(sub, -w / 2 + 160, 48, { size: 34, align: 'left', color: '#c8d6dd', weight: 'normal' });
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+// 1. タイトル: ボールが池にポチャン
+function sceneTitle(t, a) {
+  course(t);
+  const p = seg(t, .3, 1.4);
+  if (p < 1) {
+    const x = lerp(-40, 470, p), y = lerp(700, 1130, p) - Math.sin(p * Math.PI) * 520;
+    ball(x, y, lerp(34, 22, p), 1, p * 10);
+  }
+  const sp = seg(t, 1.7, 1.0);
+  if (sp > 0 && sp < 1) { // しぶき + 波紋
+    for (let i = 0; i < 10; i++) {
+      const ang = Math.PI * (0.15 + 0.7 * i / 9);
+      circle(470 + Math.cos(ang) * 120 * sp, 1130 - Math.sin(ang) * 200 * sp + 260 * sp * sp, 12 * (1 - sp), '#dff5ff');
+    }
+  }
+  for (let k = 0; k < 3; k++) {
+    const rp = seg(t, 1.7 + k * .35, 2.2);
+    if (rp > 0 && rp < 1) {
+      ctx.save(); ctx.globalAlpha = 1 - rp; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.ellipse(470, 1135, 40 + 260 * rp, 12 + 70 * rp, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    }
+  }
+  const tp = seg(t, 2.0, .7);
+  text('ポチャン！', 470, 1000 - easeOut(tp) * 40, { size: 72, color: '#ffffff', stroke: C.water2, sw: 14, alpha: tp * (1 - seg(t, 4, .6)) });
+  // タイトル
+  const a1 = seg(t, .2, .8);
+  ctx.save(); ctx.globalAlpha = a1;
+  rrect(W / 2 - 230, 180, 460, 70, 35, C.accent); text('池の底のお宝ハンター', W / 2, 230, { size: 40, color: C.dark });
+  const s = backOut(seg(t, .4, .9));
+  ctx.translate(W / 2, 420); ctx.scale(s, s);
+  text('ゴルフボール', 0, -10, { size: 120, stroke: C.dark, sw: 22 });
+  text('ダイバー', 0, 130, { size: 150, color: C.accent, stroke: C.dark, sw: 24 });
+  ctx.restore();
+}
+
+// 2. 失われるボールの数
+function sceneLost(t, a) {
+  underwater(t);
+  // 上から沈んでくるボール
+  for (let i = 0; i < 26; i++) {
+    const st = rnd(i * 2.3) * 5, p = seg(t, st, 2.4);
+    if (p <= 0) continue;
+    const x = 60 + rnd(i * 5.1) * (W - 120), y = lerp(-40, 1440 + rnd(i * 7.7) * 140, easeInOut(p));
+    ball(x + Math.sin(p * 6 + i) * 20 * (1 - p), y, 18 + rnd(i) * 8, 1, i + p * 4);
+  }
+  bottomBalls(Math.floor(lerp(10, 60, seg(t, 0, 6))), t);
+  header('アメリカだけで', '年間 約3億個', a);
+  const c = easeOut(seg(t, .6, 2.5));
+  rrect(140, 520, 800, 300, 36, 'rgba(6,32,45,0.75)', clamp(a));
+  text('失われるゴルフボール', W / 2, 600, { size: 46, alpha: a, weight: 'normal', color: '#cde9f5' });
+  text(Math.round(c * 3) ? `${(c * 3).toFixed(1)}億個` : '0', W / 2, 740, { size: 130, color: C.accent, alpha: a });
+  text('※推計。多くが池の底へ', W / 2, 880, { size: 34, alpha: a * .9, weight: 'normal', color: '#cde9f5' });
+}
+
+// 3. 仕事内容: 潜って手探りで回収
+function sceneWork(t, a) {
+  underwater(t, .25);
+  const pick = Math.floor(seg(t, 1, 6.5) * 22);
+  bottomBalls(60, t, 1, pick);  // 拾われたぶんは消える
+  const dx = lerp(-200, 760, easeInOut(seg(t, 0, 8)));
+  diver(dx, 1150, 1.0, t);
+  bubbles(dx + 150, 1080, t, 6);
+  meshBag(860, 900, 240, 260, seg(t, 1, 6.5), a);
+  header('ゴルフ場と契約', '池に潜って回収', a);
+  const steps = ['閉場後の池に潜る', '底の泥を手探り', 'ネットに詰める'];
+  steps.forEach((s, i) => {
+    const p = seg(t, 1 + i * 1.3, .6);
+    rrect(120, 470 + i * 110, 600, 86, 43, 'rgba(255,255,255,0.92)', p);
+    circle(170, 513 + i * 110, 30, C.accent, p); text(String(i + 1), 170, 528 + i * 110, { size: 40, color: C.dark, alpha: p });
+    text(s, 220, 532 + i * 110, { size: 46, align: 'left', color: C.dark, alpha: p });
+  });
+}
+
+// 4. 過酷な環境
+function sceneDanger(t, a) {
+  const murk = 0.55 + 0.25 * seg(t, 0, 2);
+  underwater(t, murk);
+  bottomBalls(40, t, .35);
+  diver(380, 1130, .9, t, 1, true);
+  bubbles(510, 1070, t, 5, .7);
+  // 暗闇に光る目(ワニ)
+  const ep = seg(t, 4.2, .8);
+  if (ep > 0) {
+    const blink = (Math.floor(t * 3) % 7 === 0) ? .2 : 1;
+    for (const ex of [870, 935]) {
+      ctx.save(); ctx.globalAlpha = ep * blink; ctx.fillStyle = '#ffe066'; ctx.shadowColor = '#ffe066'; ctx.shadowBlur = 30;
+      ctx.beginPath(); ctx.ellipse(ex, 1010, 22, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#111'; ctx.shadowBlur = 0; ctx.fillRect(ex - 3, 998, 6, 24); ctx.restore();
+    }
+  }
+  header('実はハードな仕事', '命がけの潜水', a);
+  card(W / 2, 560, 820, 150, '🌫️', '視界ほぼゼロ', '泥で濁り、すべて手探り', seg(t, .8, .6));
+  card(W / 2, 730, 820, 150, '🥶', '冷たい水', '冬場は水温一桁の日も', seg(t, 2.2, .6), '#9fe3ff');
+  card(W / 2, 900, 820, 150, '🐊', 'ワニやヘビ', '米国南部の池では本当にいる', seg(t, 3.6, .6), C.red);
+}
+
+// 5. 稼ぎ
+function sceneMoney(t, a) {
+  underwater(t, .1);
+  const n = Math.floor(easeOut(seg(t, .4, 4)) * 3000);
+  for (let b = 0; b < 3; b++) meshBag(240 + b * 300, 1360, 240, 300, clamp(n / 1000 - b), a);
+  header('稼ぎはどのくらい？', '1日に数千個', a);
+  rrect(140, 470, 800, 200, 36, 'rgba(6,32,45,0.78)', a);
+  text('今日の回収数', W / 2, 540, { size: 42, weight: 'normal', color: '#cde9f5', alpha: a });
+  text(n.toLocaleString('en-US') + ' 個', W / 2, 640, { size: 100, color: C.accent, alpha: a });
+  const p = seg(t, 4.2, .7), s = backOut(p);
+  if (p > 0) {
+    ctx.save(); ctx.translate(W / 2, 860); ctx.scale(s, s); ctx.globalAlpha = clamp(p * 1.5);
+    rrect(-440, -90, 880, 180, 40, C.accent);
+    text('腕利きは', -230, -10, { size: 50, color: C.dark });
+    text('年収1,000万円超も', 0, 62, { size: 76, color: C.dark });
+    ctx.restore();
+  }
+  for (let i = 0; i < 8; i++) { // キラキラ
+    const q = seg(t, 4.5 + i * .12, 1);
+    if (q > 0 && q < 1) text('✦', W / 2 + Math.cos(i * .8) * 480 * q, 860 + Math.sin(i * .8) * 200 * q, { size: 40, color: '#fff7c2', alpha: 1 - q, weight: 'normal' });
+  }
+}
+
+// 6. リサイクルの流れ
+function sceneRecycle(t, a) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#e9f7ff'); g.addColorStop(1, '#bfe3f2');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  header('拾ったボールのその後', 'ロストボールに', a);
+  const steps = [
+    ['回収', 'ダイバーが池から', '#2b8db3'],
+    ['洗浄', '泥や藻を落とす', '#3aa6a0'],
+    ['選別', 'ブランド・状態で仕分け', '#e0a526'],
+    ['販売', '中古球として再び店頭へ', '#e2604f'],
+  ];
+  steps.forEach(([title, sub, col], i) => {
+    const p = seg(t, .6 + i * 1.5, .6), y = 530 + i * 205;
+    if (p <= 0) return;
+    const s = backOut(p);
+    ctx.save(); ctx.translate(W / 2, y); ctx.scale(s, s); ctx.globalAlpha = clamp(p * 1.5);
+    rrect(-420, -85, 840, 170, 34, '#ffffff', 1, col, 6);
+    circle(-310, 0, 62, col);
+    ball(-310, 0, 34, 1, t * 2 + i, i === 0 ? '#d8cfb4' : null);
+    if (i === 1) for (let k = 0; k < 4; k++) circle(-350 + k * 26, -40 - ((t * 60 + k * 20) % 50), 8, '#bff0ff', .9);
+    text(title, -200, -8, { size: 62, align: 'left', color: col });
+    text(sub, -200, 48, { size: 36, align: 'left', color: '#40525c', weight: 'normal' });
+    ctx.restore();
+    if (i < 3) {
+      const ap = seg(t, 1.2 + i * 1.5, .5);
+      text('▼', W / 2, y + 120, { size: 44, color: '#7d97a3', alpha: ap, weight: 'normal' });
+    }
+  });
+}
+
+// 7. まとめ
+function sceneEnd(t, a) {
+  course(t + 47, 1250);
+  // 池から飛び出すボール(第二の人生)
+  const p = seg(t, .3, 1.6);
+  const x = lerp(470, 820, p), y = lerp(1230, 950, p) - Math.sin(p * Math.PI) * 600;
+  ball(x, y, 26, 1, p * 8);
+  rrect(90, 340, 900, 360, 44, 'rgba(255,255,255,0.92)', a);
+  text('池ポチャのボールにも', W / 2, 470, { size: 64, color: C.dark, alpha: a });
+  text('第二の人生', W / 2, 610, { size: 110, color: '#e2604f', alpha: a });
+  const c = seg(t, 1.5, .8);
+  rrect(140, 740, 800, 150, 30, 'rgba(14,28,36,0.8)', c);
+  text('ナレーション  VOICEVOX:四国めたん', W / 2, 805, { size: 38, alpha: c });
+  text('※数値は海外報道等に基づく概数・推計', W / 2, 860, { size: 30, alpha: c, weight: 'normal', color: '#cde9f5' });
+}
+
+const SCENES = [
+  [0, 6.5, sceneTitle],
+  [6.5, 7.5, sceneLost],
+  [14, 8.5, sceneWork],
+  [22.5, 8.5, sceneDanger],
+  [31, 8.5, sceneMoney],
+  [39.5, 8, sceneRecycle],
+  [47.5, 5.5, sceneEnd],
+];
+window.SCENES_T = SCENES.map(s => [s[0], s[1]]);
+
+// 字幕(行分割は幅で計測)
+function wrap(str, maxW, size) {
+  ctx.font = `bold ${size}px ${FONT}`;
+  const lines = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      // 句読点・閉じ括弧は行頭に来ないようにする
+      if ('、。」）！？'.includes(ch)) { cur += ch; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+function subtitles(t) {
+  const cue = window.CUES.find(c => t >= c.a && t < c.b);
+  if (!cue) return;
+  const a = Math.min(seg(t, cue.a, .15), 1 - seg(t, cue.b - .15, .15));
+  const size = 52, lines = wrap(cue.text, 900, size), lh = 74;
+  const y0 = 1410 - (lines.length - 1) * lh / 2;
+  rrect(60, y0 - 62, W - 120, lines.length * lh + 34, 28, 'rgba(8,18,24,0.62)', a);
+  lines.forEach((l, i) => text(l, W / 2, y0 + i * lh, { size, alpha: a, stroke: '#0e1c24', sw: 12 }));
+}
+
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  let drawn = false;
+  for (let i = 0; i < SCENES.length; i++) {
+    const [s, d, fn] = SCENES[i];
+    if (t >= s && t < s + d) {
+      const lt = t - s;
+      const a = Math.min(seg(lt, 0, .5), 1 - seg(lt, d - .35, .35));
+      ctx.save(); fn(lt, i === 0 ? 1 : seg(lt, 0, .5)); ctx.restore();
+      // シーン切替のフラッシュ風フェード
+      const f = 1 - seg(lt, 0, .3);
+      if (i > 0 && f > 0) { ctx.fillStyle = `rgba(255,255,255,${f * .8})`; ctx.fillRect(0, 0, W, H); }
+      drawn = true; break;
+    }
+  }
+  if (!drawn) sceneEnd(5.5, 1);
+  subtitles(t);
+  const fo = seg(t, DURATION - .6, .6);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
