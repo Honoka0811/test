@@ -1,0 +1,5 @@
+output/stills/
+output/check/
+output/*.wav
+output/video_silent.mp4
+__pycache__/

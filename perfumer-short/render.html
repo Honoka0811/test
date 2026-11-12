@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>調香師のお仕事</title>
+<style>
+  @font-face { font-family: "ZenMaru"; src: url("fonts/ZenMaruGothic-Medium.ttf"); font-weight: 500; }
+  @font-face { font-family: "ZenMaru"; src: url("fonts/ZenMaruGothic-Bold.ttf"); font-weight: 700; }
+  @font-face { font-family: "ZenMaru"; src: url("fonts/ZenMaruGothic-Black.ttf"); font-weight: 900; }
+  html, body { margin: 0; background: #222; }
+  canvas { display: block; width: 405px; height: 720px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 調香師のお仕事 (9:16 ショート動画)
+// シーン・字幕のタイミングは narrate.py が書き出す output/timeline.js (window.TL) に従う
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TL;
+const DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"ZenMaru","IPAPGothic",sans-serif';
+const EMOJI = '"Noto Color Emoji"';
+const C = {
+  bg1: '#FBF5EE', bg2: '#EFE3F3', ink: '#3E2A4F', ink2: '#6E5A7E', ink3: '#9C8CA8',
+  plum: '#6B3F86', rose: '#D9799A', roseSoft: '#F7DCE6', gold: '#C79A4B', goldSoft: '#F4E6C8',
+  mint: '#6FAF9B', mintSoft: '#DCEFE8', sky: '#7C9BD6', skySoft: '#E0E8F7', card: '#FFFFFF'
+};
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c = 1.6; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+function rand(seed) { let x = Math.sin(seed * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function text(str, x, y, { size = 48, weight = 700, color = C.ink, align = 'center', base = 'alphabetic', alpha = 1, font = FONT, ls = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y); ctx.restore();
+}
+function emoji(ch, x, y, size, alpha = 1) { text(ch, x, y, { size, font: EMOJI, weight: 400, base: 'middle', alpha }); }
+function rrectPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, fill, alpha = 1, shadow = false, stroke = null) {
+  if (alpha <= 0 || w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  if (shadow) { ctx.shadowColor = 'rgba(80,40,100,0.16)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; }
+  rrectPath(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill();
+  if (stroke) { ctx.shadowColor = 'transparent'; ctx.lineWidth = 4; ctx.strokeStyle = stroke; ctx.stroke(); }
+  ctx.restore();
+}
+// アニメーション: p(0..1) でふわっと出現(下から + 拡大)
+function pop(p, cx, cy, fn) {
+  if (p <= 0) return;
+  const s = lerp(0.85, 1, easeBack(p)), dy = (1 - easeOut(p)) * 40;
+  ctx.save(); ctx.globalAlpha *= clamp(p * 1.6); ctx.translate(cx, cy + dy); ctx.scale(s, s); ctx.translate(-cx, -cy); fn(); ctx.restore();
+}
+// 句読点・閉じカッコの後を優先して改行する。1チャンクが長すぎるときだけ文字単位で切る
+function wrap(str, maxW, size, weight = 700) {
+  ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`;
+  const mw = s => ctx.measureText(s).width;
+  const noStart = '、。,.!?」』)ー・…';
+  const chunks = str.split(/\||(?<=[、。!?」』])/).filter(Boolean);
+  const lines = []; let cur = ''; let broke = 0;
+  for (const ck of chunks) {
+    if (mw(cur + ck) <= maxW) { cur += ck; continue; }
+    if (cur && mw(ck) <= maxW) { lines.push(cur); cur = ck; continue; }
+    for (const ch of ck) {
+      if (mw(cur + ch) > maxW && cur && !noStart.includes(ch)) { lines.push(cur); cur = ch; broke++; }
+      else cur += ch;
+    }
+  }
+  if (cur) lines.push(cur);
+  lines.broke = broke;
+  ctx.restore(); return lines;
+}
+// 行数は最小のまま、各行の長さをなるべく揃える
+function wrapBalanced(str, maxW, size, weight = 700) {
+  const first = wrap(str, maxW, size, weight);
+  if (first.length < 2) return first;
+  let best = first, bestScore = Infinity;
+  ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`;
+  for (let w = maxW * 0.5; w <= maxW; w += 10) {
+    const l = wrap(str, w, size, weight);
+    if (l.length !== first.length) continue;
+    const ws = l.map(x => ctx.measureText(x).width);
+    // 句読点で終わる行を優遇し、行の長さのばらつきが小さいものを選ぶ
+    const score = Math.max(...ws) - Math.min(...ws) - 200 * l.slice(0, -1).filter(x => /[、。!?」』]$/.test(x)).length + 5000 * l.broke;
+    if (score < bestScore) { bestScore = score; best = l; }
+  }
+  ctx.restore(); return best;
+}
+
+// ---------- 背景 ----------
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, W * 0.3, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ふわふわ漂う光の粒(香りの粒子のイメージ)
+  for (let i = 0; i < 28; i++) {
+    const r = 30 + rand(i) * 110, sp = 12 + rand(i + 50) * 26;
+    const x = (rand(i + 9) * W + Math.sin(t * 0.3 + i) * 40);
+    const y = ((rand(i + 20) * (H + 400) - t * sp) % (H + 400) + H + 400) % (H + 400) - 200;
+    const col = [C.rose, C.gold, C.plum, C.mint][i % 4];
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, col + '30'); rg.addColorStop(1, col + '00');
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// ---------- 香水瓶 ----------
+function bottle(cx, cy, s, t, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(cx, cy); ctx.scale(s, s);
+  // 影
+  ctx.fillStyle = 'rgba(90,50,110,0.12)'; ctx.beginPath(); ctx.ellipse(0, 200, 190, 26, 0, 0, Math.PI * 2); ctx.fill();
+  // 本体(ガラス)
+  const g = ctx.createLinearGradient(-170, 0, 170, 0);
+  g.addColorStop(0, '#F3C9D8'); g.addColorStop(0.5, '#FBE7EE'); g.addColorStop(1, '#E8B3C6');
+  rrect(-170, -120, 340, 320, 70, g);
+  // 中身の液体(ゆらぐ)
+  ctx.save(); rrectPath(-150, -100, 300, 280, 56); ctx.clip();
+  const lg = ctx.createLinearGradient(0, -20, 0, 180); lg.addColorStop(0, '#F2C46E'); lg.addColorStop(1, '#E58FA9');
+  ctx.fillStyle = lg; ctx.beginPath(); ctx.moveTo(-160, 200);
+  for (let x = -160; x <= 160; x += 10) ctx.lineTo(x, 10 + Math.sin(x / 40 + t * 2.2) * 8);
+  ctx.lineTo(160, 200); ctx.closePath(); ctx.fill(); ctx.restore();
+  // ハイライト
+  rrect(-130, -90, 40, 200, 20, 'rgba(255,255,255,0.65)');
+  rrect(-75, -90, 14, 120, 7, 'rgba(255,255,255,0.5)');
+  // 首とキャップ
+  rrect(-55, -175, 110, 60, 14, '#EBC2D2');
+  const cg = ctx.createLinearGradient(-80, 0, 80, 0); cg.addColorStop(0, '#B8873A'); cg.addColorStop(0.5, '#F0D28E'); cg.addColorStop(1, '#B8873A');
+  rrect(-80, -265, 160, 100, 22, cg);
+  rrect(-18, -300, 36, 40, 8, '#C99B4E');
+  // ラベル
+  rrect(-95, 20, 190, 100, 16, 'rgba(255,255,255,0.85)');
+  text('PARFUM', 0, 82, { size: 34, weight: 700, color: C.plum, ls: 4 });
+  ctx.restore();
+}
+// ノズルから広がるミスト
+function mist(cx, cy, t, t0, alpha = 1) {
+  for (let i = 0; i < 26; i++) {
+    const life = ((t - t0) * 0.9 + rand(i + 3)) % 1;
+    if (t < t0) continue;
+    const ang = -0.75 + rand(i + 7) * 0.8, dist = 30 + life * 300;
+    const x = cx + 20 + Math.cos(ang) * dist, y = cy + Math.sin(ang) * dist * 0.6 - life * 30;
+    const a = (1 - life) * alpha * 0.8;
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = i % 3 ? C.rose : C.gold;
+    ctx.beginPath(); ctx.arc(x, y, 4 + rand(i) * 9 + life * 10, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+function sparkle(x, y, r, a, col = C.gold) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = col; ctx.translate(x, y); ctx.beginPath();
+  for (let k = 0; k < 8; k++) { const rr = k % 2 ? r * 0.25 : r; const an = k * Math.PI / 4; ctx.lineTo(Math.cos(an) * rr, Math.sin(an) * rr); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+// ---------- 共通パーツ ----------
+function header(no, title, p) {
+  pop(p, W / 2, 300, () => {
+    rrect(W / 2 - 70, 196, 140, 56, 28, C.plum);
+    text(no, W / 2, 236, { size: 32, color: '#fff', ls: 2 });
+    text(title, W / 2, 350, { size: 76, weight: 900, color: C.ink });
+  });
+}
+function arrowDown(x, y, a) {
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = C.ink3;
+  ctx.beginPath(); ctx.moveTo(x - 22, y - 10); ctx.lineTo(x + 22, y - 10); ctx.lineTo(x, y + 16); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+// ---------- シーン ----------
+const SCENE_FN = {
+  title(lt, sc, S) {
+    const p = seg(lt, 0, 0.9);
+    pop(seg(lt, 0.1, 0.6), W / 2, 280, () => {
+      rrect(W / 2 - 170, 220, 340, 76, 38, C.card, 1, true);
+      text('お仕事しょうかい', W / 2, 272, { size: 40, color: C.plum });
+    });
+    const by = 760 + Math.sin(lt * 1.6) * 10;
+    bottle(W / 2, by, lerp(0.7, 1.05, easeBack(seg(lt, 0.2, 0.9))), lt, clamp(p * 2));
+    mist(W / 2 + 10, by - 300 * 1.05, lt, 0.9, seg(lt, 0.9, 0.5));
+    for (let i = 0; i < 6; i++) sparkle(W / 2 + Math.cos(i * 1.05 + 0.4) * 330, by - 40 + Math.sin(i * 1.05 + 0.4) * 300, 22 + 10 * Math.sin(lt * 3 + i), seg(lt, 0.6 + i * 0.1, 0.4) * (0.6 + 0.4 * Math.sin(lt * 2.5 + i)));
+    pop(seg(lt, S(1) - 0.3, 0.6), W / 2, 1180, () => {
+      text('ちょうこうし', W / 2, 1065, { size: 40, color: C.rose, ls: 10 });
+      text('調香師', W / 2, 1220, { size: 190, weight: 900, color: C.plum, ls: 12 });
+      text('ってどんな仕事?', W / 2, 1320, { size: 64, weight: 700, color: C.ink });
+    });
+  },
+  what(lt, sc, S) {
+    header('01', '調香師とは?', seg(lt, 0, 0.6));
+    pop(seg(lt, 0.3, 0.6), W / 2, 500, () => {
+      rrect(90, 410, W - 180, 190, 36, C.card, 1, true);
+      text('香料を組み合わせて', W / 2, 490, { size: 52, color: C.ink });
+      text('新しい香りを生み出す専門家', W / 2, 565, { size: 52, color: C.plum, weight: 900 });
+    });
+    const tiles = [['🌸', '香水', C.roseSoft], ['🧴', 'シャンプー', C.skySoft], ['🫧', '洗剤', C.mintSoft], ['🍰', 'お菓子・飲み物', C.goldSoft]];
+    tiles.forEach(([e, l, bg], i) => {
+      const x = 90 + (i % 2) * 460, y = 650 + Math.floor(i / 2) * 270;
+      pop(seg(lt, S(1) + i * 0.55, 0.5), x + 210, y + 120, () => {
+        rrect(x, y, 440, 240, 32, bg, 1, true);
+        emoji(e, x + 220, y + 95, 100);
+        text(l, x + 220, y + 205, { size: 44, color: C.ink });
+      });
+    });
+    const q = seg(lt, S(2), 0.6);
+    pop(q, W / 2, 1270, () => {
+      rrect(90, 1210, 440, 130, 28, C.card, 1, false, C.rose);
+      text('化粧品・日用品の香り', 310, 1260, { size: 30, color: C.ink2 });
+      text('パフューマー', 310, 1315, { size: 46, weight: 900, color: C.rose });
+      rrect(550, 1210, 440, 130, 28, C.card, 1, false, C.gold);
+      text('食べ物の香り', 770, 1260, { size: 30, color: C.ink2 });
+      text('フレーバリスト', 770, 1315, { size: 46, weight: 900, color: C.gold });
+    });
+  },
+  materials(lt, sc, S) {
+    header('02', '香りの材料', seg(lt, 0, 0.6));
+    const cols = [
+      { x: 90, title: '天然香料', col: C.mint, bg: C.mintSoft, items: [['🌹', 'ローズ'], ['🍋', 'レモン'], ['🌿', 'ラベンダー'], ['🪵', '白檀']] },
+      { x: 560, title: '合成香料', col: C.sky, bg: C.skySoft, items: [['🧪', 'バニリン'], ['⚗️', 'ムスク系'], ['💧', 'アルデヒド'], ['✨', 'その他多数']] },
+    ];
+    cols.forEach((c, ci) => {
+      const base = ci === 0 ? 0.5 : 2.4;
+      pop(seg(lt, base, 0.5), c.x + 215, 470, () => {
+        rrect(c.x, 410, 430, 560, 34, c.bg, 1, true);
+        rrect(c.x + 95, 435, 240, 66, 33, c.col);
+        text(c.title, c.x + 215, 482, { size: 40, color: '#fff' });
+      });
+      c.items.forEach(([e, l], i) => {
+        pop(seg(lt, base + 0.35 + i * 0.25, 0.4), c.x + 215, 570 + i * 100, () => {
+          emoji(e, c.x + 90, 560 + i * 100, 64);
+          text(l, c.x + 150, 578 + i * 100, { size: 42, color: C.ink, align: 'left' });
+        });
+      });
+    });
+    // 数千種類: 小さな香料瓶が並んでいく
+    const q = seg(lt, S(1), 2.6);
+    pop(seg(lt, S(1), 0.5), W / 2, 1150, () => {
+      rrect(90, 1010, W - 180, 330, 34, C.card, 1, true);
+      const n = Math.floor(easeOut(q) * 120);
+      for (let i = 0; i < 120; i++) {
+        const x = 140 + (i % 20) * 42, y = 1045 + Math.floor(i / 20) * 34;
+        const col = [C.rose, C.gold, C.mint, C.sky, C.plum][(i * 7) % 5];
+        rrect(x, y, 26, 26, 8, col, i < n ? 0.85 : 0.12);
+      }
+      ctx.save(); ctx.globalAlpha *= 0.94; rrect(W / 2 - 300, 1140, 600, 150, 30, C.card); ctx.restore();
+      text('数千種類', W / 2, 1255, { size: 104, weight: 900, color: C.plum, alpha: seg(lt, S(1) + 0.6, 0.5) });
+      text('を嗅ぎ分けて記憶!', W / 2, 1320, { size: 34, color: C.ink2, alpha: seg(lt, S(1) + 0.9, 0.5) });
+    });
+  },
+  pyramid(lt, sc, S) {
+    header('03', '香りのピラミッド', seg(lt, 0, 0.6));
+    // 時間とともに変化: 時計アイコン
+    pop(seg(lt, 0.4, 0.5), W / 2, 450, () => {
+      text('時間とともに香りが変わる', W / 2, 460, { size: 44, color: C.ink2 });
+    });
+    const tiers = [
+      { name: 'トップノート', time: 'つけて〜30分', ex: '柑橘・ハーブ', e: '🍊', col: '#F2B85C' },
+      { name: 'ミドルノート', time: '30分〜数時間', ex: '花・スパイス', e: '🌷', col: C.rose },
+      { name: 'ベースノート', time: '数時間〜半日', ex: 'ウッド・ムスク', e: '🪵', col: C.plum },
+    ];
+    const top = 540, hgt = 780, apexX = 340, baseHalf = 245;
+    const d2 = sc.subs[1].end - sc.subs[1].start;
+    // 現在注目している段(2文目の読み上げに合わせて上から順に)
+    const focus = lt < S(1) ? -1 : lt < S(2) ? Math.min(2, Math.floor((lt - S(1)) / (d2 / 3))) : 3;
+    tiers.forEach((tr, i) => {
+      const p = seg(lt, S(1) + (d2 / 3) * i - 0.2, 0.5);
+      const pre = seg(lt, 0.8 + i * 0.25, 0.5) * 0.35;
+      const a = Math.max(pre, p);
+      const y0 = top + (hgt / 3) * i, y1 = top + (hgt / 3) * (i + 1) - 14;
+      const w0 = baseHalf * (y0 - top) / hgt, w1 = baseHalf * (y1 - top) / hgt;
+      ctx.save(); ctx.globalAlpha *= a;
+      ctx.fillStyle = tr.col; ctx.beginPath();
+      ctx.moveTo(apexX - w0, y0); ctx.lineTo(apexX + w0, y0); ctx.lineTo(apexX + w1, y1); ctx.lineTo(apexX - w1, y1); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      emoji(tr.e, apexX, (y0 + y1) / 2 + (i === 0 ? 40 : 10), i === 0 ? 70 : 84, a);
+      // 右側の説明
+      const hl = focus === i || focus === 3;
+      pop(p, 760, (y0 + y1) / 2, () => {
+        rrect(600, (y0 + y1) / 2 - 105, 400, 210, 28, C.card, 1, hl, hl ? tr.col : null);
+        text(tr.name, 800, (y0 + y1) / 2 - 35, { size: 46, weight: 900, color: tr.col === '#F2B85C' ? '#D08E1E' : tr.col });
+        text(tr.time, 800, (y0 + y1) / 2 + 25, { size: 34, color: C.ink });
+        text(tr.ex, 800, (y0 + y1) / 2 + 75, { size: 32, color: C.ink2 });
+      });
+    });
+    // 時間軸の矢印
+    const pa = seg(lt, S(2), 0.6);
+    if (pa > 0) {
+      ctx.save(); ctx.globalAlpha *= pa; ctx.strokeStyle = C.ink3; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(60, top + 30); ctx.lineTo(60, top + 30 + (hgt - 60) * easeOut(pa)); ctx.stroke(); ctx.restore();
+      arrowDown(60, top + hgt - 20, pa);
+      text('時間', 60, top - 10, { size: 32, color: C.ink3, alpha: pa });
+    }
+  },
+  work(lt, sc, S) {
+    header('04', '仕事の流れ', seg(lt, 0, 0.6));
+    const steps = [
+      ['💬', 'イメージを聞く', '依頼主の想いや商品コンセプト', 0.4],
+      ['📝', '処方を考える', 'どの香料をどれだけ使うか', S(1)],
+      ['⚗️', '調合する', '香料を正確に量って混ぜる', S(1) + 1.1],
+      ['🌬️', '香りを確かめる', '試香紙(ムエット)で評価', S(1) + 2.2],
+    ];
+    steps.forEach(([e, t1, t2, st], i) => {
+      const y = 420 + i * 215;
+      pop(seg(lt, st, 0.5), W / 2, y + 85, () => {
+        rrect(90, y, W - 180, 170, 30, C.card, 1, true);
+        ctx.save(); ctx.fillStyle = [C.roseSoft, C.goldSoft, C.mintSoft, C.skySoft][i]; ctx.beginPath(); ctx.arc(200, y + 85, 62, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        emoji(e, 200, y + 88, 70);
+        text(`${i + 1}`, 300, y + 72, { size: 30, color: C.ink3, align: 'left' });
+        text(t1, 340, y + 75, { size: 50, weight: 900, color: C.ink, align: 'left' });
+        text(t2, 300, y + 132, { size: 32, color: C.ink2, align: 'left' });
+      });
+      if (i < 3) arrowDown(W / 2, y + 192, seg(lt, steps[i + 1][3], 0.4));
+    });
+    // くり返しループ
+    const q = seg(lt, S(2), 0.6);
+    pop(q, W / 2, 1300, () => {
+      rrect(200, 1250, W - 400, 110, 55, C.plum, 1, true);
+      const rot = lt * 3;
+      ctx.save(); ctx.translate(300, 1305); ctx.rotate(rot); ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, 0, 26, 0.3, Math.PI * 1.7); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(26 * Math.cos(0.3) - 12, 26 * Math.sin(0.3) - 4); ctx.lineTo(26 * Math.cos(0.3) + 12, 26 * Math.sin(0.3) - 4); ctx.lineTo(26 * Math.cos(0.3), 26 * Math.sin(0.3) + 14); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      const cnt = Math.floor(easeOut(seg(lt, S(2) + 0.3, 2.2)) * 300);
+      text(`2〜4をくり返し ${cnt}回…`, W / 2 + 40, 1322, { size: 44, color: '#fff' });
+    });
+  },
+  become(lt, sc, S) {
+    header('05', '調香師になるには', seg(lt, 0, 0.6));
+    const steps = [
+      ['🎓', '大学で学ぶ', '化学・薬学・農学など', 0.5, C.skySoft],
+      ['🏢', '香料会社に入社', '化粧品・食品メーカーなど', 1.9, C.mintSoft],
+      ['⏳', '修業 約10年', '先輩のもとで香りを覚える', S(1), C.goldSoft],
+      ['✨', '一人前の調香師に!', '', S(1) + 2.0, C.roseSoft],
+    ];
+    steps.forEach(([e, t1, t2, st, bg], i) => {
+      const y = 430 + i * 230;
+      const last = i === 3;
+      pop(seg(lt, st, 0.5), W / 2, y + 90, () => {
+        rrect(90, y, W - 180, 180, 90, last ? C.plum : C.card, 1, true);
+        ctx.save(); ctx.fillStyle = last ? 'rgba(255,255,255,0.2)' : bg; ctx.beginPath(); ctx.arc(180, y + 90, 66, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        emoji(e, 180, y + 93, 74);
+        text(t1, 280, t2 ? y + 82 : y + 108, { size: 52, weight: 900, color: last ? '#fff' : C.ink, align: 'left' });
+        if (t2) text(t2, 280, y + 140, { size: 34, color: C.ink2, align: 'left' });
+      });
+      if (i < 3) arrowDown(180, y + 207, seg(lt, steps[i + 1][3], 0.4));
+    });
+    // 修業の年数バー
+    const q = seg(lt, S(1) + 0.4, 1.8);
+    if (q > 0 && lt > S(1)) {
+      const y = 430 + 2 * 230;
+      rrect(660, y + 58, 270, 22, 11, '#EADCC0');
+      rrect(660, y + 58, 270 * easeOut(q), 22, 11, C.gold);
+    }
+  },
+  outro(lt, sc, S) {
+    const by = 640 + Math.sin(lt * 1.6) * 10;
+    bottle(W / 2, by, 0.85, lt + 20, seg(lt, 0, 0.8));
+    mist(W / 2 + 10, by - 255, lt + 20, 20, 1);
+    for (let i = 0; i < 8; i++) sparkle(W / 2 + Math.cos(i * 0.8) * 320, by + Math.sin(i * 0.8) * 280, 18 + 8 * Math.sin(lt * 3 + i), seg(lt, 0.3 + i * 0.08, 0.4) * (0.6 + 0.4 * Math.sin(lt * 2.5 + i)), i % 2 ? C.gold : C.rose);
+    pop(seg(lt, 0.5, 0.7), W / 2, 1080, () => {
+      text('目に見えない香りで', W / 2, 1040, { size: 64, color: C.ink });
+      text('人の心を動かす', W / 2, 1140, { size: 88, weight: 900, color: C.plum });
+      text('それが「調香師」のお仕事', W / 2, 1230, { size: 50, color: C.ink2 });
+    });
+    const c = seg(lt, sc.subs[0].end - sc.start, 0.6);
+    text('ナレーション:VOICEVOX:四国めたん', W / 2, 1460, { size: 32, color: C.ink2, alpha: c, weight: 500 });
+    text('BGM:オリジナル', W / 2, 1510, { size: 32, color: C.ink2, alpha: c, weight: 500 });
+  },
+};
+
+// ---------- 字幕 ----------
+function subtitle(t) {
+  for (const sc of TL.scenes) for (const s of sc.subs) {
+    if (t < s.start - 0.12 || t > s.end + 0.25) continue;
+    const a = Math.min(seg(t, s.start - 0.12, 0.15), 1 - seg(t, s.end + 0.1, 0.15));
+    const lines = wrapBalanced(s.text, 880, 50);
+    const lh = 70, h = lines.length * lh + 50, y = 1400;
+    ctx.save(); ctx.globalAlpha = a;
+    rrect(70, y, W - 140, h, 32, 'rgba(62,42,79,0.88)');
+    lines.forEach((l, i) => text(l, W / 2, y + 25 + 52 + i * lh, { size: 50, color: '#fff', weight: 700 }));
+    ctx.restore();
+  }
+}
+
+// 上部の進行ドット
+function progress(t, idx) {
+  const n = TL.scenes.length, gap = 34, x0 = W / 2 - (n - 1) * gap / 2;
+  for (let i = 0; i < n; i++) {
+    ctx.save(); ctx.fillStyle = i <= idx ? C.plum : 'rgba(107,63,134,0.2)';
+    ctx.beginPath(); ctx.arc(x0 + i * gap, 120, i === idx ? 10 : 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+
+const FADE = 0.35;
+function render(t) {
+  ctx.clearRect(0, 0, W, H);
+  background(t);
+  let idx = TL.scenes.findIndex(s => t >= s.start && t < s.end);
+  if (idx < 0) idx = TL.scenes.length - 1;
+  TL.scenes.forEach((sc, i) => {
+    const lt = t - sc.start;
+    const fin = i === 0 ? 1 : seg(t, sc.start, FADE);
+    const fout = i === TL.scenes.length - 1 ? 1 - seg(t, sc.end - 0.6, 0.6) : 1 - seg(t, sc.end - FADE, FADE);
+    const a = Math.min(fin, fout);
+    if (a <= 0 || t < sc.start || t > sc.end) return;
+    const S = k => sc.subs[k].start - sc.start;
+    ctx.save(); ctx.globalAlpha = a; SCENE_FN[sc.key](lt, sc, S); ctx.restore();
+  });
+  progress(t, idx);
+  subtitle(t);
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生
+if (!navigator.webdriver) {
+  document.fonts.load('700 50px ZenMaru').then(() => {
+    const t0 = performance.now();
+    (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+  });
+}
+</script>
+</body>
+</html>
