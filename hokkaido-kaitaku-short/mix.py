@@ -36,6 +36,6 @@ SRC, DST = O('out', 'video_silent.mp4'), O('out', 'hokkaido_kaitaku_bones_short.
 m = subprocess.run(['ffmpeg', '-hide_banner', '-i', O('audio', 'mix.wav'), '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-'], capture_output=True, text=True).stderr
 j = json.loads(m[m.rindex('{'):m.rindex('}') + 1])
 af = f"loudnorm=I=-14:TP=-1.5:LRA=11:measured_I={j['input_i']}:measured_TP={j['input_tp']}:measured_LRA={j['input_lra']}:measured_thresh={j['input_thresh']}:offset={j['target_offset']}:linear=true"
-subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', SRC, '-i', O('audio', 'mix.wav'), '-c:v', 'copy', '-af', af, '-ac', '2', '-ar', '48000',
+subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', SRC, '-i', O('audio', 'mix.wav'), '-c:v', 'libx264', '-crf', '23', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-af', af, '-ac', '2', '-ar', '48000',
                 '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', DST], check=True)
 print('wrote', DST)

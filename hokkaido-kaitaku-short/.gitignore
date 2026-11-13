@@ -4,3 +4,5 @@ out/capture.log
 out/video_silent.mp4
 audio/mix.wav
 __pycache__/
+out/seg*.mp4
+out/segs.txt
