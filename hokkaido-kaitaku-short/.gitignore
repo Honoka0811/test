@@ -1,0 +1,6 @@
+node_modules/
+out/preview/
+out/capture.log
+out/video_silent.mp4
+audio/mix.wav
+__pycache__/

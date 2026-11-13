@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>北海道開拓の現場に眠る骨 — ショート動画</title>
+<style>
+@font-face { font-family: "Mincho"; font-weight: 800; src: url("node_modules/@expo-google-fonts/shippori-mincho-b1/800ExtraBold/ShipporiMinchoB1_800ExtraBold.ttf"); }
+@font-face { font-family: "Sans"; font-weight: 500; src: url("node_modules/@expo-google-fonts/noto-sans-jp/500Medium/NotoSansJP_500Medium.ttf"); }
+@font-face { font-family: "Sans"; font-weight: 700; src: url("node_modules/@expo-google-fonts/noto-sans-jp/700Bold/NotoSansJP_700Bold.ttf"); }
+@font-face { font-family: "Sans"; font-weight: 900; src: url("node_modules/@expo-google-fonts/noto-sans-jp/900Black/NotoSansJP_900Black.ttf"); }
+:root { --red: #e0392b; --gold: #ffd54a; --paper: #efe9dc; }
+html, body { margin: 0; background: #000; }
+#stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; background: #07090c; color: var(--paper); font-family: "Sans", sans-serif; }
+#stage * { box-sizing: border-box; }
+.layer { position: absolute; inset: 0; opacity: 0; }
+.cover { position: absolute; inset: 0; background-size: cover; background-repeat: no-repeat; will-change: transform; }
+.blurbg { position: absolute; inset: -80px; background-size: cover; background-position: center; filter: blur(36px) grayscale(.8) brightness(.3); }
+.card { position: absolute; left: 0; top: 340px; width: 1080px; height: 810px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.8); }
+.card .cover { filter: grayscale(.75) sepia(.22) contrast(1.08) brightness(.82); }
+.scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.72) 0, rgba(0,0,0,.25) 420px, rgba(0,0,0,0) 760px, rgba(0,0,0,.2) 900px, rgba(0,0,0,.9) 1320px, rgba(0,0,0,.94) 100%); }
+.vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,.6) 100%); pointer-events: none; }
+.phototag { position: absolute; font-weight: 500; font-size: 28px; letter-spacing: .04em; color: rgba(239,233,220,.85); background: rgba(0,0,0,.55); padding: 8px 16px; border-left: 4px solid var(--paper); }
+
+/* 見出しチップ */
+.chip { position: absolute; left: 56px; top: 176px; display: flex; align-items: flex-start; gap: 22px; }
+.chip .no { font-family: "Mincho"; font-weight: 800; font-size: 54px; line-height: 1; background: var(--red); color: #fff; padding: 14px 14px 16px; margin-top: 6px; }
+.chip .ttl { font-family: "Mincho"; font-weight: 800; font-size: 84px; line-height: 1.08; letter-spacing: .02em; text-shadow: 0 4px 24px rgba(0,0,0,.9); white-space: nowrap; }
+.chip .sub { font-weight: 700; font-size: 32px; margin-top: 12px; color: rgba(239,233,220,.88); letter-spacing: .03em; text-shadow: 0 2px 12px rgba(0,0,0,.9); white-space: nowrap; }
+
+/* 数字ブロック */
+.stat { position: absolute; left: 0; width: 1080px; top: 1030px; text-align: center; text-shadow: 0 4px 30px rgba(0,0,0,.95), 0 0 8px rgba(0,0,0,.8); }
+.stat .lbl { font-weight: 700; font-size: 38px; letter-spacing: .2em; color: rgba(239,233,220,.9); }
+.stat .big { font-family: "Mincho"; font-weight: 800; font-size: 168px; line-height: 1.12; white-space: nowrap; }
+.stat .big small { font-size: .5em; margin-left: .06em; }
+.stat .note { font-weight: 500; font-size: 28px; color: rgba(239,233,220,.75); margin-top: 2px; }
+.red { color: var(--red); } .gold { color: var(--gold); }
+.pair { position: absolute; top: 1052px; left: 56px; width: 968px; display: flex; gap: 24px; }
+.pair > div { flex: 1; border-top: 3px solid rgba(239,233,220,.7); padding-top: 14px; text-align: center; opacity: 0; }
+.pair .lbl { font-weight: 700; font-size: 32px; letter-spacing: .14em; color: rgba(239,233,220,.85); }
+.pair .big { font-family: "Mincho"; font-weight: 800; font-size: 104px; line-height: 1.15; white-space: nowrap; }
+.pair .big small { font-size: .46em; }
+
+/* 字幕 */
+#cap { position: absolute; left: 0; width: 1080px; bottom: 318px; text-align: center; font-weight: 900; font-size: 57px; line-height: 1.36; letter-spacing: .01em;
+  color: #fff; -webkit-text-stroke: 11px rgba(0,0,0,.92); paint-order: stroke fill; }
+#cap .hl { color: var(--gold); }
+#credit { position: absolute; left: 56px; top: 104px; font-weight: 500; font-size: 26px; letter-spacing: .05em; color: rgba(239,233,220,.62); text-shadow: 0 2px 8px #000; }
+
+/* フック */
+#hook .q { position: absolute; left: 0; width: 1080px; text-align: center; font-family: "Mincho"; font-weight: 800; text-shadow: 0 6px 40px #000, 0 0 12px rgba(0,0,0,.9); white-space: nowrap; }
+/* 地図 */
+#mapwrap { position: absolute; left: 40px; top: 400px; width: 1000px; height: 912px; }
+#mapwrap svg { position: absolute; inset: 0; overflow: visible; }
+.maplabel { position: absolute; font-weight: 700; font-size: 34px; white-space: nowrap; text-shadow: 0 2px 10px #000, 0 0 4px #000; transform: translate(-50%, -50%); }
+.mini { position: absolute; right: 44px; top: 150px; width: 270px; height: 246px; }
+#snow { position: absolute; inset: 0; pointer-events: none; }
+#endcard { position: absolute; left: 0; width: 1080px; top: 560px; text-align: center; opacity: 0; }
+#endcard .msg { font-family: "Mincho"; font-weight: 800; font-size: 96px; line-height: 1.35; text-shadow: 0 6px 40px #000; }
+#endcard .cr { margin: 56px auto 0; width: 880px; font-weight: 500; font-size: 28px; line-height: 1.7; color: rgba(239,233,220,.82); border-top: 2px solid rgba(239,233,220,.45); padding-top: 26px; text-shadow: 0 2px 10px #000; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <!-- フック -->
+  <div class="layer" id="hook">
+    <div class="cover" id="hookbg" style="background-image:url(assets/jomon2.jpg); height:1560px; background-position: 47% 50%; transform-origin: 50% 46%;"></div>
+    <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,0) 1000px, #07090c 1480px);"></div>
+    <div class="vignette"></div>
+    <div class="q" id="q1" style="top:560px; font-size:88px;">北海道の開拓現場には</div>
+    <div class="q" id="q2" style="top:690px; font-size:236px; line-height:1.1;">人の<span class="red">骨</span>が</div>
+    <div class="q" id="q3" style="top:960px; font-size:136px;">埋まっている</div>
+    <div class="q" id="q4" style="top:1220px; font-size:92px; color:rgba(239,233,220,.92);">――ただの怪談?</div>
+    <div class="q" id="q5" style="top:700px; font-size:132px; line-height:1.3;">実は、<span class="gold">本当に</span><br>見つかっている。</div>
+  </div>
+
+  <!-- 01 常紋トンネル -->
+  <div class="layer" id="jomonA">
+    <div class="cover" id="jomonAbg" style="background-image:url(assets/jomon2.jpg); height:1560px; -webkit-mask-image:linear-gradient(#000 72%, transparent 97%); background-position: 47% 50%; transform-origin: 50% 46%; filter: grayscale(.7) sepia(.2) contrast(1.08) brightness(.8);"></div>
+    <div class="scrim"></div>
+  </div>
+  <div class="layer" id="jomonB">
+    <div class="cover" id="jomonBbg" style="background-image:url(assets/jomon1.jpg); background-position: 33% 50%; transform-origin: 50% 40%; filter: grayscale(.7) sepia(.2) contrast(1.08) brightness(.78);"></div>
+    <div class="scrim"></div>
+    <div class="phototag" style="left:56px; top:930px;">常紋トンネル工事殉難者追悼碑</div>
+  </div>
+  <div class="layer" id="jomonUI">
+    <div class="chip"><div class="no">01</div><div><div class="ttl">常紋トンネル</div><div class="sub">JR石北本線|1914年(大正3)開通</div></div></div>
+    <svg class="mini" id="mini1"></svg>
+    <div class="stat" id="st_j1"><div class="lbl">工事の犠牲者</div><div class="big"><span class="red">100</span><small>人以上</small></div><div class="note">「タコ部屋労働」による。人数は諸説あり</div></div>
+    <div class="stat" id="st_j2"><div class="lbl">改修工事中に</div><div class="big"><span class="gold">1970</span><small>年</small></div><div class="note" style="font-size:44px; font-weight:700; color:#efe9dc;">壁の裏から<span class="red">人骨</span>を発見</div></div>
+  </div>
+
+  <!-- 02 囚人道路 -->
+  <div class="layer" id="road">
+    <div class="blurbg" style="background-image:url(assets/kitamitoge.jpg);"></div>
+    <div class="vignette"></div>
+    <div id="mapwrap"><svg id="bigmap"></svg><div id="maplabels"></div></div>
+    <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(7,9,12,0) 900px, rgba(7,9,12,.82) 1080px, rgba(7,9,12,.9) 1400px, rgba(7,9,12,.6) 100%);"></div>
+    <div class="pair">
+      <div id="p1"><div class="lbl">動員された囚人</div><div class="big">1,000<small>人以上</small></div></div>
+      <div id="p2"><div class="lbl">開削した距離</div><div class="big">約160<small>km</small></div></div>
+    </div>
+    <div class="stat" id="st_r1" style="top:1040px;"><div class="lbl">一年足らずの工事で 死者</div><div class="big"><span class="red">200</span><small>人以上</small></div></div>
+  </div>
+  <div class="layer" id="roadB">
+    <div class="blurbg" style="background-image:url(assets/kitamitoge.jpg);"></div>
+    <div class="card" style="top:392px; height:780px;"><div class="cover" id="roadBimg" style="background-image:url(assets/kitamitoge.jpg); background-position:center; transform-origin: 50% 40%;"></div>
+      <div class="phototag" style="left:24px; bottom:24px;">中央道路開削 殉難者慰霊の碑(北見峠)</div></div>
+    <div class="stat" id="st_r2" style="top:1184px;"><div class="big" style="font-size:150px;"><span class="gold">鎖塚</span><small style="font-size:.3em; font-family:Sans; font-weight:700; margin-left:.5em;">くさりづか|北見市端野町</small></div></div>
+  </div>
+  <div class="layer" id="roadUI">
+    <div class="chip"><div class="no">02</div><div><div class="ttl">囚人道路</div><div class="sub">中央道路 網走〜北見峠|1891年(明治24)</div></div></div>
+  </div>
+
+  <!-- 03 朱鞠内 -->
+  <div class="layer" id="shu">
+    <div class="blurbg" style="background-image:url(assets/uryudam.jpg);"></div>
+    <div class="card" style="top:420px;"><div class="cover" id="shuimg" style="background-image:url(assets/uryudam.jpg); background-position:center; transform-origin: 55% 50%;"></div>
+      <div class="phototag" style="left:24px; bottom:24px;">雨竜第一ダム(1943年完成)</div></div>
+    <div class="chip"><div class="no">03</div><div><div class="ttl">朱鞠内</div><div class="sub">幌加内町|雨竜ダム・旧深名線</div><div class="sub" style="margin-top:4px;">戦時中の工事</div></div></div>
+    <svg class="mini" id="mini2"></svg>
+    <div class="stat" id="st_s1" style="top:1258px;"><div class="lbl" style="font-size:42px; letter-spacing:.08em;">1980年〜 市民の手で<span class="red">遺骨を発掘</span></div></div>
+  </div>
+
+  <!-- エンド -->
+  <div class="layer" id="end">
+    <div class="cover" id="endbg" style="background-image:url(assets/kiha40.jpg); background-position:center 0%; height: 2100px; filter: grayscale(.55) sepia(.15) contrast(1.05) brightness(.62);"></div>
+    <div class="scrim" style="background: linear-gradient(180deg, rgba(0,0,0,.6) 0, rgba(0,0,0,.1) 500px, rgba(0,0,0,.25) 1000px, rgba(0,0,0,.92) 1500px);"></div>
+    <div id="enddim" style="position:absolute; inset:0; background:#000; opacity:0;"></div>
+    <div id="endcard">
+      <div class="msg">足もとの歴史を、<br>忘れない。</div>
+      <div class="cr">ナレーション VOICEVOX:四国めたん<br>写真 Wikimedia Commons(パブリックドメイン)<br>地図 Natural Earth / BGM 自作<br>※人数・距離は概数で、伝承を含みます</div>
+    </div>
+  </div>
+
+  <canvas id="snow" width="1080" height="1920"></canvas>
+  <div id="credit">VOICEVOX:四国めたん</div>
+  <div id="cap"></div>
+</div>
+
+<script src="timeline.js"></script>
+<script src="map.js"></script>
+<script>
+const TL = window.TIMELINE, M = window.MAP;
+window.FPS = 30; window.DURATION = TL.total;
+const $ = id => document.getElementById(id);
+const C = Object.fromEntries(TL.cues.map(c => [c.id, c]));
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ease = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+const out3 = x => 1 - Math.pow(1 - clamp(x), 3);
+const lerp = (a, b, x) => a + (b - a) * x;
+// 区間 [a,b] でフェードイン/アウトする不透明度
+const win = (t, a, b, fi = 0.35, fo = 0.35) => Math.min(ease((t - a) / fi), ease((b - t) / fo));
+const pop = (el, t, a, b, dy = 30, fi = 0.3, fo = 0.3) => { const o = win(t, a, b, fi, fo); el.style.opacity = o; el.style.transform = `translateY(${(1 - out3((t - a) / fi)) * dy}px)`; return o; };
+
+// シーン境界(前シーン最後のセリフと次シーン最初のセリフの中間)
+const S = { hook: 0, jomon: (C.hook3.end + C.jomon1.start) / 2, road: (C.jomon4.end + C.road1.start) / 2, shu: (C.road4.end + C.shu1.start) / 2, end: (C.shu2.end + C.end1.start) / 2, fin: TL.total + 1 };
+const X = 0.45; // クロスフェード秒
+
+// ---------- 地図 ----------
+const NS = 'http://www.w3.org/2000/svg';
+function mini(svg, pt) {
+  svg.setAttribute('viewBox', `0 0 ${M.w} ${M.h}`);
+  svg.innerHTML = `<path d="${M.path}" fill="rgba(239,233,220,.16)" stroke="rgba(239,233,220,.9)" stroke-width="9" stroke-linejoin="round"/>
+    <circle class="pulse" cx="${pt[0]}" cy="${pt[1]}" r="40" fill="none" stroke="#e0392b" stroke-width="10"/><circle cx="${pt[0]}" cy="${pt[1]}" r="30" fill="#e0392b" stroke="#fff" stroke-width="8"/>`;
+}
+mini($('mini1'), M.sites.jomon); mini($('mini2'), M.sites.shumarinai);
+const big = $('bigmap');
+big.innerHTML = `<path id="isl" d="${M.path}" fill="rgba(239,233,220,.10)" stroke="rgba(239,233,220,.85)" stroke-linejoin="round"/>
+  <polyline id="route" points="${M.road.map(p => p.join(',')).join(' ')}" fill="none" stroke="#e0392b" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1 1"/>
+  <circle id="dotA" cx="${M.sites.abashiri[0]}" cy="${M.sites.abashiri[1]}" fill="#fff"/><circle id="dotB" cx="${M.sites.kitamitoge[0]}" cy="${M.sites.kitamitoge[1]}" fill="#fff"/>`;
+const labels = [
+  { p: M.sites.abashiri, text: '網走', dx: 62, dy: -34 },
+  { p: M.sites.kitamitoge, text: '北見峠', dx: -40, dy: 50 },
+];
+labels.forEach(l => { l.el = document.createElement('div'); l.el.className = 'maplabel'; l.el.textContent = l.text; $('maplabels').appendChild(l.el); });
+const VB0 = { x: 0, y: 0, w: M.w }, VB1 = { x: 330, y: 80, w: 650 };
+
+// ---------- 雪 ----------
+const sctx = $('snow').getContext('2d');
+let seed = 20261113; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+const flakes = Array.from({ length: 150 }, () => ({ x: rnd() * 1080, y: rnd() * 1920, r: 1.2 + rnd() * rnd() * 5, v: 50 + rnd() * 120, a: 0.15 + rnd() * 0.5, f: 0.3 + rnd() * 0.8, ph: rnd() * 6.28, amp: 10 + rnd() * 40, d: -20 + rnd() * 40 }));
+function snow(t, k) {
+  sctx.clearRect(0, 0, 1080, 1920);
+  for (const f of flakes) {
+    const y = ((f.y + f.v * t) % 1960) - 20, x = (((f.x + f.d * t + Math.sin(t * f.f + f.ph) * f.amp) % 1080) + 1080) % 1080;
+    sctx.globalAlpha = f.a * k; sctx.fillStyle = '#fff'; sctx.beginPath(); sctx.arc(x, y, f.r, 0, 6.2832); sctx.fill();
+  }
+}
+
+// ---------- 字幕 ----------
+const capHTML = c => c.cap.split('|').map(l => l.replace(/\*(.+?)\*/g, '<span class="hl">$1</span>')).join('<br>');
+let capId = null;
+
+window.render = function (t) {
+  const L = (id, a, b) => { const o = win(t, a - X / 2, b + X / 2, X, X); $(id).style.opacity = o; return o; };
+
+  // フック
+  if (L('hook', -1, S.jomon) > 0) {
+    $('hookbg').style.transform = `scale(${lerp(1.0, 1.5, t / S.jomon)})`;
+    $('hookbg').style.filter = `grayscale(.85) contrast(1.15) brightness(${lerp(.42, .3, ease((t - C.hook3.start + .3) / .5))})`;
+    const b = C.hook3.start - 0.12;
+    pop($('q1'), t, 0.25, b, 24, 0.4, 0.25);
+    pop($('q2'), t, C.hook1.start + 1.15, b, 40, 0.3, 0.25);
+    pop($('q3'), t, C.hook1.start + 1.85, b, 30, 0.3, 0.25);
+    pop($('q4'), t, C.hook2.start, b, 24, 0.3, 0.25);
+    const dim = lerp(1, .55, ease((t - C.hook2.start) / .3));
+    ['q1', 'q2', 'q3'].forEach(i => $(i).style.opacity *= dim);
+    const o5 = win(t, C.hook3.start, S.jomon + 0.3, 0.25, 0.4);
+    $('q5').style.opacity = o5; $('q5').style.transform = `scale(${lerp(1.12, 1, out3((t - C.hook3.start) / .35))})`;
+  }
+
+  // 01 常紋トンネル
+  const jm = (C.jomon2.end + C.jomon3.start) / 2;
+  if (L('jomonA', S.jomon, jm) > 0) $('jomonAbg').style.transform = `scale(${lerp(1.22, 1.0, ease((t - S.jomon) / (jm - S.jomon + .5)))})`;
+  if (L('jomonB', jm, S.road) > 0) $('jomonBbg').style.transform = `scale(${lerp(1.02, 1.16, (t - jm) / (S.road - jm))})`;
+  if (L('jomonUI', S.jomon, S.road) > 0) {
+    pop($('st_j1'), t, C.jomon2.start + 2.6, jm - 0.1, 30);
+    pop($('st_j2'), t, C.jomon4.start + 0.1, S.road, 30);
+    const k = (t * 1.1) % 1;
+    const pl = $('mini1').querySelector('.pulse'); pl.setAttribute('r', 40 + k * 90); pl.setAttribute('opacity', 1 - k);
+  }
+
+  // 02 囚人道路
+  const rm = (C.road3.end + C.road4.start) / 2;
+  if (L('road', S.road, rm) > 0) {
+    const z = ease((t - C.road1.start - 0.6) / 1.6);
+    const vb = { x: lerp(VB0.x, VB1.x, z), y: lerp(VB0.y, VB1.y, z), w: lerp(VB0.w, VB1.w, z) };
+    const u = vb.w / 1000;   // 画面 1px あたりの地図単位
+    big.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.w * M.h / M.w}`);
+    $('isl').setAttribute('stroke-width', 4 * u);
+    const prog = ease((t - C.road1.start - 1.2) / (C.road2.end - C.road1.start - 2.2));
+    const r = $('route'); r.setAttribute('stroke-width', 11 * u); r.setAttribute('stroke-dashoffset', 1 - prog);
+    $('dotA').setAttribute('r', 10 * u * ease((t - C.road1.start - 0.6) / .4)); $('dotB').setAttribute('r', 10 * u * ease((prog - .9) / .1));
+    labels.forEach((l, i) => {
+      l.el.style.left = ((l.p[0] - vb.x) / u + l.dx) + 'px'; l.el.style.top = ((l.p[1] - vb.y) / u + l.dy) + 'px';
+      l.el.style.opacity = i === 0 ? ease((t - C.road1.start - 0.8) / .4) : ease((prog - .85) / .15);
+    });
+    const pe = C.road3.start - 0.05;
+    pop($('p1'), t, C.road2.start + 1.2, pe, 24); pop($('p2'), t, C.road2.start + 3.0, pe, 24);
+    pop($('st_r1'), t, C.road3.start, rm + 0.3, 30);
+  }
+  if (L('roadB', rm, S.shu) > 0) {
+    $('roadBimg').style.transform = `scale(${lerp(1.0, 1.1, (t - rm) / (S.shu - rm))})`;
+    pop($('st_r2'), t, C.road4.start + 1.9, S.shu + 0.3, 30);
+  }
+  L('roadUI', S.road, S.shu);
+
+  // 03 朱鞠内
+  if (L('shu', S.shu, S.end) > 0) {
+    $('shuimg').style.transform = `scale(${lerp(1.12, 1.0, (t - S.shu) / (S.end - S.shu))})`;
+    const k = (t * 1.1) % 1;
+    pop($('st_s1'), t, C.shu1.start + 2.6, S.end + 0.2, 20);
+    const pl = $('mini2').querySelector('.pulse'); pl.setAttribute('r', 40 + k * 90); pl.setAttribute('opacity', 1 - k);
+  }
+
+  // エンド
+  if (L('end', S.end, S.fin) > 0) {
+    $('endbg').style.transform = `translateY(${lerp(0, -180, (t - S.end) / (TL.total - S.end))}px)`;
+    const e = ease((t - C.end4.end + 0.5) / 0.6);
+    $('enddim').style.opacity = e * 0.72;
+    $('endcard').style.opacity = e; $('endcard').style.transform = `translateY(${(1 - e) * 20}px)`;
+  }
+
+  // 字幕
+  const cue = TL.cues.find((c, i) => c.cap && t >= c.start - 0.05 && t < Math.min(c.end + 0.3, (TL.cues[i + 1] || { start: 1e9 }).start - 0.05));
+  const cap = $('cap');
+  if (cue) {
+    if (capId !== cue.id) { cap.innerHTML = capHTML(cue); capId = cue.id; }
+    const i = out3((t - cue.start + 0.05) / 0.16);
+    cap.style.opacity = i; cap.style.transform = `translateY(${(1 - i) * 14}px)`;
+  } else { cap.style.opacity = 0; }
+
+  $('credit').style.opacity = 1 - ease((t - C.end4.end + 0.5) / 0.6);
+  snow(t, lerp(1, .55, ease((t - S.jomon) / 1)));
+  // 全体フェード
+  $('stage').style.opacity = Math.min(ease(t / 0.35), ease((TL.total - t) / 0.5));
+};
+
+// ブラウザで直接開いたときはプレビュー再生(?t=12.3 で静止)
+const q = new URLSearchParams(location.search);
+if (q.has('t')) document.fonts.ready.then(() => window.render(parseFloat(q.get('t'))));
+else if (!navigator.webdriver) { const t0 = performance.now(); (function loop() { window.render(((performance.now() - t0) / 1000) % TL.total); requestAnimationFrame(loop); })(); }
+</script>
+</body>
+</html>

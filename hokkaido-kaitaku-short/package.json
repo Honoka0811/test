@@ -1,0 +1,18 @@
+{
+  "name": "hokkaido-kaitaku-short",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@expo-google-fonts/noto-sans-jp": "^0.4.4",
+    "@expo-google-fonts/shippori-mincho-b1": "^0.4.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}
