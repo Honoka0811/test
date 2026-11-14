@@ -82,7 +82,7 @@ function odoMetrics() {
 // cx, cy: 数字ブロックの中心。size: フォントサイズ。t: 動画時刻(桁増えアニメとブラー用)
 const ROLL_SEC = [0, 0, 0.16, 0.26, 0.30];      // 百の位以上が 1 つ進むのにかける秒数
 function drawOdometer(t, cx, cy, size, o = {}) {
-  const { alpha = 1, unit = true, color0 = '#FFF6A8', color1 = '#FFC400', glow = 1, panelA = 1, pulse = 0 } = o;
+  const { alpha = 1, unit = true, color0 = '#FFF6A8', color1 = '#FFC400', glow = 1, panelA = 1, pulse = 0, crisp = false } = o;
   if (alpha <= 0) return { left: cx, right: cx, w: 0 };
   const m = odoMetrics(), cw = m.cw * size, asc = m.asc * size, cmw = m.comma * size;
   // 桁数(増える瞬間に 0.22 秒かけて幅を広げる)
@@ -131,7 +131,11 @@ function drawOdometer(t, cx, cy, size, o = {}) {
     ctx.restore();
   };
   for (let p = ndInt - 1; p >= 0; p--) {
-    if (p <= 1) {                                 // 速すぎる桁は 1 フレームぶんの動きを細かく重ねてモーションブラーにする
+    if (crisp) {                                  // ゴールのフレーム: 止まって見える数字で値を読ませる
+      const pw10 = Math.pow(10, p), dig = Math.floor(V_GAL * t / pw10) % 10, x = right - (p + 0.5) * cw - (p >= 3 ? commaK * cmw : 0);
+      ctx.strokeStyle = 'rgba(30,14,0,0.9)'; ctx.lineWidth = size * 0.05; ctx.strokeText(String(dig), x, by);
+      ctx.fillStyle = fill; ctx.fillText(String(dig), x, by);
+    } else if (p <= 1) {                          // 速すぎる桁は 1 フレームぶんの動きを細かく重ねてモーションブラーにする
       const K = 20;
       for (let k = 0; k < K; k++) drawCol(p, Math.max(0, t - k / (60 * K)), p === 0 ? 0.10 : 0.15, true);
     } else drawCol(p, t, 1);
@@ -157,24 +161,34 @@ function drawOdometer(t, cx, cy, size, o = {}) {
 }
 
 // ---------------------------------------------------------------- ゴールゲージ
-// x0..x1 のバーが D/12742 で埋まる。label は左上、右上に %。
+// x0..x1 のバーが D/12742 で埋まる。左上にゴールの名前、右上に % か残り秒。
+// ticks: [{km, short, t}] 通過した天体の直径。通過後にバーの中へ名前を出す(通過前は目盛りだけ)。
 function drawGauge(t, y, o = {}) {
-  const { alpha = 1, label = 'ゴール', goal = '？？？ 1個ぶん', goalColor = C.ink, x0 = 70, x1 = 1010, pulse = 0, ticks = [] } = o;
+  const { alpha = 1, label = 'ゴール', goal = '？？？ 1個ぶん', goalColor = C.ink, goalPop = 1, x0 = 70, x1 = 1010, pulse = 0, ticks = [], remain = null } = o;
   if (alpha <= 0) return;
-  const p = clamp(V_GAL * t / EARTH_D), h = 26, w = x1 - x0;
+  const p = clamp(V_GAL * t / EARTH_D), h = 28, w = x1 - x0;
   ctx.save(); ctx.globalAlpha *= alpha;
   text(label, x0, y - 16, { size: 32, color: C.ink2, weight: 900 });
   const lw = measure(label, 32, F.jp, 900);
-  text(goal, x0 + lw + 16, y - 16, { size: 38, color: goalColor, weight: 900 });
-  text(Math.floor(p * 100) + '%', x1, y - 14, { size: 40, family: F.num, weight: 400, color: C.yellow, align: 'right' });
+  text(goal, x0 + lw + 16, y - 16, { size: 38 * goalPop, color: goalColor, weight: 900 });
+  if (remain === null) text(Math.floor(p * 100) + '%', x1, y - 14, { size: 40, family: F.num, weight: 400, color: C.yellow, align: 'right' });
+  else {                                          // 「あと 23 秒」
+    const wS = measure('秒', 28, F.jp, 900), wN = measure(String(remain), 44, F.num, 400);
+    text('秒', x1, y - 16, { size: 28, color: C.yellow, align: 'right', weight: 900 });
+    text(String(remain), x1 - wS - 6, y - 14, { size: 44, family: F.num, weight: 400, color: C.yellow, align: 'right' });
+    text('あと', x1 - wS - wN - 16, y - 16, { size: 28, color: C.yellow, align: 'right', weight: 900 });
+  }
   bar(x0, y, w, h, h / 2, 'rgba(255,255,255,0.10)');
   ctx.save(); rr(x0, y, w, h, h / 2); ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
-  for (const tk of ticks) {                       // 通過点の目盛り
-    const tx = x0 + w * clamp(tk.km / EARTH_D), passed = V_GAL * t >= tk.km;
-    lineSeg(tx, y - 5, tx, y + h + 5, passed ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)', 2);
-  }
   const fw = Math.max(h, w * p);
   bar(x0, y, fw, h, h / 2, grad(x0, 0, x0 + fw, 0, [[0, '#FF8A00'], [1, C.yellow]]), 1, 'rgba(255,200,40,0.8)');
+  for (const tk of ticks) {
+    const tx = x0 + w * clamp(tk.km / EARTH_D), passed = t >= tk.t;
+    if (!passed) { lineSeg(tx, y - 5, tx, y + h + 5, 'rgba(255,255,255,0.4)', 2); continue; }
+    const k = ease.back(seg(t, tk.t, 0.3));
+    lineSeg(tx, y - 6, tx, y + h + 6, '#fff', 3);
+    text(tk.short, tx - 8, y + h - 7, { size: 20 * (0.7 + 0.3 * k), color: '#3a2500', align: 'right', weight: 900 });
+  }
   const hx = x0 + fw - h / 2;
   circle(hx, y + h / 2, 9 + 5 * pulse, '#fff', 1, '#fff', 18 + 20 * pulse);
   ctx.restore();
@@ -320,7 +334,7 @@ function drawEarthDome(alpha = 1, dy = 0) {
   ctx.drawImage(c, 0, top);
   ctx.restore();
   const p = Globe.project(35.68, 139.77, lon0, lat0, r);
-  return { x: cx + p.x, y: cy + p.y };
+  return { x: cx + p.x, y: cy + p.y, cx, cy, r };
 }
 
 // ---------------------------------------------------------------- 銀河(粒子の渦)

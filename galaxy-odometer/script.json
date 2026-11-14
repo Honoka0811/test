@@ -1,10 +1,11 @@
 {
  "fps": 60,
  "lead_in": 0.0,
- "tail": 0.25,
+ "tail": 0.1,
+ "duration": 56.15,
  "voice": {
   "style": 13,
-  "speed": 1.22,
+  "speed": 1.2,
   "intonation": 1.15,
   "gap": 0.14,
   "pause_scale": 0.55
@@ -35,38 +36,47 @@
    ]
   },
   {
-   "id": "promise",
+   "id": "who",
+   "gap_before": 0.14,
    "chunks": [
     {
-     "show": "じっとしていても"
+     "show": "じっとしていても、"
     },
     {
-     "show": "止まらない。"
+     "show": "止まらない。",
+     "em": true,
+     "cue": "noStop"
     },
     {
      "show": "犯人は、",
      "cue": "suspects"
     },
     {
-     "show": "3つの動き。",
-     "say": "三つの動き。",
+     "show": "この中にいる。",
+     "em": true
+    }
+   ]
+  },
+  {
+   "id": "spin0",
+   "gap_before": 0.18,
+   "chunks": [
+    {
+     "show": "容疑者1、",
+     "say": "容疑者いち、"
+    },
+    {
+     "show": "自転。",
      "em": true
     }
    ]
   },
   {
    "id": "spin1",
+   "gap_before": 0.12,
    "chunks": [
     {
-     "show": "まず、",
-     "cue": "spin"
-    },
-    {
-     "show": "地球の自転。",
-     "em": true
-    },
-    {
-     "show": "東京の地面は"
+     "show": "東京の地面は、"
     },
     {
      "show": "時速1360キロ。",
@@ -82,6 +92,7 @@
   },
   {
    "id": "spin2",
+   "gap_before": 0.2,
    "chunks": [
     {
      "show": "でもこれで"
@@ -90,26 +101,33 @@
      "show": "進めたのは、"
     },
     {
-     "show": "たった4キロ。",
-     "say": "たった四キロ。",
+     "show": "たった5キロ。",
+     "say": "たった五キロ。",
      "em": true,
      "cue": "spinLane"
     }
    ]
   },
   {
-   "id": "orbit1",
+   "id": "orb0",
+   "gap_before": 0.2,
    "chunks": [
     {
-     "show": "次に、",
-     "cue": "orbit"
+     "show": "容疑者2、",
+     "say": "容疑者に、"
     },
     {
      "show": "公転。",
      "em": true
-    },
+    }
+   ]
+  },
+  {
+   "id": "orb1",
+   "gap_before": 0.12,
+   "chunks": [
     {
-     "show": "地球は太陽のまわりを"
+     "show": "太陽のまわりを、"
     },
     {
      "show": "秒速30キロ。",
@@ -120,53 +138,88 @@
    ]
   },
   {
-   "id": "orbit2",
+   "id": "orb2",
+   "gap_before": 0.14,
    "chunks": [
     {
-     "show": "東京から大阪まで"
+     "show": "東京から"
+    },
+    {
+     "show": "大阪まで、"
     },
     {
      "show": "13秒。",
      "say": "十三秒。",
      "em": true,
-     "cue": "osaka"
+     "cue": "osakaSec"
+    }
+   ]
+  },
+  {
+   "id": "orb3",
+   "gap_before": 0.14,
+   "chunks": [
+    {
+     "show": "なのに、"
     },
     {
-     "show": "それでも、",
-     "cue": "orbitV"
-    },
-    {
-     "show": "まだ足りない。",
+     "show": "やっと600キロ。",
+     "say": "やっと六百キロ。",
      "em": true,
      "cue": "orbitLane"
     }
    ]
   },
   {
-   "id": "galaxy1",
+   "id": "bridge",
+   "gap_before": 0.2,
    "chunks": [
     {
-     "show": "正体は、",
-     "cue": "galaxy"
+     "show": "2つ足しても、",
+     "say": "二つ足しても、"
     },
     {
-     "show": "銀河。",
+     "show": "まるで足りない。",
      "em": true,
-     "cue": "galaxyWord"
-    },
-    {
-     "show": "太陽系まるごと、"
-    },
-    {
-     "show": "天の川銀河を"
-    },
-    {
-     "show": "回っている。"
+     "cue": "bridgeNo"
     }
    ]
   },
   {
-   "id": "galaxy2",
+   "id": "rev1",
+   "gap_before": 0.2,
+   "chunks": [
+    {
+     "show": "真犯人は、"
+    },
+    {
+     "show": "もっと大きい。",
+     "em": true,
+     "cue": "bigger"
+    }
+   ]
+  },
+  {
+   "id": "rev2",
+   "gap_before": 0.5,
+   "chunks": [
+    {
+     "show": "天の川銀河だ。",
+     "em": true
+    },
+    {
+     "show": "太陽系ごと、",
+     "cue": "solar"
+    },
+    {
+     "show": "回っている。",
+     "cue": "turning"
+    }
+   ]
+  },
+  {
+   "id": "rev3",
+   "gap_before": 0.2,
    "chunks": [
     {
      "show": "秒速およそ"
@@ -189,17 +242,42 @@
    ]
   },
   {
-   "id": "parker",
+   "id": "tease",
+   "gap_before": 0.38,
    "chunks": [
     {
-     "show": "人類最速の",
-     "cue": "parker"
+     "show": "残るは、"
     },
     {
-     "show": "探査機より、"
+     "show": "ゴール。",
+     "em": true,
+     "cue": "teaseGoal"
     },
     {
-     "show": "あなたは速い。",
+     "show": "あるもの",
+     "cue": "teaseThing"
+    },
+    {
+     "show": "1個ぶん。",
+     "say": "一個ぶん。",
+     "em": true,
+     "cue": "teaseOne"
+    }
+   ]
+  },
+  {
+   "id": "parker",
+   "gap_before": 0.25,
+   "chunks": [
+    {
+     "show": "人類最速の"
+    },
+    {
+     "show": "探査機の記録より、",
+     "cue": "parkerRec"
+    },
+    {
+     "show": "速い。",
      "em": true,
      "cue": "parkerWin"
     }
@@ -207,14 +285,14 @@
   },
   {
    "id": "lap1",
+   "gap_before": 0.2,
    "chunks": [
     {
-     "show": "それでも",
-     "cue": "lap"
+     "show": "それでも"
     },
     {
-     "show": "銀河を1周するのに、",
-     "say": "銀河を一周するのに、"
+     "show": "1周するのに、",
+     "say": "一周するのに、"
     },
     {
      "show": "およそ2億年。",
@@ -226,79 +304,128 @@
   },
   {
    "id": "lap2",
+   "gap_before": 0.14,
    "chunks": [
     {
-     "show": "前にここを通ったとき、",
-     "cue": "dino"
+     "show": "前回ここを"
     },
     {
-     "show": "地球は"
+     "show": "通ったのは、"
     },
     {
-     "show": "恐竜が現れたばかり。",
+     "show": "恐竜が",
      "em": true,
      "cue": "dinoWord"
+    },
+    {
+     "show": "現れたころ。",
+     "em": true
     }
    ]
   },
   {
    "id": "lap3",
+   "gap_before": 0.25,
    "chunks": [
     {
-     "show": "人類の歴史は、",
-     "cue": "human"
+     "show": "人類の歴史"
     },
     {
-     "show": "まだ1周の",
-     "say": "まだ一周の"
+     "show": "ぜんぶで、"
+    },
+    {
+     "show": "1周の",
+     "say": "一周の"
     },
     {
      "show": "700分の1。",
-     "say": "七百分の一。",
+     "say": "ななひゃくぶんのいち。",
      "em": true,
      "cue": "humanFrac"
     }
    ]
   },
   {
-   "id": "goal",
+   "id": "year",
+   "gap_before": 0.28,
    "chunks": [
     {
-     "show": "そして、",
-     "cue": "goal"
+     "show": "1年で、",
+     "say": "一年で、"
     },
     {
-     "show": "まもなくゴール。"
-    },
-    {
-     "show": "この距離は、",
-     "cue": "riser"
+     "show": "約72億キロ。",
+     "say": "約七十二億キロ。",
+     "em": true,
+     "cue": "yearNum"
     }
-   ],
-   "at": 53.3
+   ]
+  },
+  {
+   "id": "never",
+   "gap_before": 0.32,
+   "chunks": [
+    {
+     "show": "あなたは"
+    },
+    {
+     "show": "生まれてから"
+    },
+    {
+     "show": "1度も、",
+     "say": "一度も、",
+     "em": true
+    },
+    {
+     "show": "同じ場所に",
+     "cue": "neverWord"
+    },
+    {
+     "show": "いたことがない。",
+     "em": true
+    }
+   ]
+  },
+  {
+   "id": "goal",
+   "gap_before": 0.52,
+   "chunks": [
+    {
+     "show": "見始めた場所は、"
+    },
+    {
+     "show": "もう——",
+     "say": "もう、",
+     "cue": "already"
+    }
+   ]
   },
   {
    "id": "payoff",
+   "gap_before": 0.73,
    "chunks": [
     {
-     "show": "地球、",
-     "em": true,
-     "cue": "earth"
+     "show": "ほぼ地球",
+     "em": true
     },
     {
-     "show": "1個ぶん。",
-     "say": "一個ぶん。",
-     "em": true
+     "show": "1個ぶん、",
+     "say": "一個ぶん、",
+     "em": true,
+     "cue": "payoffOne"
+    },
+    {
+     "show": "うしろ。",
+     "cue": "behind"
     }
-   ],
-   "at": 56.13
+   ]
   },
   {
    "id": "loop",
+   "gap_before": 0.14,
    "chunks": [
     {
-     "show": "もう一度見ても、",
-     "cue": "loop"
+     "show": "何度見ても、"
     }
    ]
   }

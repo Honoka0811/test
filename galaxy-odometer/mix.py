@@ -91,7 +91,7 @@ def main():
     speech = np.clip(env / 0.05, 0, 1)
     k = SR // 12
     speech = np.convolve(speech, np.ones(k) / k, mode='same')
-    BGM_OPEN, BGM_SPEECH = 0.58, 0.175            # 無音時 / 発話時の BGM ゲイン
+    BGM_OPEN, BGM_SPEECH = 0.58, 0.145            # 無音時 / 発話時の BGM ゲイン
     music = music * (BGM_OPEN - (BGM_OPEN - BGM_SPEECH) * speech)[:, None]
 
     v = voice / (np.max(np.abs(voice)) + 1e-9) * 0.9

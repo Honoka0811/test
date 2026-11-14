@@ -2,14 +2,14 @@
 """BGM を numpy だけで合成する(外部音源・生成AI音楽なし。完全オリジナルで権利表記不要)。
 
 構成は build/plan.json のシーン時刻に合わせる:
-  0 秒〜      : 鼓動するベースとキックで即スタート(イントロなし)
-  公転〜      : アルペジオとハットが加わる
-  銀河の判明  : ドロップ。パッドが広がりフルの厚み
-  銀河 1 周   : ドラムを抜いて浮遊感(深い時間の話)
-  ゴール前    : 上昇音とスネアロールで溜める
-  ゴール      : 長調の和音で解決 → 最後の 1 小節で冒頭へ戻る(ループ再生で切れ目なくつながる)
+  0 秒〜           : 鼓動するベースとキックで即スタート(イントロなし)
+  公転〜           : アルペジオとハットが加わる
+  「真犯人は…」    : ドラムを抜いて溜める
+  銀河の判明       : ドロップ。パッドが広がりフルの厚み
+  銀河 1 周〜      : ドラムを抜いて浮遊感(深い時間の話)。「同じ場所に…」でさらに静かに
+  「見始めた場所」 : スネアロールで溜め、最後のフレームで切る → ループ再生で 0 秒のインパクトにつながる
 
-1 小節 = ゴール時刻(56.13 秒)/ 28。ゴールの瞬間が必ず小節の頭に来る。
+1 小節 = ゴール時刻(56.13 秒)/ 28。動画はちょうど 28 小節で終わり、次の再生の頭が 1 小節目になる。
 使い方: python3 bgm.py  → build/bgm.wav
 """
 import json, os, wave
@@ -91,11 +91,12 @@ def generate(plan):
     BAR = goal / 28.0
     BEAT = BAR / 4
     n = int(round(total * SR))
-    nb = int(np.ceil(total / BAR))
+    nb = min(28, int(np.ceil(total / BAR)))        # 28 小節でちょうど終わる(29 小節目の頭は鳴らさない)
     q = lambda t: round(t / BEAT) * BEAT          # 拍に吸着
     t_orbit, t_gal, t_lap = q(S.get('orbit') or 13), q(S.get('galaxy') or 20), q(S.get('lap') or 30)
-    t_build = goal - 4 * BAR                       # ゴール前 4 小節は溜め
-    t_arp = q(S.get('promise') or 3)
+    t_zoom, t_never = q(S.get('zoom') or t_gal - 2), q(S.get('never') or 48)
+    t_build = q(S.get('goal') or goal - 4 * BAR)   # 「見始めた場所は…」からゴールまでは溜め
+    t_arp = q(S.get('who') or 3)
     # Dm → Bb → F → C の 4 小節循環(ルートは MIDI)。ゴールで D メジャーに解決。
     PROG = [(38, [62, 65, 69, 72]), (34, [58, 62, 65, 70]), (41, [60, 65, 69, 72]), (36, [60, 64, 67, 72])]
     drums = np.zeros((n, 2), np.float32); bass = np.zeros((n, 2), np.float32)
@@ -111,7 +112,8 @@ def generate(plan):
         if final:
             root, chord = 38, [62, 66, 69, 74]     # D メジャー
         sec_gal = t_gal <= t0 < t_lap
-        sec_lap = t_lap <= t0 < t_build
+        sec_lap = (t_lap <= t0 < t_build) or (t_zoom <= t0 < t_gal)   # ドラムを抜く区間
+        sec_quiet = t_never <= t0 < t_build                          # いちばん静かな区間
         sec_build = t_build <= t0 < goal - 1e-6
         full = sec_gal or final
         # --- ドラム
@@ -129,11 +131,11 @@ def generate(plan):
                 if full:
                     add(drums, tb + BEAT / 4, HAT, 0.12, -0.3); add(drums, tb + 3 * BEAT / 4, HAT, 0.12, 0.3)
         if sec_build:                              # スネアロール(だんだん細かく)
-            p = (t0 - t_build) / (4 * BAR)
+            p = (t0 - t_build) / max(BAR, goal - t_build)
             div = 4 if p < 0.25 else 8 if p < 0.5 else 16 if p < 0.75 else 32
             for j in range(div):
                 tt = t0 + j * BAR / div
-                add(drums, tt, SN, 0.10 + 0.34 * ((tt - t_build) / (4 * BAR)) ** 1.5)
+                add(drums, tt, SN, 0.10 + 0.34 * min(1.0, (tt - t_build) / max(BAR, goal - t_build)) ** 1.5)
         # --- ベース(8 分の刻み。キックの頭は避けて軽くうねらせる)
         if not final:
             for k in range(8):
@@ -163,7 +165,7 @@ def generate(plan):
                     s0 = int(round(t0 * SR)); e0 = min(n, s0 + ln)
                     pad[s0:e0, ch] += x[:e0 - s0] * (0.20 if i < 3 else 0.12) * (1.25 if final else pad_g)
         # --- アルペジオ(公転から。16 分。銀河 1 周の間は 8 分でまばらに高く)
-        if t0 >= t_arp - 1e-6 and not final:
+        if t0 >= t_arp - 1e-6 and not final and not sec_quiet:
             early = t0 < t_orbit - 1e-6
             steps = 8 if (sec_lap or early) else 16
             pat = [0, 1, 2, 3, 2, 1, 2, 3, 0, 2, 1, 3, 2, 3, 1, 2]
@@ -190,6 +192,7 @@ def generate(plan):
             duck[s:s + ln] = np.minimum(duck[s:s + ln], 0.45 + 0.55 * np.linspace(0, 1, ln) ** 0.7)
     lap_mask = np.ones(n, np.float32)
     lap_mask[int(t_lap * SR):int(t_build * SR)] = 0   # ドラムのない区間はダッキングしない
+    lap_mask[int(t_zoom * SR):int(t_gal * SR)] = 0
     duck = 1 - (1 - duck) * lap_mask
     bass = lowpass(bass, 1100) * duck[:, None]
     pad = lowpass(pad, 3200) * (0.6 + 0.4 * duck[:, None])
@@ -199,7 +202,8 @@ def generate(plan):
     mix = np.fft.irfft(spec * (1 / np.sqrt(1 + (45 / np.maximum(f, 1)) ** 8))[:, None], n, axis=0).astype(np.float32)
     # 全体の抑揚: 冒頭は 85%、銀河で 100%、銀河 1 周で 80%、ゴールへ向けて 100%
     tt = np.arange(n) / SR
-    dyn = np.interp(tt, [0, t_gal - 0.05, t_gal, t_lap, t_lap + 1, t_build, goal, total], [0.85, 0.88, 1.0, 1.0, 0.8, 0.85, 1.0, 1.0]).astype(np.float32)
+    dyn = np.interp(tt, [0, t_zoom, t_gal - 0.05, t_gal, t_lap, t_lap + 1, t_never, t_never + 0.5, t_build, t_build + 0.5, total],
+                    [0.85, 0.85, 0.6, 1.0, 1.0, 0.8, 0.8, 0.55, 0.6, 0.9, 1.0]).astype(np.float32)
     mix *= dyn[:, None]
     mix[:int(0.004 * SR)] *= np.linspace(0, 1, int(0.004 * SR))[:, None]
     mix[-int(0.006 * SR):] *= np.linspace(1, 0, int(0.006 * SR))[:, None]   # クリック防止の極短フェードのみ(曲はフェードアウトしない)

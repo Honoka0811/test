@@ -6,7 +6,6 @@ const ctx = cv.getContext('2d');
 const F = {
   jp: '"Noto Sans JP"',      // テロップ・ラベル
   num: '"Anton"',            // メーター・大きい数字
-  en: '"Oswald"',            // 単位・小さい英数字
 };
 const C = {
   bg0: '#03061a', bg1: '#0a1338', bg2: '#101c52',

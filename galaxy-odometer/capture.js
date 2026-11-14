@@ -74,7 +74,7 @@ function arg(name, def) {
     const page = await open();
     const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-i', '-',
       '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p',
-      '-c:v', 'libx264', '-crf', arg('crf', '15'), '-preset', arg('preset', 'slow'), '-tune', 'animation',
+      '-c:v', 'libx264', '-crf', arg('crf', '18'), '-preset', arg('preset', 'slow'), '-tune', 'animation',
       '-g', String(FPS * 2), '-bf', '2',
       '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
       '-video_track_timescale', String(FPS * 256), part]);

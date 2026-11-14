@@ -173,6 +173,10 @@ def main():
             pieces.append((start, resample(x, sr)))
         t = start + total
     duration = round(t + float(script.get('tail', 0.6)), 3)
+    if 'duration' in script:                   # 尺を固定する(例: 56.15 秒 = メーターが地球の直径に届くフレームまで)
+        if t > float(script['duration']) - 0.03:
+            print(f"  [!] ナレーションが尺 {script['duration']}s を超えています(終わり {t:.2f}s)。speed か gap を詰めてください")
+        duration = float(script['duration'])
     print(f'total duration: {duration:.2f}s')
     if check:
         return
