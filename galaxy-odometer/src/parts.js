@@ -87,9 +87,9 @@ function drawOdometer(t, cx, cy, size, o = {}) {
   const m = odoMetrics(), cw = m.cw * size, asc = m.asc * size, cmw = m.comma * size;
   // 桁数(増える瞬間に 0.22 秒かけて幅を広げる)
   let nd = 1;
-  for (let p = 1; p < 5; p++) nd += ease.out(seg(t, DIGIT_T[p], 0.22));
+  for (let p = 1; p < 5; p++) nd += ease.out(seg(t, DIGIT_T[p] - 0.22, 0.22));
   const ndInt = Math.ceil(nd - 1e-6);
-  const commaK = ease.out(seg(t, DIGIT_T[3], 0.22));
+  const commaK = ease.out(seg(t, DIGIT_T[3] - 0.22, 0.22));
   const unitSize = size * 0.40, unitGap = size * 0.10, unitW = unit ? measure('km', unitSize, F.num, 400) + unitGap : 0;
   const total = nd * cw + commaK * cmw + unitW;
   const right = cx + total / 2 - unitW;          // 一の位の右端
@@ -112,12 +112,13 @@ function drawOdometer(t, cx, cy, size, o = {}) {
   const fill = grad(0, cy - asc / 2, 0, cy + asc / 2, [[0, color0], [1, color1]]);
   const by = cy + asc / 2;
   const drawCol = (p, tt, a, soft = false) => {
-    const pw10 = Math.pow(10, p), v = V_GAL * tt / pw10;
+    const pw10 = Math.pow(10, p);
+    let v = V_GAL * tt / pw10, k = 1;
+    if (p >= 2) { k = Math.min(1, ROLL_SEC[p] / (pw10 / V_GAL)); v = Math.max(0, v - k / 2); }   // 回転の中心 = 実際に切り替わる瞬間
     const d = Math.floor(v) % 10, f = v - Math.floor(v);
-    let off = f;                                  // 一・十の位は連続回転
-    if (p >= 2) { const period = pw10 / V_GAL, k = Math.min(1, ROLL_SEC[p] / period); off = ease.inOut(clamp((f - (1 - k)) / k)); }
+    const off = p >= 2 ? ease.inOut(clamp((f - (1 - k)) / k)) : f;                // 一・十の位は連続回転
     const x = right - (p + 0.5) * cw - (p >= 3 ? commaK * cmw : 0);
-    const appear = p === 0 ? 1 : ease.out(seg(t, DIGIT_T[p], 0.22));
+    const appear = p === 0 ? 1 : ease.out(seg(t, DIGIT_T[p] - 0.22, 0.22));
     if (appear <= 0) return;
     ctx.save();
     ctx.globalAlpha *= a * appear;
@@ -187,7 +188,7 @@ function drawGauge(t, y, o = {}) {
     if (!passed) { lineSeg(tx, y - 5, tx, y + h + 5, 'rgba(255,255,255,0.4)', 2); continue; }
     const k = ease.back(seg(t, tk.t, 0.3));
     lineSeg(tx, y - 6, tx, y + h + 6, '#fff', 3);
-    text(tk.short, tx - 8, y + h - 7, { size: 20 * (0.7 + 0.3 * k), color: '#3a2500', align: 'right', weight: 900 });
+    text(tk.short, tx - 12, y + h - 6, { size: 22 * (0.7 + 0.3 * k), color: '#3a2500', align: 'right', weight: 900 });
   }
   const hx = x0 + fw - h / 2;
   circle(hx, y + h / 2, 9 + 5 * pulse, '#fff', 1, '#fff', 18 + 20 * pulse);
@@ -222,13 +223,17 @@ function drawTelopChunk(str, em, age, o = {}) {
   ctx.restore();
 }
 function drawTelop(t, TL) {
-  for (const line of TL.lines) {
+  const on = (c) => c.cue === 'hit500' ? Math.max(c.t0 - 0.04, 500 / V_GAL) : c.t0 - 0.04;
+  for (let li = 0; li < TL.lines.length; li++) {
+    const line = TL.lines[li], next = TL.lines[li + 1];
     if (t < line.start - 0.05 || t > line.end + 0.5) continue;
     const ch = line.chunks;
     for (let i = 0; i < ch.length; i++) {
-      const t0 = ch[i].t0 - 0.04, t1 = i + 1 < ch.length ? ch[i + 1].t0 - 0.04 : line.end + 0.28;
+      const last = i + 1 === ch.length;
+      const cut = last && next ? on(next.chunks[0]) : Infinity;        // 次の行が始まったらすぐ譲る
+      const t0 = on(ch[i]), t1 = last ? Math.min(line.end + 0.28, cut) : on(ch[i + 1]);
       if (t >= t0 && t < t1) {
-        const out = i + 1 < ch.length ? 1 : 1 - seg(t, t1 - 0.12, 0.12);
+        const out = !last || cut <= line.end + 0.28 ? 1 : 1 - seg(t, t1 - 0.12, 0.12);
         drawTelopChunk(ch[i].show, !!ch[i].em, t - t0, { alpha: out });
         return;
       }
@@ -319,7 +324,7 @@ function drawGlobe(cx, cy, r, lon0, lat0, alpha = 1, glow = 1) {
 }
 
 // 画面下からのぞく大きな地球。cy は球の中心(画面外)。日本が上端近くに来る向きにしてある。
-const DOME = { r: 720, cx: 540, cy: 2170, lon0: 137, lat0: -22 };
+const DOME = { r: 720, cx: 540, cy: 2050, lon0: 137, lat0: -22 };
 function drawEarthDome(alpha = 1, dy = 0) {
   if (alpha <= 0) return null;
   const { r, cx, lon0, lat0 } = DOME, cy = DOME.cy + dy;

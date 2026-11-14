@@ -25,13 +25,10 @@
      "show": "あなたはもう"
     },
     {
-     "show": "500キロ",
-     "say": "五百キロ",
+     "show": "500キロ動いた。",
+     "say": "五百キロ動いた。",
      "em": true,
      "cue": "hit500"
-    },
-    {
-     "show": "動いた。"
     }
    ]
   },
@@ -62,8 +59,7 @@
    "gap_before": 0.18,
    "chunks": [
     {
-     "show": "容疑者1、",
-     "say": "容疑者いち、"
+     "show": "容疑者1、"
     },
     {
      "show": "自転。",
@@ -79,14 +75,15 @@
      "show": "東京の地面は、"
     },
     {
-     "show": "時速1360キロ。",
+     "show": "時速1,360キロ。",
      "say": "時速千三百六十キロ。",
      "em": true,
      "cue": "spinSpeed"
     },
     {
      "show": "音より速い。",
-     "cue": "sound"
+     "cue": "sound",
+     "em": true
     }
    ]
   },
@@ -113,8 +110,7 @@
    "gap_before": 0.2,
    "chunks": [
     {
-     "show": "容疑者2、",
-     "say": "容疑者に、"
+     "show": "容疑者2、"
     },
     {
      "show": "公転。",
@@ -273,7 +269,7 @@
      "show": "人類最速の"
     },
     {
-     "show": "探査機の記録より、",
+     "show": "探査機より、",
      "cue": "parkerRec"
     },
     {
@@ -372,7 +368,7 @@
      "show": "生まれてから"
     },
     {
-     "show": "1度も、",
+     "show": "一度も、",
      "say": "一度も、",
      "em": true
     },
@@ -384,7 +380,8 @@
      "show": "いたことがない。",
      "em": true
     }
-   ]
+   ],
+   "speed": 1.08
   },
   {
    "id": "goal",
@@ -398,31 +395,29 @@
      "say": "もう、",
      "cue": "already"
     }
-   ]
+   ],
+   "kana": "ミハジ'メタ/バショワ'、モ'オ"
   },
   {
    "id": "payoff",
-   "gap_before": 0.73,
+   "gap_before": 0.45,
    "chunks": [
     {
-     "show": "ほぼ地球",
-     "em": true
-    },
-    {
-     "show": "1個ぶん、",
-     "say": "一個ぶん、",
+     "show": "ほぼ地球1個ぶん、",
+     "say": "ほぼ地球一個ぶん、",
      "em": true,
      "cue": "payoffOne"
     },
     {
      "show": "うしろ。",
+     "em": true,
      "cue": "behind"
     }
    ]
   },
   {
    "id": "loop",
-   "gap_before": 0.14,
+   "gap_before": 0.42,
    "chunks": [
     {
      "show": "何度見ても、"

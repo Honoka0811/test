@@ -40,16 +40,17 @@
       goalT: GOAL_T, end: TL.duration,
     };
     const ms = MILESTONES.map(m => ({ ...m, t: m.km / V_GAL }));
+    for (const m of ms) m.quiet = Math.abs(m.t - S.payoff) < 0.6;   // 「ほぼ地球…」の瞬間に重なる通過点は音もログも出さない
 
     // 効果音: {t, name, gain}。映像のキューと同じ時刻を使う。
     const sfx = [];
     const add = (t, name, gain = 1, extra = {}) => { if (t != null && isFinite(t) && t < TL.duration) sfx.push({ t: Math.max(0, t), name, gain, ...extra }); };
     add(0, 'impact', 0.75);
     add(S.hit500, 'impact', 1.0);
-    for (const m of ms) add(m.t, 'tick', m.big ? 0.9 : m.planet ? 0.8 : 0.55);
+    for (const m of ms) if (!m.quiet) add(m.t, 'tick', m.big ? 0.9 : m.planet ? 0.8 : 0.55);
     add(S.who - 0.05, 'whoosh', 0.6);
     add(S.noStop, 'hit', 0.5);
-    [0, 0.2, 0.4].forEach((d, i) => add(S.suspects + d, 'pop', 0.6, { f: 520 + i * 110 }));
+    [0, 0.2, 0.4].forEach((d, i) => add(S.noStop + 0.1 + d, 'pop', 0.6, { f: 520 + i * 110 }));
     for (const k of ['spin', 'spinV', 'orbit', 'orbitV', 'galaxyV', 'tease', 'parker', 'lap', 'dino', 'human', 'year', 'never', 'goal']) add(S[k] - 0.08, 'whoosh', 0.5);
     add(S.spinSpeed, 'hit', 0.7); add(S.sound, 'pop', 0.6);
     add(S.spinLane + 0.5, 'buzz', 0.7);
@@ -57,6 +58,7 @@
     add(S.orbitLane + 0.5, 'buzz', 0.7);
     add(S.bridgeNo, 'buzz', 0.55);
     add(S.zoom, 'subdrop', 0.7);
+    add(S.bigger, 'pop', 0.5);
     add(S.galaxy - 1.3, 'riser', 0.7, { dur: 1.3 });
     add(S.galaxy, 'impact', 1.0);
     add(S.solar, 'pop', 0.5);

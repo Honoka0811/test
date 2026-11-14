@@ -86,7 +86,8 @@ def synth_line(synth, ojt, line, voice):
     chunks = line['chunks']
     says = [c.get('say', c['show']) for c in chunks]
     text = ''.join(says)
-    q = synth.create_audio_query(text, style)
+    # "kana" があればアクセントつきの読みをそのまま使う(辞書のアクセントが不自然な行だけ指定する)
+    q = synth.create_audio_query_from_kana(line['kana'], style) if 'kana' in line else synth.create_audio_query(text, style)
     q.speed_scale = float(line.get('speed', voice.get('speed', 1.0)))
     q.pitch_scale = float(line.get('pitch', voice.get('pitch', 0.0)))
     q.intonation_scale = float(line.get('intonation', voice.get('intonation', 1.0)))
