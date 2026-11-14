@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>男性が多く払うべき理由</title>
+<style>html,body{margin:0;background:#111;}canvas{display:block;max-height:100vh;margin:0 auto;}</style></head>
+<body><canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const FONT = '"IPAGothic","IPAPGothic",sans-serif';
+const C = { bg1: '#141633', bg2: '#2a1d4a', gold: '#FFC94A', ink: '#FFFFFF', sub: '#C9CBE8',
+            man: '#4C9BF5', woman: '#FF6F91', card: 'rgba(255,255,255,0.08)', line: 'rgba(255,255,255,0.18)' };
+// capture.js が output/timings.json を流し込む。ブラウザで直接開いた時の既定値
+let T = { total: 54.97, scenes: [
+  { id: 'title', start: 0, dur: 6.72, sub: 'デート代や食事代、男性が多く払うべき？よく挙げられる理由を4つ紹介します。' },
+  { id: 'wage', start: 6.72, dur: 8.76, sub: '理由①　収入の差。日本の女性の平均賃金は男性の約76%。月に約9万円の差があります。' },
+  { id: 'beauty', start: 15.48, dur: 7.66, sub: '理由②　身だしなみのコスト。' },
+  { id: 'life', start: 23.14, dur: 9.19, sub: '理由③　ライフイベントの影響。' },
+  { id: 'safety', start: 32.33, dur: 8.12, sub: '理由④　安全のためのお金。' },
+  { id: 'wrap', start: 40.45, dur: 9.83, sub: 'とはいえ、正解はカップルそれぞれ。' },
+  { id: 'end', start: 50.29, dur: 4.68, sub: 'あなたはどう思いますか？' } ] };
+window.setTimings = (j) => { T = j; window.DURATION = j.total; };
+window.FPS = FPS; window.DURATION = T.total;
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = (x) => { x = clamp(x); return 1 - Math.pow(1 - x, 3); };
+const back = (x) => { x = clamp(x); const c = 1.7; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+function font(px, bold = true) { ctx.font = `${bold ? 'bold ' : ''}${px}px ${FONT}`; }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(s, x, y, px, color, align = 'center', bold = true) {
+  font(px, bold); ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y);
+}
+function strokeText(s, x, y, px, color, outline, lw) {
+  font(px); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round'; ctx.lineWidth = lw; ctx.strokeStyle = outline; ctx.strokeText(s, x, y);
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function wrap(s, maxW, px) {
+  font(px); const lines = []; let cur = '';
+  const noStart = '、。，．！？」）%'; // 行頭禁則
+  for (const ch of s) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !noStart.includes(ch)) { lines.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) lines.push(cur); return lines;
+}
+// 要素の登場アニメ(シーン内時刻 lt が d 秒を過ぎたら 0→1)
+const appear = (lt, d, len = 0.45) => ease((lt - d) / len);
+
+function background(t) {
+  const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
+  g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ゆっくり漂う光の玉
+  for (let i = 0; i < 5; i++) {
+    const x = W * (0.15 + 0.7 * ((i * 0.37 + t * 0.012 * (i % 2 ? 1 : -1)) % 1 + 1) % 1);
+    const y = H * (0.12 + 0.18 * i) + 40 * Math.sin(t * 0.4 + i);
+    const r = 220 + 60 * (i % 3);
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, i % 2 ? 'rgba(255,111,145,0.10)' : 'rgba(76,155,245,0.10)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+}
+
+function header() {
+  font(38); const label = 'デート代 論争'; const w = ctx.measureText(label).width + 70;
+  rr((W - w) / 2, 150, w, 72, 36); ctx.fillStyle = 'rgba(255,201,74,0.16)'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = C.gold; ctx.stroke();
+  text(label, W / 2, 187, 38, C.gold);
+}
+
+function reasonHead(n, title, lt) {
+  const a = back((lt - 0.05) / 0.5);
+  ctx.save(); ctx.translate(W / 2, 360); ctx.scale(a, a);
+  ctx.beginPath(); ctx.arc(0, 0, 92, 0, Math.PI * 2); ctx.fillStyle = C.gold; ctx.fill();
+  text('理由', 0, -34, 34, '#2a1d4a'); text(String(n), 0, 22, 84, '#2a1d4a');
+  ctx.restore();
+  const b = appear(lt, 0.25);
+  ctx.globalAlpha = b; strokeText(title, W / 2, 540 + 30 * (1 - b), 92, C.ink, 'rgba(0,0,0,0.35)', 12); ctx.globalAlpha = 1;
+}
+
+function source(s, lt, d = 1.0, y0 = 1255) {
+  ctx.globalAlpha = appear(lt, d) * 0.85;
+  const ls = wrap(s, 900, 26); ls.forEach((l, i) => text(l, W / 2, y0 + i * 36, 26, C.sub, 'center', false));
+  ctx.globalAlpha = 1;
+}
+
+// ---------- 各シーン ----------
+const SCENE = {
+  title(lt) {
+    const lines = [['男性が', C.ink], ['女性より', C.ink], ['多く払うべき', C.gold], ['理由', C.ink]];
+    lines.forEach(([s, col], i) => {
+      const a = back((lt - 0.15 - i * 0.22) / 0.5);
+      ctx.save(); ctx.translate(W / 2, 470 + i * 175); ctx.scale(a, a);
+      strokeText(s, 0, 0, i === 2 ? 132 : 120, col, 'rgba(0,0,0,0.4)', 16); ctx.restore();
+    });
+    const a = back((lt - 1.3) / 0.5);
+    ctx.save(); ctx.translate(850, 1150); ctx.rotate(-0.12); ctx.scale(a, a);
+    ctx.beginPath(); ctx.arc(0, 0, 105, 0, Math.PI * 2); ctx.fillStyle = C.woman; ctx.fill();
+    text('4つ', 0, -8, 70, '#fff'); text('紹介', 0, 52, 32, '#fff'); ctx.restore();
+    // 男女アイコン(棒人間風の円)
+    const pa = appear(lt, 0.9);
+    ctx.globalAlpha = pa;
+    person(200, 1180, C.man, 0.85); person(330, 1190, C.woman, 0.75);
+    ctx.globalAlpha = 1;
+  },
+  wage(lt) {
+    reasonHead(1, '収入の差', lt);
+    text('一般労働者の平均賃金(月額)', W / 2, 700, 40, C.sub, 'center', false);
+    const rows = [['男性', 36.3, C.man], ['女性', 27.5, C.woman]];
+    const maxW = 640, x0 = 250;
+    rows.forEach(([lab, v, col], i) => {
+      const y = 800 + i * 150, p = ease((lt - 0.8 - i * 0.3) / 1.0);
+      text(lab, 200, y, 52, col, 'right');
+      rr(x0, y - 45, maxW, 90, 20); ctx.fillStyle = C.card; ctx.fill();
+      rr(x0, y - 45, Math.max(1, maxW * v / 36.3 * p), 90, 20); ctx.fillStyle = col; ctx.fill();
+      ctx.globalAlpha = clamp((lt - 1.4 - i * 0.3) / 0.3);
+      text((v * p).toFixed(1) + '万円', x0 + maxW * v / 36.3 * p - 24, y + 2, 46, '#fff', 'right');
+      ctx.globalAlpha = 1;
+    });
+    const a = back((lt - 2.8) / 0.5);
+    ctx.save(); ctx.translate(W / 2, 1120); ctx.scale(a, a);
+    rr(-400, -70, 800, 140, 30); ctx.fillStyle = 'rgba(255,201,74,0.14)'; ctx.fill();
+    ctx.lineWidth = 3; ctx.strokeStyle = C.gold; ctx.stroke();
+    text('女性は男性の 約76%', 0, -18, 58, C.gold); text('差は 月 約9万円', 0, 42, 40, C.ink, 'center', false);
+    ctx.restore();
+    source('出典: 厚生労働省「令和6年 賃金構造基本統計調査」(一般労働者・所定内給与)', lt, 1.5);
+  },
+  beauty(lt) {
+    reasonHead(2, '身だしなみコスト', lt);
+    const items = [['化粧品', 'スキンケア・メイク'], ['美容院', 'カット・カラー'], ['ネイル・脱毛', '定期的なケア'], ['服・バッグ', 'トレンドの変化']];
+    items.forEach(([h, s], i) => {
+      const a = back((lt - 0.9 - i * 0.45) / 0.45);
+      const cx = 290 + (i % 2) * 500, cy = 760 + Math.floor(i / 2) * 250;
+      ctx.save(); ctx.translate(cx, cy); ctx.scale(a, a);
+      rr(-230, -110, 460, 220, 28); ctx.fillStyle = C.card; ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = C.line; ctx.stroke();
+      rr(-230, -110, 14, 220, 7); ctx.fillStyle = C.woman; ctx.fill();
+      text(h, 0, -22, 54, C.ink); text(s, 0, 44, 32, C.sub, 'center', false);
+      ctx.restore();
+    });
+    const a = appear(lt, 3.0);
+    ctx.globalAlpha = a; text('見た目にかかるお金が多くなりがち', W / 2, 1200 + 20 * (1 - a), 46, C.gold); ctx.globalAlpha = 1;
+  },
+  life(lt) {
+    reasonHead(3, 'ライフイベント', lt);
+    text('女性の正規雇用率(年齢別・概数)', W / 2, 690, 38, C.sub, 'center', false);
+    const ages = ['20代前半', '20代後半', '30代前半', '30代後半', '40代前半', '40代後半', '50代前半', '50代後半'];
+    const vals = [48, 59, 50, 43, 40, 37, 35, 31];
+    const x0 = 150, x1 = 960, y0 = 1080, y1 = 800, vmax = 65;
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2;
+    [20, 40, 60].forEach(v => { const y = y0 - (y0 - y1) * v / vmax; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      text(v + '%', x0 - 14, y, 26, C.sub, 'right', false); });
+    const pts = vals.map((v, i) => [x0 + 40 + (x1 - x0 - 80) * i / (vals.length - 1), y0 - (y0 - y1) * v / vmax]);
+    const p = ease((lt - 0.8) / 2.2) * (pts.length - 1);
+    ctx.strokeStyle = C.woman; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
+    for (let i = 0; i <= Math.floor(p); i++) i ? ctx.lineTo(...pts[i]) : ctx.moveTo(...pts[i]);
+    const k = Math.floor(p), f = p - k;
+    if (k < pts.length - 1) ctx.lineTo(pts[k][0] + (pts[k + 1][0] - pts[k][0]) * f, pts[k][1] + (pts[k + 1][1] - pts[k][1]) * f);
+    ctx.stroke();
+    pts.forEach(([x, y], i) => {
+      if (i > p + 0.01) return;
+      ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.save(); ctx.translate(x + 10, y0 + 30); ctx.rotate(-0.6); text(ages[i], 0, 0, 24, C.sub, 'right', false); ctx.restore();
+    });
+    const a = back((lt - 1.4) / 0.4);
+    if (a > 0) { ctx.save(); ctx.translate(pts[1][0] + 40, pts[1][1] - 55); ctx.scale(a, a);
+      rr(-10, -36, 290, 72, 20); ctx.fillStyle = C.gold; ctx.fill(); text('20代後半がピーク', 135, 0, 32, '#2a1d4a'); ctx.restore(); }
+    const b = appear(lt, 3.2);
+    ctx.globalAlpha = b; text('出産・育児をきっかけに下がり続ける', W / 2, 1225, 42, C.gold); ctx.globalAlpha = 1;
+    source('出典: 総務省「労働力調査」をもとにした内閣府「男女共同参画白書」の L字カーブ(概数)', lt, 2.0, 1285);
+  },
+  safety(lt) {
+    reasonHead(4, '安全のためのお金', lt);
+    const items = [['深夜のタクシー代', '夜道をひとりで歩かないために'], ['オートロック・2階以上の部屋', '家賃が上がりやすい'], ['防犯グッズ', 'ブザー・カメラ・補助錠など']];
+    items.forEach(([h, s], i) => {
+      const a = appear(lt, 0.9 + i * 0.5, 0.5);
+      const y = 770 + i * 175;
+      ctx.globalAlpha = a; ctx.save(); ctx.translate(-80 * (1 - a), 0);
+      rr(110, y - 75, 860, 150, 26); ctx.fillStyle = C.card; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = C.line; ctx.stroke();
+      ctx.beginPath(); ctx.arc(190, y, 40, 0, Math.PI * 2); ctx.fillStyle = C.gold; ctx.fill();
+      text(String(i + 1), 190, y + 2, 44, '#2a1d4a');
+      text(h, 260, y - 24, 48, C.ink, 'left'); text(s, 260, y + 34, 30, C.sub, 'left', false);
+      ctx.restore(); ctx.globalAlpha = 1;
+    });
+  },
+  wrap(lt) {
+    const a = appear(lt, 0.1);
+    ctx.globalAlpha = a; strokeText('とはいえ…', W / 2, 360, 80, C.ink, 'rgba(0,0,0,0.35)', 12); ctx.globalAlpha = 1;
+    text('正解はカップルそれぞれ', W / 2, 490, 54, C.sub);
+    ctx.globalAlpha = 1;
+    const chips = [['割り勘', C.man], ['多めに払う', C.gold], ['交互に払う', C.woman]];
+    chips.forEach(([s, col], i) => {
+      const b = back((lt - 1.2 - i * 0.35) / 0.45);
+      ctx.save(); ctx.translate(W / 2, 660 + i * 150); ctx.scale(b, b);
+      rr(-260, -58, 520, 116, 58); ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fill();
+      ctx.lineWidth = 5; ctx.strokeStyle = col; ctx.stroke(); text(s, 0, 2, 52, col); ctx.restore();
+    });
+    const c = back((lt - 4.6) / 0.5);
+    ctx.save(); ctx.translate(W / 2, 1150); ctx.scale(c, c);
+    rr(-450, -95, 900, 190, 36); ctx.fillStyle = C.gold; ctx.fill();
+    text('大切なのは', 0, -40, 42, '#2a1d4a'); text('二人の納得感', 0, 30, 76, '#2a1d4a'); ctx.restore();
+  },
+  end(lt) {
+    const a = back((lt - 0.1) / 0.5);
+    ctx.save(); ctx.translate(W / 2, 640); ctx.scale(a, a);
+    strokeText('あなたは', 0, -90, 110, C.ink, 'rgba(0,0,0,0.4)', 14);
+    strokeText('どう思う？', 0, 70, 130, C.gold, 'rgba(0,0,0,0.4)', 16); ctx.restore();
+    const b = appear(lt, 0.9);
+    ctx.globalAlpha = b;
+    rr(190, 900, 700, 110, 55); ctx.fillStyle = C.woman; ctx.fill();
+    text('コメントで教えてください', W / 2, 956, 46, '#fff');
+    text('ナレーション  VOICEVOX:青山龍星', W / 2, 1140, 36, C.ink, 'center', false);
+    text('BGM  オリジナル', W / 2, 1200, 36, C.ink, 'center', false);
+    ctx.globalAlpha = 1;
+  },
+};
+
+function person(x, y, col, s) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(0, -90, 45, 0, Math.PI * 2); ctx.fill();
+  rr(-60, -35, 120, 150, 50); ctx.fill(); ctx.restore();
+}
+
+function subtitle(sc, lt) {
+  if (sc.id === 'end') return;
+  const fade = clamp(lt / 0.25) * clamp((sc.dur - lt) / 0.2);
+  const lines = wrap(sc.sub, 900, 50);
+  const lh = 70, h = lines.length * lh + 60, y = 1530 - h / 2;
+  ctx.globalAlpha = fade;
+  rr(60, y, W - 120, h, 28); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+  lines.forEach((l, i) => text(l, W / 2, y + 30 + lh / 2 + i * lh, 50, '#fff'));
+  ctx.globalAlpha = 1;
+}
+
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  background(t);
+  let sc = T.scenes[0];
+  for (const s of T.scenes) if (t >= s.start) sc = s;
+  const lt = t - sc.start;
+  header();
+  // シーン切り替え: 0.25 秒でフェードイン
+  ctx.globalAlpha = 1;
+  ctx.save();
+  const k = ease(lt / 0.3);
+  ctx.translate(0, 40 * (1 - k));
+  SCENE[sc.id](lt);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  subtitle(sc, lt);
+  // 進行バー
+  ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(0, H - 14, W, 14);
+  ctx.fillStyle = C.gold; ctx.fillRect(0, H - 14, W * clamp(t / T.total), 14);
+}
+window.render = render;
+
+// プレビュー再生(ブラウザで直接開いた場合)
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % T.total); requestAnimationFrame(loop); })();
+}
+</script></body></html>
