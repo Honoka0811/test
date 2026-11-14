@@ -1,0 +1,306 @@
+{
+ "fps": 60,
+ "lead_in": 0.0,
+ "tail": 0.25,
+ "voice": {
+  "style": 13,
+  "speed": 1.22,
+  "intonation": 1.15,
+  "gap": 0.14,
+  "pause_scale": 0.55
+ },
+ "lines": [
+  {
+   "id": "hook",
+   "gap_before": 0.08,
+   "chunks": [
+    {
+     "show": "この動画が"
+    },
+    {
+     "show": "始まってから、"
+    },
+    {
+     "show": "あなたはもう"
+    },
+    {
+     "show": "500キロ",
+     "say": "五百キロ",
+     "em": true,
+     "cue": "hit500"
+    },
+    {
+     "show": "動いた。"
+    }
+   ]
+  },
+  {
+   "id": "promise",
+   "chunks": [
+    {
+     "show": "じっとしていても"
+    },
+    {
+     "show": "止まらない。"
+    },
+    {
+     "show": "犯人は、",
+     "cue": "suspects"
+    },
+    {
+     "show": "3つの動き。",
+     "say": "三つの動き。",
+     "em": true
+    }
+   ]
+  },
+  {
+   "id": "spin1",
+   "chunks": [
+    {
+     "show": "まず、",
+     "cue": "spin"
+    },
+    {
+     "show": "地球の自転。",
+     "em": true
+    },
+    {
+     "show": "東京の地面は"
+    },
+    {
+     "show": "時速1360キロ。",
+     "say": "時速千三百六十キロ。",
+     "em": true,
+     "cue": "spinSpeed"
+    },
+    {
+     "show": "音より速い。",
+     "cue": "sound"
+    }
+   ]
+  },
+  {
+   "id": "spin2",
+   "chunks": [
+    {
+     "show": "でもこれで"
+    },
+    {
+     "show": "進めたのは、"
+    },
+    {
+     "show": "たった4キロ。",
+     "say": "たった四キロ。",
+     "em": true,
+     "cue": "spinLane"
+    }
+   ]
+  },
+  {
+   "id": "orbit1",
+   "chunks": [
+    {
+     "show": "次に、",
+     "cue": "orbit"
+    },
+    {
+     "show": "公転。",
+     "em": true
+    },
+    {
+     "show": "地球は太陽のまわりを"
+    },
+    {
+     "show": "秒速30キロ。",
+     "say": "秒速三十キロ。",
+     "em": true,
+     "cue": "orbitSpeed"
+    }
+   ]
+  },
+  {
+   "id": "orbit2",
+   "chunks": [
+    {
+     "show": "東京から大阪まで"
+    },
+    {
+     "show": "13秒。",
+     "say": "十三秒。",
+     "em": true,
+     "cue": "osaka"
+    },
+    {
+     "show": "それでも、",
+     "cue": "orbitV"
+    },
+    {
+     "show": "まだ足りない。",
+     "em": true,
+     "cue": "orbitLane"
+    }
+   ]
+  },
+  {
+   "id": "galaxy1",
+   "chunks": [
+    {
+     "show": "正体は、",
+     "cue": "galaxy"
+    },
+    {
+     "show": "銀河。",
+     "em": true,
+     "cue": "galaxyWord"
+    },
+    {
+     "show": "太陽系まるごと、"
+    },
+    {
+     "show": "天の川銀河を"
+    },
+    {
+     "show": "回っている。"
+    }
+   ]
+  },
+  {
+   "id": "galaxy2",
+   "chunks": [
+    {
+     "show": "秒速およそ"
+    },
+    {
+     "show": "227キロ。",
+     "say": "二百二十七キロ。",
+     "em": true,
+     "cue": "galaxySpeed"
+    },
+    {
+     "show": "メーターと",
+     "cue": "galaxyV"
+    },
+    {
+     "show": "ぴったり同じ。",
+     "em": true,
+     "cue": "match"
+    }
+   ]
+  },
+  {
+   "id": "parker",
+   "chunks": [
+    {
+     "show": "人類最速の",
+     "cue": "parker"
+    },
+    {
+     "show": "探査機より、"
+    },
+    {
+     "show": "あなたは速い。",
+     "em": true,
+     "cue": "parkerWin"
+    }
+   ]
+  },
+  {
+   "id": "lap1",
+   "chunks": [
+    {
+     "show": "それでも",
+     "cue": "lap"
+    },
+    {
+     "show": "銀河を1周するのに、",
+     "say": "銀河を一周するのに、"
+    },
+    {
+     "show": "およそ2億年。",
+     "say": "およそ二億年。",
+     "em": true,
+     "cue": "lapYears"
+    }
+   ]
+  },
+  {
+   "id": "lap2",
+   "chunks": [
+    {
+     "show": "前にここを通ったとき、",
+     "cue": "dino"
+    },
+    {
+     "show": "地球は"
+    },
+    {
+     "show": "恐竜が現れたばかり。",
+     "em": true,
+     "cue": "dinoWord"
+    }
+   ]
+  },
+  {
+   "id": "lap3",
+   "chunks": [
+    {
+     "show": "人類の歴史は、",
+     "cue": "human"
+    },
+    {
+     "show": "まだ1周の",
+     "say": "まだ一周の"
+    },
+    {
+     "show": "700分の1。",
+     "say": "七百分の一。",
+     "em": true,
+     "cue": "humanFrac"
+    }
+   ]
+  },
+  {
+   "id": "goal",
+   "chunks": [
+    {
+     "show": "そして、",
+     "cue": "goal"
+    },
+    {
+     "show": "まもなくゴール。"
+    },
+    {
+     "show": "この距離は、",
+     "cue": "riser"
+    }
+   ],
+   "at": 53.3
+  },
+  {
+   "id": "payoff",
+   "chunks": [
+    {
+     "show": "地球、",
+     "em": true,
+     "cue": "earth"
+    },
+    {
+     "show": "1個ぶん。",
+     "say": "一個ぶん。",
+     "em": true
+    }
+   ],
+   "at": 56.13
+  },
+  {
+   "id": "loop",
+   "chunks": [
+    {
+     "show": "もう一度見ても、",
+     "cue": "loop"
+    }
+   ]
+  }
+ ]
+}
