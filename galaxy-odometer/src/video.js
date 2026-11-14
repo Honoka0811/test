@@ -156,12 +156,12 @@ function drawDome(t) {
   text('静止中', bx + 64, ty - 6, { size: 29, color: C.cyan, align: 'center', weight: 900 });
   ctx.restore();
 }
-function sceneHook(t, h) {
+function sceneHook(t, h, note = true) {
   const a = clamp((h - 0.55) / 0.45);
   if (a <= 0) return;
   const m0 = PLAN.milestones[0], sl = seg(t, m0.t - 0.1, 0.15);
   // 「何に対して?」の注記。最初の通過点(東京→大阪)が出たら、その下へ下がって残る
-  text('※「何に対して？」の答えは このあと', 540, lerp(936, 1016, sl), { size: 34, color: C.ink3, align: 'center', weight: 700, alpha: a });
+  if (note) text('※「何に対して？」の答えは このあと', 540, lerp(936, 1016, sl), { size: 34, color: C.ink3, align: 'center', weight: 700, alpha: a });
   if (t >= m0.t) pillLabel(540, 928, `${m0.label} 約${fmtInt(m0.km)}km 通過`, { size: 50, alpha: a * fadeIn(t, m0.t, 0.08), k: ease.back(seg(t, m0.t, 0.22)), line: C.cyan });
 }
 
@@ -731,12 +731,12 @@ window.render = (t) => {
 
 // サムネイル用の 1 枚(冒頭の構図に大きい見出しを重ねる)
 window.renderPoster = () => {
-  const t = 2.215;
+  const t = 2.4;                                 // 百の位が「5」で止まって見える瞬間
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   drawBackground(t, SPEED_KEYS, 0);
   drawDome(t);
   drawVignette();
-  sceneHook(t, 1);
+  sceneHook(t, 1, false);
   drawHeader(t);
   drawTelopChunk('じっとしてるのに', false, 1, { y: 1076, size: 92, maxW: 860, cx: 540 });
   drawTelopChunk('もう500km!?', true, 1, { y: 1262, size: 124, maxW: 900, cx: 540 });
