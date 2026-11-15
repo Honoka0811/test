@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Guillotine Short</title>
+<style>
+  html,body{margin:0;background:#0c0a0a;}
+  canvas{display:block;max-height:100vh;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timings.js"></script>
+<script>
+// ------------------------------------------------------------
+// ギロチンの歴史 (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーンの開始/長さは narrate.py が書き出す timings.js(ナレーション実尺)に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const C = {
+  bg: '#0c0a0a', bg2: '#1a1212', panel: '#1c1616', line: '#3a2e2c',
+  ink: '#f2ece4', ink2: '#bfb3a8', ink3: '#857971',
+  red: '#C8343A', redSoft: 'rgba(200,52,58,0.18)', gold: '#D9A441', steel: '#c9ced6', wood: '#6b4a33'
+};
+const T = window.TIMINGS;
+const FPS = 30, DURATION = T.total;
+const SC = Object.fromEntries(T.scenes.map(s => [s.id, s]));
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeIn = t => { t = clamp(t); return t * t * t; };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function text(str, x, y, { size = 48, weight = 'normal', color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, ls = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rect(x, y, w, h, color, alpha = 1) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.fillRect(x, y, w, h); ctx.restore();
+}
+function rrect(x, y, w, h, r, color, alpha = 1, stroke = null) {
+  if (w <= 0 || h <= 0 || alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
+  if (color) { ctx.fillStyle = color; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 3; ctx.stroke(); }
+  ctx.restore();
+}
+function line(x1, y1, x2, y2, color, width = 3, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+// 日本語の折り返し(1文字ずつ測る。行頭禁則つき)
+function wrap(str, maxW, size, weight = 'normal') {
+  ctx.save(); ctx.font = `${weight} ${size}px ${FONT}`;
+  const out = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !'、。」）・'.includes(ch)) { out.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) out.push(cur);
+  ctx.restore(); return out;
+}
+// シーン内のローカル時刻と表示アルファ(フェードイン/アウト)
+function local(t, id) {
+  const s = SC[id]; const lt = t - s.start;
+  const a = Math.min(easeOut(lt / 0.4), 1 - easeIn((lt - (s.dur - 0.3)) / 0.3));
+  return { lt, a: clamp(a), s };
+}
+
+// ---------- ギロチンの線画(装飾目的の簡略図。高さ約900px相当) ----------
+// cx: 中心x, base: 台の上面y, sc: 拡大率, drop: 刃の位置 0(上)→1(下)
+function guillotine(cx, base, sc, drop, alpha = 1, glow = 0) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(cx, base); ctx.scale(sc, sc);
+  const postH = 820, gap = 150, pw = 34;
+  // 台
+  ctx.fillStyle = '#3a2a20'; ctx.fillRect(-300, 0, 600, 46);
+  ctx.fillStyle = '#2a1e17'; ctx.fillRect(-330, 46, 660, 26);
+  // 柱
+  const g = ctx.createLinearGradient(-gap, 0, gap, 0);
+  g.addColorStop(0, '#5a3e2b'); g.addColorStop(1, '#7a5638');
+  ctx.fillStyle = g;
+  ctx.fillRect(-gap / 2 - pw, -postH, pw, postH);
+  ctx.fillRect(gap / 2, -postH, pw, postH);
+  // 支え
+  ctx.strokeStyle = '#4a3324'; ctx.lineWidth = 22;
+  ctx.beginPath(); ctx.moveTo(-gap / 2 - pw, -260); ctx.lineTo(-230, 0); ctx.moveTo(gap / 2 + pw, -260); ctx.lineTo(230, 0); ctx.stroke();
+  // 上の横木
+  ctx.fillStyle = '#6b4a33'; ctx.fillRect(-gap / 2 - pw - 26, -postH - 40, gap + pw * 2 + 52, 46);
+  // 首枷(ルネット)
+  const lunY = -150;
+  ctx.fillStyle = '#5a3e2b'; ctx.fillRect(-gap / 2, lunY, gap, 70);
+  ctx.fillStyle = '#0c0a0a'; ctx.beginPath(); ctx.arc(0, lunY + 35, 26, 0, Math.PI * 2); ctx.fill();
+  // 刃(斜め)+重り
+  const topY = -postH + 20, botY = lunY - 120;
+  const by = lerp(topY, botY + 110, drop);
+  ctx.fillStyle = '#3d3d42'; ctx.fillRect(-gap / 2 + 4, by, gap - 8, 70);           // 重り
+  const blade = ctx.createLinearGradient(0, by + 70, 0, by + 170);
+  blade.addColorStop(0, '#9aa1ab'); blade.addColorStop(1, '#e6eaef');
+  ctx.fillStyle = blade;
+  ctx.beginPath(); ctx.moveTo(-gap / 2 + 4, by + 70); ctx.lineTo(gap / 2 - 4, by + 70);
+  ctx.lineTo(gap / 2 - 4, by + 110); ctx.lineTo(-gap / 2 + 4, by + 170); ctx.closePath(); ctx.fill();
+  if (glow > 0) {
+    ctx.globalAlpha = alpha * glow; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(gap / 2 - 4, by + 110); ctx.lineTo(-gap / 2 + 4, by + 170); ctx.stroke();
+  }
+  // 綱
+  ctx.globalAlpha = alpha; ctx.strokeStyle = '#8a7a63'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(0, -postH - 40); ctx.lineTo(0, by); ctx.stroke();
+  ctx.restore();
+  return { bladeY: base + by * sc, lunY: base + lunY * sc };
+}
+
+// ---------- 共通の背景・ヘッダー・字幕 ----------
+function background(t) {
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, 760, 80, W / 2, 900, 1200);
+  g.addColorStop(0, 'rgba(120,30,30,0.20)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // ちらつく粒子(灰)
+  for (let i = 0; i < 40; i++) {
+    const x = (i * 271.3 + t * (8 + (i % 5) * 3)) % W;
+    const y = (i * 613.7 - t * (14 + (i % 7) * 4)) % H;
+    circle(x, (y + H) % H, 1.5 + (i % 3), '#d9b9a0', 0.10 + 0.08 * Math.sin(t * 1.3 + i));
+  }
+}
+function header(t) {
+  if (t < SC.before.start) return;
+  const a = easeOut((t - SC.before.start) / 0.5) * (1 - seg(t, SC.outro.start, 0.4));
+  rect(80, 170, 8, 56, C.red, a);
+  text('ギロチンの歴史', 108, 212, { size: 40, weight: 'bold', color: C.ink2, alpha: a, ls: 4 });
+  // 進行バー
+  const p = clamp(t / SC.outro.start);
+  rect(80, 250, W - 160, 4, C.line, a);
+  rect(80, 250, (W - 160) * p, 4, C.red, a);
+}
+function subtitles(t) {
+  const s = T.scenes.find(s => s.sub && t >= s.speechStart - 0.05 && t <= s.speechEnd + 0.35);
+  if (!s) return;
+  const a = Math.min(seg(t, s.speechStart - 0.05, 0.2), 1 - seg(t, s.speechEnd + 0.15, 0.2));
+  const lines = wrap(s.sub, 900, 50, 'bold');
+  const lh = 70, h = lines.length * lh + 40, y0 = 1440;
+  rrect(60, y0, W - 120, h, 22, 'rgba(0,0,0,0.62)', a);
+  lines.forEach((l, i) => text(l, W / 2, y0 + 20 + lh * i + 52, { size: 50, weight: 'bold', align: 'center', alpha: a }));
+}
+
+// ---------- 各シーン ----------
+function sTitle(t) {
+  const { lt, a, s } = local(t, 'title');
+  if (a <= 0) return;
+  const dropAt = s.dur - 1.0;
+  const drop = easeIn(seg(lt, dropAt, 0.22));
+  const shake = lt > dropAt + 0.22 ? Math.sin(lt * 90) * 14 * Math.exp(-(lt - dropAt - 0.22) * 9) : 0;
+  ctx.save(); ctx.translate(shake, 0);
+  guillotine(W / 2, 1370, 0.8, drop, a * 0.9 * easeOut(lt / 0.8), 0.6);
+  ctx.restore();
+  const ty = 420 - 30 * (1 - easeOut(lt / 0.9));
+  text('ギロチン', W / 2, ty, { size: 170, weight: 'bold', align: 'center', alpha: a, ls: 18 });
+  text('「人道的」な処刑機械の物語', W / 2, ty + 100, { size: 52, align: 'center', color: C.ink2, alpha: a * seg(lt, 0.5, 0.6) });
+  rect(W / 2 - 60, ty + 140, 120, 6, C.red, a * seg(lt, 0.8, 0.5));
+  if (lt > dropAt + 0.2) rect(0, 0, W, H, '#ffffff', 0.35 * Math.exp(-(lt - dropAt - 0.2) * 10) * a);
+}
+
+function icSword(x, y, a) {
+  line(x, y - 90, x, y + 50, C.steel, 14, a);
+  line(x - 46, y + 50, x + 46, y + 50, C.gold, 12, a);
+  line(x, y + 50, x, y + 100, C.wood, 14, a);
+  circle(x, y + 108, 12, C.gold, a);
+}
+function icRope(x, y, a) {
+  line(x, y - 100, x, y - 10, '#b39a72', 10, a);
+  ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = '#b39a72'; ctx.lineWidth = 10;
+  ctx.beginPath(); ctx.ellipse(x, y + 40, 40, 52, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  rect(x - 14, y - 22, 28, 30, '#8c7550', a);
+}
+function sBefore(t) {
+  const { lt, a } = local(t, 'before');
+  if (a <= 0) return;
+  text('18世紀フランスの死刑', W / 2, 410, { size: 64, weight: 'bold', align: 'center', alpha: a });
+  text('身分によって、処刑方法が違った', W / 2, 480, { size: 42, align: 'center', color: C.ink2, alpha: a * seg(lt, 0.3, 0.5) });
+  const cards = [
+    { who: '貴族', how: '剣による斬首', ic: icSword, d: 0.6 },
+    { who: '庶民', how: '絞首刑・車裂き など', ic: icRope, d: 2.6 },
+  ];
+  cards.forEach((c, i) => {
+    const ca = a * easeOut(seg(lt, c.d, 0.6));
+    const x = 90 + i * 470, y = 600 + 40 * (1 - ca);
+    rrect(x, y, 430, 640, 26, C.panel, ca, C.line);
+    text(c.who, x + 215, y + 110, { size: 72, weight: 'bold', align: 'center', color: i ? C.ink : C.gold, alpha: ca });
+    c.ic(x + 215, y + 330, ca);
+    text(c.how, x + 215, y + 560, { size: 40, weight: 'bold', align: 'center', color: C.ink2, alpha: ca });
+  });
+  text('≠', W / 2, 960, { size: 90, weight: 'bold', align: 'center', color: C.red, alpha: a * seg(lt, 3.2, 0.4) });
+}
+
+function sGuillotin(t) {
+  const { lt, a } = local(t, 'guillotin');
+  if (a <= 0) return;
+  const yr = Math.round(lerp(1750, 1789, easeOut(seg(lt, 0, 1.0))));
+  text(String(yr), W / 2, 500, { size: 200, weight: 'bold', align: 'center', color: C.red, alpha: a, ls: 6 });
+  text('医師 ジョゼフ＝イニャス・ギヨタン', W / 2, 600, { size: 46, weight: 'bold', align: 'center', alpha: a * seg(lt, 0.6, 0.5) });
+  text('国民議会での提案', W / 2, 668, { size: 38, align: 'center', color: C.ink2, alpha: a * seg(lt, 0.8, 0.5) });
+  const items = ['身分に関係なく', '全員 同じ方法で', 'できるだけ苦痛なく'];
+  const hits = [2.2, 3.6, 5.0];
+  items.forEach((s, i) => {
+    const ia = a * easeOut(seg(lt, hits[i], 0.5));
+    const y = 790 + i * 170 + 30 * (1 - ia);
+    rrect(140, y, 800, 130, 20, C.panel, ia, C.line);
+    circle(220, y + 65, 34, C.red, ia);
+    line(203, y + 66, 216, y + 80, '#fff', 7, ia); line(216, y + 80, 240, y + 50, '#fff', 7, ia);
+    text(s, 290, y + 82, { size: 54, weight: 'bold', alpha: ia });
+  });
+}
+
+function sMachine(t) {
+  const { lt, a } = local(t, 'machine');
+  if (a <= 0) return;
+  const drop = 0;
+  const g = guillotine(380, 1180, 0.85, drop, a * easeOut(lt / 0.6));
+  const ann = (y, x2, label, sub, d) => {
+    const aa = a * easeOut(seg(lt, d, 0.5));
+    line(500, y, x2, y, C.gold, 3, aa); circle(500, y, 8, C.gold, aa);
+    text(label, x2 + 14, y + 6, { size: 44, weight: 'bold', alpha: aa });
+    if (sub) text(sub, x2 + 14, y + 58, { size: 34, color: C.ink2, alpha: aa });
+  };
+  ann(g.bladeY + 105, 610, '斜めの刃', '確実に切断できる', 2.4);
+  ann(820, 610, '高さ 約4m', '刃と重り 約40kg', 3.6);
+  ann(g.lunY + 26, 610, '首枷(ルネット)', '頭を固定する', 4.6);
+  text('設計：外科医 アントワーヌ・ルイ', 80, 335, { size: 44, weight: 'bold', alpha: a * seg(lt, 0.3, 0.5) });
+  text('製作：楽器職人 トビアス・シュミット', 80, 390, { size: 36, color: C.ink2, alpha: a * seg(lt, 0.6, 0.5) });
+  const da = a * easeOut(seg(lt, 5.8, 0.5));
+  rrect(560, 1210, 440, 150, 20, C.redSoft, da, C.red);
+  text('1792.4.25', 780, 1275, { size: 54, weight: 'bold', align: 'center', color: C.ink, alpha: da });
+  text('最初の執行', 780, 1330, { size: 36, align: 'center', color: C.ink2, alpha: da });
+}
+
+function sTerror(t) {
+  const { lt, a } = local(t, 'terror');
+  if (a <= 0) return;
+  text('恐怖政治', W / 2, 420, { size: 92, weight: 'bold', align: 'center', alpha: a, ls: 10 });
+  text('1793 – 1794', W / 2, 490, { size: 44, align: 'center', color: C.ink2, alpha: a * seg(lt, 0.3, 0.5) });
+  const p = easeOut(seg(lt, 1.2, 3.0));
+  const n = Math.round(17000 * p / 100) * 100;
+  text('約 ' + n.toLocaleString('en-US') + ' 人', W / 2, 680, { size: 120, weight: 'bold', align: 'center', color: C.red, alpha: a });
+  text('フランス全土での死刑判決(概数)　● 1つ = 100人', W / 2, 750, { size: 36, align: 'center', color: C.ink2, alpha: a });
+  // 1点 = 100人 → 170点
+  const cols = 14, gap = 56, x0 = W / 2 - (cols - 1) * gap / 2, y0 = 840;
+  const shown = 170 * p;
+  for (let i = 0; i < 170; i++) {
+    const r = clamp(shown - i);
+    if (r <= 0) break;
+    circle(x0 + (i % cols) * gap, y0 + Math.floor(i / cols) * 46, 15 * easeOut(r), C.red, a * 0.9);
+  }
+}
+
+function sNames(t) {
+  const { lt, a } = local(t, 'names');
+  if (a <= 0) return;
+  text('この刃で命を落とした人々', W / 2, 420, { size: 56, weight: 'bold', align: 'center', alpha: a });
+  const ppl = [
+    { n: 'ルイ16世', r: 'フランス国王', d: '1793.1.21', at: 0.2 },
+    { n: 'マリー・アントワネット', r: '王妃', d: '1793.10.16', at: 1.5 },
+    { n: 'ロベスピエール', r: '恐怖政治の指導者', d: '1794.7.28', at: 3.2 },
+  ];
+  ppl.forEach((p, i) => {
+    const pa = a * easeOut(seg(lt, p.at, 0.5));
+    const y = 540 + i * 270 + 30 * (1 - pa);
+    const hl = i === 2 ? seg(lt, 4.2, 0.5) : 0;
+    rrect(90, y, 900, 220, 24, C.panel, pa, hl > 0 ? C.red : C.line);
+    text(p.n, 140, y + 95, { size: 58, weight: 'bold', alpha: pa });
+    text(p.r, 140, y + 160, { size: 36, color: C.ink2, alpha: pa });
+    text(p.d, 950, y + 160, { size: 40, weight: 'bold', align: 'right', color: C.red, alpha: pa });
+    if (hl > 0) text('自らも処刑', 950, y + 92, { size: 38, weight: 'bold', align: 'right', color: C.gold, alpha: pa * hl });
+  });
+}
+
+function sCrowd(t) {
+  const { lt, a } = local(t, 'crowd');
+  if (a <= 0) return;
+  text('処刑は「見世物」だった', W / 2, 420, { size: 64, weight: 'bold', align: 'center', alpha: a });
+  // 処刑台(遠景)
+  guillotine(W / 2, 880, 0.48, 0, a * 0.95);
+  // 群衆シルエット(何列も、ゆらゆら)
+  for (let row = 0; row < 5; row++) {
+    const y = 960 + row * 70, cnt = 11 + row;
+    for (let i = 0; i < cnt; i++) {
+      const ra = a * easeOut(seg(lt, 0.3 + row * 0.25 + (i % 3) * 0.1, 0.5));
+      const x = (i + 0.5) * (W / cnt) + (row % 2) * 20;
+      const bob = Math.sin(lt * 3 + i * 1.7 + row) * 5;
+      const s = 0.8 + row * 0.12;
+      ctx.save(); ctx.globalAlpha = ra; ctx.fillStyle = `rgb(${30 + row * 9},${22 + row * 6},${22 + row * 6})`;
+      ctx.beginPath(); ctx.arc(x, y + bob, 22 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x, y + bob + 60 * s, 42 * s, 40 * s, 0, Math.PI, 0); ctx.fill();
+      ctx.restore();
+    }
+  }
+  const ma = a * easeOut(seg(lt, 3.6, 0.5));
+  rrect(250, 1200 - 20 * ma, 580, 140, 22, 'rgba(28,22,22,0.95)', ma, C.gold);
+  guillotine(340, 1305 - 20 * ma, 0.11, 0, ma);
+  text('おもちゃのギロチンも', 400, 1255 - 20 * ma, { size: 42, weight: 'bold', alpha: ma });
+  text('売られていた', 400, 1310 - 20 * ma, { size: 36, color: C.ink2, alpha: ma });
+}
+
+function sEnd(t) {
+  const { lt, a } = local(t, 'end');
+  if (a <= 0) return;
+  text('ギロチンの終わり', W / 2, 420, { size: 64, weight: 'bold', align: 'center', alpha: a });
+  const ev = [
+    { y: '1792', d: '初めての執行', at: 0.0 },
+    { y: '1939', d: '最後の公開処刑', s: '以後は刑務所の中で', at: 0.4 },
+    { y: '1977', d: '最後の執行', at: 3.4 },
+    { y: '1981', d: '死刑廃止', s: 'ギロチンも役目を終える', at: 6.0, hl: true },
+  ];
+  const x = 260, y0 = 560, step = 210;
+  const prog = Math.max(...ev.map((e, i) => lt >= e.at ? i : 0));
+  line(x, y0, x, y0 + step * 3, C.line, 6, a);
+  line(x, y0, x, y0 + step * prog * easeOut(seg(lt, ev[prog].at, 0.5)) + (prog ? 0 : 0), C.red, 6, a);
+  ev.forEach((e, i) => {
+    const ea = a * easeOut(seg(lt, e.at, 0.5));
+    const y = y0 + i * step;
+    circle(x, y, e.hl ? 24 : 18, e.hl ? C.gold : C.red, ea);
+    text(e.y, x - 50, y + 22, { size: 60, weight: 'bold', align: 'right', color: e.hl ? C.gold : C.ink, alpha: ea });
+    text(e.d, x + 60, y + 16, { size: 52, weight: 'bold', alpha: ea });
+    if (e.s) text(e.s, x + 60, y + 70, { size: 34, color: C.ink2, alpha: ea });
+  });
+}
+
+function sTrivia(t) {
+  const { lt, a } = local(t, 'trivia');
+  if (a <= 0) return;
+  rrect(90, 420, 220, 70, 35, C.gold, a);
+  text('トリビア', 200, 470, { size: 40, weight: 'bold', align: 'center', color: '#1a1212', alpha: a });
+  text('ギヨタン本人は', 90, 640, { size: 76, weight: 'bold', alpha: a * seg(lt, 0.2, 0.5) });
+  text('ギロチンで', 90, 750, { size: 76, weight: 'bold', alpha: a * seg(lt, 0.5, 0.5) });
+  text('処刑されていない', 90, 860, { size: 76, weight: 'bold', color: C.red, alpha: a * seg(lt, 0.8, 0.5) });
+  text('1814年に病気で死去', 90, 960, { size: 42, color: C.ink2, alpha: a * seg(lt, 1.6, 0.5) });
+  const na = a * easeOut(seg(lt, 3.4, 0.8));
+  text('Guillotin', W / 2, 1220, { size: 110, weight: 'bold', align: 'center', color: C.ink3, alpha: na, ls: 8 });
+  text('→ guillotine', W / 2, 1310, { size: 54, align: 'center', color: C.ink2, alpha: na });
+}
+
+function sOutro(t) {
+  const { lt, a } = local(t, 'outro');
+  if (a <= 0) return;
+  guillotine(W / 2, 1000, 0.55, 0, a * 0.5);
+  text('ギロチンの歴史', W / 2, 560, { size: 72, weight: 'bold', align: 'center', alpha: a });
+  text('ナレーション  VOICEVOX:四国めたん', W / 2, 1200, { size: 40, align: 'center', color: C.ink2, alpha: a });
+  text('BGM  自作(プログラム合成)', W / 2, 1265, { size: 36, align: 'center', color: C.ink3, alpha: a });
+  text('人数・寸法などの数値は概数です', W / 2, 1325, { size: 32, align: 'center', color: C.ink3, alpha: a });
+}
+
+const SCENE_FN = [sTitle, sBefore, sGuillotin, sMachine, sTerror, sNames, sCrowd, sEnd, sTrivia, sOutro];
+window.FPS = FPS; window.DURATION = DURATION;
+window.render = function (t) {
+  background(t);
+  header(t);
+  for (const f of SCENE_FN) f(t);
+  subtitles(t);
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H / 2, 500, W / 2, H / 2, 1200);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+};
+
+// ブラウザで開いたときはプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { window.render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+}
+</script>
+</body>
+</html>
