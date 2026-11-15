@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Earth Calendar</title>
+<style>
+  @font-face{font-family:"Dela";src:url(fonts/DelaGothicOne-Regular.ttf);}
+  @font-face{font-family:"Maru";src:url(fonts/MPLUSRounded1c-ExtraBold.ttf);}
+  html,body{margin:0;background:#05060d;}
+  canvas{display:block;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 地球46億年を1年にすると (9:16 ショート)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// window.TIMINGS(output/timings.json)にナレーションの実測タイミングが入る。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const DELA = '"Dela","Maru",sans-serif', MARU = '"Maru",sans-serif', EMO = '"Noto Color Emoji"';
+const GOLD = '#FFD23F', PINK = '#FF5C8A', CYAN = '#5CE1E6', INK = '#FFFFFF';
+window.FPS = FPS;
+
+// ---- 時間換算(1年 = 365日) ----
+const YEAR_S = 365 * 86400;
+const frac = { // 1年のうち経過した割合
+  birth: 0,
+  life: 63.48 / 365,           // 38億年前
+  cambr: 322.23 / 365,         // 5.4億年前
+  dino: 346.75 / 365,          // 2.3億年前
+  dinoEnd: 359.76 / 365,       // 6600万年前
+  human: 1 - 34.3 * 60 / YEAR_S,  // 30万年前 → 23:25:43
+  agri: 1 - 70 / YEAR_S,       // 1万年前(≒68.5秒 → 約70秒)
+  christ: 1 - 13.9 / YEAR_S,   // 2000年前
+};
+const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function dateOf(f) {
+  let d = Math.min(Math.floor(f * 365), 364);
+  let m = 0; while (d >= MDAYS[m]) { d -= MDAYS[m]; m++; }
+  return [m + 1, d + 1];
+}
+function clockOf(f) { // その日の時刻
+  const s = Math.max(0, Math.round((f * 365 % 1) * 86400)) % 86400;
+  return [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60];
+}
+const p2 = n => String(n).padStart(2, '0');
+
+// ---- 補助 ----
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const eio = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const eout = k => 1 - Math.pow(1 - k, 3);
+const back = k => { const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+function hash(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function cueAt(t) {
+  const cs = window.TIMINGS.cues; let cur = cs[0];
+  for (const c of cs) if (t >= c.start - 0.12) cur = c;
+  return cur;
+}
+const cue = id => window.TIMINGS.cues.find(c => c.id === id);
+
+function text(s, x, y, size, font, color, align = 'center', stroke = 0, strokeColor = '#000') {
+  ctx.font = `${size}px ${font}`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+}
+function emoji(e, x, y, size, rot = 0, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.translate(x, y); ctx.rotate(rot);
+  ctx.font = `${size}px ${EMO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(e, 0, 0); ctx.restore();
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+// ---- 背景(時代ごとに色が変わる宇宙) ----
+const THEMES = {
+  hook: ['#0b0f2a', '#1b0f3a'], birth: ['#2a0a05', '#6b1a06'], life: ['#04213a', '#0a4a63'],
+  cambr: ['#032a2a', '#0b5a4a'], dino: ['#1a2a06', '#4a3a08'], human_q: ['#05060d', '#120b2a'],
+  human: ['#070a24', '#24113f'], agri: ['#0a0a22', '#2a1236'], you_q: ['#020205', '#0a0a14'],
+  you: ['#1a0a00', '#3a1a00'], outro: ['#0b0f2a', '#2a0f3a'],
+};
+function background(t, id, k) {
+  const ids = Object.keys(THEMES);
+  const cs = window.TIMINGS.cues, i = cs.findIndex(c => c.id === id);
+  const prev = i > 0 ? cs[i - 1].id : id;
+  const a = THEMES[prev], b = THEMES[id], m = eout(clamp(k / 0.8));
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, mix(a[0], b[0], m)); g.addColorStop(1, mix(a[1], b[1], m));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 星
+  for (let s = 0; s < 140; s++) {
+    const x = hash(s) * W, y = hash(s + 999) * H, r = 0.8 + hash(s + 55) * 2.2;
+    const tw = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * (1 + hash(s + 7) * 3) + s));
+    ctx.globalAlpha = tw * 0.8; ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(x, (y + t * 6 * r) % H, r, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // ビネット
+  const v = ctx.createRadialGradient(W / 2, H * 0.45, 300, W / 2, H * 0.45, 1250);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+function mix(a, b, k) {
+  const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.substr(i, 2), 16));
+  return `rgb(${pa.map((v, i) => Math.round(lerp(v, pb[i], k))).join(',')})`;
+}
+
+// ---- ヘッダー ----
+function header(t) {
+  const y = 190;
+  rrect(140, y - 62, 800, 124, 62); ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.stroke();
+  text('地球46億年を', 375, y + 2, 54, MARU, INK);
+  text('1年', 640, y + 2, 70, DELA, GOLD);
+  text('にすると', 815, y + 2, 54, MARU, INK);
+  text('VOICEVOX:四国めたん', 1040, 70, 28, MARU, 'rgba(255,255,255,0.55)', 'right');
+}
+
+// ---- 進捗バー(年 → 大晦日 → 最後の2分 → 最後の1秒) ----
+function bar(t, mode, f, k) {
+  const x0 = 90, x1 = 990, y = 390, h = 46;
+  let labels, pos, title;
+  if (mode === 'year') {
+    title = 'カレンダー 1月 → 12月';
+    labels = [...Array(12)].map((_, i) => [(i + 0.5) / 12, String(i + 1)]); pos = f;
+  } else if (mode === 'day') {
+    title = '12月31日(大晦日)0時 → 24時';
+    labels = [[0, '0時'], [0.25, '6時'], [0.5, '12時'], [0.75, '18時'], [1, '24時']];
+    pos = clamp((f * 365 - 364));
+  } else if (mode === 'min') {
+    title = '年明けまで 残り2分';
+    labels = [[0, '23:58'], [0.5, '23:59'], [1, '0:00']];
+    pos = clamp(1 - (1 - f) * YEAR_S / 120);
+  } else {
+    title = '年明けまで 最後の1秒';
+    labels = [[0, '23:59:59'], [1, '0:00:00']];
+    pos = 1;
+  }
+  text(title, 540, y - 62, 34, MARU, 'rgba(255,255,255,0.8)');
+  rrect(x0, y, x1 - x0, h, h / 2); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill();
+  // 月の区切り
+  if (mode === 'year') {
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    for (let i = 1; i < 12; i++) ctx.fillRect(x0 + (x1 - x0) * i / 12 - 1, y + 8, 2, h - 16);
+  }
+  const px = x0 + (x1 - x0) * pos;
+  if (mode === 'sec') {
+    // 最後の 0.55 秒だけを光らせる
+    const sx = x1 - (x1 - x0) * 0.55 * eout(clamp(k / 1.2));
+    rrect(sx, y, x1 - sx, h, h / 2); ctx.fillStyle = GOLD; ctx.fill();
+  } else if (pos > 0.002) {
+    const g = ctx.createLinearGradient(x0, 0, x1, 0);
+    g.addColorStop(0, CYAN); g.addColorStop(1, PINK);
+    rrect(x0, y, Math.max(h, px - x0), h, h / 2); ctx.fillStyle = g; ctx.fill();
+  }
+  if (mode !== 'sec') {
+    ctx.shadowColor = GOLD; ctx.shadowBlur = 30;
+    ctx.beginPath(); ctx.arc(px, y + h / 2, 30, 0, 7); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(px, y + h / 2, 17, 0, 7); ctx.fillStyle = GOLD; ctx.fill();
+  }
+  for (const [p, s] of labels) text(s, x0 + (x1 - x0) * p, y + h + 40, 32, MARU, 'rgba(255,255,255,0.75)');
+}
+
+// ---- 字幕(数字・日付を黄色で強調) ----
+function subtitle(c, t) {
+  const lines = c.text.split('|');
+  const k = clamp((t - c.start + 0.12) / 0.25);
+  const size = lines.some(l => l.length > 13) ? 70 : 82, lh = size * 1.32;
+  const y0 = 1430 - (lines.length - 1) * lh / 2;
+  ctx.save();
+  ctx.globalAlpha = k; ctx.translate(540, y0); ctx.scale(lerp(0.85, 1, back(k)), lerp(0.85, 1, back(k)));
+  lines.forEach((l, i) => drawRich(l, 0, i * lh, size));
+  ctx.restore();
+}
+function drawRich(s, cx, y, size) {
+  const parts = s.split(/([0-9][0-9.,:]*(?:億年|万年|年|か月|月|日|時|分|秒)?(?:[0-9]+(?:日|分|秒))?|何月何日|大晦日|ホモ・サピエンス)/).filter(Boolean);
+  ctx.font = `${size}px ${MARU}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const ws = parts.map(p => ctx.measureText(p).width), tw = ws.reduce((a, b) => a + b, 0);
+  const sc = Math.min(1, 960 / tw);
+  ctx.save(); ctx.translate(cx, y); ctx.scale(sc, sc);
+  let x = -tw / 2;
+  parts.forEach((p, i) => {
+    const hi = /^[0-9]|何月何日|大晦日|ホモ/.test(p);
+    ctx.lineJoin = 'round'; ctx.lineWidth = 18; ctx.strokeStyle = '#000'; ctx.strokeText(p, x, 0);
+    ctx.fillStyle = hi ? GOLD : INK; ctx.fillText(p, x, 0);
+    x += ws[i];
+  });
+  ctx.restore();
+}
+
+// ---- 大きな日付カード ----
+function bigDate(m, d, y, k, sub, subColor = INK) {
+  const s = lerp(1.25, 1, back(clamp(k / 0.45)));
+  ctx.save(); ctx.translate(540, y); ctx.scale(s, s);
+  rrect(-420, -150, 840, 300, 44); ctx.fillStyle = 'rgba(255,255,255,0.96)'; ctx.fill();
+  rrect(-420, -150, 840, 74, [44, 44, 0, 0]); ctx.fillStyle = PINK; ctx.fill();
+  ctx.fillStyle = '#fff';
+  for (const xx of [-260, 260]) { rrect(xx - 14, -178, 28, 62, 14); ctx.fill(); }
+  text(sub, 0, -112, 40, MARU, '#fff');
+  text(`${m}月${d}日`, 0, 46, (m >= 10) + (d >= 10) === 2 ? 132 : (m >= 10 || d >= 10 ? 150 : 170), DELA, '#1a1a2e');
+  ctx.restore();
+}
+function bigClock(str, y, size, color, k) {
+  const s = lerp(1.2, 1, back(clamp(k / 0.4)));
+  ctx.save(); ctx.translate(540, y); ctx.scale(s, s);
+  rrect(-470, -size * 0.75, 940, size * 1.5, 40); ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.stroke();
+  ctx.shadowColor = color; ctx.shadowBlur = 40;
+  text(str, 0, 6, size, DELA, color);
+  ctx.restore();
+}
+
+// ---- シーン ----
+function render(t) {
+  const c = cueAt(t), k = t - c.start, id = c.id;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // 0.5秒のインパクトで画面を揺らす
+  const you = cue('you');
+  if (t > you.start && t < you.start + 0.6) {
+    const a = (1 - (t - you.start) / 0.6) * 22;
+    ctx.translate(Math.sin(t * 90) * a, Math.cos(t * 77) * a);
+  }
+  background(t, id, k);
+  header(t);
+
+  const order = ['birth', 'life', 'cambr', 'dino'];
+  if (id === 'hook') {
+    bar(t, 'year', 0, k);
+    // 46億年 → 1年
+    const a = eout(clamp(k / 0.5)), b = eout(clamp((k - 0.9) / 0.5)), q = eout(clamp((k - 3.2) / 0.5));
+    ctx.globalAlpha = a; text('46億年', 540, 700 - 40 * (1 - a), 150, DELA, INK, 'center', 14, '#000'); ctx.globalAlpha = 1;
+    if (b > 0) {
+      ctx.globalAlpha = b;
+      text('▼', 540, 840, 70, MARU, GOLD);
+      ctx.save(); ctx.translate(540, 990); ctx.scale(lerp(1.6, 1, back(b)), lerp(1.6, 1, back(b)));
+      text('1年', 0, 0, 190, DELA, GOLD, 'center', 16, '#000'); ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+    if (q > 0) {
+      // 「?」を周囲に散らす
+      for (let i = 0; i < 6; i++) {
+        const ang = i / 6 * 6.283 + t * 0.6, r = 400 + 20 * Math.sin(t * 3 + i);
+        ctx.globalAlpha = q * 0.85;
+        text('?', 540 + Math.cos(ang) * r, 860 + Math.sin(ang) * r * 0.55, 90, DELA, i % 2 ? PINK : CYAN);
+      }
+      ctx.globalAlpha = 1;
+    }
+  } else if (order.includes(id)) {
+    const i = order.indexOf(id);
+    const f0 = i ? frac[order[i - 1]] : 0, f1 = frac[id];
+    let f = lerp(f0, f1, eio(clamp(k / 0.9)));
+    if (id === 'dino') { // 12/13 → 12/26 へもう一段進む
+      const k2 = t - (c.start + 3.2);
+      if (k2 > 0) f = lerp(f1, frac.dinoEnd, eio(clamp(k2 / 0.9)));
+    }
+    bar(t, 'year', f, k);
+    const [m, d] = dateOf(f);
+    const ext = id === 'dino' && t > c.start + 3.6;
+    const subs = { birth: '地球 誕生', life: '最初の生命', cambr: 'カンブリア爆発', dino: ext ? '恐竜 絶滅' : '恐竜 登場' };
+    bigDate(m, d, 760, ext ? t - (c.start + 3.2) : k, subs[id]);
+    // イラスト(絵文字)
+    const ek = back(clamp((k - 0.5) / 0.5)), bob = Math.sin(t * 2.2) * 12;
+    if (id === 'birth') {
+      emoji('🌋', 300, 1100 + bob, 170 * ek); emoji('🌍', 760, 1090 - bob, 210 * ek, t * 0.2);
+    } else if (id === 'life') {
+      for (let j = 0; j < 5; j++) emoji('🦠', 200 + j * 170, 1110 + Math.sin(t * 2 + j) * 18, (90 + 30 * (j % 2)) * ek, Math.sin(t + j));
+    } else if (id === 'cambr') {
+      const E = ['🦑', '🐚', '🦐', '🪼', '🐟', '🦀'];
+      E.forEach((e, j) => emoji(e, 150 + j * 156, 1110 + Math.sin(t * 2.5 + j) * 22, 110 * back(clamp((k - 0.5 - j * 0.12) / 0.4))));
+    } else if (id === 'dino') {
+      if (!ext) { emoji('🦖', 360, 1100 + bob, 190 * ek); emoji('🦕', 720, 1100 - bob, 190 * ek); }
+      else {
+        const kr = (t - c.start - 3.2) / 0.9, kk = clamp(kr);
+        emoji('☄️', lerp(1000, 640, eio(kk)), lerp(820, 1080, eio(kk)), 170);
+        emoji('🦴', 380, 1120, 150 * back(clamp((kk - 0.6) / 0.4)));
+        if (kr > 0.95 && kr < 1.2) { ctx.fillStyle = `rgba(255,220,150,${(1 - (kr - 0.95) / 0.25) * 0.6})`; ctx.fillRect(0, 0, W, H); }
+      }
+    }
+  } else if (id === 'human_q') {
+    bar(t, 'year', frac.dinoEnd + (1 - frac.dinoEnd) * eio(clamp(k / 1.2)), k);
+    const [m, d] = dateOf(frac.dinoEnd + (1 - frac.dinoEnd) * eio(clamp(k / 1.2)));
+    bigDate(m, d, 760, k, 'そして…');
+    emoji('🧑', 540, 1110, 190 * back(clamp((k - 0.3) / 0.5)));
+    text('?', 680, 1020, 110 * back(clamp((k - 0.5) / 0.4)), DELA, GOLD, 'center', 10, '#000');
+    // 白フラッシュ
+    if (k < 0.25) { ctx.fillStyle = `rgba(255,255,255,${(0.25 - k) * 2})`; ctx.fillRect(0, 0, W, H); }
+  } else if (id === 'human') {
+    const kk = eio(clamp(k / 1.8));
+    const f = lerp(364 / 365, frac.human, kk);
+    bar(t, 'day', f, k);
+    text('12月31日 大晦日', 540, 600, 64, MARU, INK, 'center', 10, '#000');
+    const [h, m] = clockOf(f + 30 / YEAR_S); // 分単位に四捨五入
+    bigClock(`${p2(h)}:${p2(m)}`, 790, 220, kk >= 1 ? GOLD : INK, k);
+    if (kk >= 1) emoji('🧍', 540, 1080 + Math.sin(t * 2) * 10, 170 * back(clamp((k - 1.8) / 0.5)));
+  } else if (id === 'agri') {
+    const ag = cue('agri');
+    const split = ag.start + 3.1;                       // 2文目(キリスト)へ
+    const f = t < split ? lerp(frac.human + 0.00004, frac.agri, eio(clamp(k / 1.2)))
+                        : lerp(frac.agri, frac.christ, eio(clamp((t - split) / 1.0)));
+    bar(t, 'min', f, k);
+    text('12月31日 大晦日', 540, 600, 64, MARU, INK, 'center', 10, '#000');
+    const [h, m, s] = clockOf(f);
+    bigClock(`${p2(h)}:${p2(m)}:${p2(s)}`, 790, 140, INK, t < split ? k : t - split);
+    const left = Math.round((1 - f) * YEAR_S);
+    text(`年明けまで あと${left}秒`, 540, 960, 58, MARU, PINK, 'center', 10, '#000');
+    if (t < split) emoji('🌾', 540, 1100 + Math.sin(t * 2) * 10, 150 * back(clamp((k - 0.8) / 0.4)));
+    else emoji('🏛️', 540, 1100 + Math.sin(t * 2) * 10, 150 * back(clamp((t - split - 0.6) / 0.4)));
+  } else if (id === 'you_q') {
+    bar(t, 'min', frac.christ + (1 - frac.christ) * eio(clamp(k / 2.2)), k);
+    const f = frac.christ + (1 - frac.christ) * 0.97 * eio(clamp(k / 2.2));
+    const [h, m, s] = clockOf(f);
+    bigClock(`${p2(h)}:${p2(m)}:${p2(s)}`, 790, 140, PINK, k);
+    emoji('🫵', 540, 1080, 180 * back(clamp((k - 0.4) / 0.5)));
+  } else if (id === 'you' || id === 'outro') {
+    const yk = t - cue('you').start;
+    bar(t, 'sec', 1, yk);
+    // 0.5秒
+    const s = lerp(2.4, 1, back(clamp(yk / 0.45)));
+    ctx.save(); ctx.translate(540, 800); ctx.scale(s, s);
+    ctx.shadowColor = GOLD; ctx.shadowBlur = 60;
+    text('0.5秒', 0, 0, 260, DELA, GOLD, 'center', 22, '#000');
+    ctx.restore();
+    // 放射光
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.12 * clamp(yk / 0.3);
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * 6.283 + t * 0.25;
+      ctx.beginPath(); ctx.moveTo(540, 800);
+      ctx.arc(540, 800, 1300, a, a + 0.12); ctx.closePath(); ctx.fillStyle = GOLD; ctx.fill();
+    }
+    ctx.restore();
+    text('人生80年 ≒ 地球カレンダーの0.55秒', 540, 1040, 46, MARU, INK, 'center', 10, '#000');
+    if (id === 'outro') {
+      const ok = eout(clamp((k - 0.3) / 0.4));
+      ctx.globalAlpha = ok;
+      rrect(170, 1150 - 20 * (1 - ok), 740, 96, 48); ctx.fillStyle = 'rgba(255,255,255,0.14)'; ctx.fill();
+      text('あなたの答えはコメントへ', 540, 1199 - 20 * (1 - ok), 46, MARU, INK);
+      ctx.globalAlpha = 1;
+    }
+  }
+  subtitle(c, t);
+  // 終盤: もう一度見たくなるループ演出(最後の0.5秒で暗転→冒頭へ)
+  const end = window.TIMINGS.duration;
+  if (t > end - 0.5) { ctx.fillStyle = `rgba(5,6,13,${clamp((t - end + 0.5) / 0.5)})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+</script>
+</body>
+</html>
