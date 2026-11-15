@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>名大すごい10選</title>
+<style>
+  @font-face { font-family: 'MR'; src: url('fonts/m-plus-rounded-1c-japanese-800-normal.woff2') format('woff2'); font-weight: 800; }
+  @font-face { font-family: 'MR'; src: url('fonts/m-plus-rounded-1c-japanese-500-normal.woff2') format('woff2'); font-weight: 500; }
+  html, body { margin: 0; background: #111; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+  body.preview canvas { width: auto; height: 96vh; margin: 2vh auto; }
+</style>
+<script src="timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const W = 1080, H = 1920, FPS = 30;
+window.FPS = FPS;
+const TL = window.TIMELINE;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const F = (w, px) => `${w} ${px}px MR, IPAGothic, sans-serif`;
+
+const C = {
+  bg0: '#0a4d33', bg1: '#06301f', green: '#12a36a', light: '#e9fff4',
+  yellow: '#ffd23f', pink: '#ff6fa5', ink: '#0d2b1f', white: '#ffffff', blue: '#4fb3ff',
+};
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = x => 1 - Math.pow(1 - clamp(x), 3);
+const easeBack = x => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+function text(str, x, y, { size = 60, weight = 800, color = C.white, stroke = null, sw = 0, align = 'center', base = 'middle', lh = 1.25 } = {}) {
+  ctx.font = F(weight, size); ctx.textAlign = align; ctx.textBaseline = base;
+  const lines = String(str).split('\n');
+  const y0 = y - (lines.length - 1) * size * lh / 2;
+  lines.forEach((ln, i) => {
+    const yy = y0 + i * size * lh;
+    if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = sw; ctx.strokeStyle = stroke; ctx.strokeText(ln, x, yy); }
+    ctx.fillStyle = color; ctx.fillText(ln, x, yy);
+  });
+}
+
+// 指定幅で日本語テキストを折り返す(句読点で行頭禁則)
+function wrap(str, maxW, size, weight = 800) {
+  ctx.font = F(weight, size);
+  // 必要行数を求め、各行の幅がそろうように目標幅を下げる
+  const n = Math.ceil(ctx.measureText(str).width / maxW);
+  if (n > 1) maxW = Math.min(maxW, ctx.measureText(str).width / n + size * 1.5);
+  const out = []; let cur = '';
+  for (const ch of str) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !'、。！？」）'.includes(ch)) { out.push(cur); cur = ch; }
+    else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function sceneAt(t) {
+  for (let i = TL.length - 1; i >= 0; i--) if (t >= TL[i].start) return i;
+  return 0;
+}
+
+// ---------- 背景 ----------
+function background(t, hue) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.bg0); g.addColorStop(1, C.bg1);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 流れる斜めストライプ
+  ctx.save();
+  ctx.globalAlpha = 0.06; ctx.fillStyle = C.white;
+  const off = (t * 40) % 120;
+  ctx.translate(W / 2, H / 2); ctx.rotate(-Math.PI / 6);
+  for (let x = -1600 - off; x < 1600; x += 120) ctx.fillRect(x, -1600, 50, 3200);
+  ctx.restore();
+  // 浮かぶ丸
+  for (let i = 0; i < 14; i++) {
+    const s = (i * 97.13) % 1;
+    const x = (i * 211 + Math.sin(t * 0.5 + i) * 30) % W;
+    const y = H - ((t * (25 + i * 4) + i * 300) % (H + 200)) + 100;
+    ctx.beginPath(); ctx.arc(x, y, 10 + s * 26, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${0.04 + s * 0.05})`; ctx.fill();
+  }
+}
+
+// 放射状の集中線(バースト)
+function burst(cx, cy, t, color, alpha) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 0.25);
+  ctx.globalAlpha = alpha; ctx.fillStyle = color;
+  for (let i = 0; i < 18; i++) {
+    ctx.rotate(Math.PI * 2 / 18);
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(1400, -110); ctx.lineTo(1400, 110); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- ヘッダー(進捗) ----------
+function header(t, idx) {
+  rr(40, 70, W - 80, 110, 55); ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fill();
+  text('名古屋大学のここがすごい！10選', W / 2, 125, { size: 46, color: C.light });
+  const cur = TL[idx].kind === 'item' ? TL[idx].num : (TL[idx].kind === 'outro' ? 11 : 0);
+  for (let i = 1; i <= 10; i++) {
+    const x = W / 2 + (i - 5.5) * 86, y = 240;
+    const on = i <= cur;
+    const now = i === cur;
+    const p = now ? easeBack((t - TL[idx].start) / 0.4) : 1;
+    ctx.beginPath(); ctx.arc(x, y, (now ? 30 : 24) * (now ? p : 1), 0, Math.PI * 2);
+    ctx.fillStyle = on ? (now ? C.yellow : C.green) : 'rgba(255,255,255,0.15)'; ctx.fill();
+    text(String(i), x, y + 2, { size: now ? 30 : 24, color: on ? C.ink : 'rgba(255,255,255,0.55)' });
+  }
+}
+
+// ---------- アイコン(各項目) ----------
+function icon(num, cx, cy, s, t) {
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const bob = Math.sin(t * 2.4) * 8;
+  ctx.translate(0, bob);
+  const P = { fill: C.white, ink: C.ink };
+  const circleBg = (col) => { ctx.beginPath(); ctx.arc(0, 0, 230, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill(); };
+  switch (num) {
+    case 1: { // メダル
+      circleBg('rgba(255,210,63,0.18)');
+      ctx.fillStyle = C.pink; ctx.beginPath(); ctx.moveTo(-90, -200); ctx.lineTo(-20, -40); ctx.lineTo(-70, -30); ctx.lineTo(-150, -190); ctx.fill();
+      ctx.fillStyle = C.blue; ctx.beginPath(); ctx.moveTo(90, -200); ctx.lineTo(20, -40); ctx.lineTo(70, -30); ctx.lineTo(150, -190); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 50, 130, 0, Math.PI * 2); ctx.fillStyle = '#e8a90c'; ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 50, 105, 0, Math.PI * 2); ctx.fillStyle = C.yellow; ctx.fill();
+      text('6', 0, 56, { size: 150, color: '#b77c00' });
+      break;
+    }
+    case 2: { // 青色LED
+      const glow = 0.6 + 0.4 * Math.sin(t * 5);
+      const g = ctx.createRadialGradient(0, -40, 10, 0, -40, 260);
+      g.addColorStop(0, `rgba(80,170,255,${0.75 * glow})`); g.addColorStop(1, 'rgba(80,170,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -40, 260, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2d7cff'; ctx.beginPath(); ctx.moveTo(-90, 60); ctx.lineTo(-90, -60); ctx.arc(0, -60, 90, Math.PI, 0); ctx.lineTo(90, 60); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; rr(-55, -110, 28, 120, 14); ctx.fill();
+      ctx.fillStyle = '#cfd8dc'; rr(-110, 60, 220, 34, 10); ctx.fill();
+      ctx.strokeStyle = '#cfd8dc'; ctx.lineWidth = 18;
+      ctx.beginPath(); ctx.moveTo(-40, 94); ctx.lineTo(-40, 210); ctx.moveTo(40, 94); ctx.lineTo(40, 180); ctx.stroke();
+      break;
+    }
+    case 3: { // 帝国大学(列柱の建物)
+      circleBg('rgba(255,255,255,0.08)');
+      ctx.fillStyle = P.fill;
+      ctx.beginPath(); ctx.moveTo(-200, -60); ctx.lineTo(0, -170); ctx.lineTo(200, -60); ctx.closePath(); ctx.fill();
+      rr(-190, -55, 380, 26, 6); ctx.fill();
+      for (let i = 0; i < 5; i++) { rr(-165 + i * 76, -20, 36, 160, 6); ctx.fill(); }
+      rr(-210, 145, 420, 34, 8); ctx.fill();
+      text('1939', 0, -92, { size: 46, color: C.ink });
+      break;
+    }
+    case 4: { // 地下鉄
+      circleBg('rgba(255,255,255,0.08)');
+      ctx.fillStyle = '#9b5de5'; rr(-150, -190, 300, 330, 60); ctx.fill();
+      ctx.fillStyle = C.light; rr(-115, -150, 230, 130, 24); ctx.fill();
+      ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.arc(-80, 60, 26, 0, Math.PI * 2); ctx.arc(80, 60, 26, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = C.white; rr(-50, 40, 100, 40, 10); ctx.fill();
+      ctx.strokeStyle = C.white; ctx.lineWidth = 16;
+      ctx.beginPath(); ctx.moveTo(-90, 140); ctx.lineTo(-150, 220); ctx.moveTo(90, 140); ctx.lineTo(150, 220); ctx.moveTo(-200, 222); ctx.lineTo(200, 222); ctx.stroke();
+      text('名古屋大学', 0, -85, { size: 40, color: C.ink });
+      break;
+    }
+    case 5: { // 豊田講堂(モダニズムの大屋根と柱)
+      circleBg('rgba(255,255,255,0.08)');
+      ctx.fillStyle = P.fill;
+      rr(-220, -150, 440, 50, 8); ctx.fill();            // 大庇
+      for (const x of [-170, -60, 60, 170]) { rr(x - 16, -100, 32, 240, 6); ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; rr(-130, -60, 260, 200, 6); ctx.fill(); // ガラス面
+      ctx.fillStyle = P.fill; rr(-240, 140, 480, 30, 8); ctx.fill();
+      for (let i = 0; i < 3; i++) { rr(-200 + i * 20, 170 + i * 18, 400 - i * 40, 16, 4); ctx.fill(); }
+      break;
+    }
+    case 6: { // 展示館(トロフィー+ケース)
+      circleBg('rgba(255,210,63,0.15)');
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 10; rr(-170, -200, 340, 380, 20); ctx.stroke();
+      ctx.fillStyle = C.yellow;
+      ctx.beginPath(); ctx.moveTo(-90, -140); ctx.lineTo(90, -140); ctx.quadraticCurveTo(90, 20, 0, 30); ctx.quadraticCurveTo(-90, 20, -90, -140); ctx.fill();
+      ctx.strokeStyle = C.yellow; ctx.lineWidth = 16;
+      ctx.beginPath(); ctx.arc(-95, -80, 40, Math.PI * 0.5, Math.PI * 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.arc(95, -80, 40, -Math.PI * 0.5, Math.PI * 0.5); ctx.stroke();
+      rr(-16, 25, 32, 70, 6); ctx.fill(); rr(-75, 90, 150, 36, 10); ctx.fill();
+      text('★', 0, -70, { size: 70, color: '#b77c00' });
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'; rr(-200, 175, 400, 30, 8); ctx.fill();
+      break;
+    }
+    case 7: { // 2つの大学が1つの法人に
+      const k = easeOut((t % 3) / 1.2);
+      ctx.lineWidth = 26;
+      ctx.strokeStyle = C.green; ctx.beginPath(); ctx.arc(-80 + 10 * k, 0, 140, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = C.yellow; ctx.beginPath(); ctx.arc(80 - 10 * k, 0, 140, 0, Math.PI * 2); ctx.stroke();
+      text('名大', -110, 0, { size: 64, color: C.white });
+      text('岐大', 110, 0, { size: 64, color: C.white });
+      ctx.fillStyle = C.pink; rr(-90, 170, 180, 60, 30); ctx.fill();
+      text('1法人', 0, 201, { size: 40, color: C.white });
+      break;
+    }
+    case 8: { // 地球+星
+      ctx.beginPath(); ctx.arc(0, 0, 190, 0, Math.PI * 2); ctx.fillStyle = '#2d7cff'; ctx.fill();
+      ctx.save(); ctx.clip();
+      ctx.fillStyle = '#3ecf8e';
+      const sh = (t * 30) % 400;
+      for (const [x, y, r] of [[-60, -60, 70], [70, 40, 90], [-110, 90, 50], [130, -110, 45]]) {
+        ctx.beginPath(); ctx.ellipse(x - sh + 200, y, r * 1.3, r, 0.3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x - sh - 200, y, r * 1.3, r, 0.3, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.ellipse(0, 0, 250, 70, -0.35, 0, Math.PI * 2); ctx.stroke();
+      ctx.save(); ctx.translate(150, -160); ctx.rotate(t * 1.2);
+      ctx.fillStyle = C.yellow; ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const r = i % 2 ? 30 : 70; const a = i * Math.PI / 5 - Math.PI / 2; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      ctx.fill(); ctx.restore();
+      break;
+    }
+    case 9: { // 免震の建物
+      const sway = Math.sin(t * 6) * 18;
+      ctx.strokeStyle = C.yellow; ctx.lineWidth = 10;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        for (let x = -230; x <= 230; x += 10) ctx.lineTo(x, 200 + i * 26 + Math.sin(x * 0.05 + t * 8 + i) * 8);
+        ctx.stroke();
+      }
+      ctx.fillStyle = C.white; rr(-140, -200, 280, 340, 14); ctx.fill();
+      ctx.fillStyle = C.green;
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 3; c++) { rr(-110 + c * 80, -170 + r * 75, 60, 50, 8); ctx.fill(); }
+      // 免震装置(ばね)
+      ctx.strokeStyle = C.pink; ctx.lineWidth = 10;
+      for (const x0 of [-90, 0, 90]) {
+        ctx.beginPath();
+        for (let k = 0; k <= 6; k++) ctx.lineTo(x0 + (k % 2 ? 22 : -22) + sway * (k / 6), 145 + k * 7);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 10: { // 自由(羽ばたく鳥)
+      circleBg('rgba(255,210,63,0.16)');
+      for (let i = 0; i < 3; i++) {
+        const fl = Math.sin(t * 7 + i) * 0.5;
+        ctx.save(); ctx.translate(-100 + i * 110, -60 + (i % 2) * 90 - i * 20); ctx.scale(1 - i * 0.2, 1 - i * 0.2);
+        ctx.strokeStyle = C.white; ctx.lineWidth = 18;
+        ctx.beginPath(); ctx.moveTo(-90, -30 * fl - 20); ctx.quadraticCurveTo(-40, -70 * fl - 40, 0, 0); ctx.quadraticCurveTo(40, -70 * fl - 40, 90, -30 * fl - 20); ctx.stroke();
+        ctx.restore();
+      }
+      ctx.fillStyle = C.yellow; ctx.beginPath(); ctx.arc(120, 150, 60, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+// ---------- 字幕 ----------
+function subtitle(t, sc) {
+  if (t < sc.vstart - 0.05 || t > sc.vend + 0.35) return;
+  const a = clamp((t - sc.vstart + 0.05) / 0.15) * clamp((sc.vend + 0.35 - t) / 0.15);
+  const size = 50, lh = size * 1.42;
+  const lines = wrap(sc.subtitle, W - 200, size);
+  const boxH = lines.length * lh + 70, y0 = 1560 - boxH / 2;
+  ctx.save(); ctx.globalAlpha = a;
+  rr(60, y0, W - 120, boxH, 36); ctx.fillStyle = 'rgba(255,255,255,0.96)'; ctx.fill();
+  ctx.lineWidth = 8; ctx.strokeStyle = C.pink; ctx.stroke();
+  // 話者ラベル
+  rr(90, y0 - 38, 250, 70, 35); ctx.fillStyle = C.pink; ctx.fill();
+  text('四国めたん', 215, y0 - 2, { size: 36, color: C.white });
+  lines.forEach((ln, i) => text(ln, W / 2, y0 + 40 + lh / 2 + i * lh, { size, color: C.ink }));
+  // 発話中の波形インジケータ
+  const talking = t > sc.vstart && t < sc.vend;
+  for (let i = 0; i < 5; i++) {
+    const h = talking ? 10 + 22 * Math.abs(Math.sin(t * 13 + i * 1.7)) : 8;
+    rr(W - 210 + i * 22, y0 - 4 - h / 2, 12, h, 6); ctx.fillStyle = C.pink; ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function drawIntro(t, sc) {
+  const lt = t - sc.start;
+  burst(W / 2, 820, t, C.yellow, 0.10 * easeOut(lt / 0.5));
+  const p = easeBack(lt / 0.55);
+  ctx.save(); ctx.translate(W / 2, 700); ctx.scale(p, p); ctx.rotate(-0.04);
+  rr(-470, -230, 940, 460, 50); ctx.fillStyle = C.white; ctx.fill();
+  ctx.lineWidth = 14; ctx.strokeStyle = C.green; ctx.stroke();
+  text(sc.title, 0, 0, { size: 120, color: C.bg0, lh: 1.3 });
+  ctx.restore();
+  const q = easeBack((lt - 0.45) / 0.5);
+  if (q > 0) {
+    ctx.save(); ctx.translate(W / 2, 1120); ctx.scale(q, q); ctx.rotate(0.06 + Math.sin(t * 4) * 0.03);
+    ctx.fillStyle = C.yellow; ctx.beginPath();
+    for (let i = 0; i < 24; i++) { const r = i % 2 ? 175 : 225; const a = i * Math.PI / 12; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+    ctx.fill();
+    text('10選', 0, 6, { size: 130, color: C.ink });
+    ctx.restore();
+  }
+}
+
+function drawItem(t, sc) {
+  const lt = t - sc.start;
+  // 入場フラッシュ
+  const fl = clamp(1 - lt / 0.25);
+  burst(W / 2, 760, t, C.white, 0.05);
+  // No. バッジ
+  const pb = easeBack(lt / 0.45);
+  ctx.save(); ctx.translate(200, 430); ctx.scale(pb, pb); ctx.rotate(-0.12);
+  ctx.beginPath(); ctx.arc(0, 0, 115, 0, Math.PI * 2); ctx.fillStyle = C.yellow; ctx.fill();
+  ctx.lineWidth = 10; ctx.strokeStyle = C.white; ctx.stroke();
+  text('No.', 0, -48, { size: 40, color: C.ink });
+  text(String(sc.num), 0, 22, { size: 110, color: C.ink });
+  ctx.restore();
+  // アイコン
+  const pi = easeBack((lt - 0.1) / 0.5);
+  if (pi > 0) icon(sc.num, W / 2 + 90, 640, 0.95 * pi, t);
+  // 見出し
+  const ph = easeOut((lt - 0.2) / 0.4);
+  ctx.save(); ctx.globalAlpha = ph; ctx.translate((1 - ph) * 140, 0);
+  const lines = sc.title.split('\n').length;
+  const size = sc.title.replace('\n', '').length > 12 ? 96 : 110;
+  text(sc.title, W / 2, 1040, { size, color: C.white, stroke: C.ink, sw: 22, lh: 1.2 });
+  ctx.restore();
+  // 補足
+  const ps = easeOut((lt - 0.45) / 0.4);
+  if (ps > 0) {
+    ctx.save(); ctx.globalAlpha = ps;
+    const sl = sc.sub.split('\n');
+    ctx.font = F(800, 40);
+    const w = Math.max(...sl.map(s => ctx.measureText(s).width)) + 80;
+    const hh = sl.length * 54 + 34, y = 1040 + lines * 66 + 40;
+    rr(W / 2 - w / 2, y, w, hh, hh / 2 > 50 ? 30 : hh / 2); ctx.fillStyle = C.green; ctx.fill();
+    text(sc.sub, W / 2, y + hh / 2 + 2, { size: 40, color: C.white, lh: 1.35 });
+    ctx.restore();
+  }
+  if (fl > 0) { ctx.fillStyle = `rgba(255,255,255,${fl * 0.5})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const SHORT = ['ノーベル賞受賞者6人', '青色LEDを生んだ', '最後の帝国大学', 'キャンパスに地下鉄駅', 'シンボル豊田講堂', 'ノーベル賞展示館', '日本初の1法人複数大学', '指定国立大学法人', '防災拠点「減災館」', '自由闊達な学風'];
+function drawOutro(t, sc) {
+  const lt = t - sc.start;
+  const p = easeBack(lt / 0.5);
+  ctx.save(); ctx.translate(W / 2, 470); ctx.scale(p, p);
+  rr(-440, -150, 880, 300, 50); ctx.fillStyle = C.yellow; ctx.fill();
+  text(sc.title, 0, 0, { size: 96, color: C.ink, lh: 1.25 });
+  ctx.restore();
+  // 10項目のおさらい
+  const items = TL.filter(s => s.kind === 'item');
+  items.forEach((s, i) => {
+    const q = easeOut((lt - 0.3 - i * 0.08) / 0.35);
+    if (q <= 0) return;
+    const col = i % 2, row = Math.floor(i / 2);
+    const x = 70 + col * 480 + (1 - q) * 60, y = 700 + row * 110;
+    ctx.save(); ctx.globalAlpha = q;
+    rr(x, y, 460, 90, 45); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x + 45, y + 45, 32, 0, Math.PI * 2); ctx.fillStyle = C.yellow; ctx.fill();
+    text(String(s.num), x + 45, y + 47, { size: 32, color: C.ink });
+    const label = SHORT[s.num - 1];
+    let size = 34; ctx.font = F(800, size);
+    while (ctx.measureText(label).width > 360 && size > 22) { size -= 2; ctx.font = F(800, size); }
+    text(label, x + 92, y + 47, { size, align: 'left', color: C.white });
+    ctx.restore();
+  });
+  // クレジット
+  text('ナレーション：VOICEVOX:四国めたん　BGM：オリジナル', W / 2, 1830, { size: 30, weight: 500, color: 'rgba(255,255,255,0.75)' });
+}
+
+function render(t) {
+  const idx = sceneAt(t), sc = TL[idx];
+  background(t);
+  header(t, idx);
+  if (sc.kind === 'intro') drawIntro(t, sc);
+  else if (sc.kind === 'item') drawItem(t, sc);
+  else drawOutro(t, sc);
+  subtitle(t, sc);
+  if (sc.kind !== 'outro') text('VOICEVOX:四国めたん', W - 40, 1880, { size: 26, weight: 500, align: 'right', color: 'rgba(255,255,255,0.5)' });
+  // 全体フェードアウト
+  const fo = clamp((t - (window.DURATION - 0.8)) / 0.8);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生
+document.fonts.load(F(800, 40)).then(() => document.fonts.load(F(500, 40))).then(() => {
+  window.READY = true;
+  if (!navigator.webdriver) {
+    document.body.classList.add('preview');
+    const t0 = performance.now();
+    const loop = () => { render(((performance.now() - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); };
+    loop();
+  } else render(0);
+});
+</script>
+</body>
+</html>
