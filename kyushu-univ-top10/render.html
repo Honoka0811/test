@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Kyushu Univ Top10</title>
+<style>
+  @font-face { font-family: 'MR'; src: url('fonts/MPLUSRounded1c-Black.ttf'); font-weight: 900; }
+  @font-face { font-family: 'MR'; src: url('fonts/MPLUSRounded1c-ExtraBold.ttf'); font-weight: 800; }
+  @font-face { font-family: 'MR'; src: url('fonts/MPLUSRounded1c-Bold.ttf'); font-weight: 700; }
+  html,body{margin:0;background:#2a0a14;}
+  canvas{display:block;max-height:100vh;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 九州大学のここがすごい！10選(9:16 ショート)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。尺は timeline.js(voice.py が生成)
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TIMELINE, DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const F = (w, s) => `${w} ${s}px MR, "IPAGothic", sans-serif`;
+const C = {
+  wine: '#7B1E3A', wineDk: '#3A0C1C', wineLt: '#A33457',
+  cream: '#FFF7EF', ink: '#3A0C1C', gold: '#FFC94A', goldDk: '#E09A12',
+  white: '#FFFFFF', sky: '#4AA8E8', green: '#4CB86B', gray: '#C9B8BE'
+};
+
+// ---------- 補助 ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = x => 1 - Math.pow(1 - clamp(x), 3);
+const easeBack = x => { x = clamp(x); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const lerp = (a, b, x) => a + (b - a) * x;
+function hash(i) { const s = Math.sin(i * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+function txt(s, x, y, { size = 60, w = 900, color = C.white, align = 'center', alpha = 1, stroke = 0, strokeColor = C.wineDk, base = 'alphabetic', ls = 0 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = F(w, size); ctx.textAlign = align; ctx.textBaseline = base;
+  if (ls) ctx.letterSpacing = ls + 'px';
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rr(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function fillRR(x, y, w, h, r, color, alpha = 1) { ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; rr(x, y, w, h, r); ctx.fill(); ctx.restore(); }
+function circle(x, y, r, color, alpha = 1) { ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+function withT(x, y, s, rot, fn) { ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0); ctx.scale(s, s); fn(); ctx.restore(); }
+// 幅に収まるように折り返す
+function wrap(s, maxW, size, w = 800) {
+  ctx.font = F(w, size);
+  const lines = []; let cur = '';
+  for (const ch of s) {
+    if (ctx.measureText(cur + ch).width > maxW && cur) {
+      // 句読点・閉じ括弧は行頭に来ないよう前の行へ
+      if ('、。！？)」・'.includes(ch)) { cur += ch; lines.push(cur); cur = ''; continue; }
+      lines.push(cur); cur = ch;
+    } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+// ---------- 背景 ----------
+function background(t, gold) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, gold ? '#8A2442' : C.wine); g.addColorStop(1, C.wineDk);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 流れる斜めストライプ
+  ctx.save(); ctx.globalAlpha = 0.06; ctx.fillStyle = C.white;
+  const off = (t * 60) % 160;
+  ctx.translate(W / 2, H / 2); ctx.rotate(-Math.PI / 5);
+  for (let x = -1800; x < 1800; x += 160) ctx.fillRect(x + off, -1800, 60, 3600);
+  ctx.restore();
+  // 浮遊する粒
+  for (let i = 0; i < 26; i++) {
+    const x = hash(i) * W, sp = 20 + hash(i + 50) * 50;
+    const y = H - ((t * sp + hash(i + 99) * H) % (H + 100));
+    circle(x, y, 4 + hash(i + 7) * 9, gold ? C.gold : C.white, 0.10 + hash(i + 3) * 0.12);
+  }
+}
+
+// ---------- 共通 UI ----------
+function header(t, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  fillRR(150, 236, 780, 96, 48, C.cream);
+  txt('九州大学のここがすごい！', 540, 302, { size: 50, w: 900, color: C.wine });
+  ctx.restore();
+}
+function progress(rank, p) {
+  const n = 10, gap = 76, x0 = 540 - gap * (n - 1) / 2, y = 392;
+  for (let i = 0; i < n; i++) {
+    const r = 10 - i, x = x0 + i * gap;
+    const done = r > rank, cur = r === rank;
+    const s = cur ? lerp(1, 1.35, easeBack(p)) : 1;
+    circle(x, y, 26 * s, cur ? C.gold : done ? C.wineLt : 'rgba(255,255,255,0.18)');
+    txt(String(r), x, y + 1, { size: cur ? 30 : 26, w: 900, base: 'middle', color: cur ? C.wineDk : done ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.55)' });
+  }
+}
+function subtitle(sc, t) {
+  const a = seg(t, sc.vs - 0.05, 0.12) * (1 - seg(t, sc.start + sc.dur - 0.08, 0.08));
+  if (a <= 0) return;
+  const lines = wrap(sc.sub, 940, 54);
+  const lh = 72, y0 = sc.kind === 'rank' ? 1500 : 1540;
+  ctx.save(); ctx.globalAlpha = a;
+  fillRR(40, y0 - 64, 1000, lines.length * lh + 40, 28, 'rgba(30,6,14,0.55)');
+  lines.forEach((l, i) => txt(l, 540, y0 + i * lh, { size: 54, w: 800, stroke: 12, strokeColor: C.wineDk }));
+  ctx.restore();
+}
+
+// ---------- イラスト(カード中央 cx, cy を原点として描く) ----------
+const ICON = {
+  10(p, t) { // 12 個のブロック(学部)が積み上がる
+    for (let i = 0; i < 12; i++) {
+      const col = i % 4, row = Math.floor(i / 4);
+      const q = easeBack(seg(p, i * 0.05, 0.25));
+      const x = -195 + col * 130, y = -120 + row * 92;
+      withT(x + 55, y + 38, q, 0, () => fillRR(-55, -38, 110, 76, 16, [C.wine, C.wineLt, C.goldDk, C.sky][(i + row) % 4]));
+    }
+  },
+  9(p, t) { // 歯車 × ペン先
+    const q = easeBack(seg(p, 0, 0.35));
+    withT(-90, 0, q, t * 1.2, () => {
+      ctx.fillStyle = C.wine; ctx.beginPath();
+      for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; ctx.save(); ctx.rotate(a); ctx.fillRect(-18, -122, 36, 40); ctx.restore(); }
+      ctx.arc(0, 0, 92, 0, Math.PI * 2); ctx.fill(); circle(0, 0, 38, C.cream);
+    });
+    withT(110, 10, easeBack(seg(p, 0.15, 0.35)), -0.5 + Math.sin(t * 3) * 0.08, () => {
+      ctx.fillStyle = C.goldDk; ctx.beginPath(); ctx.moveTo(0, 130); ctx.lineTo(-48, 10); ctx.lineTo(-48, -120); ctx.lineTo(48, -120); ctx.lineTo(48, 10); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = C.ink; ctx.beginPath(); ctx.moveTo(0, 130); ctx.lineTo(-22, 75); ctx.lineTo(22, 75); ctx.closePath(); ctx.fill();
+      fillRR(-48, -150, 96, 40, 10, C.wine);
+    });
+  },
+  8(p, t) { // 砂漠に水路が伸び、緑が広がる
+    const q = easeOut(seg(p, 0, 0.6));
+    fillRR(-330, -150, 660, 300, 30, '#E9C98F');
+    ctx.save(); rr(-330, -150, 660, 300, 30); ctx.clip();
+    // 緑
+    for (let i = 0; i < 14; i++) {
+      const x = -300 + i * 46, g = easeBack(seg(p, 0.35 + i * 0.025, 0.25));
+      withT(x, -60 + (i % 2) * 150, g, 0, () => { circle(0, 0, 26, C.green); circle(14, -12, 18, '#62CF80'); });
+    }
+    ctx.fillStyle = C.sky; ctx.fillRect(-330, -18, 660 * q, 40);
+    ctx.globalAlpha = 0.6; ctx.fillStyle = C.white;
+    for (let i = 0; i < 8; i++) { const x = -330 + ((t * 160 + i * 90) % 700); if (x < -330 + 660 * q) ctx.fillRect(x, -6, 34, 6); }
+    ctx.restore();
+  },
+  7(p, t) { // 風レンズ風車:リング(集風体)+回る羽根
+    const q = easeBack(seg(p, 0, 0.35));
+    withT(0, -10, q, 0, () => {
+      for (let i = 0; i < 5; i++) { // 風の線
+        const y = -110 + i * 55, x = -330 + ((t * 420 + i * 130) % 260);
+        ctx.strokeStyle = C.sky; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 70, y + (0 - y) * 0.25); ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = C.gray; ctx.fillRect(-12, 40, 24, 170);
+      ctx.save(); ctx.lineWidth = 34; ctx.strokeStyle = C.wine;
+      ctx.beginPath(); ctx.ellipse(40, -20, 52, 150, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      withT(40, -20, 1, 0, () => { ctx.scale(0.32, 1); ctx.rotate(t * 7);
+        ctx.fillStyle = C.goldDk;
+        for (let i = 0; i < 3; i++) { ctx.rotate(Math.PI * 2 / 3); ctx.beginPath(); ctx.ellipse(0, -62, 18, 62, 0, 0, Math.PI * 2); ctx.fill(); }
+      });
+      circle(40, -20, 14, C.ink);
+    });
+  },
+  6(p, t) { // 病院の十字 + 心拍
+    const q = easeBack(seg(p, 0, 0.35)), beat = 1 + 0.06 * Math.max(0, Math.sin(t * 7));
+    withT(-120, 0, q * beat, 0, () => { circle(0, 0, 130, C.wine); fillRR(-30, -85, 60, 170, 12, C.white); fillRR(-85, -30, 170, 60, 12, C.white); });
+    const d = easeOut(seg(p, 0.2, 0.5));
+    ctx.save(); ctx.strokeStyle = C.wineLt; ctx.lineWidth = 12; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath(); const pts = [[40, 0], [90, 0], [115, -70], [150, 80], [180, 0], [300, 0]];
+    ctx.moveTo(...pts[0]); const n = d * (pts.length - 1);
+    for (let i = 1; i <= Math.ceil(n); i++) { const k = Math.min(1, n - (i - 1)); ctx.lineTo(lerp(pts[i - 1][0], pts[i][0], k), lerp(pts[i - 1][1], pts[i][1], k)); }
+    ctx.stroke(); ctx.restore();
+  },
+  5(p, t) { // 大講堂(楕円形の建物 + 縦ルーバー)
+    const q = easeOut(seg(p, 0, 0.5));
+    ctx.save(); ctx.beginPath(); ctx.rect(-340, 150 - 300 * q, 680, 300 * q); ctx.clip();
+    ctx.fillStyle = '#E9DCD2'; ctx.beginPath(); ctx.ellipse(0, 40, 300, 110, 0, Math.PI, 0); ctx.lineTo(300, 120); ctx.lineTo(-300, 120); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = C.wine; ctx.fillRect(-300, 0, 600, 120);
+    ctx.fillStyle = C.cream; for (let x = -280; x < 290; x += 28) ctx.fillRect(x, 12, 10, 96);
+    ctx.fillStyle = C.ink; ctx.fillRect(-330, 120, 660, 14);
+    ctx.restore();
+    for (let i = 0; i < 3; i++) { const g = easeBack(seg(p, 0.35 + i * 0.08, 0.25)); withT(-260 + i * 260, 140, g, 0, () => { circle(0, -24, 30, C.green); ctx.fillStyle = '#7A4E2D'; ctx.fillRect(-5, -2, 10, 24); }); }
+    circle(230, -110, 34, C.gold, q);
+  },
+  4(p, t) { // 地球 + CO2 → 0
+    const q = easeBack(seg(p, 0, 0.35));
+    withT(-140, 0, q, 0, () => {
+      circle(0, 0, 130, C.sky);
+      ctx.save(); ctx.beginPath(); ctx.arc(0, 0, 130, 0, Math.PI * 2); ctx.clip();
+      const o = (t * 40) % 260;
+      for (const [x, y, r] of [[-60, -40, 50], [30, 30, 60], [90, -70, 35], [-30, 80, 40]]) { circle(x + o - 130, y, r, C.green); circle(x + o + 130, y, r, C.green); }
+      ctx.restore();
+    });
+    const a = seg(p, 0.25, 0.25);
+    txt('CO₂', 150, -20, { size: 84, w: 900, color: C.ink, alpha: a });
+    txt('→ 0', 150, 80, { size: 84, w: 900, color: C.green, alpha: seg(p, 0.45, 0.25) });
+  },
+  3(p, t) { // H2 分子 + 泡
+    const q = easeBack(seg(p, 0, 0.35)), bob = Math.sin(t * 2.5) * 10;
+    for (let i = 0; i < 12; i++) { const y = 150 - ((t * 90 + hash(i) * 300) % 300); circle(-300 + hash(i + 9) * 600, y, 8 + hash(i + 4) * 14, C.sky, 0.35); }
+    withT(0, bob, q, Math.sin(t * 1.5) * 0.1, () => {
+      ctx.fillStyle = C.ink; ctx.fillRect(-60, -12, 120, 24);
+      circle(-110, 0, 90, C.sky); circle(110, 0, 90, C.sky);
+      txt('H', -110, 30, { size: 90, w: 900 }); txt('H', 110, 30, { size: 90, w: 900 });
+    });
+  },
+  2(p, t) { // メダル
+    const q = easeBack(seg(p, 0, 0.4)), sh = (t * 0.8) % 2;
+    withT(0, 0, q, Math.sin(t * 2) * 0.05, () => {
+      ctx.fillStyle = C.wineLt; ctx.beginPath(); ctx.moveTo(-70, -170); ctx.lineTo(-10, -40); ctx.lineTo(-60, -30); ctx.lineTo(-130, -170); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(70, -170); ctx.lineTo(10, -40); ctx.lineTo(60, -30); ctx.lineTo(130, -170); ctx.closePath(); ctx.fill();
+      circle(0, 40, 130, C.goldDk); circle(0, 40, 108, C.gold);
+      ctx.save(); ctx.beginPath(); ctx.arc(0, 40, 108, 0, Math.PI * 2); ctx.clip();
+      ctx.globalAlpha = 0.5; ctx.fillStyle = C.white; ctx.translate(lerp(-260, 260, sh / 2), 40); ctx.rotate(0.5); ctx.fillRect(-20, -200, 40, 400); ctx.restore();
+      txt('指定', 0, 70, { size: 76, w: 900, color: C.wineDk });
+    });
+  },
+  1(p, t) { // 東京ドーム 58 個が並ぶ
+    const cols = 10, sz = 58;
+    for (let i = 0; i < 58; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      const g = easeBack(seg(p, 0.05 + i * 0.0105, 0.12));
+      const x = -(cols - 1) * sz / 2 + col * sz, y = -140 + row * 44;
+      withT(x, y, g * 0.9, 0, () => {
+        ctx.fillStyle = i % 2 ? C.wine : C.wineLt; ctx.beginPath(); ctx.ellipse(0, 10, 26, 22, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = C.ink; ctx.fillRect(-28, 10, 56, 6);
+      });
+    }
+  },
+};
+
+function confetti(t, t0) {
+  const e = t - t0; if (e < 0) return;
+  for (let i = 0; i < 90; i++) {
+    const x = hash(i) * W + Math.sin(e * 2 + i) * 40, y = -40 + e * (300 + hash(i + 11) * 380) - hash(i + 5) * 600;
+    if (y < -40 || y > H) continue;
+    withT(x, y, 1, e * (3 + hash(i + 2) * 5), () => { ctx.fillStyle = [C.gold, C.white, C.sky, '#FF7AA8', C.green][i % 5]; ctx.fillRect(-10, -6, 20, 12); });
+  }
+}
+
+// ---------- シーン ----------
+function sceneIntro(sc, t) {
+  const e = t - sc.start;
+  const a = easeBack(seg(e, 0.05, 0.45)), b = easeBack(seg(e, 0.35, 0.45)), c = easeBack(seg(e, 0.7, 0.5));
+  withT(540, 560, a, -0.04, () => { fillRR(-330, -70, 660, 130, 30, C.cream); txt('九州大学の', 0, 30, { size: 92, w: 900, color: C.wine }); });
+  withT(540, 790, b, 0.03, () => txt('ここがすごい！', 0, 40, { size: 128, w: 900, color: C.white, stroke: 22, strokeColor: C.wineDk }));
+  const pulse = 1 + 0.04 * Math.sin(e * 8);
+  withT(540, 1110, c * pulse, 0, () => {
+    // 星形のバッジ
+    ctx.fillStyle = C.gold; ctx.beginPath();
+    for (let i = 0; i < 32; i++) { const r = i % 2 ? 200 : 235, ang = i / 32 * Math.PI * 2 + e * 0.4; ctx.lineTo(Math.cos(ang) * r, Math.sin(ang) * r); }
+    ctx.closePath(); ctx.fill();
+    txt('10', -18, 52, { size: 200, w: 900, color: C.wineDk });
+    txt('選', 118, 50, { size: 90, w: 900, color: C.wineDk });
+  });
+  txt('いきますわよ！', 540, 1390, { size: 64, w: 800, alpha: seg(e, 1.2, 0.3) });
+}
+
+function sceneRank(sc, t) {
+  const e = t - sc.start, top = sc.rank === 1;
+  progress(sc.rank, seg(e, 0, 0.35));
+  // 「第N位」バッジ
+  const bp = easeBack(seg(e, 0.0, 0.4));
+  withT(540, 560, bp, -0.05 + 0.05 * bp, () => {
+    const col = top ? C.gold : C.cream, ink = top ? C.wineDk : C.wine;
+    fillRR(-260, -120, 520, 210, 105, col);
+    txt('第', -160, 30, { size: 80, w: 900, color: ink });
+    txt(String(sc.rank), 0, 58, { size: sc.rank === 10 ? 170 : 190, w: 900, color: ink });
+    txt('位', 165, 30, { size: 80, w: 900, color: ink });
+  });
+  // タイトル
+  const tp = easeOut(seg(e, 0.2, 0.35));
+  txt(sc.title, 540, 770 + (1 - tp) * 40, { size: sc.title.length > 9 ? 78 : 92, w: 900, alpha: tp, stroke: 18, strokeColor: C.wineDk });
+  // カード
+  const cp = easeOut(seg(e, 0.3, 0.4));
+  ctx.save(); ctx.globalAlpha = cp;
+  withT(540, 1060, lerp(0.92, 1, cp), 0, () => {
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14;
+    fillRR(-450, -240, 900, 480, 44, C.cream); ctx.restore();
+    if (top) { ctx.save(); ctx.lineWidth = 10; ctx.strokeStyle = C.gold; rr(-450, -240, 900, 480, 44); ctx.stroke(); ctx.restore(); }
+    withT(0, -55, 1, 0, () => ICON[sc.rank](seg(e, 0.4, 2.2), t));
+    // 大きな数字/キーワード
+    const kp = easeBack(seg(e, 0.9, 0.4));
+    withT(0, 190, kp, 0, () => {
+      ctx.font = F(900, 110); const bw = ctx.measureText(sc.big).width;
+      ctx.font = F(900, 54); const uw = sc.unit ? ctx.measureText(sc.unit).width + 10 : 0;
+      const x0 = -(bw + uw) / 2;
+      txt(sc.big, x0, 0, { size: 110, w: 900, color: C.wine, align: 'left' });
+      if (sc.unit) txt(sc.unit, x0 + bw + 10, 0, { size: 54, w: 900, color: C.wine, align: 'left' });
+    });
+  });
+  ctx.restore();
+  // 補足チップ
+  const np = easeOut(seg(e, 1.2, 0.3));
+  if (np > 0) {
+    let ns = 44; ctx.font = F(800, ns); while (ctx.measureText(sc.note).width > 880 && ns > 28) { ns -= 2; ctx.font = F(800, ns); }
+    const w = ctx.measureText(sc.note).width + 80;
+    ctx.save(); ctx.globalAlpha = np;
+    fillRR(540 - w / 2, 1352 - 38 + (1 - np) * 20, w, 76, 38, top ? C.gold : C.wineLt);
+    txt(sc.note, 540, 1352 + ns * 0.36 + (1 - np) * 20, { size: ns, w: 800, color: top ? C.wineDk : C.white });
+    ctx.restore();
+  }
+  if (top) confetti(t, sc.start + 0.2);
+}
+
+function sceneOutro(sc, t) {
+  const e = t - sc.start;
+  const a = easeBack(seg(e, 0.05, 0.4)), b = easeBack(seg(e, 0.9, 0.4));
+  withT(540, 640, a, 0, () => txt('いくつ', 0, 0, { size: 120, w: 900, stroke: 20 }));
+  withT(540, 800, a, 0, () => txt('知ってた？', 0, 0, { size: 120, w: 900, stroke: 20 }));
+  withT(540, 1060, b * (1 + 0.04 * Math.sin(e * 9)), 0, () => {
+    fillRR(-300, -80, 600, 160, 80, C.gold);
+    txt('フォローしてね', 0, 22, { size: 66, w: 900, color: C.wineDk });
+  });
+  const c = seg(e, 1.3, 0.4);
+  txt('ナレーション VOICEVOX:四国めたん', 540, 1290, { size: 38, w: 700, alpha: c * 0.9 });
+  txt('BGM オリジナル / 数値は概数', 540, 1350, { size: 38, w: 700, alpha: c * 0.9 });
+}
+
+function render(t) {
+  const sc = TL.scenes.find(s => t >= s.start && t < s.start + s.dur) || TL.scenes[TL.scenes.length - 1];
+  const isTop = sc.kind === 'rank' && sc.rank === 1;
+  ctx.clearRect(0, 0, W, H);
+  background(t, isTop);
+  header(t, sc.kind === 'rank' ? 1 : 0);
+  if (sc.kind === 'intro') sceneIntro(sc, t);
+  else if (sc.kind === 'rank') sceneRank(sc, t);
+  else sceneOutro(sc, t);
+  subtitle(sc, t);
+  // シーン切替のフラッシュ
+  const e = t - sc.start;
+  if (sc.start > 0 && e < 0.12) { ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - e / 0.12)})`; ctx.fillRect(0, 0, W, H); }
+  // 全体のフェードアウト
+  const fo = seg(t, DURATION - 0.4, 0.4);
+  if (fo > 0) { ctx.fillStyle = `rgba(20,4,10,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  document.fonts.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+}
+</script>
+</body>
+</html>
