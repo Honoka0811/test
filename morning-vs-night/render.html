@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Morning vs Night</title>
+<style>
+  html,body{margin:0;background:#111;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+<script src="output/timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ------------------------------------------------------------
+// 朝型 VS 夜型 対決!  (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン尺・字幕は narrate.py が書き出す output/timeline.js に従う。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"IPAPGothic","IPAGothic",sans-serif';
+const TL = window.TIMELINE;
+const FPS = 30, DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+
+const C = {
+  asa: '#FF7A2F', asaDeep: '#E2541B', asaSky1: '#FFF3C4', asaSky2: '#FFC27A',
+  yoru: '#6B63FF', yoruDeep: '#3D35C9', yoruSky1: '#0E1433', yoruSky2: '#2E2466',
+  gold: '#FFD23F', ink: '#FFFFFF', dark: '#1B1B2F', red: '#FF3B5C',
+};
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+// 太字風テキスト(IPAフォントに太字が無いので同色ストロークで太らせ、外側に縁取り)
+function txt(s, x, y, { size = 60, color = C.ink, align = 'center', base = 'middle', alpha = 1,
+  outline = null, ow = 0, bold = true, rot = 0, scale = 1, shadow = false } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(scale, scale);
+  ctx.font = `${size}px ${FONT}`;
+  ctx.textAlign = align; ctx.textBaseline = base;
+  ctx.lineJoin = 'round';
+  if (shadow) { ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowOffsetY = size * 0.08; ctx.shadowBlur = size * 0.1; }
+  if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = ow || size * 0.22; ctx.strokeText(s, 0, 0); }
+  ctx.shadowColor = 'transparent';
+  if (bold) { ctx.strokeStyle = color; ctx.lineWidth = size * 0.06; ctx.strokeText(s, 0, 0); }
+  ctx.fillStyle = color; ctx.fillText(s, 0, 0);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// ---------- タイムライン参照 ----------
+function sceneAt(t) {
+  let s = TL.scenes[0];
+  for (const sc of TL.scenes) if (t >= sc.start) s = sc;
+  return s;
+}
+function scoreAt(t) {
+  let a = 0, y = 0;
+  for (const sc of TL.scenes) if (sc.id === 'round' && t >= sc.lines[2].t0) sc.win === 'asa' ? a++ : y++;
+  return { a, y };
+}
+function lastWinT(t) {  // 直近の勝敗決定時刻
+  let w = -99;
+  for (const sc of TL.scenes) if (sc.id === 'round' && t >= sc.lines[2].t0) w = sc.lines[2].t0;
+  return w;
+}
+
+// ---------- 背景: 斜めに分割した朝と夜 ----------
+function background(t) {
+  const sc = scoreAt(t), wt = lastWinT(t);
+  // 勝った側が境界線を押し込む(綱引き風)
+  const target = (sc.a - sc.y) * 70;
+  const prev = target - (sc.a - sc.y - (sceneAt(t).win === 'asa' ? 1 : -1)) * 70;
+  let off = target;
+  if (t - wt < 0.6 && sceneAt(t).id === 'round') off = lerp(prev, target, backOut(seg(t, wt, 0.6)));
+  const sway = Math.sin(t * 1.3) * 10;
+  const xTop = 650 + off + sway, xBot = 430 + off + sway;
+
+  // 朝
+  let g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.asaSky1); g.addColorStop(1, C.asaSky2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 朝の光線
+  ctx.save();
+  ctx.translate(120, 260); ctx.rotate(t * 0.08);
+  for (let i = 0; i < 14; i++) {
+    ctx.rotate(Math.PI * 2 / 14);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(1800, -120); ctx.lineTo(1800, 120); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  // 雲
+  for (let i = 0; i < 4; i++) {
+    const cx = ((hash(i) * 900 + t * (18 + i * 6)) % 1100) - 120, cy = 380 + i * 360 + hash(i + 9) * 80;
+    cloud(cx, cy, 0.8 + hash(i + 3) * 0.6);
+  }
+
+  // 夜(右側の多角形)
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(xTop, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H); ctx.lineTo(xBot, H); ctx.closePath();
+  ctx.clip();
+  g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, C.yoruSky1); g.addColorStop(1, C.yoruSky2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  for (let i = 0; i < 90; i++) {
+    const sx = 300 + hash(i * 3.1) * 800, sy = hash(i * 7.7) * H;
+    const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * (1 + hash(i) * 2) + i));
+    ctx.globalAlpha = tw * 0.9; ctx.fillStyle = '#FFFFFF';
+    const r = 1.5 + hash(i * 1.3) * 3;
+    if (i % 9 === 0) star(sx, sy, r * 3, '#FFF6C9'); else { ctx.beginPath(); ctx.arc(sx, sy, r, 0, 7); ctx.fill(); }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // 境界線(光る稲妻ライン)
+  ctx.save();
+  ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 14; ctx.shadowColor = C.gold; ctx.shadowBlur = 30;
+  ctx.beginPath();
+  const N = 12;
+  for (let i = 0; i <= N; i++) {
+    const p = i / N, x = lerp(xTop, xBot, p) + (i % 2 ? 1 : -1) * (i > 0 && i < N ? 16 : 0), y = p * H;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+function cloud(x, y, s) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  for (const [dx, dy, r] of [[0, 0, 50], [55, -20, 62], [115, 0, 48], [55, 18, 50]]) { ctx.beginPath(); ctx.arc(dx, dy, r, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function star(x, y, r, col) {
+  ctx.save(); ctx.translate(x, y); ctx.fillStyle = col; ctx.beginPath();
+  for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+// ---------- キャラクター ----------
+function face(R, mood, eyeStyle) {
+  ctx.lineCap = 'round'; ctx.strokeStyle = C.dark; ctx.fillStyle = C.dark;
+  const ex = R * 0.34, ey = -R * 0.08;
+  ctx.lineWidth = R * 0.07;
+  for (const sx of [-1, 1]) {
+    ctx.beginPath();
+    if (mood === 'happy') { ctx.arc(sx * ex, ey + R * 0.06, R * 0.12, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+    else if (mood === 'sad') { ctx.moveTo(sx * ex - R * 0.12, ey - sx * R * 0.0); ctx.lineTo(sx * ex + R * 0.12, ey + R * 0.04 * -sx + R * 0.04); ctx.stroke(); }
+    else if (eyeStyle === 'sleepy') { ctx.arc(sx * ex, ey, R * 0.12, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke(); }
+    else { ctx.ellipse(sx * ex, ey, R * 0.075, R * 0.11, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(sx * ex + R * 0.025, ey - R * 0.04, R * 0.03, 0, 7); ctx.fill(); ctx.fillStyle = C.dark; }
+  }
+  // 口
+  ctx.beginPath();
+  if (mood === 'happy') { ctx.fillStyle = '#C2304A'; ctx.arc(0, R * 0.22, R * 0.2, 0, Math.PI); ctx.closePath(); ctx.fill(); }
+  else if (mood === 'sad') { ctx.arc(0, R * 0.38, R * 0.14, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke(); }
+  else { ctx.arc(0, R * 0.18, R * 0.14, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+  // ほっぺ
+  ctx.fillStyle = 'rgba(255,90,110,0.45)';
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse(sx * R * 0.58, R * 0.16, R * 0.13, R * 0.08, 0, 0, 7); ctx.fill(); }
+  if (mood === 'sad') { // 汗
+    ctx.fillStyle = '#7EC8FF'; ctx.beginPath(); ctx.moveTo(R * 0.7, -R * 0.45); ctx.quadraticCurveTo(R * 0.85, -R * 0.2, R * 0.7, -R * 0.15); ctx.quadraticCurveTo(R * 0.55, -R * 0.2, R * 0.7, -R * 0.45); ctx.fill();
+  }
+}
+function sun(x, y, R, t, mood = 'normal', grey = false) {
+  ctx.save(); ctx.translate(x, y);
+  if (grey) ctx.filter = 'grayscale(0.85) brightness(0.85)';
+  ctx.save(); ctx.rotate(t * 0.6);
+  ctx.fillStyle = C.gold;
+  for (let i = 0; i < 12; i++) {
+    ctx.rotate(Math.PI / 6); ctx.beginPath();
+    ctx.moveTo(-R * 0.18, -R * 1.05); ctx.lineTo(0, -R * 1.42); ctx.lineTo(R * 0.18, -R * 1.05); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  const g = ctx.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, 0, 0, R);
+  g.addColorStop(0, '#FFD08A'); g.addColorStop(1, C.asa);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+  ctx.lineWidth = R * 0.06; ctx.strokeStyle = C.asaDeep; ctx.stroke();
+  face(R, mood, 'normal');
+  ctx.restore();
+}
+function moon(x, y, R, t, mood = 'normal', grey = false) {
+  ctx.save(); ctx.translate(x, y);
+  if (grey) ctx.filter = 'grayscale(0.85) brightness(0.8)';
+  ctx.shadowColor = 'rgba(255,240,170,0.7)'; ctx.shadowBlur = R * 0.5;
+  const g = ctx.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, 0, 0, R);
+  g.addColorStop(0, '#FFFBE0'); g.addColorStop(1, '#F3D77A');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(200,165,80,0.35)';
+  for (const [cx, cy, r] of [[-0.45, 0.45, 0.14], [0.5, -0.35, 0.1], [0.35, 0.55, 0.08]]) { ctx.beginPath(); ctx.arc(cx * R, cy * R, r * R, 0, 7); ctx.fill(); }
+  ctx.lineWidth = R * 0.05; ctx.strokeStyle = '#C9A445'; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.stroke();
+  face(R, mood, 'sleepy');
+  // ナイトキャップ
+  const sw = Math.sin(t * 2) * 0.08;
+  ctx.save(); ctx.rotate(-0.25);
+  ctx.fillStyle = C.yoru;
+  ctx.beginPath(); ctx.moveTo(-R * 0.85, -R * 0.55);
+  ctx.quadraticCurveTo(-R * 0.1, -R * 1.9, R * (1.25 + sw), -R * (1.05 - sw));
+  ctx.quadraticCurveTo(R * 0.4, -R * 1.0, R * 0.85, -R * 0.55);
+  ctx.quadraticCurveTo(0, -R * 0.95, -R * 0.85, -R * 0.55); ctx.fill();
+  ctx.fillStyle = '#FFFFFF';
+  rrect(-R * 0.95, -R * 0.72, R * 1.9, R * 0.26, R * 0.13); ctx.fill();
+  ctx.beginPath(); ctx.arc(R * (1.25 + sw), -R * (1.05 - sw), R * 0.17, 0, 7); ctx.fill();
+  ctx.restore();
+  // Zzz
+  if (mood !== 'happy') for (let i = 0; i < 3; i++) {
+    const p = (t * 0.6 + i / 3) % 1;
+    txt('z', R * (0.95 + p * 0.5), -R * (0.4 + p * 0.9), { size: R * (0.18 + p * 0.15), color: '#FFFFFF', alpha: Math.sin(p * Math.PI) * 0.9, outline: C.yoruDeep, ow: 6 });
+  }
+  ctx.restore();
+}
+
+// ---------- 共通パーツ ----------
+function scoreboard(t, y, big = 1, alpha = 1) {
+  const s = scoreAt(t), wt = lastWinT(t);
+  const pop = t - wt < 0.5 ? 1 + 0.35 * Math.sin(seg(t, wt, 0.5) * Math.PI) : 1;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.translate(540, y); ctx.scale(big, big);
+  ctx.fillStyle = 'rgba(20,20,40,0.85)'; rrect(-330, -62, 660, 124, 62); ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = C.gold; ctx.stroke();
+  ctx.fillStyle = C.asa; rrect(-322, -54, 220, 108, 54); ctx.fill();
+  ctx.fillStyle = C.yoru; rrect(102, -54, 220, 108, 54); ctx.fill();
+  txt('朝型', -212, 2, { size: 50 });
+  txt('夜型', 212, 2, { size: 50 });
+  const sa = sceneAt(t);
+  const pa = sa.win === 'asa' ? pop : 1, py = sa.win === 'yoru' ? pop : 1;
+  txt(String(s.a), -48, 4, { size: 76, color: C.gold, scale: pa });
+  txt('-', 0, 0, { size: 60 });
+  txt(String(s.y), 48, 4, { size: 76, color: C.gold, scale: py });
+  ctx.restore();
+}
+function subtitle(t) {
+  const sc = sceneAt(t);
+  const ln = sc.lines.find(l => t >= l.t0 - 0.05 && t < l.t1 + 0.25);
+  if (!ln) return;
+  const a = Math.min(seg(t, ln.t0 - 0.05, 0.12), 1 - seg(t, ln.t1 + 0.1, 0.15));
+  const size = 56, maxW = 940;
+  ctx.font = `${size}px ${FONT}`;
+  let lines = [ln.sub];
+  if (ctx.measureText(ln.sub).width > maxW) {
+    const s = ln.sub, mid = s.length / 2;
+    let best = -1;
+    for (let i = 1; i < s.length - 1; i++) if ('、。'.includes(s[i]) && (best < 0 || Math.abs(i + 1 - mid) < Math.abs(best - mid))) best = i + 1;
+    if (best < 0 || ctx.measureText(s.slice(0, best)).width > maxW || ctx.measureText(s.slice(best)).width > maxW) best = Math.ceil(mid);
+    lines = [s.slice(0, best), s.slice(best)];
+  }
+  const y0 = 1470 - (lines.length - 1) * 38;
+  lines.forEach((l, i) => txt(l, 540, y0 + i * 76, { size, color: '#FFFFFF', outline: '#1B1B2F', ow: 16, alpha: a }));
+}
+function confetti(t, t0, cx, cy, n = 60) {
+  const p = t - t0; if (p < 0 || p > 2.2) return;
+  const cols = [C.gold, C.red, '#4ADE80', '#60A5FA', '#FFFFFF', C.asa];
+  for (let i = 0; i < n; i++) {
+    const ang = -Math.PI / 2 + (hash(i) - 0.5) * 2.4, sp = 700 + hash(i + 50) * 900;
+    const x = cx + Math.cos(ang) * sp * p, y = cy + Math.sin(ang) * sp * p + 900 * p * p;
+    ctx.save(); ctx.globalAlpha = clamp(1.6 - p * 0.8); ctx.translate(x, y); ctx.rotate(p * 8 + i);
+    ctx.fillStyle = cols[i % cols.length]; ctx.fillRect(-9, -5, 18, 10); ctx.restore();
+  }
+}
+function stamp(s, x, y, t, t0, { color = C.red, size = 150, rot = -0.18 } = {}) {
+  const p = seg(t, t0, 0.28); if (p <= 0) return;
+  const sc = lerp(2.4, 1, easeOut(p));
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc); ctx.globalAlpha = clamp(p * 2);
+  ctx.font = `${size}px ${FONT}`;
+  const w = ctx.measureText(s).width + size * 0.6;
+  ctx.fillStyle = color; rrect(-w / 2, -size * 0.68, w, size * 1.3, size * 0.25); ctx.fill();
+  ctx.lineWidth = 10; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+  ctx.restore();
+  txt(s, x, y, { size, color: '#FFFFFF', rot, scale: sc, alpha: clamp(p * 2) });
+}
+function speechCard(lines, x, y, t, t0, col) {
+  const p = backOut(seg(t, t0, 0.35)); if (seg(t, t0, 0.35) <= 0) return;
+  ctx.save(); ctx.translate(x, y); ctx.scale(p, p);
+  ctx.fillStyle = '#FFFFFF'; ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+  rrect(-235, -90, 470, 180, 40); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath(); ctx.moveTo(-30, -88); ctx.lineTo(0, -130); ctx.lineTo(30, -88); ctx.fill();
+  ctx.lineWidth = 8; ctx.strokeStyle = col; rrect(-235, -90, 470, 180, 40); ctx.stroke();
+  lines.forEach((l, i) => txt(l, 0, -36 + i * 74, { size: 52, color: C.dark, bold: true }));
+  ctx.restore();
+}
+function flash(t, t0) { const a = 1 - seg(t, t0, 0.25); if (a > 0 && t >= t0) { ctx.fillStyle = `rgba(255,255,255,${a * 0.8})`; ctx.fillRect(0, 0, W, H); } }
+const bob = (t, k = 0) => Math.sin(t * 3 + k) * 14;
+
+// ---------- シーン ----------
+function sceneTitle(t, sc) {
+  const lt = t - sc.start;
+  const pa = easeOut(seg(lt, 0, 0.5)), pv = backOut(seg(lt, 0.35, 0.45));
+  txt('どっちが強い!?', 540, 300, { size: 84, color: C.gold, outline: C.dark, ow: 20, scale: backOut(seg(lt, 0.15, 0.4)), rot: -0.04 });
+  sun(lerp(-300, 290, pa), 560 + bob(t), 160, t, lt > 2.9 ? 'happy' : 'normal');
+  txt('朝型', lerp(-300, 290, pa), 805, { size: 120, color: C.asa, outline: '#FFFFFF', ow: 26, shadow: true });
+  moon(lerp(1380, 790, pa), 1120 + bob(t, 2), 150, t);
+  txt('夜型', lerp(1380, 790, pa), 1345, { size: 120, color: '#FFFFFF', outline: C.yoru, ow: 26, shadow: true });
+  // VS
+  const shake = lt > 0.35 && lt < 0.8 ? Math.sin(lt * 90) * 10 * (1 - seg(lt, 0.35, 0.45)) : 0;
+  ctx.save(); ctx.translate(520 + shake, 960); ctx.rotate(-0.12);
+  txt('VS', 0, 0, { size: 230, color: C.red, outline: '#FFFFFF', ow: 34, scale: lerp(3, 1, pv), alpha: clamp(pv * 3), shadow: true });
+  ctx.restore();}
+function sceneIntro(t, sc) {
+  const [l1, l2] = sc.lines;
+  txt('選手入場', 540, 300, { size: 84, color: '#FFFFFF', outline: C.dark, ow: 20, scale: backOut(seg(t, sc.start, 0.4)) });
+  // 朝型
+  const pa = easeOut(seg(t, l1.t0 - 0.1, 0.45));
+  ctx.save(); ctx.globalAlpha = pa; ctx.translate(lerp(-400, 0, pa), 0);
+  txt('赤コーナー', 270, 470, { size: 50, color: '#FFFFFF', outline: C.asaDeep, ow: 16 });
+  sun(270, 720 + bob(t), 150, t, 'happy');
+  txt('朝型', 270, 965, { size: 110, color: C.asa, outline: '#FFFFFF', ow: 24, shadow: true });
+  txt('起床 5:00', 270, 1085, { size: 58, color: C.dark, outline: '#FFFFFF', ow: 14 });
+  ctx.restore();
+  // 夜型
+  const py = easeOut(seg(t, l2.t0 - 0.1, 0.45));
+  ctx.save(); ctx.globalAlpha = py; ctx.translate(lerp(400, 0, py), 0);
+  txt('青コーナー', 810, 470, { size: 50, color: '#FFFFFF', outline: C.yoruDeep, ow: 16 });
+  moon(810, 740 + bob(t, 2), 140, t);
+  txt('夜型', 810, 965, { size: 110, color: '#FFFFFF', outline: C.yoru, ow: 24, shadow: true });
+  txt('就寝 2:00', 810, 1085, { size: 58, color: '#FFFFFF', outline: C.yoruDeep, ow: 14 });
+  ctx.restore();
+}
+function sceneRound(t, sc) {
+  const lt = t - sc.start, [l1, l2, l3] = sc.lines;
+  const decided = t >= l3.t0, aw = sc.win === 'asa';
+  scoreboard(t, 250);
+  // ラウンドバナー
+  const pb = easeOut(seg(lt, 0, 0.35));
+  const label = sc.round === 4 ? 'FINAL ROUND' : `ROUND ${sc.round}`;
+  ctx.save(); ctx.translate(lerp(1400, 540, pb), 410); ctx.rotate(-0.05);
+  ctx.fillStyle = C.dark; ctx.beginPath(); ctx.moveTo(-430, -58); ctx.lineTo(450, -58); ctx.lineTo(430, 58); ctx.lineTo(-450, 58); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  txt(label, lerp(1400, 540, pb), 412, { size: 84, color: C.gold, rot: -0.05 });
+  txt(sc.topic, 540, 545, { size: 108, color: '#FFFFFF', outline: C.dark, ow: 26, shadow: true, scale: backOut(seg(lt, 0.25, 0.4)), alpha: clamp(seg(lt, 0.25, 0.1)) });
+  // キャラ
+  const winB = decided ? Math.abs(Math.sin((t - l3.t0) * 7)) * -40 * Math.exp(-(t - l3.t0) * 1.2) : 0;
+  const sm = decided ? (aw ? 'happy' : 'sad') : 'normal', mm = decided ? (aw ? 'sad' : 'happy') : 'normal';
+  const ent = easeOut(seg(lt, 0.1, 0.5));
+  sun(lerp(-250, 270, ent), 870 + bob(t) + (aw ? winB : 0), 140 * (decided && aw ? 1.12 : 1), t, sm, decided && !aw);
+  moon(lerp(1330, 810, ent), 890 + bob(t, 2) + (!aw ? winB : 0), 130 * (decided && !aw ? 1.12 : 1), t, mm, decided && aw);
+  // 主張カード
+  speechCard(sc.asa, 270, 1180, t, l2.t0, C.asa);
+  speechCard(sc.yoru, 810, 1180, t, l2.t0 + 0.25, C.yoru);
+  // 決着
+  if (decided) {
+    const wx = aw ? 270 : 810;
+    confetti(t, l3.t0, wx, 860);
+    stamp('WIN!', wx, 735, t, l3.t0, { color: C.red, size: 96, rot: aw ? -0.16 : 0.16 });
+  }
+}
+function sceneResult(t, sc) {
+  const lt = t - sc.start, [l1, l2, l3] = sc.lines;
+  txt('結果発表', 540, 290, { size: 90, color: '#FFFFFF', outline: C.dark, ow: 22, scale: backOut(seg(lt, 0, 0.4)) });
+  scoreboard(t, 470, lerp(1, 1.35, easeOut(seg(lt, 0.1, 0.4))));
+  stamp('引き分け!', 540, 680, t, sc.start + 0.25, { color: C.gold, size: 110, rot: -0.06 });
+  // 握手(並んで跳ねる)
+  const hop = Math.abs(Math.sin(t * 4)) * -30;
+  sun(330, 930 + hop, 120, t, 'happy');
+  moon(750, 930 + Math.abs(Math.sin(t * 4 + 1)) * -30, 112, t, 'happy');
+  // ハート
+  const hp = 1 + 0.12 * Math.sin(t * 8);
+  ctx.save(); ctx.translate(540, 920); ctx.scale(hp, hp); ctx.fillStyle = C.red; ctx.beginPath();
+  ctx.moveTo(0, 30); ctx.bezierCurveTo(-60, -10, -40, -60, 0, -30); ctx.bezierCurveTo(40, -60, 60, -10, 0, 30); ctx.fill(); ctx.restore();
+  // 情報カード
+  const p2 = backOut(seg(t, l2.t0, 0.35)), p3 = seg(t, l3.t0, 0.3);
+  if (seg(t, l2.t0, 0.35) > 0) {
+    ctx.save(); ctx.translate(540, 1200); ctx.scale(p2, p2);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; rrect(-450, -105, 900, 210, 40); ctx.fill();
+    ctx.lineWidth = 8; ctx.strokeStyle = C.gold; rrect(-450, -105, 900, 210, 40); ctx.stroke();
+    ctx.restore();
+    const a1 = 1 - p3, a2 = p3;
+    txt('朝型・夜型は', 540, 1160, { size: 58, color: C.dark, alpha: a1, scale: p2 });
+    txt('遺伝の影響も大きい!', 540, 1240, { size: 66, color: C.asaDeep, alpha: a1, scale: p2 });
+    txt('自分のリズムで', 540, 1160, { size: 60, color: C.dark, alpha: a2 });
+    txt('過ごすのが一番!', 540, 1240, { size: 70, color: C.yoruDeep, alpha: a2 });
+  }
+}
+function sceneOutro(t, sc) {
+  const lt = t - sc.start, [l1, l2] = sc.lines;
+  txt('あなたはどっち派?', 540, 420, { size: 100, color: '#FFFFFF', outline: C.dark, ow: 24, shadow: true, scale: backOut(seg(lt, 0, 0.4)) });
+  const pulseA = 1 + 0.05 * Math.sin(t * 6), pulseY = 1 + 0.05 * Math.sin(t * 6 + Math.PI);
+  for (const [x, col, deep, label, k, pul] of [[285, C.asa, C.asaDeep, '朝型派', 0.2, pulseA], [795, C.yoru, C.yoruDeep, '夜型派', 0.35, pulseY]]) {
+    const p = backOut(seg(lt, k, 0.4)); if (seg(lt, k, 0.4) <= 0) continue;
+    ctx.save(); ctx.translate(x, 760); ctx.scale(p * pul, p * pul);
+    ctx.fillStyle = deep; rrect(-215, -175, 430, 370, 60); ctx.fill();
+    ctx.fillStyle = col; rrect(-215, -190, 430, 360, 60); ctx.fill();
+    ctx.lineWidth = 8; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+    if (label === '朝型派') sun(0, -60, 70, t, 'happy'); else moon(0, -50, 66, t, 'happy');
+    txt(label, 0, 100, { size: 76, color: '#FFFFFF', outline: deep, ow: 12 });
+    ctx.restore();
+  }
+  const pc = backOut(seg(t, l2.t0, 0.4));
+  if (seg(t, l2.t0, 0.4) > 0) {
+    ctx.save(); ctx.translate(540, 1105); ctx.scale(pc, pc);
+    ctx.fillStyle = '#FFFFFF'; rrect(-400, -75, 800, 150, 75); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-200, 70); ctx.lineTo(-250, 130); ctx.lineTo(-140, 70); ctx.fill();
+    ctx.restore();
+    txt('コメントで教えてね!', 540, 1105, { size: 66, color: C.red, scale: pc });
+  }
+  txt('ナレーション  VOICEVOX:四国めたん', 540, 1270, { size: 36, color: '#FFFFFF', outline: C.dark, ow: 10, bold: false, alpha: seg(lt, 0.5, 0.4) });
+  txt('BGM・効果音  オリジナル', 540, 1320, { size: 36, color: '#FFFFFF', outline: C.dark, ow: 10, bold: false, alpha: seg(lt, 0.5, 0.4) });
+}
+
+const SCENE_FN = { title: sceneTitle, intro: sceneIntro, round: sceneRound, result: sceneResult, outro: sceneOutro };
+function render(t) {
+  t = clamp(t, 0, DURATION - 1e-6);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.filter = 'none';
+  background(t);
+  const sc = sceneAt(t);
+  SCENE_FN[sc.id](t, sc);
+  subtitle(t);
+  if (sc.start > 0) flash(t, sc.start);
+  // 終わり 0.4 秒でフェードアウト
+  const fo = seg(t, DURATION - 0.4, 0.4);
+  if (fo > 0) { ctx.fillStyle = `rgba(0,0,0,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// プレビュー再生(ブラウザで直接開いたとき)
+if (!navigator.webdriver) {
+  const st = performance.now();
+  (function loop() { render(((performance.now() - st) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
