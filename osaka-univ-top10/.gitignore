@@ -1,0 +1,5 @@
+# 中間ファイル(narrate.py / capture.js / mix.py で再生成できる)
+output/*
+!output/timeline.js
+!output/subtitles_ja.srt
+__pycache__/
