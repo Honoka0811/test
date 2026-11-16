@@ -5,3 +5,4 @@ output/*.wav
 output/*.npz
 output/silent.mp4
 data.js
+output/*.npy

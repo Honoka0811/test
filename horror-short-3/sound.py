@@ -36,7 +36,7 @@ def window(a, b, f=0.12):
     return ramp(a, a + f) * (1 - ramp(b - f, b))
 
 # 再生区間 [開始, 終了]
-P1 = (L['r1']['end'] + 0.3, L['r1']['end'] + 3.1)
+P1 = (L['r1']['end'] + 0.3, L['r1']['end'] + 4.4)
 P2 = (L['r2']['end'] + 0.25, L['c2']['end'] + 0.65)
 P3 = (L['r3']['end'] + 0.25, L['c3']['end'] + 0.75)
 LIVE = (L['sleep']['end'] + 0.55, L['now']['end'] + 0.5)
@@ -90,7 +90,7 @@ def heartbeat():
 
 # ---------------- 録音されていた音 ----------------
 def snore(d=1.5):
-    t = tt(d); n = lowpass(rng.standard_normal(len(t)).astype(np.float32), 420)
+    t = tt(d); w = rng.standard_normal(len(t)).astype(np.float32); n = lowpass(w, 420) + lowpass(w, 1600) * 0.55
     flut = 0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 27 * t + 3 * np.sin(2 * np.pi * 1.3 * t)))
     return (n * flut * np.sin(np.pi * t / d) ** 1.5 * 9).astype(np.float32)
 def breath_out(d=1.0):
@@ -101,7 +101,7 @@ def creak(d=0.9, f0=310):
     x = (np.sin(ph) + 0.6 * np.sin(2.02 * ph) + 0.4 * np.sin(3.1 * ph)) * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 38 * t)))
     return (x * np.sin(np.pi * t / d) ** 1.2).astype(np.float32)
 def step():
-    t = tt(0.3); return (np.sin(2 * np.pi * 70 * t) * np.exp(-t * 26) + lowpass(rng.standard_normal(len(t)).astype(np.float32), 600) * np.exp(-t * 50) * 2).astype(np.float32)
+    t = tt(0.35); return (np.sin(2 * np.pi * 95 * t) * np.exp(-t * 22) + 0.7 * np.sin(2 * np.pi * 260 * t) * np.exp(-t * 40) + lowpass(rng.standard_normal(len(t)).astype(np.float32), 1500) * np.exp(-t * 45) * 2.5).astype(np.float32)
 def rustle(d=0.7):
     t = tt(d); return highpass(rng.standard_normal(len(t)).astype(np.float32), 1800) * np.sin(np.pi * t / d) ** 2 * (0.6 + 0.4 * np.sin(2 * np.pi * 7 * t))
 def tick():
@@ -130,13 +130,14 @@ def main():
     # --- 録音トラック(スマホのマイクで録った質感にする) ---
     rec = np.zeros(N, np.float32)
     a = P1[0]
-    add(rec, a + 0.05, snore(1.45), 0.5); add(rec, a + 1.5, breath_out(0.9), 0.5); add(rec, a + 2.25, snore(0.6), 0.35)
-    add(rec, a + 0.75, creak(1.0, 300), 0.055)                    # いびきの裏で、ドアがきしむ(伏線)
-    add(rec, a + 1.75, step(), 0.22); add(rec, a + 2.3, step(), 0.26)   # 足音
+    add(rec, a + 0.05, snore(1.4), 0.26); add(rec, a + 1.45, breath_out(0.5), 0.3)
+    add(rec, a + 1.55, creak(1.0, 420), 0.30)                     # いびきの合間に、ドアがきしむ(伏線)
+    add(rec, a + 2.55, snore(0.7), 0.17)
+    add(rec, a + 3.3, step(), 0.55); add(rec, a + 3.68, step(), 0.7)    # 近づく足音
     a = P2[0]
     add(rec, a + 0.05, rustle(0.7), 0.35); add(rec, L['c2']['start'], segs['c2'], 1.8); add(rec, L['c2']['end'] + 0.1, step(), 0.2)
     a = P3[0]
-    add(rec, a + 0.1, creak(0.8, 240), 0.12); add(rec, L['c3']['start'], segs['c3'], 1.25); add(rec, L['c3']['end'] + 0.15, breath_out(0.5), 0.5)
+    add(rec, a + 0.1, creak(0.8, 380), 0.22); add(rec, L['c3']['start'], segs['c3'], 1.25); add(rec, L['c3']['end'] + 0.15, breath_out(0.5), 0.5)
     hiss = highpass(lowpass(rng.standard_normal(N).astype(np.float32), 5000), 300) * 0.02
     win = window(*P1) + window(*P2) + window(*P3)
     rec = lowpass(highpass(rec + hiss * win, 180), 3800) * win
@@ -177,6 +178,7 @@ def main():
             w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR); w.writeframes((np.clip(a, -1, 1) * 32767).astype(np.int16).tobytes())
     save('mix.wav', y)
     save('bgm.wav', np.stack([(pad() + lb * 0.5 + conv(lb, hall[c]) * 0.5) * 2.5 for c in range(2)], axis=1))
+    np.save(os.path.join(HERE, 'output', 'rec.npy'), rec)
     json.dump(EV, open(os.path.join(HERE, 'events.json'), 'w'))
 
 if __name__ == '__main__':
