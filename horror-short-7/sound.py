@@ -33,14 +33,14 @@ def ramp(t0, t1, v0=0.0, v1=1.0):
     t = np.arange(N) / SR
     return (v0 + (v1 - v0) * np.clip((t - t0) / max(t1 - t0, 1e-6), 0, 1)).astype(np.float32)
 
-T_SHADOW = L['l3']['start'] + 1.6            # 障子に影が映る。虫の声が止む
+T_SHADOW = L['l3b']['start'] + 0.3           # 縁側を影が歩いてくる。虫の声が止む
 T_DAWN = L['l6']['start'] - 0.25
 T_MORNING = L['l7']['start'] - 0.25
-T_ONE = L['baba']['end'] - 1.3               # 「布団も敷いてない」
+T_ONE = L['baba']['end'] - 2.6               # 「布団も敷いてない」
 T_NIGHT2 = L['l8']['start'] - 0.25
 T_MOVE = L['l8']['end'] + 0.2                # 隣の布団が動く
 HIT = L['now']['end'] + 0.5
-EV = dict(t_room=L['l2']['start'] - 0.25, t_shoji=L['l3']['start'] - 0.2, shadow=T_SHADOW, t_room2=L['l5']['start'] - 0.25, t_dawn=T_DAWN,
+EV = dict(t_room=L['l2']['start'] - 0.25, t_wake=L['l3']['start'] - 0.3, t_shoji=L['l3b']['start'] - 0.2, shadow=T_SHADOW, arrive=L['call']['start'] - 0.5, t_room2=L['l4']['start'] - 0.25, t_dawn=T_DAWN,
           t_morning=T_MORNING, one=T_ONE, t_night2=T_NIGHT2, move=T_MOVE, hit=HIT)
 
 def drone():
@@ -139,9 +139,9 @@ def main():
     fx = np.zeros(N, np.float32); big = np.zeros(N, np.float32); chime = np.zeros(N, np.float32)
     for tc, g in [(0.6, 0.10), (2.1, 0.05), (L['l2']['start'] + 0.5, 0.08), (L['l2']['start'] + 3.4, 0.05), (T_MORNING + 0.6, 0.07), (T_NIGHT2 + 0.8, 0.05)]:
         add(chime, tc, furin(), g); add(chime, tc + 0.19, furin(2350 * 1.02), g * 0.6)
-    add(big, 0.0, taiko(0.6)); add(big, L['rule']['start'] + 2.6, taiko(0.5)); add(big, T_SHADOW, taiko(0.7)); add(big, L['l5']['start'] + 1.2, taiko(0.6)); add(big, T_ONE + 0.9, taiko(0.75))
-    add(fx, T_SHADOW - 0.9, creak(1.0, 260), 0.10)          # 廊下の床がきしむ
-    add(fx, T_MOVE + 0.6, rustle(1.3), 0.45); add(fx, T_MOVE + 1.7, rustle(1.0), 0.35); add(fx, T_MOVE + 2.4, creak(0.7, 240), 0.06)   # 隣の布団が、ゆっくり起き上がる
+    add(big, 0.0, taiko(0.6)); add(big, L['rule']['start'] + 2.6, taiko(0.5)); add(big, T_SHADOW, taiko(0.7)); add(big, L['l4']['start'] + 2.2, taiko(0.6)); add(big, T_ONE + 0.9, taiko(0.75))
+    for k in range(4): add(fx, T_SHADOW + 0.3 + 0.62 * k, creak(0.45, 230 + 20 * (k % 2)), 0.07)   # 縁側の床板が、歩くたびにきしむ
+    add(fx, T_MOVE + 0.7, rustle(1.0), 0.45); add(fx, T_MOVE + 2.0, rustle(1.4), 0.4); add(fx, T_MOVE + 3.1, creak(0.7, 240), 0.06)   # 隣の布団が、ゆっくり起き上がる
     add(big, HIT, stinger(), 0.75)
     nar = np.zeros(N, np.float32); far = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']: add(far if l['id'] == 'call' else last if l['id'] == 'now' else nar, l['start'], segs[l['id']], 1.5 if l['id'] == 'baba' else 1.0)

@@ -42,6 +42,17 @@ const WOOD = '#17110c';
 
 // ---- 障子(部屋の中から見る) ----
 const shCv = document.createElement('canvas'); shCv.width = W; shCv.height = H; const sh = shCv.getContext('2d');
+const washi = document.createElement('canvas'); washi.width = 1024; washi.height = 1024;     // 和紙の繊維
+{ const c = washi.getContext('2d'), r = rngOf(4242); for (let i = 0; i < 2600; i++) { const x = r() * 1024, y = r() * 1024, a = r() * 6.3, l = 8 + r() * 46; c.strokeStyle = r() < 0.5 ? `rgba(255,255,255,${0.05 + r() * 0.10})` : `rgba(0,0,0,${0.04 + r() * 0.07})`; c.lineWidth = 0.6 + r() * 1.4; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo(x + Math.cos(a) * l * 0.5 + (r() - 0.5) * 12, y + Math.sin(a) * l * 0.5 + (r() - 0.5) * 12, x + Math.cos(a) * l, y + Math.sin(a) * l); c.stroke(); } }
+const grainCv = document.createElement('canvas'); grainCv.width = 256; grainCv.height = 1024;   // 木目
+{ const c = grainCv.getContext('2d'), r = rngOf(77); c.fillStyle = '#17110c'; c.fillRect(0, 0, 256, 1024); for (let i = 0; i < 160; i++) { const x = r() * 256; c.strokeStyle = r() < 0.5 ? `rgba(255,220,170,${0.02 + r() * 0.05})` : `rgba(0,0,0,${0.1 + r() * 0.2})`; c.lineWidth = 0.5 + r() * 2; c.beginPath(); c.moveTo(x, 0); c.bezierCurveTo(x + (r() - 0.5) * 14, 340, x + (r() - 0.5) * 14, 680, x + (r() - 0.5) * 10, 1024); c.stroke(); } }
+function branches(c, t, a) {     // 月明かりで障子に落ちる庭木の影。風でゆれる
+  c.save(); c.globalAlpha = a; c.strokeStyle = '#000'; c.lineCap = 'round'; const r = rngOf(31);
+  for (let i = 0; i < 7; i++) { const x0 = 1090, y0 = 200 + r() * 520, len = 300 + r() * 420, sway = Math.sin(t * (0.5 + r() * 0.5) + i) * (10 + r() * 16), ang = Math.PI + (r() - 0.5) * 0.9;
+    const x1 = x0 + Math.cos(ang) * len, y1 = y0 + Math.sin(ang) * len + sway; c.lineWidth = 5 + r() * 12; c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo((x0 + x1) / 2, (y0 + y1) / 2 - 50 + sway * 0.4, x1, y1); c.stroke();
+    for (let k = 0; k < 9; k++) { const u = 0.3 + r() * 0.7, lx = lerp(x0, x1, u), ly = lerp(y0, y1, u) - 26 * Math.sin(u * 3) + sway * u; c.fillStyle = '#000'; c.beginPath(); c.ellipse(lx + (r() - 0.5) * 50, ly + (r() - 0.5) * 60, 14 + r() * 16, 7 + r() * 8, r() * 3 + sway * 0.02, 0, 7); c.fill(); } }
+  c.restore();
+}
 function oldWoman(c, sx, base, s, raise) {     // 腰の曲がった老婆の影
   c.save(); c.translate(sx, base); c.scale(s, s); c.fillStyle = '#000';
   c.beginPath(); c.moveTo(-160, 0); c.bezierCurveTo(-190, -260, -170, -430, -60, -470); c.bezierCurveTo(-10, -490, 60, -470, 90, -410); c.bezierCurveTo(140, -300, 130, -120, 140, 0); c.closePath(); c.fill();
@@ -55,16 +66,22 @@ function shoji(t, f, o) {
   const X0 = 40, X1 = 1040, Y0 = 150, YP = o.yp || 1070, Y1 = 1330, pc = o.paper;
   // 紙
   const g = ctx.createRadialGradient(700, 420, 60, 540, 600, 900); g.addColorStop(0, mix(pc, [255, 255, 255], 0.22)); g.addColorStop(1, mix(pc, [0, 0, 0], 0.45)); ctx.fillStyle = g; ctx.fillRect(X0, Y0, X1 - X0, YP - Y0);
-  // 影
-  if (o.shadow > 0) { sh.clearRect(0, 0, W, H); oldWoman(sh, 470 + Math.sin(t * 0.7) * 10, YP + 40, 1.32 + 0.05 * (o.near || 0), o.raise || 0);
-    ctx.save(); ctx.beginPath(); ctx.rect(X0, Y0, X1 - X0, YP - Y0); ctx.clip(); ctx.globalAlpha = o.shadow * 0.86; ctx.filter = 'blur(13px)'; ctx.drawImage(shCv, 0, 0); ctx.filter = 'none'; ctx.restore(); }
+  ctx.save(); ctx.globalAlpha = 0.8; ctx.globalCompositeOperation = 'overlay'; ctx.fillStyle = ctx.createPattern(washi, 'repeat'); ctx.fillRect(X0, Y0, X1 - X0, YP - Y0); ctx.restore();
+  // 庭木の影(ぼけている=障子から遠い)と、雲で月明かりがゆっくり陰る
+  if (!o.noTree) { sh.clearRect(0, 0, W, H); branches(sh, t, 1); ctx.save(); ctx.beginPath(); ctx.rect(X0, Y0, X1 - X0, YP - Y0); ctx.clip(); ctx.globalAlpha = 0.22 * (o.tree ?? 1); ctx.filter = 'blur(16px)'; ctx.drawImage(shCv, 0, 0); ctx.filter = 'none'; ctx.restore(); }
+  ctx.fillStyle = `rgba(0,0,10,${0.10 + 0.10 * Math.sin(t * 0.23 + 1)})`; ctx.fillRect(X0, Y0, X1 - X0, YP - Y0);
+  // 人の影: 障子から遠いほど大きく、淡く、ぼける。近づくと濃く、くっきりする
+  if (o.shadow > 0) { const d = o.dist ?? 0, step = o.walk ? Math.abs(Math.sin(t * 5.1)) * 14 * o.walk : 0;
+    sh.clearRect(0, 0, W, H); oldWoman(sh, (o.sx ?? 470) + Math.sin(t * 0.7) * 6, YP + 40 - step + d * 60, 1.32 + 0.35 * d, o.raise || 0);
+    ctx.save(); ctx.beginPath(); ctx.rect(X0, Y0, X1 - X0, YP - Y0); ctx.clip(); ctx.globalAlpha = o.shadow * lerp(0.88, 0.5, d); ctx.filter = `blur(${lerp(9, 30, d).toFixed(1)}px)`; ctx.drawImage(shCv, 0, 0); ctx.filter = 'none'; ctx.restore(); }
   // 組子と枠
-  ctx.fillStyle = WOOD;
+  ctx.fillStyle = ctx.createPattern(grainCv, 'repeat');
   for (let p = 0; p < 2; p++) { const px = X0 + p * 500; for (let i = 1; i < 4; i++) ctx.fillRect(px + i * 125 - 4, Y0, 8, YP - Y0); ctx.fillRect(px - 11 + (p ? 0 : 0), Y0, 22, Y1 - Y0); }
   ctx.fillRect(X1 - 22, Y0, 22, Y1 - Y0); ctx.fillRect(X0 + 489, Y0, 22, Y1 - Y0);
   for (let j = 1; j < 6; j++) ctx.fillRect(X0, Y0 + j * (YP - Y0) / 6 - 4, X1 - X0, 8);
   ctx.fillRect(X0, Y0 - 26, X1 - X0, 30); ctx.fillStyle = '#120d09'; ctx.fillRect(X0, YP, X1 - X0, Y1 - YP);
-  ctx.fillStyle = WOOD; for (let i = 0; i <= 8; i++) ctx.fillRect(X0 + i * 125 - 3, YP, 6, Y1 - YP); ctx.fillRect(X0, YP - 10, X1 - X0, 22); ctx.fillRect(X0, Y1 - 14, X1 - X0, 22);
+  ctx.fillStyle = ctx.createPattern(grainCv, 'repeat'); for (let i = 0; i <= 8; i++) ctx.fillRect(X0 + i * 125 - 3, YP, 6, Y1 - YP); ctx.fillRect(X0, YP - 10, X1 - X0, 22); ctx.fillRect(X0, Y1 - 14, X1 - X0, 22);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(X0, Y0, X1 - X0, 10); for (let j = 1; j < 6; j++) ctx.fillRect(X0, Y0 + j * (YP - Y0) / 6 + 4, X1 - X0, 5);   // 桟の下の影
   // 畳
   const tg = ctx.createLinearGradient(0, Y1, 0, H); tg.addColorStop(0, mix([26, 32, 24], pc, 0.12)); tg.addColorStop(1, '#040504'); ctx.fillStyle = tg; ctx.fillRect(0, Y1 + 8, W, H - Y1);
   ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, Y1 + 150, W, 10);
@@ -85,10 +102,10 @@ function ruleStrip(t) {     // 決まりを書いた紙
 }
 
 // ---- 隣の布団(自分の布団から横向きに見る。障子の明かりを背にした影) ----
-function riser(c, rise, lean) {
+function riser(c, rise, lean, lag = rise, breath = 0) {
   const GY = 1322, PX = 610, th = rise * 1.36, tl = 330;                    // 腰を支点に上体が起きる
   c.save(); c.translate(PX, GY); c.scale(1 + lean, 1 + lean); c.translate(-PX, -GY); c.fillStyle = '#000';
-  c.beginPath(); c.moveTo(1010, GY); c.bezierCurveTo(960, GY - 96, 700, GY - 104, 600, GY - 84); c.bezierCurveTo(480, GY - lerp(118, 40, rise), 330, GY - lerp(112, 34, rise), 215, GY - lerp(60, 30, rise)); c.lineTo(120, GY); c.closePath(); c.fill();   // 掛け布団
+  c.beginPath(); c.moveTo(1010, GY); c.bezierCurveTo(960, GY - 96, 700, GY - 104, 600, GY - 84); c.bezierCurveTo(480, GY - lerp(118 + breath, 40, rise), 330, GY - lerp(112 + breath, 34, rise), 215, GY - lerp(60, 30, rise)); c.lineTo(120, GY); c.closePath(); c.fill();   // 掛け布団
   c.beginPath(); c.ellipse(170, GY - 26, 92, 34, 0, 0, 7); c.fill();                                              // 枕
   // 上体(腰は太く、肩に向かって細く)。座ると少し前かがみになる
   c.save(); c.translate(PX, GY - 60); c.rotate(th);
@@ -100,62 +117,91 @@ function riser(c, rise, lean) {
   c.beginPath(); c.ellipse(hx, hy, 50, 58, 0.3 * rise, 0, 7); c.fill();                                             // 頭
   if (rise > 0.3) { const a = (rise - 0.3) / 0.7; c.lineWidth = 40; c.beginPath(); c.moveTo(sx + 14, sy + 30); c.quadraticCurveTo(sx + 40 + 30 * a, sy + 150, PX + 40 + 70 * a, GY - 110); c.stroke(); }   // ひざに落ちた腕
   // 髪: 背中側に長く垂れ、顔の前にも少しかかる(重力でまっすぐ下へ)
-  const hl = lerp(30, 330, rise), sw = Math.sin(rise * 8) * 8 * (1 - rise);
+  const thL = lag * 1.36, hxL = PX - Math.cos(thL) * 262 - Math.cos(thL - 0.5 * lag) * 78;       // 少し前の頭の位置
+  const hl = lerp(30, 330, rise), sw = (hxL - hx) * 0.9;
   c.beginPath(); c.moveTo(hx - 50, hy - 26); c.bezierCurveTo(hx - 78 + sw, hy + hl * 0.4, hx - 96 + sw, hy + hl * 0.8, hx - 104 + sw, hy + hl);
   c.lineTo(hx - 82 + sw, hy + hl - 22); c.lineTo(hx - 64 + sw, hy + hl + 6); c.lineTo(hx - 44 + sw, hy + hl - 28); c.bezierCurveTo(hx - 30, hy + hl * 0.6, hx - 16, hy + hl * 0.3, hx - 6, hy - 40); c.closePath(); c.fill();
   const fl = 120 * rise; c.beginPath(); c.moveTo(hx + 10, hy - 54); c.bezierCurveTo(hx + 62, hy - 30, hx + 66, hy + fl * 0.6, hx + 50, hy + fl + 30); c.lineTo(hx + 34, hy + fl); c.lineTo(hx + 22, hy + 20); c.closePath(); c.fill();
   c.restore();
 }
-function sideView(t, f, rise, lean) {
-  shoji(t, f, { paper: MOON, shadow: 0, yp: 1262 });
-  sh.clearRect(0, 0, W, H); riser(sh, rise, lean);
+function sideView(t, f, rise, lean, lag, breath) {
+  shoji(t, f, { paper: MOON, shadow: 0, yp: 1262, tree: 0.7 });
+  sh.clearRect(0, 0, W, H); riser(sh, rise, lean, lag, breath);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, 1326); ctx.clip(); ctx.filter = 'blur(3.5px)'; ctx.drawImage(shCv, 0, 0); ctx.filter = 'none'; ctx.restore();
   // 手前: 自分の布団のふち(ぼけた影)
   const g = ctx.createLinearGradient(0, 1300, 0, 1560); g.addColorStop(0, 'rgba(0,0,0,0.25)'); g.addColorStop(1, 'rgba(0,0,0,1)'); ctx.fillStyle = g; ctx.fillRect(0, 1300, W, 700);
   ctx.save(); ctx.filter = 'blur(18px)'; ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(380, 1700, 760, 300, -0.05, 0, 7); ctx.fill(); ctx.restore();
 }
 
-// ---- 部屋(真上から見る) ----
-function futon(x, y, o) {
-  const w = 290, h = 650;
-  ctx.fillStyle = o.sheet; rr(x, y, w, h, 18); ctx.fill();
-  ctx.fillStyle = o.pillow; rr(x + 55, y + 22, w - 110, 84, 22); ctx.fill();
-  if (o.head) { ctx.fillStyle = o.hair; ctx.beginPath(); ctx.arc(x + w / 2, y + 86, o.headR, 0, 7); ctx.fill(); }
-  const by = y + o.edge; ctx.fillStyle = o.blanket; rr(x - 8, by, w + 16, y + h - by + 6, 22); ctx.fill();
-  ctx.fillStyle = 'rgba(255,255,255,0.07)'; for (let i = 0; i < 5; i++) ctx.fillRect(x - 8, by + 60 + i * 100, w + 16, 16);
-  ctx.fillStyle = o.fold; rr(x - 8, by, w + 16, 46, 20); ctx.fill();
-  const bg = ctx.createRadialGradient(x + w / 2, by + 230, 20, x + w / 2, by + 240, 260); bg.addColorStop(0, `rgba(255,255,255,${o.bump})`); bg.addColorStop(1, 'rgba(255,255,255,0)');   // 体のふくらみ
-  ctx.save(); ctx.beginPath(); ctx.ellipse(x + w / 2, by + 250, 96, 260, 0, 0, 7); ctx.clip(); ctx.fillStyle = bg; ctx.fillRect(x, by, w, h); ctx.restore();
+// ---- 部屋(斜め上から。簡易3D: 床は y が奥行き、z が高さ、単位はメートル) ----
+let CAM;
+const vsub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], vdot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], vnorm = a => { const l = Math.hypot(...a); return a.map(v => v / l); }, vcross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+function setCam(pos, tgt, F) { const fw = vnorm(vsub(tgt, pos)), r = vnorm(vcross(fw, [0, 0, 1])), u = vcross(r, fw); CAM = { pos, fw, r, u, F }; }
+function P(x, y, z) { const d = [x - CAM.pos[0], y - CAM.pos[1], z - CAM.pos[2]], zc = Math.max(vdot(d, CAM.fw), 0.05); return [540 + CAM.F * vdot(d, CAM.r) / zc, 820 - CAM.F * vdot(d, CAM.u) / zc, zc]; }
+function poly(pts, fill, stroke, lw) { ctx.beginPath(); pts.forEach((p, i) => { const q = P(p[0], p[1], p[2]); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); } }
+function line3(a, b, col, lw) { const p = P(...a), q = P(...b); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+const RXW = 2.25, RD = 5.2, WH = 2.3, PZ = 0.55;
+function futon3(x0, o, t) {
+  const y0 = 1.3, y1 = 3.45, hw = 0.6;
+  poly([[x0 - hw, y0, 0.07], [x0 + hw, y0, 0.07], [x0 + hw, y1, 0.07], [x0 - hw, y1, 0.07]], o.sheet);                         // 敷き布団
+  poly([[x0 - hw, y0, 0], [x0 + hw, y0, 0], [x0 + hw, y0, 0.07], [x0 - hw, y0, 0.07]], o.side);
+  poly([[x0 - 0.3, y0 + 0.06, 0.15], [x0 + 0.3, y0 + 0.06, 0.15], [x0 + 0.3, y0 + 0.4, 0.13], [x0 - 0.3, y0 + 0.4, 0.13]], o.pillow);   // 枕
+  if (o.head) { const h = P(x0, y0 + 0.24, 0.24), r = 0.115 * CAM.F / h[2]; const g = ctx.createRadialGradient(h[0] - r * 0.3, h[1] - r * 0.4, r * 0.1, h[0], h[1], r); g.addColorStop(0, o.hair2); g.addColorStop(1, o.hair); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(h[0], h[1], r, r * 0.92, 0, 0, 7); ctx.fill(); }
+  const e = y0 + o.edge;                                                                                                    // 掛け布団
+  poly([[x0 - hw - 0.04, e, 0.11], [x0 + hw + 0.04, e, 0.11], [x0 + hw + 0.04, y1 + 0.03, 0.09], [x0 - hw - 0.04, y1 + 0.03, 0.09]], o.blanket);
+  poly([[x0 - hw - 0.04, e, 0.02], [x0 + hw + 0.04, e, 0.02], [x0 + hw + 0.04, e, 0.11], [x0 - hw - 0.04, e, 0.11]], o.fold);
+  // 体のふくらみ: 等高線のように重ねて丸みを出す。呼吸でわずかに上下する
+  if (o.body > 0) { const br = 1 + 0.035 * Math.sin(t * (o.fast ? 2.1 : 1.25)); for (let k = 0; k < 9; k++) { const u = k / 9, rx = 0.36 * (1 - u * 0.85) * o.body, ry = 0.86 * (1 - u * 0.7), z = 0.11 + 0.21 * u * o.body * br, pts = [];
+      for (let i = 0; i < 26; i++) { const a = i / 26 * 6.283; pts.push([x0 + Math.cos(a) * rx, e + 0.95 + Math.sin(a) * ry, z]); }
+      poly(pts, mix(o.b0, o.b1, u)); } }
 }
 function room(t, f, o) {
-  ctx.fillStyle = '#050608'; ctx.fillRect(0, 0, W, H);
-  ctx.save(); ctx.translate(540, 780); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
-  const day = o.day, RX = 70, RY = 260, RW = 940, RH = 1030;
+  const day = !!o.day, sway = [Math.sin(t * 0.43) * 0.035, Math.sin(t * 0.31 + 1) * 0.02, Math.sin(t * 0.37 + 2) * 0.025];     // 手持ちカメラのような、わずかなゆれ
+  setCam([o.cam[0] + sway[0], o.cam[1] + sway[1], o.cam[2] + sway[2]], o.tgt, o.F || 1250);
+  ctx.fillStyle = day ? '#3a3226' : '#040508'; ctx.fillRect(0, 0, W, H);
+  // 壁
+  poly([[-RXW, RD, 0], [RXW, RD, 0], [RXW, RD, WH + 0.5], [-RXW, RD, WH + 0.5]], day ? '#8c7a5c' : '#0c0d12');
+  poly([[-RXW, 0, 0], [-RXW, RD, 0], [-RXW, RD, WH + 0.5], [-RXW, 0, WH + 0.5]], day ? '#a39270' : '#0a0b10'); poly([[RXW, 0, 0], [RXW, RD, 0], [RXW, RD, WH + 0.5], [RXW, 0, WH + 0.5]], day ? '#a39270' : '#0a0b10');
+  // 障子(奥の壁)
+  const pc = day ? [255, 244, 214] : MOON.map(v => v * (0.92 + 0.08 * Math.sin(t * 0.23 + 1)));
+  const a = P(-RXW + 0.1, RD, WH), b = P(RXW - 0.1, RD, WH), c = P(-RXW + 0.1, RD, PZ), d2 = P(RXW - 0.1, RD, PZ);
+  const pg = ctx.createLinearGradient(0, a[1], 0, c[1]); pg.addColorStop(0, mix(pc, [255, 255, 255], day ? 0.5 : 0.18)); pg.addColorStop(1, mix(pc, [0, 0, 0], day ? 0.05 : 0.3));
+  poly([[-RXW + 0.1, RD, WH], [RXW - 0.1, RD, WH], [RXW - 0.1, RD, PZ], [-RXW + 0.1, RD, PZ]], pg);
+  // 障子に映る影(庭木と、人影)。障子の拡大カットと同じ絵を壁に貼る
+  ctx.save(); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(d2[0], d2[1]); ctx.lineTo(c[0], c[1]); ctx.closePath(); ctx.clip();
+  const ax = (b[0] - a[0]) / 1000, ay = (b[1] - a[1]) / 1000, bx = (c[0] - a[0]) / 920, by = (c[1] - a[1]) / 920; ctx.transform(ax, ay, bx, by, a[0] - ax * 40 - bx * 150, a[1] - ay * 40 - by * 150);
+  if (!day) { sh.clearRect(0, 0, W, H); branches(sh, t, 1); ctx.globalAlpha = 0.25; ctx.filter = 'blur(6px)'; ctx.drawImage(shCv, 0, 0); }
+  if (o.shadow > 0) { sh.clearRect(0, 0, W, H); oldWoman(sh, 470 + Math.sin(t * 0.7) * 6, 1110, 1.32, 1); ctx.globalAlpha = 0.85 * o.shadow; ctx.filter = 'blur(4px)'; ctx.drawImage(shCv, 0, 0); }
+  ctx.filter = 'none'; ctx.restore();
+  const wood = day ? '#4a3824' : '#110c08';
+  for (let i = 0; i <= 16; i++) { const x = -RXW + 0.1 + i * (2 * RXW - 0.2) / 16; line3([x, RD, PZ], [x, RD, WH], wood, i % 4 === 0 ? 9 : 3); }
+  for (let j = 0; j <= 5; j++) { const z = PZ + j * (WH - PZ) / 5; line3([-RXW + 0.1, RD, z], [RXW - 0.1, RD, z], wood, j % 5 === 0 ? 9 : 3); }
+  poly([[-RXW, RD, 0], [RXW, RD, 0], [RXW, RD, PZ], [-RXW, RD, PZ]], day ? '#6b5236' : '#0d0906');
   // 畳
-  ctx.fillStyle = day ? '#b5ac74' : '#16221d'; ctx.fillRect(RX, RY, RW, RH);
-  for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) { const x = RX + c * RW / 2, y = RY + r * RH / 3;
-    ctx.strokeStyle = day ? 'rgba(90,84,40,0.25)' : 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2; for (let i = 8; i < RW / 2; i += 14) { ctx.beginPath(); ctx.moveTo(x + i, y); ctx.lineTo(x + i, y + RH / 3); ctx.stroke(); }
-    ctx.strokeStyle = day ? '#3d3a22' : '#070b09'; ctx.lineWidth = 12; ctx.strokeRect(x, y, RW / 2, RH / 3); }
-  // 障子側(上)からの光
-  const lc = day ? '255,236,190' : '120,150,215', lg = ctx.createLinearGradient(0, RY, 0, RY + 700); lg.addColorStop(0, `rgba(${lc},${day ? 0.55 : 0.32})`); lg.addColorStop(1, `rgba(${lc},0)`); ctx.fillStyle = lg; ctx.fillRect(RX, RY, RW, 700);
-  ctx.fillStyle = day ? '#fff4d6' : '#8ea2cc'; ctx.fillRect(RX, RY - 34, RW, 34); ctx.fillStyle = WOOD; for (let i = 0; i <= 8; i++) ctx.fillRect(RX + i * RW / 8 - 4, RY - 34, 8, 34); ctx.fillRect(RX, RY - 4, RW, 10);
-  if (o.shadowBlob) { ctx.fillStyle = `rgba(0,0,0,${0.75 * o.shadowBlob})`; ctx.fillRect(RX + 3 * RW / 8 + 6, RY - 34, RW / 4 - 12, 30); }
-  ctx.strokeStyle = WOOD; ctx.lineWidth = 26; ctx.strokeRect(RX - 13, RY - 47, RW + 26, RH + 60);
-  // 布団
-  const A = { sheet: day ? '#f1eee4' : '#7f8aa6', pillow: day ? '#ffffff' : '#a9b3cc', blanket: day ? '#5f82c9' : '#2f3d66', fold: day ? '#7fa0e0' : '#3d4d7c', hair: '#0a0a0c', head: !day, headR: 46, edge: 150, bump: day ? 0 : 0.10 };
-  futon(180, 470, A);
-  if (day) { ctx.fillStyle = '#5f82c9'; rr(172, 620, 306, 250, 22); ctx.fill(); }   // 朝: 掛け布団はめくれている
-  if (o.two) {
-    const r = o.reach || 0, B = { sheet: '#8a8494', pillow: '#aaa3b0', blanket: '#4a2a36', fold: '#5d3644', hair: '#050506', head: true, headR: 48, edge: 96, bump: 0.12 + 0.05 * Math.sin(t * 1.3) };
-    futon(610, 470, B);
-  } else if (o.ghost > 0) {
-    ctx.save(); ctx.globalAlpha = o.ghost; ctx.strokeStyle = RED; ctx.lineWidth = 8; ctx.setLineDash([26, 18]); ctx.shadowColor = RED; ctx.shadowBlur = 20; rr(610, 470, 290, 650, 18); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
-    tx('?', 755, 790, 200, 'rgba(255,43,43,0.9)', { align: 'center', font: SANS, w: 'bold' }); ctx.restore();
-  }
-  if (day) tx('私の布団', 325, 1158, 40, '#2a2418', { align: 'center', bold: true });
-  if (o.ring > 0) { ctx.strokeStyle = `rgba(255,43,43,${o.ring})`; ctx.lineWidth = 10; ctx.shadowColor = RED; ctx.shadowBlur = 24; ctx.beginPath(); ctx.ellipse(755, 800, 200, 370, 0, -1.6, -1.6 + 6.4 * o.ring); ctx.stroke(); ctx.shadowBlur = 0; }
+  const fl = [[-RXW, -1, 0], [RXW, -1, 0], [RXW, RD, 0], [-RXW, RD, 0]]; poly(fl, day ? '#a9a06a' : '#141d18');
+  ctx.save(); ctx.beginPath(); fl.forEach((p, i) => { const q = P(...p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.clip();
+  for (let y = -0.96; y < RD; y += 0.045) line3([-RXW, y, 0], [RXW, y, 0], day ? 'rgba(70,64,30,0.16)' : 'rgba(0,0,0,0.22)', 1);                      // い草の目
+  for (let i = -2; i <= 2; i++) line3([i * 0.9 + 0.45, -1, 0], [i * 0.9 + 0.45, RD, 0], day ? '#34301c' : '#060908', 5);
+  for (const y of [1.6, 3.4]) line3([-RXW, y, 0], [RXW, y, 0], day ? '#34301c' : '#060908', 5);
+  // 障子から床に落ちる光と、桟の影
+  const L0 = 0.15, L1 = day ? 3.6 : 2.7, sk = day ? -0.9 : 0.5, lc = day ? '255,226,160' : '120,150,220';
+  const q0 = P(0, RD - L0, 0), q1 = P(0, RD - L1, 0), lg = ctx.createLinearGradient(0, q0[1], 0, q1[1]); lg.addColorStop(0, `rgba(${lc},${day ? 0.5 : 0.30})`); lg.addColorStop(1, `rgba(${lc},0)`);
+  poly([[-RXW + 0.1, RD - L0, 0.002], [RXW - 0.1, RD - L0, 0.002], [RXW - 0.1 + sk, RD - L1, 0.002], [-RXW + 0.1 + sk, RD - L1, 0.002]], lg);
+  for (let i = 0; i <= 16; i += 1) { const x = -RXW + 0.1 + i * (2 * RXW - 0.2) / 16; line3([x, RD - L0, 0.003], [x + sk, RD - L1, 0.003], `rgba(0,0,0,${i % 4 === 0 ? 0.3 : 0.12})`, i % 4 === 0 ? 7 : 3); }
+  if (o.shadow > 0 && !day) poly([[-0.55, RD - L0, 0.004], [0.35, RD - L0, 0.004], [0.55 + sk, RD - L1 * 0.8, 0.004], [-0.5 + sk, RD - L1 * 0.8, 0.004]], `rgba(0,0,0,${0.35 * o.shadow})`);   // 人影は床にものびる
   ctx.restore();
-  if (!day) { const v = ctx.createRadialGradient(540, 700, 250, 540, 800, 1100); v.addColorStop(0, 'rgba(0,0,8,0.1)'); v.addColorStop(1, 'rgba(0,0,8,0.8)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H); }
+  // 布団
+  const A = day ? { sheet: '#efeade', side: '#c9c3b4', pillow: '#fbf8ef', blanket: '#5a7cc0', fold: '#40598f', b0: [90, 124, 192], b1: [122, 152, 214] } : { sheet: '#59627a', side: '#333a4d', pillow: '#7a849e', blanket: '#243152', fold: '#18213a', b0: [36, 49, 82], b1: [62, 80, 124], hair: '#050507', hair2: '#23252e' };
+  if (day) { futon3(-0.95, { ...A, head: false, edge: 0.95, body: 0 }, t); }                         // 朝: 起きたあと。掛け布団はめくれている
+  else futon3(-0.95, { ...A, head: true, edge: 0.52, body: 0.62, fast: o.afraid }, t);
+  if (o.two) futon3(0.95, { sheet: '#5d5866', side: '#33303a', pillow: '#77717f', blanket: '#3a2029', fold: '#24131a', b0: [58, 32, 41], b1: [96, 58, 70], hair: '#030304', hair2: '#15151a', head: true, edge: 0.3, body: 1 }, t);
+  // 光と闇
+  if (!day) { const g = ctx.createLinearGradient(0, 250, 0, 1500); g.addColorStop(0, 'rgba(0,2,14,0.05)'); g.addColorStop(0.55, 'rgba(0,2,14,0.45)'); g.addColorStop(1, 'rgba(0,1,8,0.86)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+  else { const g = ctx.createRadialGradient(540, 420, 100, 540, 700, 1200); g.addColorStop(0, 'rgba(255,240,200,0.18)'); g.addColorStop(1, 'rgba(40,20,0,0.35)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); }
+}
+function eyelids(k) {     // 目を覚ます: まぶたが開く
+  if (k >= 1) return; const h = lerp(980, -40, ease(k)); ctx.save(); ctx.filter = 'blur(26px)'; ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(540, -260, 1100, 260 + h, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(540, 2180, 1100, 260 + h, 0, 0, 7); ctx.fill(); ctx.restore();
 }
 
 // ---- 字幕 ----
@@ -182,20 +228,30 @@ function render(t) {
   let grain = 0.13;
   const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
   if (t < EV.hit) {
+    const CAMS = { wide: [[0.25, -1.7, 2.95], [0, 3.1, 0.25]], next: [[1.15, 0.2, 1.75], [0.95, 2.9, 0.15]], empty: [[1.0, -0.2, 2.2], [0.95, 2.9, 0.1]] };
+    const camLerp = (a, b, k) => [a[0].map((v, i) => lerp(v, b[0][i], k)), a[1].map((v, i) => lerp(v, b[1][i], k))];
     if (t < EV.t_room) { shoji(t, f, { paper: MOON, shadow: 0 }); ruleStrip(t); fadeIn(0, 0.6); }
-    else if (t < EV.t_shoji) { const k = prog(t, EV.t_room, EV.t_shoji); room(t, f, { z: 1 + 0.06 * k, cx: 540, cy: 780, two: true }); fadeIn(EV.t_room); }
-    else if (t < EV.t_room2) { const a = ease(prog(t, EV.shadow, EV.shadow + 1.3)), c = prog(t, LN.call.start, LN.call.end);
-      shoji(t, f, { paper: MOON, shadow: a, raise: ease(prog(t, LN.call.start - 0.3, LN.call.start + 0.8)), near: prog(t, LN.call.start, EV.t_room2) }); fadeIn(EV.t_shoji); }
-    else if (t < EV.t_dawn) { const k = ease(prog(t, EV.t_room2, EV.t_room2 + 2.2)); room(t, f, { z: lerp(1.05, 1.5, k), cx: lerp(540, 700, k), cy: lerp(780, 790, k), two: true, shadowBlob: 1, ring: ease(prog(t, LN.l5.start + 1.1, LN.l5.start + 1.7)) }); fadeIn(EV.t_room2); }
+    else if (t < EV.t_wake) {       // 寝る前: 布団はひとつ
+      const k = prog(t, EV.t_room, EV.t_wake), c = camLerp(CAMS.wide, [[0.1, -1.3, 2.75], [0, 3.1, 0.25]], k); room(t, f, { cam: c[0], tgt: c[1], two: false }); fadeIn(EV.t_room, 0.5);
+      const cl = prog(t, EV.t_wake - 0.7, EV.t_wake); if (cl > 0) eyelids(1 - cl); }
+    else if (t < EV.t_shoji) {      // 目を覚ますと、隣に布団がある
+      const k = ease(prog(t, EV.t_wake + 0.6, EV.t_shoji)), c = camLerp(CAMS.wide, [[0.75, -0.9, 2.5], [0.5, 3.0, 0.2]], k); room(t, f, { cam: c[0], tgt: c[1], two: true }); eyelids(prog(t, EV.t_wake, EV.t_wake + 1.1)); }
+    else if (t < EV.t_room2) {      // 障子: 影が縁側を歩いてきて、目の前で止まり、手を伸ばす
+      const w = prog(t, EV.shadow, EV.arrive), we = 1 - (1 - w) ** 2;
+      shoji(t, f, { paper: MOON, shadow: prog(t, EV.shadow, EV.shadow + 0.5), sx: lerp(-160, 470, we), dist: 1 - ease(prog(t, EV.shadow + 0.8, EV.arrive + 0.6)), walk: w < 1 ? 1 - w * w : 0, raise: ease(prog(t, LN.call.start - 0.2, LN.call.start + 1.0)) });
+      fadeIn(EV.t_shoji); }
+    else if (t < EV.t_dawn) {       // 隣の布団と、障子の影が同時に見える
+      const k = ease(prog(t, EV.t_room2 + 1.6, EV.t_dawn)), c = camLerp(CAMS.wide, CAMS.next, k * 0.75); room(t, f, { cam: c[0], tgt: c[1], two: true, shadow: 1, afraid: true }); fadeIn(EV.t_room2); }
     else if (t < EV.t_morning) { const k = prog(t, EV.t_dawn + 0.8, EV.t_morning - 0.2), pc = k < 0.6 ? MOON.map((v, i) => lerp(v, DAWN1[i], k / 0.6)) : DAWN1.map((v, i) => lerp(v, DAY[i], (k - 0.6) / 0.4));
-      shoji(t, f, { paper: pc, shadow: 1 - ease(prog(k, 0.72, 0.95)), raise: 1, near: 1 }); fadeIn(EV.t_dawn); }
-    else if (t < EV.t_night2) { const k = ease(prog(t, EV.one - 0.2, EV.one + 0.8)); room(t, f, { z: lerp(1, 1.12, k), cx: lerp(540, 600, k), cy: 780, two: false, day: true, ghost: ease(prog(t, EV.one, EV.one + 0.3)) * (0.75 + 0.25 * Math.sin(t * 9)) });
-      const z = Math.max(0, 1 - Math.abs(t - EV.t_morning) / 0.3); if (z) { ctx.fillStyle = `rgba(255,255,255,${z})`; ctx.fillRect(0, 0, W, H); } grain = 0.08; }
-    else if (t < EV.move) { const k = ease(prog(t, EV.t_night2, EV.move));
-      room(t, f, { z: lerp(1.1, 1.6, k), cx: lerp(560, 700, k), cy: lerp(780, 760, k), two: true }); fadeIn(EV.t_night2, 0.5); }
-    else { // ゆっくり起き上がり、こちらへ寄ってくる
-      const u = prog(t, EV.move + 0.6, EV.move + 2.9), rise = u * u * (3 - 2 * u), lean = 0.5 * ease(prog(t, LN.now.start - 0.2, EV.hit)) ** 2;
-      sideView(t, f, rise + (rise > 0 && rise < 1 ? (hash(f) - 0.5) * 0.008 : 0), lean); fadeIn(EV.move, 0.4); }
+      shoji(t, f, { paper: pc, shadow: 1 - ease(prog(k, 0.72, 0.95)), raise: 1, tree: 1 - k }); fadeIn(EV.t_dawn); }
+    else if (t < EV.t_night2) {     // 朝: 布団はひとつしかない。カメラは何もない畳へ寄っていく
+      const k = ease(prog(t, EV.one - 0.4, EV.t_night2)), c = camLerp(CAMS.wide, CAMS.empty, k); room(t, f, { cam: c[0], tgt: c[1], two: false, day: true });
+      const z = Math.max(0, 1 - Math.abs(t - EV.t_morning) / 0.35); if (z) { ctx.fillStyle = `rgba(255,250,235,${z})`; ctx.fillRect(0, 0, W, H); } grain = 0.09; }
+    else if (t < EV.move) { const k = ease(prog(t, EV.t_night2, EV.move)), c = camLerp(CAMS.empty, CAMS.next, k); room(t, f, { cam: c[0], tgt: c[1], two: true, afraid: true }); fadeIn(EV.t_night2, 0.5); }
+    else { // 隣の布団が、二度に分けてゆっくり起き上がり、こちらへ寄ってくる
+      const R = tt => { const u = prog(tt, EV.move + 0.8, EV.move + 3.6); return u < 0.3 ? 0.28 * ease(u / 0.3) : u < 0.45 ? 0.28 : 0.28 + 0.72 * ease((u - 0.45) / 0.55); };
+      const lean = 0.5 * ease(prog(t, LN.now.start - 0.1, EV.hit)) ** 2;
+      sideView(t, f, R(t), lean, R(t - 0.22), 5 * Math.sin(t * 1.3)); fadeIn(EV.move, 0.45); }
     const g = ctx.createLinearGradient(0, 1330, 0, 1500); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
   } else if (t < EV.hit + 0.5) {
     const k = (t - EV.hit) / 0.5; sideView(t, f, 1, 0.5 + 6 * k * k + (hash(f) - 0.5) * 0.1);
