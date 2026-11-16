@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>奇跡の鉱物の栄枯盛衰</title>
+<style>
+@font-face{font-family:"NSJ";font-weight:500;src:url(fonts/noto-sans-jp-japanese-500-normal.woff2) format("woff2");}
+@font-face{font-family:"NSJ";font-weight:700;src:url(fonts/noto-sans-jp-japanese-700-normal.woff2) format("woff2");}
+@font-face{font-family:"NSJ";font-weight:900;src:url(fonts/noto-sans-jp-japanese-900-normal.woff2) format("woff2");}
+@font-face{font-family:"NSL";font-weight:500;src:url(fonts/noto-sans-jp-latin-500-normal.woff2) format("woff2");}
+@font-face{font-family:"NSL";font-weight:700;src:url(fonts/noto-sans-jp-latin-700-normal.woff2) format("woff2");}
+@font-face{font-family:"NSL";font-weight:900;src:url(fonts/noto-sans-jp-latin-900-normal.woff2) format("woff2");}
+@font-face{font-family:"SMJ";font-weight:800;src:url(fonts/shippori-mincho-b1-japanese-800-normal.woff2) format("woff2");}
+@font-face{font-family:"SML";font-weight:800;src:url(fonts/shippori-mincho-b1-latin-800-normal.woff2) format("woff2");}
+html,body{margin:0;background:#000;}
+canvas{display:block;max-height:100vh;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// ------------------------------------------------------------------
+// 奇跡の鉱物の栄枯盛衰(9:16 / 30fps)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// タイミングは narrate.py が出力する timeline.js(ナレーション実測)に従う。
+// ------------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const TL = window.TIMELINE;
+const FPS = TL.fps, DURATION = TL.duration;
+window.FPS = FPS; window.DURATION = DURATION;
+const SANS = '"NSL","NSJ","Noto Color Emoji",sans-serif';
+const SERIF = '"SML","SMJ",serif';
+const EMOJI = '"Noto Color Emoji"';
+const C = { ink: '#F6F3EC', dim: '#A9ADB6', mute: '#6C717C', gold: '#F2C14E', red: '#EF4B4B', teal: '#74D3C0', panel: 'rgba(255,255,255,0.06)', line: 'rgba(255,255,255,0.16)' };
+
+// ---------- 数学ヘルパー ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const eOut = k => 1 - Math.pow(1 - clamp(k), 3);
+const eInOut = k => { k = clamp(k); return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; };
+const eBack = k => { k = clamp(k); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+function rnd(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+let T = 0;                                   // 現在時刻
+const A = (t0, d = 0.4) => clamp((T - t0) / d);     // t0 から d 秒で 0→1
+const LT = i => TL.lines[i].t0;
+const LE = i => TL.lines[i].t1;
+const CT = (i, j) => TL.lines[i].chunks[j].t0;
+const fmt = n => Math.round(n).toLocaleString('en-US');
+
+// ---------- 描画ヘルパー ----------
+function txt(s, x, y, size, color = C.ink, o = {}) {
+  ctx.save();
+  ctx.font = `${o.w || 900} ${size}px ${o.serif ? SERIF : SANS}`;
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = o.base || 'middle';
+  if (o.alpha != null) ctx.globalAlpha *= o.alpha;
+  if (o.ls) ctx.letterSpacing = o.ls + 'px';
+  if (o.glow) { ctx.shadowColor = o.glow; ctx.shadowBlur = o.blur || 40; }
+  if (o.stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = o.sw || size * 0.16; ctx.strokeStyle = o.stroke; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = color; ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function emoji(s, x, y, size, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.font = `${size}px ${EMOJI}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y + size * 0.04); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function card(x, y, w, h, o = {}) {
+  ctx.save(); rr(x, y, w, h, o.r ?? 28); ctx.fillStyle = o.fill || 'rgba(16,18,24,0.78)'; ctx.fill();
+  ctx.lineWidth = o.lw || 2; ctx.strokeStyle = o.stroke || C.line; ctx.stroke(); ctx.restore();
+}
+// アニメ付きで描く: k(0..1) に応じて拡大+フェード
+function pop(k, cx, cy, fn, back = true) {
+  if (k <= 0) return;
+  ctx.save(); const s = back ? eBack(k) : lerp(0.92, 1, eOut(k));
+  ctx.translate(cx, cy); ctx.scale(s, s); ctx.translate(-cx, -cy); ctx.globalAlpha *= clamp(k * 2.5); fn(); ctx.restore();
+}
+function rise(k, dy, fn) { if (k <= 0) return; ctx.save(); ctx.translate(0, (1 - eOut(k)) * dy); ctx.globalAlpha *= clamp(k * 2); fn(); ctx.restore(); }
+function stamp(s, cx, cy, size, t0, rot = -0.2, color = C.red) {
+  const k = A(t0, 0.22); if (k <= 0) return;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); const sc = lerp(2.6, 1, eOut(k)); ctx.scale(sc, sc); ctx.globalAlpha *= clamp(k * 3);
+  ctx.font = `900 ${size}px ${SANS}`; const w = ctx.measureText(s).width + size * 0.7, h = size * 1.5;
+  ctx.fillStyle = 'rgba(20,4,4,0.72)'; rr(-w / 2, -h / 2, w, h, 14); ctx.fill();
+  ctx.lineWidth = size * 0.09; ctx.strokeStyle = color; ctx.stroke();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = color; ctx.fillText(s, 0, size * 0.02); ctx.restore();
+  // 衝撃リング
+  const r = A(t0 + 0.12, 0.6); if (r > 0 && r < 1) { ctx.save(); ctx.globalAlpha *= (1 - r) * 0.7; ctx.strokeStyle = color; ctx.lineWidth = 8 * (1 - r); ctx.beginPath(); ctx.arc(cx, cy, 120 + r * 420, 0, 7); ctx.stroke(); ctx.restore(); }
+}
+function shakeAt(t0, amp = 22, d = 0.4) { const k = (T - t0) / d; if (k < 0 || k > 1) return [0, 0]; const a = amp * (1 - k) * (1 - k); return [Math.sin(T * 91) * a, Math.cos(T * 77) * a]; }
+function chip(s, cx, cy, size, o = {}) {
+  ctx.save(); ctx.font = `${o.w || 700} ${size}px ${SANS}`; const w = ctx.measureText(s).width + size * 1.3, h = size * 1.9;
+  rr(cx - w / 2, cy - h / 2, w, h, h / 2); ctx.fillStyle = o.fill || 'rgba(255,255,255,0.08)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = o.stroke || C.line; ctx.stroke(); ctx.restore();
+  txt(s, cx, cy + 1, size, o.color || C.ink, { w: o.w || 700 });
+}
+function yearTag(s, sub, t0) {      // 画面上部の年号見出し
+  rise(A(t0, 0.45), -40, () => { txt(s, 540, 300, 150, C.ink, { serif: true, w: 800, glow: 'rgba(0,0,0,0.6)' }); if (sub) txt(sub, 540, 400, 40, C.dim, { w: 700, ls: 6 }); });
+}
+
+// ---------- 背景 ----------
+const BG = { hook: ['#1a0707', '#050505', '#EF4B4B'], miracle: ['#0c2a2c', '#04090b', '#74D3C0'], rise: ['#2b2110', '#07080d', '#F2C14E'], shadow: ['#101614', '#030404', '#7c8f86'],
+  bomb: ['#240808', '#030303', '#EF4B4B'], fall: ['#2a0b0b', '#050404', '#EF4B4B'], japan: ['#0d1826', '#04060a', '#7FB2F0'], end: ['#18181c', '#050506', '#F2C14E'] };
+const fibers = (() => { const r = rnd(11), a = []; for (let i = 0; i < 90; i++) a.push({ x: r() * W, y: r() * H, l: 20 + r() * 90, a: r() * Math.PI, v: 6 + r() * 22, w: 0.6 + r() * 1.6, p: r() * 6.28, z: r() }); return a; })();
+const noise = (() => { const n = document.createElement('canvas'); n.width = n.height = 256; const c = n.getContext('2d'), d = c.createImageData(256, 256), r = rnd(5); for (let i = 0; i < d.data.length; i += 4) { const v = r() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 20; } c.putImageData(d, 0, 0); return n; })();
+function background(id, density = 1) {
+  const [c1, c2, tint] = BG[id];
+  const g = ctx.createRadialGradient(540, 760, 80, 540, 900, 1250); g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 漂う繊維
+  ctx.save(); ctx.strokeStyle = tint; ctx.lineCap = 'round';
+  const n = Math.round(fibers.length * clamp(density, 0, 1));
+  for (let i = 0; i < n; i++) { const f = fibers[i]; const y = ((f.y - T * f.v) % H + H) % H, x = f.x + Math.sin(T * 0.4 + f.p) * 26, a = f.a + Math.sin(T * 0.3 + f.p) * 0.5;
+    ctx.globalAlpha = 0.08 + f.z * 0.22; ctx.lineWidth = f.w; ctx.beginPath(); ctx.moveTo(x - Math.cos(a) * f.l / 2, y - Math.sin(a) * f.l / 2); ctx.lineTo(x + Math.cos(a) * f.l / 2, y + Math.sin(a) * f.l / 2); ctx.stroke(); }
+  ctx.restore();
+}
+function overlay() {
+  const g = ctx.createRadialGradient(540, 900, 500, 540, 960, 1250); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.62)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  const f = Math.floor(T * FPS), ox = (f * 97) % 256, oy = (f * 61) % 256; ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.translate(-ox, -oy); ctx.fillStyle = ctx.createPattern(noise, 'repeat'); ctx.fillRect(0, 0, W + 256, H + 256); ctx.restore();
+}
+
+// ---------- 部品 ----------
+function rock(cx, cy, s, glow = 0) {       // 繊維状の鉱石
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+  const r = rnd(42); if (glow) { ctx.shadowColor = `rgba(242,193,78,${glow})`; ctx.shadowBlur = 90; }
+  ctx.beginPath(); const pts = [[-210, 40], [-150, -110], [-20, -170], [130, -130], [215, -10], [170, 120], [20, 165], [-140, 135]]; pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.closePath();
+  const g = ctx.createLinearGradient(-200, -160, 200, 160); g.addColorStop(0, '#5d6f6a'); g.addColorStop(0.5, '#2f3b3a'); g.addColorStop(1, '#182020'); ctx.fillStyle = g; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.clip(); ctx.lineCap = 'round';
+  for (let i = 0; i < 150; i++) { const x = -230 + r() * 460, y = -180 + r() * 360, l = 60 + r() * 160, a = -0.55 + (r() - .5) * 0.35;
+    ctx.strokeStyle = `rgba(${200 + r() * 55 | 0},${225 + r() * 30 | 0},${215 + r() * 30 | 0},${0.12 + r() * 0.5})`; ctx.lineWidth = 0.8 + r() * 2.2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a) * l * .5, y + Math.sin(a) * l * .5 + (r() - .5) * 20, x + Math.cos(a) * l, y + Math.sin(a) * l); ctx.stroke(); }
+  const sw = (T * 0.35) % 1; const sx = -300 + sw * 700; const sg = ctx.createLinearGradient(sx - 60, 0, sx + 60, 0); sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(.5, 'rgba(255,255,255,0.28)'); sg.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = sg; ctx.fillRect(-300, -200, 700, 400);
+  ctx.restore();
+}
+function plaque(cx, cy, s, alive = 1) {     // 社名プレート
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+  const w = 820, h = 190; const g = ctx.createLinearGradient(0, -h / 2, 0, h / 2);
+  if (alive > 0.5) { g.addColorStop(0, '#f7dd8c'); g.addColorStop(.5, '#c9962e'); g.addColorStop(1, '#8a611a'); } else { g.addColorStop(0, '#7b7b7b'); g.addColorStop(1, '#3b3b3b'); }
+  ctx.shadowColor = alive > 0.5 ? 'rgba(242,193,78,0.45)' : 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 50; rr(-w / 2, -h / 2, w, h, 16); ctx.fillStyle = g; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 4; rr(-w / 2 + 14, -h / 2 + 14, w - 28, h - 28, 8); ctx.stroke();
+  txt('JOHNS-MANVILLE', 0, 4, 66, alive > 0.5 ? '#2b1c05' : '#1a1a1a', { serif: true, w: 800, ls: 2 });
+  ctx.restore();
+}
+const sky = (() => { const r = rnd(1858), a = []; let x = -20; while (x < W + 40) { const w = 50 + r() * 90; a.push({ x, w, h: 120 + r() * 420, win: r() }); x += w + 4; } return a; })();
+function skyline(base, k, color = '#0b0d14', lit = 1) {
+  ctx.save(); for (const [i, b] of sky.entries()) { const kk = eOut(clamp(k * 1.6 - i / sky.length * 0.6)); const h = b.h * kk; ctx.fillStyle = color; ctx.fillRect(b.x, base - h, b.w, h);
+    if (lit > 0) { ctx.fillStyle = `rgba(242,193,78,${0.5 * lit})`; const r = rnd(i * 7 + 3); for (let y = base - h + 18; y < base - 16; y += 30) for (let x = b.x + 10; x < b.x + b.w - 14; x += 22) if (r() < 0.42) ctx.fillRect(x, y, 9, 13); } }
+  ctx.restore();
+}
+function lungs(cx, cy, s, fill = 0, col = '#c9d6d2') {     // 肺のシルエット+蓄積する繊維
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+  const lobe = sgn => { ctx.beginPath(); ctx.moveTo(sgn * 22, -150); ctx.bezierCurveTo(sgn * 150, -190, sgn * 215, 40, sgn * 190, 165); ctx.bezierCurveTo(sgn * 130, 200, sgn * 50, 160, sgn * 28, 110); ctx.closePath(); };
+  ctx.lineWidth = 6; ctx.strokeStyle = col; ctx.fillStyle = 'rgba(201,214,210,0.10)';
+  ctx.beginPath(); ctx.moveTo(0, -250); ctx.lineTo(0, -150); ctx.stroke();
+  const r = rnd(9);
+  for (const sgn of [-1, 1]) { lobe(sgn); ctx.fill(); ctx.stroke(); ctx.save(); lobe(sgn); ctx.clip(); const n = Math.round(160 * fill);
+    for (let i = 0; i < 160; i++) { const x = sgn * (30 + r() * 170), y = -160 + r() * 340, a = r() * 3.14, l = 10 + r() * 22; if (i >= n) continue; ctx.strokeStyle = 'rgba(239,75,75,0.85)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); ctx.stroke(); } ctx.restore(); }
+  ctx.restore();
+}
+function clock(cx, cy, r, speed = 1, color = C.red) {
+  ctx.save(); ctx.translate(cx, cy); ctx.strokeStyle = color; ctx.lineWidth = r * 0.07; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
+  for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; ctx.lineWidth = r * 0.04; ctx.beginPath(); ctx.moveTo(Math.cos(a) * r * 0.82, Math.sin(a) * r * 0.82); ctx.lineTo(Math.cos(a) * r * 0.92, Math.sin(a) * r * 0.92); ctx.stroke(); }
+  const tick = Math.floor(T * 2 * speed) / 60 * 6.283 - 1.5708; ctx.lineWidth = r * 0.06; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(tick) * r * 0.72, Math.sin(tick) * r * 0.72); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(tick / 12 + 1) * r * 0.45, Math.sin(tick / 12 + 1) * r * 0.45); ctx.stroke(); ctx.restore();
+}
+function pulse(cx, cy, t0, color = C.red, n = 3, R = 620) {
+  ctx.save(); ctx.strokeStyle = color; for (let i = 0; i < n; i++) { const k = (((T - t0) * 0.55 + i / n) % 1 + 1) % 1; ctx.globalAlpha = (1 - k) * 0.5 * A(t0, 0.3); ctx.lineWidth = 6 * (1 - k) + 1; ctx.beginPath(); ctx.arc(cx, cy, 80 + k * R, 0, 7); ctx.stroke(); } ctx.restore();
+}
+// ダウ30社のタイル
+function dowGrid(cx, cy, t0, mode) {
+  const cols = 6, rows = 5, sz = 118, gap = 16, w = cols * sz + (cols - 1) * gap, h = rows * sz + (rows - 1) * gap, hi = 14;
+  for (let i = 0; i < 30; i++) { const x = cx - w / 2 + (i % cols) * (sz + gap), y = cy - h / 2 + Math.floor(i / cols) * (sz + gap); const k = A(t0 + i * 0.022, 0.3); if (k <= 0) continue;
+    ctx.save(); ctx.globalAlpha *= clamp(k * 2);
+    if (i === hi) {
+      if (mode === 'in') { const g = A(t0 + 1.0, 0.5); ctx.shadowColor = C.gold; ctx.shadowBlur = 50 * g; rr(x, y, sz, sz, 16); ctx.fillStyle = g > 0 ? C.gold : 'rgba(255,255,255,0.10)'; ctx.fill(); ctx.shadowBlur = 0; if (g > 0) txt('J-M', x + sz / 2, y + sz / 2 + 2, 40, '#2b1c05', { w: 900 }); }
+      else { const d = A(t0 + 1.2, 0.9), dy = d * d * 900, rot = d * 1.1; ctx.globalAlpha *= 1 - d * 0.75; ctx.strokeStyle = 'rgba(239,75,75,0.6)'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]); rr(x, y, sz, sz, 16); ctx.stroke(); ctx.setLineDash([]);
+        ctx.translate(x + sz / 2, y + sz / 2 + dy); ctx.rotate(rot); rr(-sz / 2, -sz / 2, sz, sz, 16); ctx.fillStyle = d > 0 ? '#6b6b6b' : C.gold; ctx.fill(); txt('J-M', 0, 2, 40, '#1a1a1a', { w: 900 }); }
+    } else { rr(x, y, sz, sz, 16); ctx.fillStyle = 'rgba(255,255,255,0.09)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.restore(); }
+}
+// 折れ線/棒グラフ
+function axes(x, y, w, h, years, y0, y1, step) {
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); ctx.stroke(); ctx.restore();
+  for (let v = y0; v <= y1; v += step) txt(String(v), x + (v - y0) / (y1 - y0) * w, y + h + 34, 28, C.mute, { w: 500 });
+}
+const WORLD = [[1900, 30], [1910, 110], [1920, 200], [1930, 390], [1940, 570], [1950, 1290], [1960, 2210], [1970, 3490], [1975, 4560], [1977, 4790], [1980, 4700], [1985, 4310], [1990, 4010], [1995, 2460], [2000, 2110], [2005, 2300], [2010, 2010], [2015, 1320], [2020, 1200], [2023, 1240], [2024, 950]];
+const JP_IMPORT = [[1950, 5], [1955, 22], [1960, 77], [1965, 135], [1970, 293], [1974, 352], [1977, 300], [1980, 290], [1984, 240], [1988, 320], [1990, 292], [1995, 191], [2000, 99], [2003, 25], [2006, 0], [2023, 0]];
+const JP_MESO = [[1995, 500], [1997, 597], [1999, 647], [2001, 772], [2003, 878], [2005, 911], [2007, 1068], [2009, 1156], [2011, 1258], [2013, 1410], [2015, 1504], [2017, 1555], [2019, 1466], [2021, 1635], [2023, 1595], [2024, 1562]];
+function lineChart(data, x, y, w, h, x0, x1, ymax, k, color, fillc) {
+  const X = v => x + (v - x0) / (x1 - x0) * w, Y = v => y + h - v / ymax * h; const lim = lerp(x0, x1, k); let last = null;
+  ctx.save(); ctx.beginPath(); ctx.moveTo(X(data[0][0]), Y(data[0][1]));
+  for (let i = 1; i < data.length; i++) { const [a, b] = data[i - 1], [c, d] = data[i]; if (c <= lim) { ctx.lineTo(X(c), Y(d)); last = [c, d]; } else { if (a < lim) { const q = (lim - a) / (c - a); last = [lim, lerp(b, d, q)]; ctx.lineTo(X(lim), Y(last[1])); } break; } }
+  if (!last) last = data[0];
+  ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 24; ctx.stroke(); ctx.shadowBlur = 0;
+  if (fillc) { ctx.lineTo(X(last[0]), y + h); ctx.lineTo(X(data[0][0]), y + h); ctx.closePath(); ctx.fillStyle = fillc; ctx.fill(); }
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(X(last[0]), Y(last[1]), 10, 0, 7); ctx.fill(); ctx.restore();
+  return { X, Y, last };
+}
+
+// ---------- シーン ----------
+const SC = {};
+SC.hook = () => {
+  const s1 = CT(0, 0), s2 = CT(0, 1), s3 = CT(0, 2), l1 = LT(1);
+  const out = 1 - A(l1 - 0.25, 0.35);
+  if (out > 0) { ctx.save(); ctx.globalAlpha *= out;
+    const sh = shakeAt(s1, 30, 0.45), sh2 = shakeAt(CT(0, 3) + 0.3, 26, 0.4); ctx.translate(sh[0] + sh2[0], sh[1] + sh2[1]);
+    const k = A(s1, 0.25); if (k > 0) { ctx.save(); const sc = lerp(1.9, 1, eOut(k)) * (1 + (T - s1) * 0.006); ctx.translate(540, 560); ctx.scale(sc, sc); ctx.globalAlpha *= clamp(k * 3); txt('1982', 0, 0, 330, C.ink, { serif: true, w: 800, glow: 'rgba(239,75,75,0.55)', blur: 80 }); ctx.restore(); }
+    rise(A(s1 + 0.5, 0.4), 20, () => txt('AUGUST 26', 540, 330, 44, C.red, { w: 700, ls: 14 }));
+    const chips = [['ダウ平均 構成銘柄', 0], ['フォーチュン500 181位', 0.35], ['総資産 20億ドル超', 0.7]];
+    chips.forEach(([s, d], i) => pop(A(s2 + d, 0.35), 540, 850 + i * 112, () => chip(s, 540, 850 + i * 112, 48, { fill: 'rgba(242,193,78,0.10)', stroke: 'rgba(242,193,78,0.55)', color: C.gold })));
+    stamp('破産申請', 540, 1010, 190, CT(0, 3) + 0.1, -0.16);
+    pop(A(CT(0, 3) + 0.9, 0.3), 540, 1245, () => txt('倒産するはずのない会社が、なぜ?', 540, 1245, 54, C.ink, { w: 900 }), false);
+    ctx.restore(); }
+  const k2 = A(l1 - 0.05, 0.6);
+  if (k2 > 0) { ctx.save(); ctx.globalAlpha *= k2;
+    rise(A(l1, 0.5), 30, () => txt('会社を追い詰めたのは──', 540, 330, 54, C.dim, { w: 700 }));
+    const g = A(CT(1, 2), 0.6); rock(540, 680, lerp(1.0, 1.25, eInOut(A(l1, LE(1) - l1 + 1))), 0.25 + 0.6 * g);
+    pop(A(CT(1, 1), 0.4), 540, 1010, () => chip('売り続けて100年', 540, 1010, 46), false);
+    pop(A(CT(1, 2), 0.35), 540, 1170, () => txt('「奇跡の鉱物」', 540, 1170, 136, C.gold, { serif: true, w: 800, glow: 'rgba(242,193,78,0.7)', blur: 60 }));
+    ctx.restore(); }
+};
+SC.miracle = () => {
+  const a = LT(2), b = LT(3), c = LT(4);
+  const o1 = 1 - A(b - 0.3, 0.3);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1;
+    rise(A(a - 0.3, 0.5), 30, () => txt('奇跡の鉱物の栄枯盛衰', 540, 300, 56, C.teal, { w: 700, ls: 8 }));
+    rock(540, 640, 1.15, 0.3);
+    pop(A(a + 0.5, 0.4), 540, 980, () => txt('アスベスト', 540, 980, 176, C.ink, { serif: true, w: 800, glow: 'rgba(116,211,192,0.5)' }));
+    rise(A(CT(2, 1), 0.4), 20, () => { txt('ASBESTOS', 540, 1120, 46, C.dim, { w: 700, ls: 22 }); txt('石綿(いしわた・せきめん)', 540, 1200, 52, C.teal, { w: 700 }); });
+    ctx.restore(); }
+  const o2 = A(b - 0.1, 0.3) * (1 - A(c - 0.3, 0.3));
+  if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2;
+    txt('なぜ「奇跡」と呼ばれたのか', 540, 290, 50, C.dim, { w: 700 });
+    const items = [['🔥', '燃えない', '耐火'], ['🧪', '腐らない', '耐薬品'], ['⚡', '通さない', '断熱・絶縁'], ['💰', '安い', '大量採掘']];
+    items.forEach(([e, s, sub], i) => { const x = 290 + (i % 2) * 500, y = 560 + Math.floor(i / 2) * 430; const k = A(CT(3, i), 0.35);
+      pop(k, x, y, () => { card(x - 220, y - 185, 440, 370, { stroke: 'rgba(116,211,192,0.5)', fill: 'rgba(10,30,32,0.75)' }); emoji(e, x, y - 70, 130); txt(s, x, y + 65, 76, C.ink); txt(sub, x, y + 135, 34, C.teal, { w: 700 }); }); });
+    ctx.restore(); }
+  const o3 = A(c - 0.1, 0.35);
+  if (o3 > 0) { ctx.save(); ctx.globalAlpha *= o3;
+    yearTag('1764年', '江戸時代・明和元年', c);
+    const k = A(CT(4, 1), 0.5);
+    pop(k, 540, 560, () => txt('平賀源内', 540, 560, 120, C.gold, { serif: true, w: 800 }), false);
+    // 燃えない布
+    const kc = A(CT(4, 2), 0.5);
+    if (kc > 0) { ctx.save(); ctx.globalAlpha *= kc; const x = 300, y = 720, w = 480, h = 300; ctx.fillStyle = '#d9d4c4'; rr(x, y, w, h, 8); ctx.fill(); ctx.strokeStyle = 'rgba(60,50,30,0.35)'; ctx.lineWidth = 2;
+      for (let i = 1; i < 24; i++) { ctx.beginPath(); ctx.moveTo(x + i * 20, y); ctx.lineTo(x + i * 20, y + h); ctx.stroke(); } for (let i = 1; i < 15; i++) { ctx.beginPath(); ctx.moveTo(x, y + i * 20); ctx.lineTo(x + w, y + i * 20); ctx.stroke(); }
+      for (let i = 0; i < 7; i++) { const fx = 330 + i * 70, s = 110 + Math.sin(T * 9 + i * 1.7) * 18; emoji('🔥', fx, 1040 + Math.sin(T * 7 + i) * 6, s); }
+      ctx.restore();
+      txt('火浣布(かかんぷ)', 540, 1150, 60, C.ink, { alpha: kc }); txt('アスベストで織った「燃えない布」', 540, 1225, 40, C.dim, { w: 700, alpha: A(CT(4, 2) + 0.3, 0.4) }); }
+    ctx.restore(); }
+};
+SC.rise = () => {
+  const l5 = LT(5), l6 = LT(6), l7 = LT(7), l8 = LT(8), l9 = LT(9);
+  const o1 = 1 - A(l7 - 0.3, 0.3);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1;
+    skyline(1290, A(l5, 2.2), '#0a0b10', A(l5 + 0.8, 1.5));
+    yearTag('1858年', 'NEW YORK', l5);
+    rise(A(CT(5, 1), 0.4), 30, () => { emoji('🏠', 540, 600, 190); txt('アスベスト製の屋根材', 540, 750, 56, C.ink); txt('H.W. ジョンズ(当時21歳)が創業', 540, 825, 38, C.dim, { w: 700 }); });
+    const k = A(l6, 0.4); if (k > 0) { ctx.save(); ctx.globalAlpha *= clamp(k * 2); ctx.fillStyle = `rgba(5,6,10,${0.94 * k})`; ctx.fillRect(0, 180, W, 1120); const sh = shakeAt(l6 + 0.2, 14, 0.3); plaque(540 + sh[0], lerp(200, 620, eOut(k)) + sh[1], 1.12);
+      rise(A(CT(6, 1), 0.4), 20, () => txt('世界最大級のアスベスト企業', 540, 840, 58, C.gold)); rise(A(CT(6, 1) + 0.3, 0.4), 20, () => txt('ジョンズ・マンビル社(1901年 合併で誕生)', 540, 920, 36, C.dim, { w: 700 })); ctx.restore(); }
+    ctx.restore(); }
+  const o2 = A(l7 - 0.1, 0.3) * (1 - A(l9 - 0.3, 0.3));
+  if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2;
+    txt('あらゆる製品に', 540, 290, 50, C.dim, { w: 700 });
+    const items = [['🏠', '屋根', CT(7, 0)], ['🧱', '断熱材', CT(7, 0) + 0.45], ['🚗', 'ブレーキ', CT(7, 1)], ['🚢', '軍艦', CT(7, 1) + 0.55]];
+    const small = A(l8 - 0.2, 0.4);
+    items.forEach(([e, s, t0], i) => { const x = lerp(290 + (i % 2) * 500, 170 + i * 247, eInOut(small)), y = lerp(520 + Math.floor(i / 2) * 300, 470, eInOut(small)), sc = lerp(1, 0.62, eInOut(small));
+      pop(A(t0, 0.3), x, y, () => { ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc); card(-200, -125, 400, 250, { fill: 'rgba(30,22,8,0.75)', stroke: 'rgba(242,193,78,0.45)' }); emoji(e, -95, 0, 110); txt(s, 75, 4, s.length > 3 ? 44 : 56, C.ink); ctx.restore(); }); });
+    const kc = A(CT(7, 2), 0.3) * (1 - small);
+    if (kc > 0) pop(kc, 540, 1080, () => { const n = lerp(0, 3000, eOut(A(CT(7, 2), 0.9))); txt(fmt(n) + '+', 540, 1050, 190, C.gold, { serif: true, w: 800, glow: 'rgba(242,193,78,0.5)' }); txt('種類の製品に使用', 540, 1190, 50, C.ink); }, false);
+    if (small > 0) { // 意外な用途
+      const a1 = CT(8, 0), a2 = CT(8, 1);
+      pop(A(a1, 0.35), 540, 760, () => { card(120, 620, 840, 280, { fill: 'rgba(30,22,8,0.8)', stroke: C.gold, lw: 3 }); emoji('🚬', 270, 760, 150); txt('タバコのフィルター', 610, 735, 60, C.ink); txt('1950年代・米国の一部銘柄', 610, 810, 34, C.dim, { w: 700 }); });
+      pop(A(a2, 0.35), 540, 1080, () => { card(120, 940, 840, 280, { fill: 'rgba(30,22,8,0.8)', stroke: C.gold, lw: 3 }); emoji('❄️', 270, 1080, 150); txt('人工の「雪」', 610, 1055, 60, C.ink); txt('映画の撮影やクリスマスの飾りに', 610, 1130, 34, C.dim, { w: 700 }); });
+      const ks = A(a2, 0.6); if (ks > 0) { const r = rnd(77); ctx.save(); ctx.fillStyle = '#fff'; for (let i = 0; i < 70; i++) { const x = r() * W, v = 90 + r() * 160, y = ((r() * 1200 + (T - a2) * v) % 1150) + 180, s = 2 + r() * 5; ctx.globalAlpha = ks * (0.3 + r() * 0.6) * o2; ctx.beginPath(); ctx.arc(x + Math.sin(T * 1.5 + i) * 18, y, s, 0, 7); ctx.fill(); } ctx.restore(); } }
+    ctx.restore(); }
+  const o3 = A(l9 - 0.1, 0.35);
+  if (o3 > 0) { ctx.save(); ctx.globalAlpha *= o3;
+    yearTag('1930年', 'DOW JONES INDUSTRIAL AVERAGE', l9);
+    dowGrid(540, 800, CT(9, 1) - 0.3, 'in');
+    rise(A(CT(9, 2), 0.4), 20, () => txt('アメリカを代表する30社', 540, 1190, 62, C.gold));
+    rise(A(CT(9, 1) + 0.9, 0.4), 20, () => txt('ダウ平均の構成銘柄に採用', 540, 500 - 40, 40, C.ink, { w: 700 }));
+    ctx.restore(); }
+};
+SC.shadow = () => {
+  const l10 = LT(10), l11 = LT(11), l12 = LT(12), l13 = LT(13), l14 = LT(14);
+  const o1 = 1 - A(l11 - 0.3, 0.3);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1; const d = A(l10, 1.6);
+    plaque(540, 560, 1.05, 1); ctx.save(); ctx.globalAlpha *= 0.55 * d; ctx.translate(540, 700); ctx.transform(1, 0, -0.9 * d, 1.6 * d + 0.2, 0, 0); ctx.fillStyle = '#000'; rr(-430, 0, 860, 190, 16); ctx.fill(); ctx.restore();
+    ctx.fillStyle = `rgba(0,0,0,${0.5 * d})`; ctx.fillRect(0, 0, W, H);
+    pop(A(l10 + 0.1, 0.4), 540, 1130, () => txt('しかし──', 540, 1130, 110, C.ink, { serif: true, w: 800 }), false);
+    ctx.restore(); }
+  const o2 = A(l11 - 0.1, 0.3) * (1 - A(l13 - 0.3, 0.3));
+  if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2;
+    const sw = eInOut(A(l12 - 0.2, 0.5));
+    const fill = clamp((T - CT(11, 2)) / 6, 0, 0.9) * A(CT(11, 2), 0.1);
+    lungs(540, lerp(760, 800, sw), lerp(1.25, 1.35, sw), fill);
+    ctx.save(); ctx.globalAlpha *= 1 - sw;
+    yearTag('1898年', '創業から40年', CT(11, 1) - 0.2);
+    rise(A(l11, 0.4), 20, () => txt('創業者 H.W. ジョンズ 死去', 540, 500, 54, C.ink));
+    pop(A(CT(11, 2), 0.35), 540, 1150, () => { card(170, 1080, 740, 150, { fill: 'rgba(40,8,8,0.85)', stroke: C.red, lw: 3 }); txt('死因:肺の病(石綿が原因とみられる)', 540, 1156, 40, C.red); });
+    ctx.restore();
+    if (sw > 0) { ctx.save(); ctx.globalAlpha *= sw; yearTag('1930年代', '業界の内部調査', l12); pop(A(CT(12, 1), 0.35), 540, 1170, () => { card(140, 1095, 800, 150, { fill: 'rgba(40,8,8,0.85)', stroke: C.red, lw: 3 }); txt('労働者の肺に異常を確認', 540, 1171, 60, C.red); }); ctx.restore(); }
+    ctx.restore(); }
+  const o3 = A(l13 - 0.1, 0.4);
+  if (o3 > 0) { ctx.save(); ctx.globalAlpha *= o3;
+    // 手紙
+    ctx.save(); ctx.translate(540, 760); ctx.rotate(-0.025); const y0 = lerp(120, 0, eOut(A(l13, 0.6))); ctx.translate(0, y0);
+    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 60; ctx.fillStyle = '#e9e2cf'; ctx.fillRect(-430, -500, 860, 1000); ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(120,90,40,0.10)'; for (let i = 0; i < 16; i++) ctx.fillRect(-430, -500 + i * 64, 860, 2);
+    const mono = (s, x, y, size, col = '#2a2520', w = 700) => { ctx.font = `${w} ${size}px "Courier New","Liberation Mono",monospace`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col; ctx.fillText(s, x, y); };
+    mono('October 1, 1935', -370, -420, 34, '#5a5246'); mono('Re: asbestos', -370, -370, 34, '#5a5246');
+    const en = ['"I think the less said', ' about asbestos,', ' the better off we are."']; const full = en.join('').length; const n = Math.floor(clamp((T - l13 - 0.4) / 3.0) * full); let used = 0;
+    en.forEach((ln, i) => { const part = ln.slice(0, clamp(n - used, 0, ln.length)); used += ln.length; mono(part, -370, -270 + i * 62, 42); });
+    const jp = [['「アスベストのことは、', '#2a2520'], ['語られないほど、', '#b3261e'], ['我々には好都合だ」', '#b3261e']];
+    jp.forEach(([s, col], i) => { const k = A(CT(14, i), 0.3); if (k <= 0) return; ctx.save(); ctx.globalAlpha *= k; ctx.font = `800 ${i ? 84 : 62}px ${SERIF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = col; ctx.fillText(s, 0, 20 + i * 125 - (i ? 0 : 10)); if (i) { ctx.fillStyle = 'rgba(179,38,30,0.9)'; const w = ctx.measureText(s).width * k; ctx.fillRect(-ctx.measureText(s).width / 2, 70 + i * 125, w, 6); } ctx.restore(); });
+    mono('— 業界大手の経営者が交わした書簡より', -370, 430, 30, '#5a5246');
+    ctx.restore(); ctx.restore(); }
+};
+SC.bomb = () => {
+  const l15 = LT(15), l16 = LT(16), l17 = LT(17);
+  const o1 = 1 - A(l16 - 0.3, 0.3);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1;
+    txt('どれくらい細いのか', 540, 290, 50, C.dim, { w: 700 });
+    const k = A(l15, 0.6); const R = 330 * eOut(k);
+    ctx.save(); const g = ctx.createRadialGradient(430, 600, 20, 480, 700, 360); g.addColorStop(0, '#5b4634'); g.addColorStop(1, '#241a12'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(480, 700, R, 0, 7); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
+    rise(A(l15 + 0.3, 0.4), 10, () => { txt('髪の毛', 480, 680, 70, C.ink); txt('(断面)', 480, 755, 36, C.dim, { w: 700 }); });
+    const kd = A(CT(15, 1), 0.3);
+    if (kd > 0) { ctx.save(); ctx.globalAlpha *= kd; ctx.fillStyle = '#fff'; ctx.shadowColor = C.red; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(900, 700, 2, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+      const p = 1 + 0.25 * Math.sin(T * 6); ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(900, 700, 34 * p, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.moveTo(900, 745); ctx.lineTo(900, 830); ctx.stroke(); ctx.restore();
+      txt('アスベスト繊維', 850, 870, 40, C.red, { alpha: kd }); txt('(この点よりも細い)', 850, 922, 30, C.dim, { w: 700, alpha: kd });
+      pop(kd, 540, 1150, () => txt('1/5000', 540, 1140, 190, C.red, { serif: true, w: 800, glow: 'rgba(239,75,75,0.5)' })); }
+    ctx.restore(); }
+  const o2 = A(l16 - 0.1, 0.3);
+  if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2;
+    const big = A(l17, 0.4); pulse(540, 620, l17, C.red, 3, 700);
+    clock(540, 620, lerp(150, 215, eOut(big)), 2);
+    // 潜伏期間バー
+    const x = 130, y = 960, w = 820; ctx.fillStyle = 'rgba(255,255,255,0.10)'; rr(x, y, w, 26, 13); ctx.fill();
+    const kb = eInOut(A(l16 + 0.2, 2.4)); const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#f2c14e'); g.addColorStop(1, '#ef4b4b'); ctx.fillStyle = g; rr(x, y, w * kb, 26, 13); ctx.fill();
+    txt('吸い込む', x, 1030, 38, C.gold, { align: 'left', w: 700 }); txt('発症', x + w, 1030, 38, C.red, { align: 'right', w: 900, alpha: A(l16 + 2.2, 0.3) });
+    ctx.save(); ctx.globalAlpha *= 1 - big; txt('潜伏期間', 540, 290, 50, C.dim, { w: 700 }); pop(A(CT(16, 1), 0.35), 540, 1170, () => txt('20〜50年', 540, 1170, 170, C.ink, { serif: true, w: 800 })); ctx.restore();
+    if (big > 0) pop(A(CT(17, 1), 0.35), 540, 1170, () => { txt('静かな', 540, 1100, 96, C.ink, { serif: true, w: 800 }); txt('時限爆弾', 540, 1230, 180, C.red, { serif: true, w: 800, glow: 'rgba(239,75,75,0.7)', blur: 60 }); });
+    ctx.restore(); }
+};
+const papers = (() => { const r = rnd(1973), a = []; for (let i = 0; i < 150; i++) a.push({ x: 40 + r() * 1000, d: r() * 9.5, y: 1280 - Math.pow(r(), 1.6) * 560 * (i / 150 + 0.25), rot: (r() - .5) * 1.4, w: 100 + r() * 50, sp: 0.5 + r() * 0.4 }); return a; })();
+SC.fall = () => {
+  const l18 = LT(18), l19 = LT(19), l20 = LT(20), l21 = LT(21), l22 = LT(22);
+  const o1 = 1 - A(l19 - 0.3, 0.3);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1; yearTag('1964年', '疫学調査の発表', l18);
+    pop(A(CT(18, 1), 0.35), 540, 800, () => { card(130, 560, 820, 520, { fill: 'rgba(30,8,8,0.8)', stroke: 'rgba(239,75,75,0.6)' }); emoji('🩺', 540, 700, 150); txt('断熱工事の労働者を追跡調査', 540, 850, 48, C.ink); txt('肺がん・中皮腫の多発を確認', 540, 935, 54, C.red); txt('I. セリコフ医師ら', 540, 1015, 34, C.dim, { w: 700 }); });
+    ctx.restore(); }
+  const o2 = A(l19 - 0.1, 0.3) * (1 - A(l21 - 0.3, 0.3));
+  if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2;
+    const t0 = CT(19, 2) - 0.6;
+    for (const p of papers) { const k = clamp((T - t0 - p.d * 0.55) / p.sp); if (k <= 0) continue; const y = lerp(-120, p.y, k * k), rot = p.rot * (0.3 + 0.7 * k) + (1 - k) * 2;
+      ctx.save(); ctx.translate(p.x, y); ctx.rotate(rot); ctx.fillStyle = '#e8e3d6'; ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 12; ctx.fillRect(-p.w / 2, -p.w * 0.65, p.w, p.w * 1.3); ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(60,50,40,0.35)'; for (let i = 0; i < 5; i++) ctx.fillRect(-p.w / 2 + 12, -p.w * 0.5 + i * 22, p.w - 24 - (i % 2) * 20, 5); ctx.restore(); }
+    const dim = A(l20 - 0.2, 0.3);
+    ctx.save(); ctx.globalAlpha *= 1 - dim; yearTag('1973年', '連邦控訴裁判所', l19); pop(A(CT(19, 1), 0.35), 540, 600, () => { emoji('⚖️', 540, 570, 170); txt('メーカーの責任を認定', 540, 730, 64, C.ink, { stroke: 'rgba(10,2,2,0.8)' }); }); ctx.restore();
+    if (dim > 0) { ctx.save(); ctx.globalAlpha *= dim; ctx.fillStyle = 'rgba(8,2,2,0.82)'; ctx.fillRect(0, 0, W, H);
+      txt('係争中の訴訟', 540, 330, 46, C.dim, { w: 700 });
+      const n = lerp(0, 16500, eOut(A(CT(20, 0) + 0.2, 1.3))); txt(fmt(n), 540, 470, 200, C.ink, { serif: true, w: 800, glow: 'rgba(239,75,75,0.6)' }); txt('件', 900, 510, 70, C.ink);
+      const k2 = A(CT(20, 1), 0.35); if (k2 > 0) { txt('将来の賠償見込み', 540, 730, 46, C.dim, { w: 700, alpha: k2 }); pop(A(CT(20, 2), 0.3), 540, 880, () => { txt('20億ドル超', 540, 880, 170, C.red, { serif: true, w: 800, glow: 'rgba(239,75,75,0.6)' }); txt('($2,000,000,000+)', 540, 1000, 44, C.dim, { w: 700 }); }); }
+      ctx.restore(); }
+    ctx.restore(); }
+  const o3 = A(l21 - 0.1, 0.3) * (1 - A(l22 - 0.3, 0.3));
+  if (o3 > 0) { ctx.save(); ctx.globalAlpha *= o3; const sh = shakeAt(CT(21, 2) + 0.35, 26, 0.4); ctx.translate(sh[0], sh[1]);
+    txt('1982.8.26', 540, 330, 130, C.ink, { serif: true, w: 800 });
+    plaque(540, 600, 1.0, 1 - A(CT(21, 2) + 0.4, 0.2));
+    pop(A(CT(21, 1), 0.3), 300, 830, () => chip('総資産 20億ドル超', 300, 830, 40, { color: C.gold, stroke: 'rgba(242,193,78,0.55)' }));
+    pop(A(CT(21, 1) + 0.4, 0.3), 780, 830, () => chip('フォーチュン500企業', 780, 830, 40, { color: C.gold, stroke: 'rgba(242,193,78,0.55)' }));
+    stamp('破産申請', 540, 640, 170, CT(21, 2) + 0.3, -0.14);
+    rise(A(CT(21, 2) + 0.9, 0.4), 20, () => { txt('連邦破産法11条(チャプター11)', 540, 1010, 46, C.ink, { w: 700 }); txt('当時、米国の製造業で史上最大の破綻', 540, 1090, 46, C.red); });
+    ctx.restore(); }
+  const o4 = A(l22 - 0.1, 0.3);
+  if (o4 > 0) { ctx.save(); ctx.globalAlpha *= o4; txt('ダウ平均 30社', 540, 300, 60, C.ink, { serif: true, w: 800 });
+    dowGrid(540, 760, l22 - 0.4, 'out');
+    rise(A(CT(22, 0), 0.4), 20, () => txt('1930 ━━━━ 1982', 540, 1150, 64, C.dim, { serif: true, w: 800 }));
+    pop(A(CT(22, 2), 0.35), 540, 1240, () => txt('52年で除外', 540, 1245, 76, C.red));
+    ctx.restore(); }
+};
+SC.japan = () => {
+  const l23 = LT(23), l24 = LT(24), l25 = LT(25), l26 = LT(26), l27 = LT(27), l28 = LT(28), l29 = LT(29);
+  const o1 = 1 - A(l24 - 0.3, 0.3);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1;
+    txt('世界のアスベスト生産量', 540, 280, 56, C.ink); txt('万トン/年(概数・USGS)', 540, 345, 32, C.mute, { w: 500 });
+    const x = 110, y = 470, w = 860, h = 640; axes(x, y, w, h, 0, 1900, 2020, 20);
+    const r = lineChart(WORLD, x, y, w, h, 1900, 2024, 5200, eInOut(A(l23 + 0.1, 3.6)), '#7FB2F0', 'rgba(127,178,240,0.14)');
+    const kp = A(CT(23, 1) + 0.6, 0.35); pop(kp, r.X(1977), r.Y(4790) - 70, () => { txt('ピーク 約480万トン', r.X(1977) - 40, r.Y(4790) - 80, 46, C.gold); txt('1970年代後半', r.X(1977) - 40, r.Y(4790) - 30, 32, C.dim, { w: 700 }); });
+    pop(A(CT(23, 2) + 0.5, 0.35), 820, 1190, () => txt('急落', 880, 730, 64, C.red));
+    ctx.restore(); }
+  const o2 = A(l24 - 0.1, 0.3) * (1 - A(l25 - 0.3, 0.3));
+  if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2;
+    txt('日本のアスベスト輸入量(累計)', 540, 290, 48, C.dim, { w: 700 });
+    const n = lerp(0, 1000, eOut(A(l24 + 0.5, 1.2))); txt('約' + fmt(n), 480, 520, 210, C.ink, { serif: true, w: 800, glow: 'rgba(127,178,240,0.5)' }); txt('万トン', 900, 560, 64, C.ink);
+    const k = A(CT(24, 1), 0.4); if (k > 0) { ctx.save(); ctx.globalAlpha *= k; ['🏢', '🏫', '🏭', '🏠'].forEach((e, i) => pop(A(CT(24, 1) + i * 0.15, 0.3), 195 + i * 230, 860, () => emoji(e, 195 + i * 230, 860, 150)));
+      ctx.fillStyle = 'rgba(255,255,255,0.10)'; rr(130, 1030, 820, 40, 20); ctx.fill(); ctx.fillStyle = '#7FB2F0'; rr(130, 1030, 820 * 0.8 * eOut(A(CT(24, 1) + 0.2, 0.8)), 40, 20); ctx.fill();
+      txt('約8割が建材に', 540, 1140, 60, C.ink); txt('屋根・壁・天井・吹き付け材など', 540, 1215, 36, C.dim, { w: 700 }); ctx.restore(); }
+    ctx.restore(); }
+  const o3 = A(l25 - 0.1, 0.3) * (1 - A(l27 - 0.3, 0.3));
+  if (o3 > 0) { ctx.save(); ctx.globalAlpha *= o3; const sh = shakeAt(CT(26, 0) + 0.45, 22, 0.4); ctx.translate(sh[0], sh[1]);
+    yearTag('2005年', '兵庫県 尼崎市', l25);
+    pop(A(CT(25, 1), 0.4), 540, 720, () => { card(110, 540, 860, 360, { fill: 'rgba(8,16,28,0.85)', stroke: 'rgba(127,178,240,0.5)' }); emoji('🏭', 300, 690, 150); emoji('🏘️', 620, 705, 120); emoji('🏘️', 810, 705, 120);
+      ctx.save(); ctx.strokeStyle = 'rgba(239,75,75,0.7)'; ctx.setLineDash([12, 10]); ctx.lineWidth = 4; for (let i = 1; i <= 3; i++) { ctx.beginPath(); ctx.arc(300, 700, 110 + i * 150 * A(CT(25, 1) + 0.3 * i, 0.8), -0.9, 0.9); ctx.stroke(); } ctx.restore();
+      txt('工場の周辺住民にも中皮腫などの被害', 540, 850, 40, C.ink, { w: 700 }); });
+    const k = A(CT(26, 0) + 0.4, 0.25); if (k > 0) { ctx.save(); ctx.translate(540, 1100); ctx.rotate(-0.04); const sc = lerp(2.2, 1, eOut(k)); ctx.scale(sc, sc); ctx.globalAlpha *= clamp(k * 3); ctx.fillStyle = C.red; ctx.fillRect(-440, -95, 880, 190); txt('クボタ・ショック', 0, 4, 104, '#fff', { w: 900 }); ctx.restore(); }
+    ctx.restore(); }
+  const o4 = A(l27 - 0.1, 0.3) * (1 - A(l28 - 0.3, 0.3));
+  if (o4 > 0) { ctx.save(); ctx.globalAlpha *= o4;
+    txt('日本の規制', 540, 290, 50, C.dim, { w: 700 });
+    const steps = [['1975', '吹き付け作業を原則禁止', l27], ['2006', '製造・使用を原則禁止', l27 + 0.5], ['2012', '全面禁止が完了', CT(27, 1)]];
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(220, 480); ctx.lineTo(220, 480 + 560 * eOut(A(l27, 1.6))); ctx.stroke();
+    steps.forEach(([y, s, t0], i) => { const yy = 480 + i * 280, last = i === 2; rise(A(t0, 0.4), 20, () => { ctx.fillStyle = last ? C.red : '#7FB2F0'; ctx.beginPath(); ctx.arc(220, yy, last ? 22 : 16, 0, 7); ctx.fill(); txt(y, 290, yy - 10, last ? 150 : 96, last ? C.ink : C.dim, { serif: true, w: 800, align: 'left' }); txt(s, 290, yy + (last ? 105 : 75), last ? 62 : 40, last ? C.red : C.dim, { align: 'left', w: last ? 900 : 700 }); }); });
+    ctx.restore(); }
+  const o5 = A(l28 - 0.1, 0.3);
+  if (o5 > 0) { ctx.save(); ctx.globalAlpha *= o5;
+    if (T > l29) pulse(820, 560, l29, C.red, 3, 520);
+    txt('輸入量と、中皮腫による死亡者数(日本)', 540, 280, 44, C.ink, { w: 700 }); txt('概数・財務省貿易統計/厚生労働省 人口動態統計', 540, 335, 28, C.mute, { w: 500 });
+    const x = 110, y = 430, w = 860, h = 560; axes(x, y, w, h, 0, 1950, 2020, 10);
+    const r1 = lineChart(JP_IMPORT, x, y, w, h, 1950, 2023, 420, eInOut(A(l28 - 0.1, 1.2)), 'rgba(127,178,240,0.9)', 'rgba(127,178,240,0.12)');
+    txt('輸入量', r1.X(1972), r1.Y(352) - 40, 36, '#7FB2F0', { alpha: A(l28 + 0.6, 0.3) }); txt('ピーク 1974年', r1.X(1972), r1.Y(352) - 84, 28, C.dim, { w: 700, alpha: A(l28 + 0.6, 0.3) });
+    const r2 = lineChart(JP_MESO, x, y, w, h, 1950, 2023, 1900, A(l28 + 0.9, 1.6) > 0 ? lerp((1995 - 1950) / 73, 1, eInOut(A(l28 + 0.9, 1.6))) : 0, C.red, 'rgba(239,75,75,0.16)');
+    txt('中皮腫の死亡者数', r2.X(2003), r2.Y(1500) - 100, 36, C.red, { alpha: A(l28 + 1.4, 0.3) });
+    const kk = A(l28 + 1.0, 0.5); if (kk > 0) { ctx.save(); ctx.globalAlpha *= kk; ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.setLineDash([8, 8]); const ya = y + h + 80; ctx.beginPath(); ctx.moveTo(r1.X(1974), ya); ctx.lineTo(r1.X(2017), ya); ctx.stroke(); ctx.setLineDash([]); txt('約40年の時差', (r1.X(1974) + r1.X(2017)) / 2, ya + 44, 40, C.gold); ctx.restore(); }
+    pop(A(CT(28, 1), 0.35), 540, 1235, () => txt('年間1,500人以上', 540, 1235, 104, C.ink, { serif: true, w: 800, glow: 'rgba(239,75,75,0.7)' }));
+    ctx.restore(); }
+};
+SC.end = () => {
+  const l30 = LT(30), l31 = LT(31), l32 = LT(32), l33 = LT(33), l34 = LT(34), l35 = LT(35);
+  const o1 = 1 - A(l34 - 0.35, 0.35);
+  if (o1 > 0) { ctx.save(); ctx.globalAlpha *= o1;
+    plaque(540, lerp(640, 400, eInOut(A(l31 - 0.2, 0.5))), lerp(1.1, 0.9, eInOut(A(l31 - 0.2, 0.5))), A(CT(30, 1), 0.3));
+    ctx.save(); ctx.globalAlpha *= 1 - A(l31 - 0.3, 0.3); pop(A(CT(30, 1), 0.35), 540, 900, () => { txt('いまも存在する', 540, 900, 110, C.ink, { serif: true, w: 800 }); txt('本社:米コロラド州デンバー', 540, 1010, 38, C.dim, { w: 700 }); }); ctx.restore();
+    // 株式の円グラフ
+    const o = A(l31 - 0.1, 0.3) * (1 - A(l32 - 0.3, 0.3));
+    if (o > 0) { ctx.save(); ctx.globalAlpha *= o; const cx = 540, cy = 830, R = 230, k = eInOut(A(l31 + 0.3, 1.3)) * 0.8;
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill(); ctx.fillStyle = C.gold; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, -1.5708, -1.5708 + 6.2832 * k); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#131317'; ctx.beginPath(); ctx.arc(cx, cy, R * 0.55, 0, 7); ctx.fill(); txt('最大', cx, cy - 42, 36, C.gold, { w: 700 }); txt(Math.round(k * 100) + '%', cx, cy + 18, 70, C.gold);
+      txt('株式を、被害者補償の基金へ', 540, 1150, 54, C.ink); txt('1988年 再建完了', 540, 1225, 38, C.dim, { w: 700 }); ctx.restore(); }
+    const o2 = A(l32 - 0.1, 0.3) * (1 - A(l33 - 0.3, 0.3));
+    if (o2 > 0) { ctx.save(); ctx.globalAlpha *= o2; rise(A(l32, 0.4), 20, () => txt('2001年', 540, 650, 130, C.ink, { serif: true, w: 800 }));
+      pop(A(CT(32, 1), 0.35), 540, 900, () => { card(110, 770, 860, 300, { fill: 'rgba(30,24,8,0.85)', stroke: C.gold, lw: 3 }); txt('バークシャー・ハサウェイ', 540, 860, 62, C.gold); txt('(W. バフェット氏の投資会社)が買収', 540, 960, 42, C.ink, { w: 700 }); }); ctx.restore(); }
+    const o3 = A(l33 - 0.1, 0.3);
+    if (o3 > 0) { ctx.save(); ctx.globalAlpha *= o3; txt('現在の主力製品', 540, 650, 44, C.dim, { w: 700 }); emoji('🏠', 540, 830, 200);
+      pop(A(CT(33, 1), 0.35), 540, 1050, () => { txt('断熱材・屋根材', 540, 1040, 84, C.ink); chip('アスベスト不使用', 540, 1170, 50, { color: C.teal, stroke: C.teal, fill: 'rgba(116,211,192,0.12)' }); }); ctx.restore(); }
+    ctx.restore(); }
+  const o4 = A(l34 - 0.1, 0.5);
+  if (o4 > 0) { ctx.save(); ctx.globalAlpha *= o4; const up = eInOut(A(l35 - 0.2, 0.6));
+    ctx.save(); ctx.translate(0, -230 * up); ctx.globalAlpha *= lerp(1, 0.9, up);
+    rise(A(l34, 0.6), 30, () => { txt('「奇跡」と', 540, 560, 124, C.gold, { serif: true, w: 800, glow: 'rgba(242,193,78,0.5)' }); txt('呼ばれるものほど、', 540, 710, 96, C.ink, { serif: true, w: 800 }); });
+    rise(A(CT(34, 1), 0.6), 30, () => { txt('代償は、', 540, 900, 96, C.ink, { serif: true, w: 800 }); txt('遅れてやってくる。', 540, 1050, 112, C.red, { serif: true, w: 800, glow: 'rgba(239,75,75,0.5)' }); });
+    ctx.restore();
+    const kc = A(LE(35) + 0.2, 0.5);
+    if (kc > 0) { rise(kc, 30, () => { card(110, 990, 860, 250, { fill: 'rgba(242,193,78,0.10)', stroke: C.gold, lw: 3 }); txt('次に見たい「栄枯盛衰」は?', 540, 1070, 56, C.gold); txt('コメントで教えてください 💬', 540, 1160, 48, C.ink, { w: 700 }); }); }
+    ctx.restore(); }
+};
+
+// ---------- 共通 UI ----------
+const CHAPTER = { hook: '', miracle: '第1章 奇跡の鉱物', rise: '第2章 頂点へ', shadow: '第3章 隠された影', bomb: '第4章 静かな時限爆弾', fall: '第5章 転落', japan: '第6章 世界と日本', end: '終章 その後' };
+function header(sc) {
+  ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(0, 0, W, 10); ctx.fillStyle = C.gold; ctx.fillRect(0, 0, W * T / DURATION, 10);
+  const ch = CHAPTER[sc.id]; if (ch) { const k = A(sc.t0 + 0.2, 0.5); ctx.save(); ctx.globalAlpha *= k * 0.95; txt(ch, 60, 120, 38, C.gold, { align: 'left', w: 700, ls: 3 }); ctx.restore(); }
+  txt('VOICEVOX:四国めたん', 1020, 120, 26, 'rgba(255,255,255,0.55)', { align: 'right', w: 500 });
+}
+// 字幕: [..] は強調。長い場合は 2 行に折り返す
+function parseRich(s) { const out = []; let hl = false; for (const ch of s) { if (ch === '[') hl = true; else if (ch === ']') hl = false; else out.push({ ch, hl }); } return out; }
+const NOHEAD = '、。」)ー・っゃゅょッャュョんン';
+function subtitle() {
+  let ln = null; for (const l of TL.lines) if (T >= l.t0 - 0.05 && T < l.t1 + 0.18) ln = l; if (!ln) return;
+  let c = ln.chunks[0]; for (const k of ln.chunks) if (T >= k.t0) c = k;
+  const chars = parseRich(c.text); const size = 74; ctx.save(); ctx.font = `900 ${size}px ${SANS}`;
+  const widths = chars.map(o => ctx.measureText(o.ch).width); const total = widths.reduce((a, b) => a + b, 0);
+  let rows = [chars];
+  if (total > 940) { let best = -1, bd = 1e9, acc = 0; for (let i = 1; i < chars.length; i++) { acc += widths[i - 1]; if (NOHEAD.includes(chars[i].ch)) continue; if (chars[i - 1].ch === '「') continue; let d = Math.abs(acc - total / 2); if ('、はがをにでもとのや'.includes(chars[i - 1].ch)) d -= 230; const kj = c => /[\u4e00-\u9fff]/.test(c), kt = c => /[\u30a0-\u30ff]/.test(c); if ((kj(chars[i].ch) && kj(chars[i - 1].ch)) || (kt(chars[i].ch) && kt(chars[i - 1].ch))) d += 200; if (/[0-9]/.test(chars[i].ch) && /[0-9]/.test(chars[i - 1].ch)) d += 400; if (chars[i - 1].ch === 'と' && chars[i].ch === 'い') d += 500; if (d < bd) { bd = d; best = i; } } rows = [chars.slice(0, best), chars.slice(best)]; }
+  const k = clamp((T - Math.max(c.t0, ln.t0 - 0.05)) / 0.12); const sc = lerp(0.9, 1, eOut(k)); const cy = 1455; const lh = 100;
+  ctx.translate(540, cy); ctx.scale(sc, sc); ctx.globalAlpha = clamp(k * 2 + 0.3);
+  rows.forEach((row, ri) => { const y = (ri - (rows.length - 1) / 2) * lh; const w = row.reduce((a, o) => a + ctx.measureText(o.ch).width, 0); let x = -w / 2;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.lineWidth = 18; ctx.strokeStyle = 'rgba(0,0,0,0.92)'; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 16;
+    let xx = x; for (const o of row) { ctx.strokeText(o.ch, xx, y); xx += ctx.measureText(o.ch).width; } ctx.shadowBlur = 0;
+    for (const o of row) { ctx.fillStyle = o.hl ? '#FFE14D' : '#fff'; ctx.fillText(o.ch, x, y); x += ctx.measureText(o.ch).width; } });
+  ctx.restore();
+}
+function credits() {
+  const k = A(LE(35) + 0.9, 0.6); if (k <= 0) return; ctx.save(); ctx.globalAlpha = k * 0.8;
+  txt('出典:USGS/厚生労働省/環境再生保全機構/当時の報道 ほか', 540, 1585, 26, C.dim, { w: 500 });
+  txt('数値は概数です 音声:VOICEVOX 四国めたん', 540, 1628, 26, C.dim, { w: 500 }); ctx.restore();
+}
+
+function render(t) {
+  T = t; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  let sc = TL.scenes[0]; for (const s of TL.scenes) if (t >= s.t0) sc = s;
+  background(sc.id, sc.id === 'bomb' || sc.id === 'shadow' ? 1 : 0.55);
+  // シーン本体(前後 0.3 秒でフェード、ゆっくりズーム)
+  const fade = Math.min(1, (t - sc.t0) / 0.3 + (sc.t0 === 0 ? 1 : 0), (sc.t1 - t) / 0.3 + (sc.t1 >= DURATION ? 1 : 0));
+  ctx.save(); ctx.globalAlpha = clamp(fade); const z = 1 + 0.03 * (t - sc.t0) / (sc.t1 - sc.t0); ctx.translate(540, 760); ctx.scale(z, z); ctx.translate(-540, -760);
+  SC[sc.id](); ctx.restore();
+  overlay(); header(sc); subtitle(); credits();
+  // 全体のフェードイン/アウト
+  const g = Math.min(clamp(t / 0.4), clamp((DURATION - t) / 0.8)); if (g < 1) { ctx.fillStyle = `rgba(0,0,0,${1 - g})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+window.ready = Promise.all(['500 20px "NSJ"', '700 20px "NSJ"', '900 20px "NSJ"', '500 20px "NSL"', '700 20px "NSL"', '900 20px "NSL"', '800 20px "SMJ"', '800 20px "SML"', '20px "Noto Color Emoji"'].map(f => document.fonts.load(f, 'あ1A🔥'))).then(() => { render(0); return true; });
+// ブラウザで直接開いたときはプレビュー再生(?t=秒 で頭出し)
+if (!navigator.webdriver) window.ready.then(() => { const off = parseFloat(new URLSearchParams(location.search).get('t') || '0'); const st = performance.now(); (function loop() { render((off + (performance.now() - st) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script>
+</body>
+</html>
