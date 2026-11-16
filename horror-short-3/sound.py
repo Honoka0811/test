@@ -36,12 +36,14 @@ def window(a, b, f=0.12):
     return ramp(a, a + f) * (1 - ramp(b - f, b))
 
 # 再生区間 [開始, 終了]
-P1 = (L['r1']['end'] + 0.3, L['r1']['end'] + 4.4)
+P1 = (L['r1']['end'] + 0.3, L['r1']['end'] + 3.7)
+RP = (L['again']['end'] + 0.3, L['again']['end'] + 4.3)   # 1件目をもう一度(いびきを抑えて)
 P2 = (L['r2']['end'] + 0.25, L['c2']['end'] + 0.65)
 P3 = (L['r3']['end'] + 0.25, L['c3']['end'] + 0.75)
-LIVE = (L['sleep']['end'] + 0.55, L['now']['end'] + 0.5)
+LIVE = (L['enter']['end'] + 0.5, L['now']['end'] + 0.5)
 HIT = LIVE[1]
-EV = dict(p1=P1, p2=P2, p3=P3, live=LIVE, hit=HIT, detail=L['stop']['start'] - 0.3, list=L['open']['start'] - 0.25)
+RP_CREAK = (RP[0] + 0.45, RP[0] + 1.55); RP_STEPS = [RP[0] + 1.85 + 0.48 * k for k in range(4)]
+EV = dict(replay=RP, rp_click=RP[0] + 0.15, rp_creak=RP_CREAK, rp_steps=RP_STEPS, t_replay=L['again']['start'] - 0.25, p1=P1, p2=P2, p3=P3, live=LIVE, hit=HIT, detail=L['stop']['start'] - 0.3, list=L['open']['start'] - 0.25)
 
 # ---------------- BGM ----------------
 def pad():
@@ -70,7 +72,7 @@ def clock():
         add(x, k, np.sin(2 * np.pi * (2400 if int(k) % 2 else 2000) * t) * np.exp(-t * 220), 0.05); k += 1.0
     return x
 def strings():
-    t = np.arange(N) / SR; x = np.zeros(N, np.float32); a, b = L['but']['start'], HIT
+    t = np.arange(N) / SR; x = np.zeros(N, np.float32); a, b = L['stop']['start'], HIT
     prog = np.clip((t - a) / (b - a), 0, 1)
     for k, n in enumerate([74, 75, 80, 81, 86, 87.5, 92]):
         f = midi(n) * (1 + 0.04 * prog ** 2) * (1 + 0.004 * np.sin(2 * np.pi * (4.5 + k * 0.37) * t + k))
@@ -102,6 +104,12 @@ def creak(d=0.9, f0=310):
     return (x * np.sin(np.pi * t / d) ** 1.2).astype(np.float32)
 def step():
     t = tt(0.35); return (np.sin(2 * np.pi * 95 * t) * np.exp(-t * 22) + 0.7 * np.sin(2 * np.pi * 260 * t) * np.exp(-t * 40) + lowpass(rng.standard_normal(len(t)).astype(np.float32), 1500) * np.exp(-t * 45) * 2.5).astype(np.float32)
+def latch():
+    """ドアノブが回る「カチャ」"""
+    x = np.zeros(int(0.25 * SR), np.float32)
+    for dt, f, g in [(0, 2100, 1.0), (0.07, 1500, 0.8)]:
+        t = tt(0.08); add(x, dt, (np.sin(2 * np.pi * f * t) + 0.5 * np.sin(2 * np.pi * f * 1.7 * t)) * np.exp(-t * 70) * g + highpass(rng.standard_normal(len(t)).astype(np.float32), 2000) * np.exp(-t * 120) * 0.6)
+    return x
 def rustle(d=0.7):
     t = tt(d); return highpass(rng.standard_normal(len(t)).astype(np.float32), 1800) * np.sin(np.pi * t / d) ** 2 * (0.6 + 0.4 * np.sin(2 * np.pi * 7 * t))
 def tick():
@@ -130,16 +138,20 @@ def main():
     # --- 録音トラック(スマホのマイクで録った質感にする) ---
     rec = np.zeros(N, np.float32)
     a = P1[0]
-    add(rec, a + 0.05, snore(1.4), 0.26); add(rec, a + 1.45, breath_out(0.5), 0.3)
-    add(rec, a + 1.55, creak(1.0, 420), 0.30)                     # いびきの合間に、ドアがきしむ(伏線)
-    add(rec, a + 2.55, snore(0.7), 0.17)
-    add(rec, a + 3.3, step(), 0.55); add(rec, a + 3.68, step(), 0.7)    # 近づく足音
+    add(rec, a + 0.05, snore(1.3), 0.26); add(rec, a + 1.3, breath_out(0.5), 0.3)
+    add(rec, a + 1.35, latch(), 0.25); add(rec, a + 1.5, creak(0.9, 420), 0.22)   # いびきの合間に、ドアが開く(伏線)
+    add(rec, a + 2.5, step(), 0.5); add(rec, a + 2.95, step(), 0.65)             # 近づく足音
+    # もう一度再生: いびきを抑え、ドアと足音をはっきり聞かせる
+    a = RP[0]
+    add(rec, a + 0.05, snore(1.3), 0.05); add(rec, a + 2.3, snore(1.2), 0.04)
+    add(rec, EV['rp_click'], latch(), 0.6); add(rec, RP_CREAK[0], creak(1.1, 420), 0.5)
+    for k, ts in enumerate(RP_STEPS): add(rec, ts, step(), 0.55 + 0.25 * k)
     a = P2[0]
     add(rec, a + 0.05, rustle(0.7), 0.35); add(rec, L['c2']['start'], segs['c2'], 1.8); add(rec, L['c2']['end'] + 0.1, step(), 0.2)
     a = P3[0]
     add(rec, a + 0.1, creak(0.8, 380), 0.22); add(rec, L['c3']['start'], segs['c3'], 1.25); add(rec, L['c3']['end'] + 0.15, breath_out(0.5), 0.5)
     hiss = highpass(lowpass(rng.standard_normal(N).astype(np.float32), 5000), 300) * 0.02
-    win = window(*P1) + window(*P2) + window(*P3)
+    win = window(*P1) + window(*P2) + window(*P3) + window(*RP)
     rec = lowpass(highpass(rec + hiss * win, 180), 3800) * win
     live = np.zeros(N, np.float32)
     add(live, L['now']['start'], segs['now'], 1.25); add(live, LIVE[0] + 0.5, breath_out(0.8), 0.4)
@@ -154,10 +166,10 @@ def main():
     lb = lullaby()
     bed = (pad() * ramp(0, 0.6, 0.35, 1) + strings() + clock()) * (1 - 0.7 * inplay) * (1 - ramp(HIT, HIT + 0.1) * 0.75)
     ui = np.zeros(N, np.float32); big = np.zeros(N, np.float32)
-    for p in (P1, P2, P3): add(ui, p[0] - 0.12, tick(), 0.25); add(ui, p[1], tick(), 0.15)
+    for p in (P1, P2, P3, RP): add(ui, p[0] - 0.12, tick(), 0.25); add(ui, p[1], tick(), 0.15)
     for k in range(3): add(ui, EV['list'] + 0.35 + 0.3 * k, tick(), 0.14)
     add(ui, LIVE[0] - 0.25, ping(), 0.22)
-    add(big, 0.0, boom(0.7)); add(big, L['manual']['start'] + 0.95, boom(0.55))
+    add(big, 0.0, boom(0.7)); add(big, L['stop']['start'] + 2.3, boom(0.5))
     add(big, HIT, stinger(), 0.75)
     nar = np.zeros(N, np.float32)
     for l in TL['lines']:

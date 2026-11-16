@@ -8,7 +8,7 @@ from script import LINES
 HERE = os.path.dirname(os.path.abspath(__file__))
 SR = 48000
 STYLES = {'n': 2, 'w': 36, 'h': 37, 'a': 0}   # 四国めたん ノーマル / ささやき / ヒソヒソ / あまあま
-PARAMS = {'n': dict(speed=1.08, pitch=-0.03, into=0.9, vol=1.0),
+PARAMS = {'n': dict(speed=1.13, pitch=-0.03, into=0.9, vol=1.0),
           'w': dict(speed=1.06, pitch=0.0, into=1.0, vol=1.7),
           'h': dict(speed=0.74, pitch=-0.06, into=1.0, vol=2.0),
           'a': dict(speed=0.7, pitch=0.0, into=0.8, vol=0.8)}

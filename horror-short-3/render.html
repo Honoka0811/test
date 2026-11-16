@@ -116,6 +116,7 @@ function list(t) {
 }
 
 // ---- C: 録音セッションの詳細 ----
+const T_MAN = LN.stop.start + 2.3;
 function detail(t) {
   base('7:02'); tx('録音セッションの詳細', 70, 300, 56, '#fff', { bold: true });
   const x0 = 90, x1 = 990, fr = 233 / 434, xs = x0 + (x1 - x0) * fr, y = 470;
@@ -132,12 +133,41 @@ function detail(t) {
   if (sa > 0) { ctx.save(); ctx.globalAlpha = sa; ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(xs + 10, y + 110); ctx.lineTo(xs + 10, y + 130); ctx.lineTo(x1, y + 130); ctx.lineTo(x1, y + 110); ctx.stroke(); tx('録音されていない 3時間21分', (xs + x1) / 2 + 5, y + 176, 34, '#e9e9ee', { align: 'center' }); ctx.restore(); }
   const rows = [['録音開始', '23:48', '自動'], ['録音停止', '3:41', '手動(画面をタップ)'], ['起床', '7:02', 'アラーム']];
   rows.forEach((r, i) => {
-    const a = ease(prog(t, EV.detail + 0.4 + i * 0.2, EV.detail + 0.7 + i * 0.2)), yy = 740 + i * 190, hot = i === 1 && t >= LN.manual.start + 0.9, p = 0.5 + 0.5 * Math.sin(t * 9);
-    ctx.save(); ctx.globalAlpha = a * (t >= LN.manual.start + 0.9 && !hot && i !== 2 ? 0.4 : 1);
+    const a = ease(prog(t, EV.detail + 0.4 + i * 0.2, EV.detail + 0.7 + i * 0.2)), yy = 740 + i * 190, hot = i === 1 && t >= T_MAN, p = 0.5 + 0.5 * Math.sin(t * 9);
+    ctx.save(); ctx.globalAlpha = a * (t >= T_MAN && !hot && i !== 2 ? 0.4 : 1);
     card(50, yy, 980, 160, hot ? { fill: 'rgba(255,43,43,0.16)', stroke: RED, glow: 12 + 22 * p, lw: 5 } : (i === 2 && t >= LN.sleep.start ? { stroke: '#e9e9ee' } : {}));
     tx(r[0], 90, yy + 54, 40, DIMC); tx(r[1], 90, yy + 112, 56, '#fff', { font: SANS, w: 'bold' });
     tx(r[2], 990, yy + 84, hot ? 58 : 48, hot ? '#ff5a52' : '#fff', { align: 'right', bold: true }); ctx.restore();
   });
+}
+
+// ---- C2: 1件目をもう一度 ----
+function replay(t) {
+  const f = Math.round(t * FPS), it = ITEMS[0], play = t >= EV.replay[0] && t < EV.replay[1], found = t >= LN.enter.start - 0.1;
+  base('7:02'); tx('1件目を、もう一度', 70, 300, 60, '#fff', { bold: true });
+  const col = found ? '#ff5a52' : BLUE, y = 380;
+  card(50, y, 980, 200, { fill: found ? 'rgba(255,43,43,0.12)' : 'rgba(127,155,255,0.12)', stroke: col, glow: 22 });
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(140, y + 100, 52, 0, 7); ctx.fill(); ctx.fillStyle = '#0a0d1c';
+  if (play) { ctx.fillRect(120, y + 76, 14, 48); ctx.fillRect(146, y + 76, 14, 48); } else { ctx.beginPath(); ctx.moveTo(124, y + 72); ctx.lineTo(166, y + 100); ctx.lineTo(124, y + 128); ctx.closePath(); ctx.fill(); }
+  tx('午前 2:13', 225, y + 66, 54, '#fff', { bold: true });
+  ctx.fillStyle = 'rgba(127,155,255,0.2)'; rr(225, y + 106, 180, 64, 32); ctx.fill(); tx('いびき', 249, y + 140, 44, '#b9c6ff', { bold: true });
+  if (found) { const a = ease(prog(t, LN.enter.start - 0.1, LN.enter.start + 0.2)); ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = RED; rr(423, y + 106, 500, 64, 32); ctx.fill(); tx('ドアの音・足音を検出', 447, y + 140, 40, '#fff', { bold: true }); ctx.restore(); }
+  // プレーヤーと、聞こえている音の説明
+  card(50, 640, 980, 560, { fill: 'rgba(0,0,0,0.35)' });
+  const creak = t >= EV.rp_click - 0.05 && t < EV.rp_creak[1] + 0.15, nstep = EV.rp_steps.filter(s => t >= s - 0.03).length, hot = creak || (nstep > 0 && play);
+  if (play) { bigWave(f, 1010, 300, hot ? '#ff5a52' : '#aebcff'); ctx.fillStyle = '#fff'; ctx.fillRect(1018, 850, 4, 320); }
+  else { ctx.fillStyle = '#3a4060'; ctx.fillRect(80, 1008, 920, 4); }
+  const pill = (s, x, on, a) => { ctx.save(); ctx.globalAlpha = a; ctx.font = `52px ${GOT}`; const w = ctx.measureText(s).width + 70; ctx.fillStyle = on ? RED : 'rgba(255,43,43,0.25)'; if (on) { ctx.shadowColor = RED; ctx.shadowBlur = 26; } rr(x, 690, w, 96, 48); ctx.fill(); ctx.shadowBlur = 0; tx(s, x + 35, 740, 52, '#fff', { bold: true }); ctx.restore(); return w; };
+  if (t >= EV.rp_click - 0.05) pill('① ドアが開く音', 90, creak, ease(prog(t, EV.rp_click - 0.05, EV.rp_click + 0.15)));
+  if (nstep > 0) { const w = pill('② 足音', 560, play && t < EV.rp_steps[3] + 0.4, ease(prog(t, EV.rp_steps[0] - 0.03, EV.rp_steps[0] + 0.15)));
+    for (let i = 0; i < nstep; i++) { const k = ease(prog(t, EV.rp_steps[i] - 0.03, EV.rp_steps[i] + 0.12)); ctx.fillStyle = `rgba(255,90,82,${k})`; ctx.beginPath(); ctx.arc(590 + w + i * 44, 740, (12 + i * 3) * k, 0, 7); ctx.fill(); } }
+  // 擬音(音を出さずに見ている人にも伝わるように)
+  let ono = ''; if (creak) ono = t < EV.rp_creak[0] ? 'カチャ' : 'カチャ……ギィ……'; else if (nstep > 0 && t < EV.replay[1] + 0.1) ono = Array(nstep).fill('トン').join('、');
+  ONO = ono;
+}
+let ONO = '';
+function drawOno(f) {
+  const ono = ONO; if (ono) { ctx.save(); ctx.font = `800 84px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#000'; ctx.lineWidth = 16; ctx.strokeText(ono, 540 + (hash(f) - 0.5) * 6, 1480); ctx.fillStyle = RED; ctx.shadowColor = 'rgba(255,0,0,0.7)'; ctx.shadowBlur = 18; ctx.fillText(ono, 540 + (hash(f) - 0.5) * 6, 1480); ctx.restore(); }
 }
 
 // ---- D: いま録音中 ----
@@ -174,14 +204,15 @@ function render(t) {
   const f = Math.round(t * FPS);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  let grain = 0.08;
+  let grain = 0.08; ONO = '';
   const fadeIn = (a) => { const k = 1 - prog(t, a, a + 0.25); if (k > 0) { ctx.fillStyle = `rgba(3,4,10,${k})`; ctx.fillRect(0, 0, W, H); } };
   if (t < EV.hit) {
     if (t < EV.list) { summary(t); const sh = Math.max(0, 1 - t / 0.4); if (sh) { ctx.fillStyle = `rgba(255,255,255,${0.3 * sh})`; ctx.fillRect(0, 0, W, H); } }
     else if (t < EV.detail) { list(t); fadeIn(EV.list); }
-    else { detail(t); fadeIn(EV.detail); if (t >= EV.live[0] - 0.3) liveScene(t); }
+    else { if (t < EV.t_replay) { detail(t); fadeIn(EV.detail); } else { replay(t); fadeIn(EV.t_replay); } if (t >= EV.live[0] - 0.3) liveScene(t); }
     // 字幕の下地
     const g = ctx.createLinearGradient(0, 1340, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = g; ctx.fillRect(0, 1340, W, 600);
+    drawOno(f);
     // 再生中・ささやき中は画面がわずかに揺れる
     if (t >= EV.p3[0] && t < EV.p3[1] || t >= EV.live[0]) { const v = env(f) * 10; if (v > 0.5) { const img = ctx.getTransform(); ctx.drawImage(cv, (hash(f) - 0.5) * v, (hash(f + 2) - 0.5) * v); } }
   } else if (t < EV.hit + 0.5) {
@@ -193,8 +224,8 @@ function render(t) {
   } else {
     if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
     const a = prog(t, EV.hit + 0.75, EV.hit + 1.1); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('1件目の「いびき」を', W / 2, 860);
-    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('もう一度、よく聞いてください。', W / 2, 960);
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('今夜、あなたも', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('録音してみますか?', W / 2, 960);
     ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
   }
   subtitle(t);
@@ -203,6 +234,6 @@ function render(t) {
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '1件目の「いびき」をもう一度、よく聞いてください。ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '今夜、あなたも録音してみますか?カチャ……ギィトン、1件目を、もう一度ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>
