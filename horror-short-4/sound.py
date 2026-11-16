@@ -39,9 +39,10 @@ DK = [(0, 1150), (L['l1']['start'], 900), (L['l2']['end'], 640), (L['l3']['end']
 def dist(t): return float(np.interp(t, [k[0] for k in DK], [k[1] for k in DK]))
 T_ZERO = DK[-1][0]
 T_BUZZ = L['l8']['end'] + 0.3
-CALL = (L['call']['start'] - 0.35, L['call']['end'] + 0.3)
+CALL = (L['call']['start'] - 0.35, L['call2']['end'] + 0.3)
+RING = (L['call2']['end'] + 0.75, L['now']['start'] - 0.25)   # ミキが鳴らした「スマホを探す」音
 HIT = L['now']['end'] + 0.5
-EV = dict(dk=DK, zero=T_ZERO, buzz=T_BUZZ, call=CALL, ring=L['l9']['start'] - 0.2, hit=HIT, bed=L['l12']['start'] + 1.0)
+EV = dict(dk=DK, zero=T_ZERO, buzz=T_BUZZ, call=CALL, ring=L['l9']['start'] - 0.2, hit=HIT, ringsnd=RING, bed=L['l12']['start'] + 0.8)
 
 def pad():
     t = np.arange(N) / SR; x = np.zeros(N, np.float32)
@@ -72,7 +73,7 @@ def heartbeat():
     x = np.zeros(N, np.float32)
     def thump(f0, g):
         t = tt(0.28); f = f0 * (1 + 1.2 * np.exp(-t * 40)); return (np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 16) * g).astype(np.float32)
-    a = L['l11']['start']; t0 = a
+    a = L['call2']['start']; t0 = a
     while t0 < HIT - 0.3:
         p = np.clip((t0 - a) / (HIT - a), 0, 1); g = 0.35 + 0.65 * p
         add(x, t0, thump(52, 1.0), g); add(x, t0 + 0.2, thump(44, 0.7), g); t0 += 0.95 - 0.4 * p
@@ -112,17 +113,20 @@ def main():
         t0 += 0.22 + 1.25 * min(d, 900) / 900
     t = tt(1.1); add(ui, T_ZERO, np.sin(2 * np.pi * 1800 * t) * np.minimum(1, (1.1 - t) * 8), 0.14)     # 0m: 鳴りっぱなしの音
     EV['pings'] = pings
-    # 家の中: 玄関のきしみと足音
-    a = L['l7']['start']
-    add(house, a + 0.5, creak(0.9), 0.16)
-    for k in range(5): add(house, a + 1.5 + 0.48 * k, step(), 0.35 + 0.12 * k)
+    # 「スマホを探す」音: ベッドの下からこもって聞こえる(右寄り)。ささやきの直前で急に止まる
+    ringt = []; t0 = RING[0]
+    while t0 < RING[1] - 0.3:
+        for k in range(3): add(house, t0 + 0.14 * k, sonar(1568, 0.12), 0.5)
+        ringt.append(round(t0, 3)); t0 += 0.85
+    house[:] = lowpass(house, 2200)
+    EV['rings'] = ringt
     for k in range(3): add(ui, T_BUZZ + 0.95 * k, buzz(0.65), 0.2)      # 着信のバイブ
     add(ui, CALL[0], tick(), 0.3); add(ui, CALL[1], tick(), 0.3)
     add(big, 0.0, boom(0.7)); add(big, T_ZERO, boom(0.8)); add(big, EV['bed'], boom(0.55)); add(big, HIT, stinger(), 0.75)
     # 声
     nar = np.zeros(N, np.float32); phone = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']:
-        add(phone if l['id'] == 'call' else last if l['id'] == 'now' else nar, l['start'], segs[l['id']])
+        add(phone if l['id'] in ('call', 'call2') else last if l['id'] == 'now' else nar, l['start'], segs[l['id']])
     phone = lowpass(highpass(phone, 450), 3000) * 3.6        # 電話の音質
     phone += highpass(lowpass(rng.standard_normal(N).astype(np.float32), 3000), 500) * 0.012 * ramp(CALL[0], CALL[0] + 0.1) * (1 - ramp(CALL[1] - 0.1, CALL[1]))
     hop = SR // FPS; n = N // hop; e = np.sqrt(np.mean(phone[:n * hop].reshape(n, hop) ** 2, axis=1))

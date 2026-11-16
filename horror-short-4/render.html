@@ -46,12 +46,12 @@ const SAMP = [];
 for (let i = 0; i < ROUTE.length - 1; i++) { const [ax, ay] = ROUTE[i], [bx, by] = ROUTE[i + 1], n = Math.ceil(Math.hypot(bx - ax, by - ay) / 0.2); for (let k = 0; k < n; k++) SAMP.push([lerp(ax, bx, k / n), lerp(ay, by, k / n)]); }
 SAMP.push(ME);
 function posFor(d) { let lo = 0; for (let i = 0; i < SAMP.length; i++) { if (Math.hypot(SAMP[i][0] - ME[0], SAMP[i][1] - ME[1]) <= d + 1e-6) { lo = i; break; } lo = i; } return lo; }
-const fmt = d => d >= 100 ? Math.round(d / 10) * 10 : d >= 10 ? Math.round(d) : d > 0.4 ? Math.round(d) : 0;
+const fmt = d => d >= 100 ? Math.round(d / 10) * 10 : Math.max(10, Math.round(d / 10) * 10);
 
 // ---- 地図 ----
 function map(t, f) {
   const d = dist(t), idx = posFor(d), [mx, my] = SAMP[idx];
-  const sc = 400 / Math.max(d * 1.12, 9.5) * lerp(1, 1.75, ease(prog(t, EV.bed - 0.4, EV.bed + 0.5)));                 // px/m。近づくほど拡大
+  const sc = 400 / Math.max(d * 1.12, 36);                 // px/m。近づくほど拡大
   const cx = lerp(ME[0], mx, 0.5), cy = lerp(ME[1], my, 0.5);
   const X = x => 540 + (x - cx) * sc, Y = y => 860 + (y - cy) * sc;
   ctx.fillStyle = '#0b111d'; ctx.fillRect(0, 0, W, H);
@@ -68,29 +68,29 @@ function map(t, f) {
   const step = Math.max(1, Math.floor(1.5 / sc / 0.2)); let first = true;
   for (let i = 0; i <= idx; i += step) { const p = SAMP[i]; if (p[0] < x0 - 50 || p[0] > x1 + 50 || p[1] < y0 - 50 || p[1] > y1 + 50) { first = true; continue; } first ? ctx.moveTo(X(p[0]), Y(p[1])) : ctx.lineTo(X(p[0]), Y(p[1])); first = false; }
   ctx.lineTo(X(mx), Y(my)); ctx.stroke();
-  // 家(拡大すると間取りが見える)
-  const ha = prog(sc, 3, 9);
+  // 建物(拡大すると見える)。位置情報で分かるのは建物単位まで
+  const ha = prog(sc, 2.5, 7);
   if (ha > 0) {
     ctx.save(); ctx.globalAlpha = ha;
-    ctx.fillStyle = '#131c2e'; ctx.fillRect(X(-6), Y(-4.6), 12 * sc, 9.2 * sc);
-    const bedHot = t >= EV.bed, p = 0.5 + 0.5 * Math.sin(t * 9);
-    ctx.fillStyle = bedHot ? `rgba(255,43,43,${0.35 + 0.3 * p})` : '#1e2a44'; rr(X(1.9), Y(-3.6), 3.4 * sc, 2.6 * sc, 0.25 * sc); ctx.fill();          // ベッド
-    ctx.fillStyle = bedHot ? 'rgba(255,255,255,0.35)' : '#2b3a5c'; rr(X(4.3), Y(-3.3), 0.8 * sc, 2.0 * sc, 0.2 * sc); ctx.fill();                       // 枕
-    ctx.strokeStyle = '#c9d3ea'; ctx.lineWidth = Math.max(0.22 * sc, 3); ctx.lineCap = 'butt'; ctx.beginPath();
-    ctx.moveTo(X(-2.2), Y(4.6)); ctx.lineTo(X(6), Y(4.6)); ctx.lineTo(X(6), Y(-4.6)); ctx.lineTo(X(-6), Y(-4.6)); ctx.lineTo(X(-6), Y(4.6)); ctx.lineTo(X(-3.8), Y(4.6));   // 外壁(玄関だけ開いている)
-    ctx.moveTo(X(0.8), Y(-4.6)); ctx.lineTo(X(0.8), Y(-3.2)); ctx.moveTo(X(0.8), Y(-1.2)); ctx.lineTo(X(0.8), Y(0.4)); ctx.lineTo(X(6), Y(0.4));                       // 私の部屋の壁
-    ctx.moveTo(X(-1.2), Y(4.6)); ctx.lineTo(X(-1.2), Y(0.4)); ctx.stroke();
-    if (sc > 14) { const fs = Math.min(0.62 * sc, 44); tx('玄関', X(-3), Y(3.6), fs, DIMC, { align: 'center' }); tx('廊下', X(-3.6), Y(-0.6), fs, DIMC, { align: 'center' }); tx('私の部屋', X(3.4), Y(-0.35), fs, bedHot ? '#fff' : DIMC, { align: 'center' }); tx('ベッド', X(3.0), Y(-3.2), fs * 0.8, bedHot ? '#fff' : '#6f7da3', { align: 'center', bold: bedHot }); tx('リビング', X(2.6), Y(2.5), fs, DIMC, { align: 'center' }); }
+    for (let bx = Math.floor((x0 + 20) / 80); bx <= Math.floor((x1 + 20) / 80); bx++) for (let by = Math.floor((y0 - 14) / 80); by <= Math.floor((y1 - 14) / 80); by++)
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+        const hx = 80 * bx - 20 + 9 + i * 22, hy = 80 * by + 14 + 9 + j * 22, r = hash(bx * 31 + by * 17 + i * 5 + j * 3);
+        if (r < 0.15 || (hx < 12 && hx + 18 > -12 && hy < 10 && hy + 18 > -10)) continue;
+        ctx.fillStyle = '#121a2b'; ctx.fillRect(X(hx + r * 3), Y(hy + r * 2), (14 + r * 4) * sc, (13 + (1 - r) * 4) * sc);
+      }
+    ctx.fillStyle = '#1b2a48'; ctx.strokeStyle = '#5a78b8'; ctx.lineWidth = 4; rr(X(-7), Y(-6), 14 * sc, 12 * sc, 0.8 * sc); ctx.fill(); ctx.stroke();
+    tx('自宅', X(0), Y(9.2), Math.min(3.2 * sc, 40), '#9fb6e6', { align: 'center', bold: true });
     ctx.restore();
   }
   // 自分のピン
-  const zero = t >= EV.zero, pu = (t * 0.8) % 1;
+  const zero = t >= EV.zero, pu = (t * 0.8) % 1, ringing = t >= EV.ringsnd[0] && t < EV.ringsnd[1];
   if (ha < 1) { ctx.save(); ctx.globalAlpha = 1 - ha; ctx.fillStyle = '#16233c'; ctx.beginPath(); ctx.arc(X(0), Y(0), 46, 0, 7); ctx.fill(); ctx.restore(); }
   ctx.strokeStyle = `rgba(90,162,255,${0.5 * (1 - pu)})`; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(X(ME[0]), Y(ME[1]), 30 + pu * 60, 0, 7); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(X(ME[0]), Y(ME[1]), 30, 0, 7); ctx.fill(); ctx.fillStyle = BLUE; ctx.beginPath(); ctx.arc(X(ME[0]), Y(ME[1]), 22, 0, 7); ctx.fill();
   if (!zero || f % 20 < 10) { ctx.fillStyle = 'rgba(8,12,22,0.85)'; rr(X(ME[0]) - 62, Y(ME[1]) + 42, 124, 56, 28); ctx.fill(); tx('自分', X(ME[0]), Y(ME[1]) + 71, 38, '#cfe2ff', { align: 'center', bold: true }); }
-  // ミキのピン
-  const px = X(mx), py = Y(my), ping = EV.pings.reduce((a, p) => t >= p ? Math.max(a, 1 - (t - p) / 0.5) : a, 0), col = zero ? RED : PINK;
+  // ミキのピン(まわりの円は位置の誤差)
+  const px = X(mx), py = Y(my); if (sc > 2) { ctx.fillStyle = `rgba(${t >= EV.zero ? '255,43,43' : '255,111,163'},0.13)`; ctx.beginPath(); ctx.arc(px, py, 13 * sc, 0, 7); ctx.fill(); }
+  const ping = EV.pings.reduce((a, p) => t >= p ? Math.max(a, 1 - (t - p) / 0.5) : a, 0), col = zero ? RED : PINK;
   if (ping > 0 && !zero) { ctx.strokeStyle = `rgba(255,111,163,${ping * 0.8})`; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(px, py, 50 + (1 - ping) * 70, 0, 7); ctx.stroke(); }
   if (zero) for (let i = 0; i < 3; i++) { const q = ((t - EV.zero) * 1.2 + i / 3) % 1; ctx.strokeStyle = `rgba(255,43,43,${1 - q})`; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(px, py, 50 + q * 240, 0, 7); ctx.stroke(); }
   ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = 30; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py - (zero ? 0 : 0), 48, 0, 7); ctx.fill(); ctx.restore();
@@ -102,9 +102,12 @@ function map(t, f) {
   if (zero) { ctx.strokeStyle = RED; ctx.lineWidth = 5; rr(40, 96, 1000, 250, 46); ctx.stroke(); }
   ctx.fillStyle = col; ctx.beginPath(); ctx.arc(140, 221, 62, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(140, 221, 53, 0, 7); ctx.fill(); tx('ミ', 140, 224, 66, col, { align: 'center', bold: true });
   tx('ミキ', 232, 178, 58, '#fff', { bold: true });
-  tx(zero ? (t >= EV.bed ? 'ミキのスマホ ・ ベッドの下' : 'あなたと同じ場所にいます') : stopped ? '停止中' : 'あなたの方へ移動中', 232, 262, 40, zero ? '#ff8a84' : stopped ? '#ffd27a' : '#9fb0d6');
-  const ds = String(fmt(d)); ctx.font = `bold 120px ${SANS}`; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillStyle = zero ? RED : d < 120 ? '#ffb347' : '#fff';
-  if (zero) { ctx.shadowColor = RED; ctx.shadowBlur = 30; } ctx.fillText(ds, 925, 216); ctx.shadowBlur = 0; tx('m', 990, 240, 60, zero ? RED : '#9fb0d6', { align: 'right', font: SANS, w: 'bold' });
+  tx(zero ? (ringing ? '一緒にいます ・ サウンド再生中' : '一緒にいます') : stopped ? '停止中 ・ 自宅付近' : 'あなたの方へ移動中', 232, 262, zero ? 48 : 40, zero ? '#ff5a52' : stopped ? '#ffd27a' : '#9fb0d6');
+  if (!zero) { ctx.font = `bold 120px ${SANS}`; ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillStyle = d < 120 ? '#ffb347' : '#fff'; ctx.fillText(String(fmt(d)), 925, 216); tx('m', 990, 240, 60, '#9fb0d6', { align: 'right', font: SANS, w: 'bold' }); if (d < 100) tx('約', 925 - ctx.measureText('00').width * 2.05, 236, 50, '#ffb347', { align: 'right', bold: true }); }
+  // サウンド再生中: ピンから音の波紋、画面には擬音
+  if (ringing) { const last = EV.rings.filter(r => t >= r).pop(), q = last === undefined ? 1 : (t - last) / 0.85;
+    for (let i = 0; i < 3; i++) { const k = clamp(q * 1.6 - i * 0.18); if (k > 0 && k < 1) { ctx.strokeStyle = `rgba(255,255,255,${0.9 * (1 - k)})`; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(px, py, 60 + k * 150, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(px, py, 60 + k * 150, Math.PI - 0.9, Math.PI + 0.9); ctx.stroke(); } }
+    if (q < 0.5) { ctx.save(); ctx.font = `800 84px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.translate(540 + (hash(f) - 0.5) * 10, 1210 + (hash(f + 3) - 0.5) * 10); ctx.strokeStyle = '#000'; ctx.lineWidth = 16; ctx.strokeText('ピピピ……', 0, 0); ctx.fillStyle = RED; ctx.shadowColor = 'rgba(255,0,0,0.7)'; ctx.shadowBlur = 18; ctx.fillText('ピピピ……', 0, 0); ctx.restore(); } }
   // 送ったメッセージ(未読のまま)
   if (t >= LN.l3.start - 0.2 && t < LN.l4.end) { const k = ease(prog(t, LN.l3.start - 0.2, LN.l3.start + 0.1)) * (1 - prog(t, LN.l4.end - 0.3, LN.l4.end));
     ctx.save(); ctx.globalAlpha = k; ctx.translate(0, (1 - k) * 40); ctx.fillStyle = '#3b6cf0'; rr(380, 1120, 640, 120, 46); ctx.fill(); tx('どうしたの?何かあった?', 420, 1182, 50, '#fff', { bold: true });
@@ -177,6 +180,6 @@ function render(t) {
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + 'あなたの位置情報は、いま誰に見えていますか?ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + 'あなたの位置情報は、いま誰に見えていますか?ピ……ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>
