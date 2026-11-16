@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>祖母の家の決まり</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(7000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+const WOOD = '#17110c';
+
+// ---- 障子(部屋の中から見る) ----
+const shCv = document.createElement('canvas'); shCv.width = W; shCv.height = H; const sh = shCv.getContext('2d');
+function oldWoman(c, sx, base, s, raise) {     // 腰の曲がった老婆の影
+  c.save(); c.translate(sx, base); c.scale(s, s); c.fillStyle = '#000';
+  c.beginPath(); c.moveTo(-160, 0); c.bezierCurveTo(-190, -260, -170, -430, -60, -470); c.bezierCurveTo(-10, -490, 60, -470, 90, -410); c.bezierCurveTo(140, -300, 130, -120, 140, 0); c.closePath(); c.fill();
+  c.beginPath(); c.ellipse(60, -520, 76, 84, 0.25, 0, 7); c.fill(); c.beginPath(); c.arc(-14, -584, 38, 0, 7); c.fill();          // 頭とまげ
+  c.lineCap = 'round'; c.strokeStyle = '#000'; c.lineWidth = 44; c.beginPath(); c.moveTo(70, -360); c.quadraticCurveTo(150, -330 - 60 * raise, 215, -330 - 150 * raise); c.stroke();   // 障子にのびる腕
+  c.lineWidth = 12; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(215, -330 - 150 * raise); c.lineTo(250 + i * 6, -372 - 150 * raise + i * 22); c.stroke(); }
+  c.restore();
+}
+function shoji(t, f, o) {
+  ctx.fillStyle = '#07080c'; ctx.fillRect(0, 0, W, H);
+  const X0 = 40, X1 = 1040, Y0 = 150, YP = 1070, Y1 = 1330, pc = o.paper;
+  // 紙
+  const g = ctx.createRadialGradient(700, 420, 60, 540, 600, 900); g.addColorStop(0, mix(pc, [255, 255, 255], 0.22)); g.addColorStop(1, mix(pc, [0, 0, 0], 0.45)); ctx.fillStyle = g; ctx.fillRect(X0, Y0, X1 - X0, YP - Y0);
+  // 影
+  if (o.shadow > 0) { sh.clearRect(0, 0, W, H); oldWoman(sh, 470 + Math.sin(t * 0.7) * 10, YP + 40, 1.32 + 0.05 * (o.near || 0), o.raise || 0);
+    ctx.save(); ctx.beginPath(); ctx.rect(X0, Y0, X1 - X0, YP - Y0); ctx.clip(); ctx.globalAlpha = o.shadow * 0.86; ctx.filter = 'blur(13px)'; ctx.drawImage(shCv, 0, 0); ctx.filter = 'none'; ctx.restore(); }
+  // 組子と枠
+  ctx.fillStyle = WOOD;
+  for (let p = 0; p < 2; p++) { const px = X0 + p * 500; for (let i = 1; i < 4; i++) ctx.fillRect(px + i * 125 - 4, Y0, 8, YP - Y0); ctx.fillRect(px - 11 + (p ? 0 : 0), Y0, 22, Y1 - Y0); }
+  ctx.fillRect(X1 - 22, Y0, 22, Y1 - Y0); ctx.fillRect(X0 + 489, Y0, 22, Y1 - Y0);
+  for (let j = 1; j < 6; j++) ctx.fillRect(X0, Y0 + j * (YP - Y0) / 6 - 4, X1 - X0, 8);
+  ctx.fillRect(X0, Y0 - 26, X1 - X0, 30); ctx.fillStyle = '#120d09'; ctx.fillRect(X0, YP, X1 - X0, Y1 - YP);
+  ctx.fillStyle = WOOD; for (let i = 0; i <= 8; i++) ctx.fillRect(X0 + i * 125 - 3, YP, 6, Y1 - YP); ctx.fillRect(X0, YP - 10, X1 - X0, 22); ctx.fillRect(X0, Y1 - 14, X1 - X0, 22);
+  // 畳
+  const tg = ctx.createLinearGradient(0, Y1, 0, H); tg.addColorStop(0, mix([26, 32, 24], pc, 0.12)); tg.addColorStop(1, '#040504'); ctx.fillStyle = tg; ctx.fillRect(0, Y1 + 8, W, H - Y1);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, Y1 + 150, W, 10);
+  // 紙からもれる光
+  const lg = ctx.createLinearGradient(0, Y1, 0, Y1 + 420); lg.addColorStop(0, `rgba(${pc.join(',')},0.16)`); lg.addColorStop(1, `rgba(${pc.join(',')},0)`); ctx.fillStyle = lg; ctx.fillRect(0, Y1 + 8, W, 420);
+}
+const MOON = [118, 138, 178], DAWN1 = [196, 150, 150], DAY = [245, 232, 205];
+function ruleStrip(t) {     // 決まりを書いた紙
+  const k = ease(prog(t, LN.rule.start - 0.3, LN.rule.start + 0.2)); if (k <= 0) return;
+  ctx.save(); ctx.translate(540, lerp(-900, 600, k)); ctx.rotate(-0.012 + Math.sin(t * 1.1) * 0.006);
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 40; ctx.fillStyle = '#e6dcc2'; ctx.fillRect(-105, -430, 210, 860); ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(120,90,40,0.10)'; for (let i = 0; i < 14; i++) ctx.fillRect(-105, -430 + hash(i) * 860, 210, 2 + hash(i + 9) * 3);
+  const s = '返事をしてはいけない', n = Math.floor(prog(t, LN.rule.start + 2.3, LN.rule.end - 0.2) * (s.length + 0.99));
+  ctx.font = `800 76px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < Math.min(n, s.length); i++) { ctx.fillStyle = i >= 0 ? '#1a0d0a' : '#000'; ctx.fillText(s[i], 0, -372 + i * 76); }
+  if (n >= s.length) { ctx.fillStyle = '#b3201a'; ctx.fillRect(34, 352, 54, 54); ctx.fillStyle = '#e6dcc2'; ctx.font = `800 34px ${MIN}`; ctx.fillText('禁', 61, 380); }
+  ctx.restore();
+}
+
+// ---- 部屋(真上から見る) ----
+function futon(x, y, o) {
+  const w = 290, h = 650;
+  ctx.fillStyle = o.sheet; rr(x, y, w, h, 18); ctx.fill();
+  ctx.fillStyle = o.pillow; rr(x + 55, y + 22, w - 110, 84, 22); ctx.fill();
+  if (o.head) { ctx.fillStyle = o.hair; ctx.beginPath(); ctx.arc(x + w / 2, y + 86, o.headR, 0, 7); ctx.fill(); }
+  const by = y + o.edge; ctx.fillStyle = o.blanket; rr(x - 8, by, w + 16, y + h - by + 6, 22); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.07)'; for (let i = 0; i < 5; i++) ctx.fillRect(x - 8, by + 60 + i * 100, w + 16, 16);
+  ctx.fillStyle = o.fold; rr(x - 8, by, w + 16, 46, 20); ctx.fill();
+  const bg = ctx.createRadialGradient(x + w / 2, by + 230, 20, x + w / 2, by + 240, 260); bg.addColorStop(0, `rgba(255,255,255,${o.bump})`); bg.addColorStop(1, 'rgba(255,255,255,0)');   // 体のふくらみ
+  ctx.save(); ctx.beginPath(); ctx.ellipse(x + w / 2, by + 250, 96, 260, 0, 0, 7); ctx.clip(); ctx.fillStyle = bg; ctx.fillRect(x, by, w, h); ctx.restore();
+}
+function room(t, f, o) {
+  ctx.fillStyle = '#050608'; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(540, 780); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  const day = o.day, RX = 70, RY = 260, RW = 940, RH = 1030;
+  // 畳
+  ctx.fillStyle = day ? '#b5ac74' : '#16221d'; ctx.fillRect(RX, RY, RW, RH);
+  for (let c = 0; c < 2; c++) for (let r = 0; r < 3; r++) { const x = RX + c * RW / 2, y = RY + r * RH / 3;
+    ctx.strokeStyle = day ? 'rgba(90,84,40,0.25)' : 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2; for (let i = 8; i < RW / 2; i += 14) { ctx.beginPath(); ctx.moveTo(x + i, y); ctx.lineTo(x + i, y + RH / 3); ctx.stroke(); }
+    ctx.strokeStyle = day ? '#3d3a22' : '#070b09'; ctx.lineWidth = 12; ctx.strokeRect(x, y, RW / 2, RH / 3); }
+  // 障子側(上)からの光
+  const lc = day ? '255,236,190' : '120,150,215', lg = ctx.createLinearGradient(0, RY, 0, RY + 700); lg.addColorStop(0, `rgba(${lc},${day ? 0.55 : 0.32})`); lg.addColorStop(1, `rgba(${lc},0)`); ctx.fillStyle = lg; ctx.fillRect(RX, RY, RW, 700);
+  ctx.fillStyle = day ? '#fff4d6' : '#8ea2cc'; ctx.fillRect(RX, RY - 34, RW, 34); ctx.fillStyle = WOOD; for (let i = 0; i <= 8; i++) ctx.fillRect(RX + i * RW / 8 - 4, RY - 34, 8, 34); ctx.fillRect(RX, RY - 4, RW, 10);
+  if (o.shadowBlob) { ctx.fillStyle = `rgba(0,0,0,${0.75 * o.shadowBlob})`; ctx.fillRect(RX + 3 * RW / 8 + 6, RY - 34, RW / 4 - 12, 30); }
+  ctx.strokeStyle = WOOD; ctx.lineWidth = 26; ctx.strokeRect(RX - 13, RY - 47, RW + 26, RH + 60);
+  // 布団
+  const A = { sheet: day ? '#f1eee4' : '#7f8aa6', pillow: day ? '#ffffff' : '#a9b3cc', blanket: day ? '#5f82c9' : '#2f3d66', fold: day ? '#7fa0e0' : '#3d4d7c', hair: '#0a0a0c', head: !day, headR: 46, edge: 150, bump: day ? 0 : 0.10 };
+  futon(180, 470, A);
+  if (day) { ctx.fillStyle = '#5f82c9'; rr(172, 620, 306, 250, 22); ctx.fill(); }   // 朝: 掛け布団はめくれている
+  if (o.two) {
+    const r = o.reach || 0, B = { sheet: '#8a8494', pillow: '#aaa3b0', blanket: '#4a2a36', fold: '#5d3644', hair: '#050506', head: true, headR: 48, edge: 96 + r * 70, bump: 0.12 + 0.05 * Math.sin(t * 1.3) };
+    futon(610, 470, B);
+    if (r > 0) {   // 掛け布団がずれて、髪と手が出てくる
+      ctx.strokeStyle = '#050506'; ctx.lineCap = 'round'; for (let i = 0; i < 9; i++) { ctx.lineWidth = 9 + hash(i) * 8; ctx.beginPath(); ctx.moveTo(735 + i * 6, 556); ctx.bezierCurveTo(700 - i * 14, 560 + i * 16, 640 - r * 120 - i * 6, 520 + i * 26, 600 - r * (170 + hash(i + 3) * 90), 560 + i * 24 + hash(i) * 30); ctx.stroke(); }
+      const hx = lerp(640, 468, ease(r)), hy = 760; ctx.strokeStyle = '#c9cdd2'; ctx.lineWidth = 34; ctx.beginPath(); ctx.moveTo(650, hy + 20); ctx.lineTo(hx + 30, hy); ctx.stroke();
+      ctx.lineWidth = 11; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(hx + 30, hy - 14 + i * 7); ctx.lineTo(hx - 34 + Math.abs(i - 2) * 9, hy - 30 + i * 15); ctx.stroke(); }
+    }
+  } else if (o.ghost > 0) {
+    ctx.save(); ctx.globalAlpha = o.ghost; ctx.strokeStyle = RED; ctx.lineWidth = 8; ctx.setLineDash([26, 18]); ctx.shadowColor = RED; ctx.shadowBlur = 20; rr(610, 470, 290, 650, 18); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+    tx('?', 755, 790, 200, 'rgba(255,43,43,0.9)', { align: 'center', font: SANS, w: 'bold' }); ctx.restore();
+  }
+  if (day) tx('私の布団', 325, 1158, 40, '#2a2418', { align: 'center', bold: true });
+  if (o.ring > 0) { ctx.strokeStyle = `rgba(255,43,43,${o.ring})`; ctx.lineWidth = 10; ctx.shadowColor = RED; ctx.shadowBlur = 24; ctx.beginPath(); ctx.ellipse(755, 800, 200, 370, 0, -1.6, -1.6 + 6.4 * o.ring); ctx.stroke(); ctx.shadowBlur = 0; }
+  ctx.restore();
+  if (!day) { const v = ctx.createRadialGradient(540, 700, 250, 540, 800, 1100); v.addColorStop(0, 'rgba(0,0,8,0.1)'); v.addColorStop(1, 'rgba(0,0,8,0.8)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.13;
+  const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
+  if (t < EV.hit) {
+    if (t < EV.t_room) { shoji(t, f, { paper: MOON, shadow: 0 }); ruleStrip(t); fadeIn(0, 0.6); }
+    else if (t < EV.t_shoji) { const k = prog(t, EV.t_room, EV.t_shoji); room(t, f, { z: 1 + 0.06 * k, cx: 540, cy: 780, two: true }); fadeIn(EV.t_room); }
+    else if (t < EV.t_room2) { const a = ease(prog(t, EV.shadow, EV.shadow + 1.3)), c = prog(t, LN.call.start, LN.call.end);
+      shoji(t, f, { paper: MOON, shadow: a, raise: ease(prog(t, LN.call.start - 0.3, LN.call.start + 0.8)), near: prog(t, LN.call.start, EV.t_room2) }); fadeIn(EV.t_shoji); }
+    else if (t < EV.t_dawn) { const k = ease(prog(t, EV.t_room2, EV.t_room2 + 2.2)); room(t, f, { z: lerp(1.05, 1.5, k), cx: lerp(540, 700, k), cy: lerp(780, 790, k), two: true, shadowBlob: 1, ring: ease(prog(t, LN.l5.start + 1.1, LN.l5.start + 1.7)) }); fadeIn(EV.t_room2); }
+    else if (t < EV.t_morning) { const k = prog(t, EV.t_dawn + 0.8, EV.t_morning - 0.2), pc = k < 0.6 ? MOON.map((v, i) => lerp(v, DAWN1[i], k / 0.6)) : DAWN1.map((v, i) => lerp(v, DAY[i], (k - 0.6) / 0.4));
+      shoji(t, f, { paper: pc, shadow: 1 - ease(prog(k, 0.72, 0.95)), raise: 1, near: 1 }); fadeIn(EV.t_dawn); }
+    else if (t < EV.t_night2) { const k = ease(prog(t, EV.one - 0.2, EV.one + 0.8)); room(t, f, { z: lerp(1, 1.12, k), cx: lerp(540, 600, k), cy: 780, two: false, day: true, ghost: ease(prog(t, EV.one, EV.one + 0.3)) * (0.75 + 0.25 * Math.sin(t * 9)) });
+      const z = Math.max(0, 1 - Math.abs(t - EV.t_morning) / 0.3); if (z) { ctx.fillStyle = `rgba(255,255,255,${z})`; ctx.fillRect(0, 0, W, H); } grain = 0.08; }
+    else { const k = ease(prog(t, EV.t_night2, EV.move + 1.5)), r = prog(t, EV.move, EV.hit);
+      room(t, f, { z: lerp(1.1, 1.75, k), cx: lerp(560, 640, k), cy: lerp(780, 730, k), two: true, reach: r }); fadeIn(EV.t_night2, 0.5);
+      if (t >= LN.now.start - 0.1) ctx.drawImage(cv, (hash(f) - 0.5) * 12, (hash(f + 2) - 0.5) * 12); }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1500); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5; room(t, f, { z: 2.6 + 1.5 * k, cx: 600 + (hash(f) - 0.5) * 40, cy: 700 + (hash(f + 4) - 0.5) * 40, two: true, reach: 1 });
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('夜中に呼ばれても', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('返事をしてはいけない。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 520, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '返事をしてはいけない禁夜中に呼ばれても。ナレーション四国めたん').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
