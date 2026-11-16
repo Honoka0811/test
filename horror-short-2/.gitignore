@@ -1,0 +1,7 @@
+node_modules/
+__pycache__/
+output/frames/
+output/*.wav
+output/*.npz
+output/silent.mp4
+data.js

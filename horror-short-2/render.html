@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>妹からのメッセージ</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", "IPAPGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(2000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(x, y, w, h, alpha, f, scale = 1, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.translate(x - ox * scale, y - oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (w + 256 * scale) / scale, (h + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function bold(s, x, y) { ctx.lineWidth = 1.6; ctx.strokeStyle = ctx.fillStyle; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); ctx.fillText(s, x, y); }
+const plain = s => s.replace(/[\[\]]/g, '');
+
+// ---- スマホ画面の共通部品 ----
+function statusBar() {
+  ctx.fillStyle = '#e9e9ee'; ctx.font = `bold 34px ${SANS}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText('1:13', 60, 52);
+  ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 3; rr(948, 36, 62, 30, 8); ctx.stroke(); ctx.fillStyle = '#ff4136'; rr(953, 41, 12, 20, 4); ctx.fill();   // 残りわずかな電池
+  ctx.fillStyle = '#e9e9ee'; ctx.fillRect(1012, 45, 5, 12);
+  for (let i = 0; i < 4; i++) ctx.fillRect(860 + i * 14, 62 - 8 - i * 6, 9, 8 + i * 6);
+}
+function avatar(x, y, r) {
+  ctx.fillStyle = '#c9a4b4'; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.clip(); ctx.fillStyle = '#5a3a48';
+  ctx.beginPath(); ctx.arc(x, y - r * 0.18, r * 0.42, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(x, y + r * 0.95, r * 0.75, r * 0.6, 0, 0, 7); ctx.fill(); ctx.restore();
+}
+function notifCard(y, body, a, dx = 0) {
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(dx, 0);
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 40; ctx.fillStyle = 'rgba(44,46,58,0.96)'; rr(50, y, 980, 210, 44); ctx.fill(); ctx.shadowBlur = 0;
+  avatar(150, y + 105, 58);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.font = `50px ${GOT}`; bold('妹', 240, y + 68);
+  ctx.fillStyle = '#9a9cab'; ctx.font = `36px ${GOT}`; ctx.textAlign = 'right'; ctx.fillText('今', 985, y + 66);
+  ctx.textAlign = 'left'; ctx.fillStyle = body.col || '#f1f1f5'; ctx.font = `52px ${GOT}`; ctx.fillText(body.s || body, 240, y + 140);
+  ctx.restore();
+}
+
+// ---- ロック画面(フック) ----
+function lockScreen(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0d1024'); g.addColorStop(1, '#030308'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  statusBar();
+  ctx.fillStyle = '#f2f2f6'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `200 250px ${SANS}`; ctx.fillText('1:13', W / 2, 420);
+  ctx.font = `44px ${GOT}`; ctx.fillStyle = '#b9bbc9'; ctx.fillText('深夜', W / 2, 250);
+  const cards = [[0.15, 'お姉ちゃん、いま部屋?'], [1.9, '絶対に部屋から出ないで'], [3.4, { s: 'リビングに お姉ちゃんがいる', col: '#ff7b72' }]];
+  cards.forEach(([t0, s], i) => {
+    if (t < t0) return; const k = ease(prog(t, t0, t0 + 0.22));
+    const later = cards.filter(c => t >= c[0] && c[0] > t0).reduce((n, c) => n + ease(prog(t, c[0], c[0] + 0.22)), 0);
+    const vib = t - t0 < 0.5 ? Math.sin((t - t0) * 90) * 9 * (1 - (t - t0) / 0.5) : 0;
+    notifCard(lerp(560, 640, k) + later * 235, s, k * (1 - 0.25 * Math.min(later, 2)), vib);
+  });
+}
+
+// ---- チャット画面 ----
+const MSGS = D.lines.filter(l => l.kind === 'sis' || l.kind === 'me');
+const BF = 56, BLH = 76, CH_TOP = 250, CH_BOTTOM = 1270;
+let LAYOUT = null;
+function layout() {
+  ctx.font = `${BF}px ${GOT}`; let y = CH_TOP, prevOver = 0;
+  LAYOUT = MSGS.map((m, i) => {
+    const rows = plain(m.text).split('\n'), w = Math.max(...rows.map(r => ctx.measureText(r).width)) + 72, h = rows.length * BLH + 40;
+    const gap = i && MSGS[i - 1].kind !== m.kind ? 44 : 22; y += i ? gap : 0;
+    const o = { m, rows, w, h, y, at: m.start - 0.14 }; y += h;
+    const over = Math.max(0, y - CH_BOTTOM); o.dScroll = over - prevOver; prevOver = over; return o;
+  });
+}
+function bubble(o, yy, k, red) {
+  const me = o.m.kind === 'me', x = me ? W - 50 - o.w : 150;
+  ctx.save(); ctx.translate(me ? W - 50 : 150, yy + o.h); ctx.scale(lerp(0.7, 1, k), lerp(0.7, 1, k)); ctx.translate(-(me ? W - 50 : 150), -(yy + o.h)); ctx.globalAlpha *= k;
+  ctx.fillStyle = me ? '#4c4fd8' : red ? '#3a1216' : '#262833'; rr(x, yy, o.w, o.h, 38); ctx.fill();
+  ctx.fillStyle = red ? '#ff5a52' : '#f4f4f8'; ctx.font = `${BF}px ${GOT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  o.rows.forEach((r, i) => bold(r, x + 36, yy + 20 + BLH / 2 + i * BLH));
+  if (!me) avatar(86, yy + o.h - 44, 44);
+  else { ctx.fillStyle = '#7d7f90'; ctx.font = `30px ${GOT}`; ctx.textAlign = 'right'; ctx.fillText('既読 1:13', x - 16, yy + o.h - 22); }
+  ctx.restore();
+}
+function typing(yy, t, a) {
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = '#262833'; rr(150, yy, 190, 96, 38); ctx.fill(); avatar(86, yy + 52, 44);
+  for (let i = 0; i < 3; i++) { const b = Math.sin(t * 9 - i * 0.9); ctx.fillStyle = `rgba(200,202,215,${0.45 + 0.4 * Math.max(0, b)})`; ctx.beginPath(); ctx.arc(205 + i * 40, yy + 48 - Math.max(0, b) * 8, 11, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function chat(t) {
+  if (!LAYOUT) layout();
+  ctx.fillStyle = '#0c0d12'; ctx.fillRect(0, 0, W, H);
+  let scroll = 0; LAYOUT.forEach(o => { scroll += o.dScroll * ease(prog(t, o.at, o.at + 0.25)); });
+  scroll += 130 * ease(prog(t, LN.away.end + 0.2, LN.away.end + 0.5));
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 215, W, CH_BOTTOM + 70 - 215); ctx.clip();
+  let last = null;
+  LAYOUT.forEach(o => { if (t < o.at) return; last = o; bubble(o, o.y - scroll, ease(prog(t, o.at, o.at + 0.16)), o.m.id === 's10'); });
+  // 入力中「…」: 妹の次のメッセージの直前と、静寂の場面
+  const next = LAYOUT.find(o => t < o.at && o.m.kind === 'sis'), idx = next ? LAYOUT.indexOf(next) : -1;
+  const from = next ? Math.max(next.at - 0.75, idx ? LAYOUT[idx - 1].m.end - 0.1 : 0) : 1e9;
+  const special = t > LN.away.end + 0.25;
+  if ((next && t >= from) || special) { const ty = (last ? last.y + last.h + (last.m.kind === 'me' ? 44 : 22) : CH_TOP) - scroll; typing(ty, t, special ? prog(t, LN.away.end + 0.25, LN.away.end + 0.45) : prog(t, from, from + 0.12)); }
+  ctx.restore();
+  // ヘッダー
+  ctx.fillStyle = '#14151c'; ctx.fillRect(0, 0, W, 215); ctx.fillStyle = '#23242e'; ctx.fillRect(0, 213, W, 2); statusBar();
+  ctx.strokeStyle = '#8f93ff'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(70, 118); ctx.lineTo(48, 146); ctx.lineTo(70, 174); ctx.stroke();
+  avatar(160, 146, 46); ctx.fillStyle = '#fff'; ctx.font = `54px ${GOT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; bold('妹', 232, 148);
+}
+
+// ---- ドア ----
+function doorScene(t) {
+  const f = Math.round(t * FPS);
+  const kn = [EV.knock, EV.knock + 0.3, EV.knock2, EV.knock2 + 0.28].map(k => t >= k ? Math.exp(-(t - k) * 14) : 0).reduce((a, b) => a + b, 0);
+  const z = 1 + 0.07 * prog(t, EV.door_in, EV.door_out);
+  ctx.save(); ctx.translate(W / 2 + (hash(f) - 0.5) * 26 * kn, 900 + (hash(f + 3) - 0.5) * 26 * kn); ctx.scale(z, z); ctx.translate(-W / 2, -900);
+  ctx.fillStyle = '#07080d'; ctx.fillRect(-100, -100, W + 200, H + 200);
+  const fl = ctx.createLinearGradient(0, 1380, 0, 1900); fl.addColorStop(0, '#0b0c12'); fl.addColorStop(1, '#030305'); ctx.fillStyle = fl; ctx.fillRect(-100, 1372, W + 200, 700);
+  // 廊下の明かりが床にもれる
+  const sp = ctx.createLinearGradient(0, 1372, 0, 1700); sp.addColorStop(0, 'rgba(255,214,150,0.5)'); sp.addColorStop(1, 'rgba(255,214,150,0)');
+  ctx.fillStyle = sp; ctx.beginPath(); ctx.moveTo(250, 1372); ctx.lineTo(830, 1372); ctx.lineTo(980, 1700); ctx.lineTo(100, 1700); ctx.closePath(); ctx.fill();
+  // ドア
+  ctx.fillStyle = '#15161d'; ctx.fillRect(214, 214, 652, 1160); ctx.fillStyle = '#1d1f29'; ctx.fillRect(240, 240, 600, 1118);
+  ctx.strokeStyle = '#12131a'; ctx.lineWidth = 6; for (const [x, y, w, h] of [[290, 300, 500, 420], [290, 780, 500, 500]]) ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = '#6b6658'; ctx.beginPath(); ctx.arc(778, 820, 24, 0, 7); ctx.fill(); ctx.fillStyle = '#2a2822'; ctx.fillRect(760, 800, 36, 8);
+  // ドア下のすき間と、そこに立つ足の影
+  ctx.save(); ctx.shadowColor = '#ffd696'; ctx.shadowBlur = 30; ctx.fillStyle = '#ffdfae'; ctx.fillRect(240, 1358, 600, 14); ctx.restore();
+  const sway = Math.sin(t * 1.3) * 10, fa = prog(t, EV.knock - 0.25, EV.knock + 0.1);
+  ctx.fillStyle = `rgba(4,4,6,${fa})`; ctx.fillRect(420 + sway, 1356, 92, 18); ctx.fillRect(566 + sway * 0.6, 1356, 92, 18);
+  ctx.fillStyle = `rgba(0,0,0,${0.55 * fa})`;
+  for (const x of [420 + sway, 566 + sway * 0.6]) { ctx.beginPath(); ctx.moveTo(x, 1372); ctx.lineTo(x + 92, 1372); ctx.lineTo(x + 130, 1700); ctx.lineTo(x - 40, 1700); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  for (const k of [EV.knock, EV.knock + 0.3]) if (t >= k && t < k + 0.5) kText('コン', k === EV.knock ? 330 : 720, k === EV.knock ? 560 : 660, 150, 1 - prog(t, k + 0.25, k + 0.5), f);
+  // スマホが震える
+  if (t >= EV.buzz && t < EV.door_out) { const a = Math.min(1, (t - EV.buzz) * 6), v = t - EV.buzz < 0.9 ? Math.sin((t - EV.buzz) * 95) * 10 : 0; notifCard(96, '開けちゃダメ', a, v); }
+}
+function kText(s, x, y, size, a, f) { ctx.save(); ctx.globalAlpha = a; ctx.font = `800 ${size}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.translate(x + (hash(f) - 0.5) * 12, y + (hash(f + 5) - 0.5) * 12); ctx.rotate(-0.08); ctx.strokeStyle = '#000'; ctx.lineWidth = size * 0.16; ctx.strokeText(s, 0, 0); ctx.fillStyle = '#fff'; ctx.fillText(s, 0, 0); ctx.restore(); }
+
+// ---- クローゼット ----
+function drawFace(cx, cy, s, a, f) {
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(cx, cy); ctx.scale(s, s);
+  const g = ctx.createRadialGradient(0, 330, 30, 0, 100, 560); g.addColorStop(0, '#dfe8f5'); g.addColorStop(0.5, '#8f9aaa'); g.addColorStop(1, '#14161a');   // 下からスマホの光
+  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 40, 285, 470, 0, 0, 7); ctx.fill();
+  for (const sg of [-1, 1]) {
+    const ex = sg * 120, ey = -80;
+    const e = ctx.createRadialGradient(ex, ey, 20, ex, ey, 125); e.addColorStop(0, 'rgba(0,0,0,0.95)'); e.addColorStop(0.6, 'rgba(0,0,0,0.8)'); e.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = e; ctx.beginPath(); ctx.ellipse(ex, ey, 120, 125, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#eef0ea'; ctx.beginPath(); ctx.ellipse(ex, ey, 50, 44, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(ex + (hash(f) - 0.5) * 8, ey + 4, 11, 0, 7); ctx.fill();
+  }
+  const m = ctx.createRadialGradient(0, 300, 10, 0, 300, 190); m.addColorStop(0, '#000'); m.addColorStop(0.8, '#050000'); m.addColorStop(1, '#2a0606');
+  ctx.fillStyle = m; ctx.beginPath(); ctx.moveTo(-150, 215); ctx.bezierCurveTo(-60, 250, 60, 250, 150, 215); ctx.bezierCurveTo(120, 330, -120, 330, -150, 215); ctx.fill();   // 横に裂けた笑み
+  ctx.fillStyle = '#030303';
+  ctx.beginPath(); ctx.moveTo(60, -470); ctx.bezierCurveTo(-60, -300, -150, -100, -208, 640); ctx.lineTo(-560, 700); ctx.lineTo(-560, -700); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(40, -470); ctx.bezierCurveTo(180, -380, 215, -100, 235, 640); ctx.lineTo(560, 700); ctx.lineTo(560, -700); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, -490, 380, 150, 0, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function closetScene(t) {
+  const f = Math.round(t * FPS);
+  const pulse = [EV.send2].map(k => t >= k ? Math.exp(-(t - k) * 2.2) : 0).reduce((a, b) => a + b, 0);
+  const open = ease(prog(t, LN.closet.end + 0.15, LN.s10.start)), gap = lerp(7, 96, open);
+  const glow = 0.28 + 0.1 * Math.sin(t * 2.1) + 0.5 * pulse + 0.25 * open;
+  const z = lerp(1, 1.22, ease(prog(t, EV.closet, EV.hit))), fade = prog(t, EV.closet, EV.closet + 0.5);
+  ctx.save(); ctx.translate(W / 2, 800); ctx.scale(z, z); ctx.translate(-W / 2, -800);
+  ctx.fillStyle = '#06070b'; ctx.fillRect(-200, -200, W + 400, H + 400);
+  ctx.fillStyle = '#040407'; ctx.fillRect(-200, 1420, W + 400, 800);
+  const X0 = 170, X1 = 910, Y0 = 170, Y1 = 1420, cxm = 540;
+  ctx.fillStyle = '#000'; ctx.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+  // すき間の奥: スマホの光に照らされた顔
+  ctx.save(); ctx.beginPath(); ctx.rect(cxm - gap / 2, Y0, gap, Y1 - Y0); ctx.clip();
+  const ig = ctx.createLinearGradient(0, Y0, 0, Y1); ig.addColorStop(0, '#000'); ig.addColorStop(0.75, `rgba(120,160,230,${0.5 * glow})`); ig.addColorStop(1, `rgba(170,205,255,${glow})`); ctx.fillStyle = ig; ctx.fillRect(X0, Y0, X1 - X0, Y1 - Y0);
+  if (open > 0.02) drawFace(cxm - 62, 770, 0.52, Math.min(1, open * 1.4), f);
+  ctx.restore();
+  // 扉(ルーバー)
+  for (const [a, b] of [[X0, cxm - gap / 2], [cxm + gap / 2, X1]]) {
+    ctx.fillStyle = '#12131a'; ctx.fillRect(a, Y0, b - a, Y1 - Y0);
+    ctx.fillStyle = '#0a0b10'; for (let y = Y0 + 50; y < Y1 - 50; y += 30) ctx.fillRect(a + 34, y, b - a - 68, 13);
+    ctx.fillStyle = `rgba(150,190,255,${0.10 * glow})`; for (let y = Y0 + 760; y < Y1 - 50; y += 30) ctx.fillRect(a + 34, y + 13, b - a - 68, 3);   // 羽板からもれる光
+    ctx.strokeStyle = '#1b1d27'; ctx.lineWidth = 5; ctx.strokeRect(a + 2, Y0 + 2, b - a - 4, Y1 - Y0 - 4);
+  }
+  ctx.fillStyle = '#4d4a40'; ctx.beginPath(); ctx.arc(cxm - gap / 2 - 30, 800, 13, 0, 7); ctx.arc(cxm + gap / 2 + 30, 800, 13, 0, 7); ctx.fill();
+  // 床にもれる光
+  const sp = ctx.createLinearGradient(0, Y1, 0, Y1 + 330); sp.addColorStop(0, `rgba(150,190,255,${0.55 * glow})`); sp.addColorStop(1, 'rgba(150,190,255,0)');
+  ctx.fillStyle = sp; ctx.beginPath(); ctx.moveTo(cxm - gap / 2, Y1); ctx.lineTo(cxm + gap / 2, Y1); ctx.lineTo(cxm + gap * 2 + 60, Y1 + 330); ctx.lineTo(cxm - gap * 2 - 60, Y1 + 330); ctx.closePath(); ctx.fill();
+  // 扉のふちにかかる指
+  const fg = ease(prog(t, LN.s10.start - 0.2, LN.s10.start + 0.5));
+  if (fg > 0) for (let i = 0; i < 4; i++) { ctx.fillStyle = `rgba(196,205,215,${fg})`; rr(cxm + gap / 2 - 6, 900 + i * 44, lerp(0, 72 - Math.abs(i - 1.3) * 9, fg), 30, 15); ctx.fill(); }
+  ctx.restore();
+  ctx.fillStyle = `rgba(0,0,0,${1 - fade})`; ctx.fillRect(0, 0, W, H);
+  if (t >= LN.s10.start - 0.14) { const k = ease(prog(t, LN.s10.start - 0.14, LN.s10.start + 0.08)); notifCard(lerp(-230, 96, k), { s: 'ばれちゃった', col: '#ff5a52' }, 1, t - LN.s10.start < 0.4 ? Math.sin(t * 95) * 8 : 0); }
+}
+
+// ---- 字幕(地の文とドア越しの声) ----
+function subtitle(t) {
+  const l = D.lines.find(l => (l.kind === 'nar' || l.kind === 'door' || l.id === 's10') && t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: l.kind === 'door' }); }); return segs; });
+  let fs = l.id === 's10' ? 110 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = (rows.length === 3 ? 1470 : 1480) - (rows.length - 1) * lh / 2;
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 's10' ? (hash(Math.round(t * FPS)) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.09;
+  const T_CHAT = LN.s1.start - 0.3;
+  if (t < T_CHAT) {
+    lockScreen(t);
+    const sh = Math.max(0, 1 - t / 0.4); if (sh) { ctx.fillStyle = `rgba(255,255,255,${0.35 * sh})`; ctx.fillRect(0, 0, W, H); }
+  } else if (t < EV.door_in || (t >= EV.door_out && t < EV.closet)) {
+    chat(t);
+    if (t < T_CHAT + 0.25) { ctx.fillStyle = `rgba(0,0,0,${1 - prog(t, T_CHAT, T_CHAT + 0.25)})`; ctx.fillRect(0, 0, W, H); }
+    // 字幕の下地 / 静寂の場面は周囲を落とす
+    const g = ctx.createLinearGradient(0, 1300, 0, 1500); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 1300, W, 620);
+    const q = prog(t, LN.away.end, LN.away.end + 0.6); if (q) { ctx.fillStyle = `rgba(0,0,0,${0.35 * q})`; ctx.fillRect(0, 0, W, H); }
+  } else if (t < EV.door_out) {
+    doorScene(t);
+    ctx.fillStyle = `rgba(0,0,0,${1 - prog(t, EV.door_in, EV.door_in + 0.2)})`; ctx.fillRect(0, 0, W, H);
+  } else if (t < EV.hit) {
+    closetScene(t);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5, sx = (hash(f) - 0.5) * 60, sy = (hash(f + 9) - 0.5) * 60;
+    const fs = 3.0 + 1.2 * k; drawFace(540 + sx - 120 * fs, 900 + sy + 80 * fs, fs, 1, f);
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff5a50' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 7; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 120 | 0, dx = (hash(f * 7 + i) - 0.5) * 300 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    if (t < EV.hit + 0.6) noise(0, 0, W, H, 0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.75, EV.hit + 1.1);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('もう一度、最初から', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('「音」をよく聞いてください。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(0, 0, W, H, grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 560, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + 'コンもう一度、最初から「音」をよく聞いてください。ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
