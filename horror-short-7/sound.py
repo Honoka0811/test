@@ -141,7 +141,7 @@ def main():
         add(chime, tc, furin(), g); add(chime, tc + 0.19, furin(2350 * 1.02), g * 0.6)
     add(big, 0.0, taiko(0.6)); add(big, L['rule']['start'] + 2.6, taiko(0.5)); add(big, T_SHADOW, taiko(0.7)); add(big, L['l5']['start'] + 1.2, taiko(0.6)); add(big, T_ONE + 0.9, taiko(0.75))
     add(fx, T_SHADOW - 0.9, creak(1.0, 260), 0.10)          # 廊下の床がきしむ
-    add(fx, T_MOVE, rustle(1.0), 0.5); add(fx, T_MOVE + 0.9, rustle(0.7), 0.4)
+    add(fx, T_MOVE + 0.6, rustle(1.3), 0.45); add(fx, T_MOVE + 1.7, rustle(1.0), 0.35); add(fx, T_MOVE + 2.4, creak(0.7, 240), 0.06)   # 隣の布団が、ゆっくり起き上がる
     add(big, HIT, stinger(), 0.75)
     nar = np.zeros(N, np.float32); far = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']: add(far if l['id'] == 'call' else last if l['id'] == 'now' else nar, l['start'], segs[l['id']], 1.5 if l['id'] == 'baba' else 1.0)

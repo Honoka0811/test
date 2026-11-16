@@ -1,5 +1,5 @@
 {
- "duration": 56.07,
+ "duration": 57.97,
  "lines": [
   {
    "id": "hook",
@@ -81,8 +81,8 @@
   {
    "id": "now",
    "kind": "clip",
-   "start": 52.349,
-   "end": 53.671,
+   "start": 54.249,
+   "end": 55.571,
    "text": "[「起きてるかい」]"
   }
  ]
