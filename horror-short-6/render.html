@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>体重計の記録</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(6000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const GREEN = '#2fd16b', AMBER = '#ffb347', MEC = '#5aa2ff';
+function base(clock) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0f1620'); g.addColorStop(0.6, '#090d13'); g.addColorStop(1, '#040508'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  tx(clock, 60, 52, 34, '#e9e9ee', { font: SANS, w: 'bold' });
+  ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 3; rr(948, 36, 62, 30, 8); ctx.stroke(); ctx.fillStyle = '#e9e9ee'; rr(953, 41, 40, 20, 4); ctx.fill(); ctx.fillRect(1012, 45, 5, 12);
+  ctx.fillStyle = GREEN; rr(60, 122, 60, 60, 16); ctx.fill(); ctx.fillStyle = '#0a0d14'; ctx.fillRect(84, 134, 12, 36); ctx.fillRect(72, 146, 36, 12);   // アプリ名(架空)
+  tx('ヘルスノート', 140, 152, 46, '#fff', { bold: true });
+}
+function card(x, y, w, h, o = {}) { ctx.fillStyle = o.fill || 'rgba(255,255,255,0.055)'; rr(x, y, w, h, o.r || 36); ctx.fill(); if (o.stroke) { ctx.save(); ctx.strokeStyle = o.stroke; ctx.lineWidth = o.lw || 4; ctx.shadowColor = o.stroke; ctx.shadowBlur = o.glow || 0; rr(x, y, w, h, o.r || 36); ctx.stroke(); ctx.restore(); } }
+function person(x, y, s, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y - 74 * s, 38 * s, 0, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(x - 62 * s, y + 80 * s); ctx.quadraticCurveTo(x - 66 * s, y - 28 * s, x, y - 28 * s); ctx.quadraticCurveTo(x + 66 * s, y - 28 * s, x + 62 * s, y + 80 * s); ctx.closePath(); ctx.fill(); }
+function kg(v, x, y, size, col, o = {}) {     // 「58.4 kg」。x は数字の右端
+  ctx.save(); if (o.glow) { ctx.shadowColor = col; ctx.shadowBlur = o.glow; } tx(v, x, y, size, col, { font: SANS, w: 'bold', align: 'right' }); ctx.restore(); tx('kg', x + size * 0.08, y + size * 0.2, size * 0.36, o.unit || DIMC, { font: SANS, w: 'bold' });
+}
+function lcd(y, h, v, col, label, sub, o = {}) {
+  card(60, y, 960, h, { fill: 'rgba(0,0,0,0.45)', stroke: o.stroke, glow: o.glow, r: 44 });
+  if (label) tx(label, 110, y + 70, 44, col === '#fff' ? DIMC : col, { bold: true }); if (sub) tx(sub, 970, y + 70, 44, DIMC, { align: 'right', font: GOT });
+  kg(v, 760 + (o.dx || 0), y + h * 0.6 + (o.dy || 0), o.size || 250, col, { glow: o.numGlow });
+}
+function topBanner(t, t0, l1, l2) {
+  const k = ease(prog(t, t0, t0 + 0.22)), v = t - t0 < 0.5 ? Math.sin((t - t0) * 95) * 9 * (1 - (t - t0) / 0.5) : 0;
+  ctx.save(); ctx.translate(v, lerp(-300, 0, k)); ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 40; card(40, 96, 1000, 200, { fill: 'rgba(44,24,28,0.98)', r: 46, stroke: RED }); ctx.shadowBlur = 0;
+  tx('ヘルスノート', 90, 156, 40, '#fff', { bold: true }); tx('今', 990, 156, 36, DIMC, { align: 'right' }); tx(l1, 90, 236, 52, '#ff8a84', { bold: true }); ctx.restore();
+}
+
+// ---- フック: 体重計の表示 ----
+function hookScene(t, f) {
+  base('7:05'); tx('体重計 ・ 洗面所', 70, 300, 56, '#fff', { bold: true });
+  const settle = prog(t, 0.1, 0.75), v = settle < 1 ? (58.4 * ease(settle) + (hash(f) - 0.5) * 6 * (1 - settle)) : 58.4, p = 0.5 + 0.5 * Math.sin(t * 8);
+  lcd(400, 480, Math.max(0, v).toFixed(1), settle < 1 ? '#fff' : RED, '', '', { size: 240, stroke: settle < 1 ? null : RED, glow: 24 * p, numGlow: settle < 1 ? 0 : 30 });
+  if (settle >= 1) { const a = ease(prog(t, 0.8, 1.1)); ctx.save(); ctx.globalAlpha = a; card(60, 930, 960, 230, { fill: 'rgba(255,43,43,0.14)', stroke: RED, r: 40 });
+    tx('未登録の測定', 110, 1000, 58, '#ff5a52', { bold: true }); tx('午前 3:10', 970, 1000, 54, '#fff', { align: 'right', font: SANS, w: 'bold' }); tx('登録されている誰の体重とも一致しません', 110, 1090, 42, '#ffb9b4'); ctx.restore(); }
+}
+
+// ---- 自分の記録 ----
+const MY = [48.3, 48.1, 48.4, 48.2, 48.0, 48.3, 48.2, 48.1, 48.3, 48.2, 48.4, 48.1, 48.2, 48.2];
+function meScene(t) {
+  base('7:05'); ctx.fillStyle = MEC; ctx.beginPath(); ctx.arc(130, 320, 56, 0, 7); ctx.fill(); person(130, 338, 0.52, '#fff'); tx('自分', 210, 300, 56, '#fff', { bold: true }); tx('登録ユーザー', 210, 356, 36, DIMC);
+  lcd(420, 330, '48.2', '#fff', '今朝', '7:05', { size: 210 });
+  card(60, 790, 960, 500); tx('過去14日間', 110, 850, 40, DIMC);
+  const k = ease(prog(t, EV.t_me + 0.3, EV.t_me + 2.2)), x0 = 190, x1 = 960, Y = v => 1090 - (v - 48.2) * 180;
+  [47.5, 48.2, 49].forEach(v => { ctx.fillStyle = '#1f2838'; ctx.fillRect(x0, Y(v), x1 - x0, 2); tx(v.toFixed(1), 170, Y(v), 32, DIMC, { align: 'right', font: SANS }); });
+  ctx.save(); ctx.beginPath(); ctx.rect(x0 - 10, 880, (x1 - x0) * k + 20, 400); ctx.clip(); ctx.strokeStyle = MEC; ctx.lineWidth = 7; ctx.lineJoin = 'round'; ctx.shadowColor = MEC; ctx.shadowBlur = 14; ctx.beginPath();
+  MY.forEach((v, i) => { const x = x0 + (x1 - x0) * i / 13; i ? ctx.lineTo(x, Y(v)) : ctx.moveTo(x, Y(v)); }); ctx.stroke(); ctx.shadowBlur = 0;
+  MY.forEach((v, i) => { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x0 + (x1 - x0) * i / 13, Y(v), 9, 0, 7); ctx.fill(); }); ctx.restore();
+}
+
+// ---- 未登録の測定 ----
+function unknownScene(t, f) {
+  base('7:05'); const has = t >= EV.t_val, p = 0.5 + 0.5 * Math.sin(t * 8), k = has ? Math.max(0, 1 - (t - EV.t_val) / 0.4) : 0;
+  lcd(360, 400, has ? '58.4' : '--.-', has ? RED : '#5d6680', '未登録の測定', '午前 3:10', { size: 240, stroke: has ? RED : null, glow: 22 * p, numGlow: has ? 26 : 0, dx: (hash(f) - 0.5) * 24 * k, dy: (hash(f + 2) - 0.5) * 24 * k });
+  const c = ease(prog(t, EV.t_cmp, EV.t_cmp + 0.3));
+  ctx.save(); ctx.globalAlpha = 1 - c; tx('この測定は誰のものですか?', 540, 850, 46, '#cfd6e6', { align: 'center' });
+  ['自分', 'ゲスト', '削除'].forEach((s, i) => { card(80 + i * 320, 910, 280, 110, { fill: 'rgba(255,255,255,0.08)', r: 55 }); tx(s, 220 + i * 320, 966, 46, '#fff', { align: 'center', bold: true }); }); ctx.restore();
+  if (c > 0) { ctx.save(); ctx.globalAlpha = c; card(60, 800, 960, 500);
+    const bar = (y, lab, v, col, t0) => { const w = 640 * (v / 60) * ease(prog(t, t0, t0 + 0.5)); tx(lab, 110, y, 46, col === RED ? '#ff8a84' : '#cfe2ff', { bold: true }); ctx.fillStyle = col; rr(250, y - 34, Math.max(w, 2), 68, 16); ctx.fill(); if (w > 400) tx(v.toFixed(1) + ' kg', 250 + w - 24, y, 44, '#06080c', { align: 'right', font: SANS, w: 'bold' }); };
+    bar(900, '自分', 48.2, MEC, EV.t_cmp + 0.1); bar(1030, '誰か', 58.4, RED, EV.t_cmp + 0.4);
+    const d = ease(prog(t, EV.t_cmp + 1.0, EV.t_cmp + 1.3)); ctx.globalAlpha = c * d; tx('+10.2 kg', 540, 1190, 110, RED, { align: 'center', font: SANS, w: 'bold' }); ctx.restore(); }
+  if (t < EV.t_val + 0.2) topBanner(t, EV.t_notif, '未登録の測定が 1件 あります');
+  else { const a = 1 - prog(t, EV.t_val + 0.2, EV.t_val + 0.5); if (a > 0) { ctx.save(); ctx.globalAlpha = a; topBanner(t, EV.t_notif, '未登録の測定が 1件 あります'); ctx.restore(); } }
+}
+
+// ---- 毎晩の記録 ----
+function listScene(t, f) {
+  base('7:05'); tx('未登録の測定', 70, 300, 60, '#fff', { bold: true }); tx('午前3時台', 1010, 304, 40, DIMC, { align: 'right' });
+  ['4日前', '3日前', '2日前'].forEach((d, i) => { const t0 = EV.nights[i]; if (t < t0) return; const a = ease(prog(t, t0, t0 + 0.2)), y = 440 + i * 140;
+    ctx.save(); ctx.globalAlpha = a * (t >= EV.t_last ? 0.45 : 1); ctx.translate((1 - a) * 60, 0); card(60, y - 58, 960, 116, { fill: 'rgba(255,43,43,0.12)', r: 26 });
+    tx(d, 100, y, 46, '#cfd6e6', { bold: true }); tx('3:10', 300, y, 52, '#fff', { font: SANS, w: 'bold' }); kg('58.4', 860, y, 76, RED); ctx.restore(); });
+  if (t >= EV.t_lastrow) { const a = ease(prog(t, EV.t_lastrow, EV.t_lastrow + 0.25)), has = t >= EV.t_last, k = has ? Math.max(0, 1 - (t - EV.t_last) / 0.6) : 0, p = 0.5 + 0.5 * Math.sin(t * 9);
+    ctx.save(); ctx.globalAlpha = a; lcd(860, 440, has ? '106.6' : '---.-', has ? RED : '#5d6680', '昨夜', '午前 3:10', { size: 210, stroke: has ? RED : '#3a4258', glow: has ? 14 + 26 * p : 0, numGlow: has ? 34 : 0, dx: 50 + (hash(f) - 0.5) * 40 * k, dy: (hash(f + 2) - 0.5) * 40 * k }); ctx.restore();
+    if (k > 0) { ctx.fillStyle = `rgba(255,30,30,${0.3 * k})`; ctx.fillRect(0, 0, W, H); } }
+}
+
+// ---- 足し算 ----
+function mathScene(t, f) {
+  base('7:05'); tx('106.6 kg の内訳', 70, 300, 60, '#fff', { bold: true });
+  const a = ease(prog(t, EV.math.a, EV.math.a + 0.25)), b = ease(prog(t, EV.math.b, EV.math.b + 0.25)), e = ease(prog(t, EV.math.eq, EV.math.eq + 0.2)), p = 0.5 + 0.5 * Math.sin(t * 9);
+  ctx.save(); ctx.globalAlpha = a; person(170, 520, 0.9, RED); tx('誰か', 170, 640, 44, '#ff8a84', { align: 'center', bold: true }); kg('58.4', 860, 520, 190, RED); ctx.restore();
+  ctx.save(); ctx.globalAlpha = b; person(170, 800, 0.9, MEC); tx('私', 170, 920, 44, '#cfe2ff', { align: 'center', bold: true }); tx('+', 350, 800, 150, '#fff', { font: SANS, w: 'bold', align: 'center' }); kg('48.2', 860, 800, 190, MEC); ctx.restore();
+  ctx.fillStyle = `rgba(255,255,255,${b})`; ctx.fillRect(280, 950, 740, 8);
+  if (e > 0) { ctx.save(); ctx.globalAlpha = e; const s = lerp(1.5, 1, e); ctx.translate(540, 1120); ctx.scale(s, s); tx('=', -410, 0, 140, '#fff', { font: SANS, w: 'bold', align: 'center' }); kg('106.6', 330, 0, 190, RED, { glow: 20 + 30 * p, unit: '#ff8a84' }); ctx.restore();
+    const z = Math.max(0, 1 - (t - EV.math.eq) / 0.5); if (z) { ctx.fillStyle = `rgba(255,30,30,${0.3 * z})`; ctx.fillRect(0, 0, W, H); } }
+}
+
+// ---- 昨夜、起きたこと ----
+function carryScene(t, f) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a0d16'); g.addColorStop(1, '#030407'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  tx('昨夜 ・ 午前 3:10', 540, 180, 56, '#fff', { align: 'center', bold: true }); tx('洗面所', 540, 250, 40, DIMC, { align: 'center' });
+  const t0 = EV.t_carry, r = ease(prog(t, t0 + 0.5, t0 + 1.1)), b = ease(prog(t, t0 + 2.0, t0 + 2.7)), on = ease(prog(t, t0 + 3.9, t0 + 4.6)), p = 0.5 + 0.5 * Math.sin(t * 8);
+  const px = lerp(360, 540, on), py = 900 + Math.abs(Math.sin(prog(t, t0 + 3.9, t0 + 4.6) * Math.PI * 2)) * -14;
+  // 体重計
+  ctx.fillStyle = '#1b2333'; rr(330, 1180, 420, 70, 20); ctx.fill(); ctx.fillStyle = '#05070b'; rr(450, 1196, 180, 40, 8); ctx.fill();
+  tx(on >= 1 ? '106.6' : on > 0 ? (106.6 * on).toFixed(1) : '0.0', 540, 1217, 34, on >= 1 ? RED : '#7de3a0', { align: 'center', font: SANS, w: 'bold' });
+  ctx.fillStyle = '#12161f'; ctx.fillRect(0, 1250, W, 8);
+  // 誰か(赤)と、抱えられた私(青)
+  ctx.save(); ctx.globalAlpha = r; if (on >= 1) { ctx.shadowColor = RED; ctx.shadowBlur = 30 + 20 * p; } person(px, py, 2.6, RED); ctx.restore();
+  if (b > 0) {   // 横向きに抱えられた私: 頭は左、足は右にだらりと下がる
+    ctx.save(); ctx.globalAlpha = b; ctx.fillStyle = MEC; const by = py - 20;
+    rr(px - 200, by, 440, 96, 48); ctx.fill(); ctx.beginPath(); ctx.arc(px - 262, by + 40, 56, 0, 7); ctx.fill();
+    rr(px + 180, by + 30, 62, 190, 31); ctx.fill(); rr(px + 110, by + 40, 56, 150, 28); ctx.fill(); rr(px - 150, by + 50, 44, 150, 22); ctx.fill();
+    ctx.fillStyle = RED; rr(px - 96, by + 70, 84, 50, 25); ctx.fill(); rr(px + 20, by + 70, 84, 50, 25); ctx.fill(); ctx.restore(); }
+  ctx.save(); ctx.globalAlpha = r; tx('誰か  58.4kg', 90, 420, 50, '#ff8a84', { bold: true }); ctx.restore();
+  ctx.save(); ctx.globalAlpha = b; tx('眠っている私  48.2kg', 990, 500, 50, '#cfe2ff', { bold: true, align: 'right' }); ctx.restore();
+  if (on >= 1) { const z = Math.max(0, 1 - (t - (t0 + 4.6)) / 0.5); if (z) { ctx.fillStyle = `rgba(255,30,30,${0.25 * z})`; ctx.fillRect(0, 0, W, H); } }
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.08;
+  const fadeIn = a => { const k = 1 - prog(t, a, a + 0.25); if (k > 0) { ctx.fillStyle = `rgba(4,5,9,${k})`; ctx.fillRect(0, 0, W, H); } };
+  if (t < EV.hit) {
+    if (t < EV.t_me) { hookScene(t, f); const sh = Math.max(0, 1 - t / 0.4); if (sh) { ctx.fillStyle = `rgba(255,255,255,${0.3 * sh})`; ctx.fillRect(0, 0, W, H); } }
+    else if (t < EV.t_notif) { meScene(t); fadeIn(EV.t_me); }
+    else if (t < EV.t_list) { unknownScene(t, f); fadeIn(EV.t_notif); }
+    else if (t < EV.t_math) { listScene(t, f); fadeIn(EV.t_list); }
+    else if (t < EV.t_carry) { mathScene(t, f); fadeIn(EV.t_math); }
+    else { carryScene(t, f); fadeIn(EV.t_carry);
+      if (t >= LN.now.start - 0.1) { ctx.fillStyle = `rgba(0,0,0,${0.5 * prog(t, LN.now.start - 0.1, LN.now.start + 0.2)})`; ctx.fillRect(0, 0, W, H); ctx.drawImage(cv, (hash(f) - 0.5) * 10, (hash(f + 2) - 0.5) * 10); } }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1500); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5; ctx.fillStyle = f % 2 ? '#300' : '#000'; ctx.fillRect(0, 0, W, H);
+    ctx.save(); ctx.translate(540 + (hash(f) - 0.5) * 70, 900 + (hash(f + 4) - 0.5) * 70); ctx.scale(1 + k, 1 + k); tx('106.6', 0, 0, 330, f % 3 ? RED : '#fff', { font: SANS, w: 'bold', align: 'center' }); ctx.restore();
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('あなたの体重計に', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('知らない記録はありませんか?', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 560, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + 'あなたの体重計に知らない記録はありませんか?ナレーション四国めたん0123456789:.').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
