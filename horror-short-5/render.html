@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>スマートロックの履歴</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(5000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const GREEN = '#2fd16b', AMBER = '#ffb347';
+function base(clock) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#101522'); g.addColorStop(0.6, '#090c14'); g.addColorStop(1, '#040509'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  tx(clock, 60, 52, 34, '#e9e9ee', { font: SANS, w: 'bold' });
+  ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 3; rr(948, 36, 62, 30, 8); ctx.stroke(); ctx.fillStyle = '#e9e9ee'; rr(953, 41, 40, 20, 4); ctx.fill(); ctx.fillRect(1012, 45, 5, 12);
+  // アプリ名(架空)
+  ctx.strokeStyle = '#f3d98b'; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(84, 150, 20, 0, 7); ctx.stroke(); ctx.beginPath(); ctx.moveTo(104, 150); ctx.lineTo(150, 150); ctx.moveTo(134, 150); ctx.lineTo(134, 166); ctx.stroke();
+  tx('カギログ', 172, 152, 46, '#fff', { bold: true });
+}
+function card(x, y, w, h, o = {}) { ctx.fillStyle = o.fill || 'rgba(255,255,255,0.055)'; rr(x, y, w, h, o.r || 36); ctx.fill(); if (o.stroke) { ctx.save(); ctx.strokeStyle = o.stroke; ctx.lineWidth = o.lw || 4; ctx.shadowColor = o.stroke; ctx.shadowBlur = o.glow || 0; rr(x, y, w, h, o.r || 36); ctx.stroke(); ctx.restore(); } }
+function padlock(x, y, s, col, open) {
+  ctx.strokeStyle = col; ctx.lineWidth = 16 * s; ctx.lineCap = 'round'; ctx.beginPath();
+  if (open) { ctx.moveTo(x - 46 * s, y - 20 * s); ctx.lineTo(x - 46 * s, y - 62 * s); ctx.arc(x, y - 62 * s, 46 * s, Math.PI, 0); ctx.lineTo(x + 46 * s, y - 54 * s); }
+  else { ctx.moveTo(x - 46 * s, y - 10 * s); ctx.lineTo(x - 46 * s, y - 40 * s); ctx.arc(x, y - 40 * s, 46 * s, Math.PI, 0); ctx.lineTo(x + 46 * s, y - 10 * s); }
+  ctx.stroke(); ctx.fillStyle = col; rr(x - 76 * s, y - 14 * s, 152 * s, 120 * s, 20 * s); ctx.fill();
+  ctx.fillStyle = '#0a0d14'; ctx.beginPath(); ctx.arc(x, y + 36 * s, 15 * s, 0, 7); ctx.fill(); ctx.fillRect(x - 6 * s, y + 40 * s, 12 * s, 34 * s);
+}
+function person(x, y, s, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y - 74 * s, 38 * s, 0, 7); ctx.fill(); ctx.beginPath(); ctx.moveTo(x - 62 * s, y + 80 * s); ctx.quadraticCurveTo(x - 66 * s, y - 28 * s, x, y - 28 * s); ctx.quadraticCurveTo(x + 66 * s, y - 28 * s, x + 62 * s, y + 80 * s); ctx.closePath(); ctx.fill(); }
+function row3(y, time, title, subt, col, a = 1, hot = false) {
+  ctx.save(); ctx.globalAlpha *= a;
+  if (hot) card(40, y - 62, 1000, 124, { fill: 'rgba(255,43,43,0.13)', r: 28 });
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(110, y, 16, 0, 7); ctx.fill();
+  tx(time, 160, y, 52, '#fff', { font: SANS, w: 'bold' }); tx(title, 350, subt ? y - 24 : y, 50, col === DIMC ? '#cfd6e6' : col, { bold: true }); if (subt) tx(subt, 350, y + 32, 38, col === RED ? '#ff8a84' : DIMC);
+  ctx.restore();
+}
+function banner(t, t0, l1, l2) {
+  const k = ease(prog(t, t0, t0 + 0.22)), v = t - t0 < 0.5 ? Math.sin((t - t0) * 95) * 9 * (1 - (t - t0) / 0.5) : 0;
+  ctx.save(); ctx.translate(v, lerp(-300, 0, k)); ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 40; card(40, 96, 1000, 230, { fill: 'rgba(44,24,28,0.98)', r: 46, stroke: RED }); ctx.shadowBlur = 0;
+  tx('カギログ', 90, 160, 42, '#fff', { bold: true }); tx('今', 990, 160, 36, DIMC, { align: 'right' });
+  tx(l1, 90, 232, 50, '#fff', { bold: true }); tx(l2, 90, 290, 42, '#ff8a84', { bold: true }); ctx.restore();
+}
+
+// ---- ホーム ----
+function home(t, f, clock, unlockedAt, openAt) {
+  base(clock);
+  const un = t >= unlockedAt, col = un ? RED : GREEN, k = un ? Math.max(0, 1 - (t - unlockedAt) / 0.5) : 0;
+  tx('玄関', 540, 300, 60, '#fff', { align: 'center', bold: true }); tx('自宅 ・ 301号室', 540, 366, 38, DIMC, { align: 'center' });
+  const cx = 540 + (hash(f) - 0.5) * 30 * k, cy = 680 + (hash(f + 3) - 0.5) * 30 * k;
+  ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 22; ctx.shadowColor = col; ctx.shadowBlur = 40 + 20 * Math.sin(t * (un ? 9 : 2)); ctx.beginPath(); ctx.arc(cx, cy, 230, 0, 7); ctx.stroke(); ctx.restore();
+  padlock(cx, cy - 10, 1.25, col, un);
+  tx(un ? '解錠されています' : '施錠中', 540, 990, 62, col, { align: 'center', bold: true });
+  if (t >= openAt) { const a = ease(prog(t, openAt, openAt + 0.2)); ctx.save(); ctx.globalAlpha = a; card(240, 1050, 600, 110, { fill: 'rgba(255,43,43,0.2)', stroke: RED, r: 55, glow: 20 }); tx('ドアが開きました', 540, 1106, 54, '#fff', { align: 'center', bold: true }); ctx.restore(); }
+}
+function homeHook(t, f) {
+  home(t, f, '7:31', 1e9, 1e9);
+  card(40, 1050, 1000, 290); tx('最近の履歴', 80, 1096, 36, DIMC);
+  const a = ease(prog(t, 0.5, 0.9)), p = 0.5 + 0.5 * Math.sin(t * 8);
+  ctx.save(); ctx.globalAlpha = a; card(56, 1128, 968, 96, { fill: `rgba(255,43,43,${0.14 + 0.1 * p})`, stroke: RED, r: 24, glow: 18 * p }); ctx.restore();
+  ctx.save(); ctx.translate(0, 0); row3(1176, '03:14', '解錠 ・ 手動(室内側)', '', RED, 1); row3(1276, '23:08', '施錠 ・ アプリ(自分)', '', DIMC, 0.8); ctx.restore();
+  // 「履歴」を開く
+  const tp = prog(t, EV.t_hist - 0.5, EV.t_hist); if (tp > 0 && tp < 1) { ctx.strokeStyle = `rgba(255,255,255,${1 - tp})`; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(540, 1176, 30 + tp * 90, 0, 7); ctx.stroke(); }
+}
+
+// ---- 履歴 ----
+const HROWS = [['23:08', '施錠', 'アプリ(自分)', DIMC, -1e9], ['03:14', '解錠', '手動(室内側)', RED, EV.rows.unlock], ['03:14', 'ドアが開きました', '', AMBER, EV.rows.open], ['03:15', 'ドアが閉まりました', '', AMBER, EV.rows.close], ['03:15', '施錠', '手動(室内側)', RED, EV.rows.lock], ['07:02', '解錠', 'アプリ(自分)', DIMC, EV.rows.wake]];
+function history(t) {
+  base('7:31'); tx('履歴', 70, 300, 64, '#fff', { bold: true }); tx('昨夜 〜 今朝', 1010, 304, 40, DIMC, { align: 'right' });
+  ctx.fillStyle = '#232a3c'; ctx.fillRect(107, 400, 6, 150 * 5 + 20);
+  let newest = -1; HROWS.forEach((r, i) => { if (t >= r[4]) newest = i; });
+  HROWS.forEach((r, i) => { if (t < r[4] - 0.02) return; const a = ease(prog(t, r[4] - 0.02, r[4] + 0.2)); ctx.save(); ctx.translate((1 - a) * 60, 0); row3(410 + i * 150, r[0], r[1], r[2], r[3], a, r[3] === RED && (i === newest || t >= EV.rows.wake)); ctx.restore(); });
+  if (t >= EV.rows.wake) { const a = ease(prog(t, EV.rows.wake + 0.2, EV.rows.wake + 0.6)); ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(900, 500); ctx.lineTo(930, 500); ctx.lineTo(930, 1070); ctx.lineTo(900, 1070); ctx.stroke();
+    ctx.translate(985, 785); ctx.rotate(Math.PI / 2); tx('この間、私は寝ていた', 0, 0, 44, '#e9e9ee', { align: 'center', bold: true }); ctx.restore(); }
+}
+
+// ---- 1週間 ----
+const DAYS = ['昨夜', '2日前', '3日前', '4日前', '5日前', '6日前', '7日前'];
+function week(t) {
+  base('7:31'); tx('過去7日間', 70, 300, 64, '#fff', { bold: true }); tx('午前3時台の記録', 1010, 304, 40, DIMC, { align: 'right' });
+  DAYS.forEach((d, i) => { const t0 = EV.week[i]; if (t < t0) return; const a = ease(prog(t, t0, t0 + 0.18)), y = 420 + i * 118;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate((1 - a) * 60, 0); card(40, y - 50, 1000, 100, { fill: 'rgba(255,43,43,0.12)', r: 24 });
+    tx(d, 80, y, 44, '#cfd6e6', { bold: true }); tx('03:14', 270, y, 52, '#fff', { font: SANS, w: 'bold' }); tx('解錠 ・ 手動(室内側)', 470, y, 46, RED, { bold: true }); ctx.restore(); });
+  const s = prog(t, EV.week[6] + 0.3, EV.week[6] + 0.5); if (s > 0) { ctx.save(); ctx.translate(540, 1270); ctx.rotate(-0.05); ctx.scale(lerp(1.8, 1, ease(s)), lerp(1.8, 1, ease(s))); ctx.globalAlpha = s; ctx.strokeStyle = RED; ctx.lineWidth = 8; rr(-270, -62, 540, 124, 20); ctx.stroke(); tx('7日連続 ・ 同じ時刻', 0, 2, 56, RED, { align: 'center', bold: true }); ctx.restore(); }
+}
+
+// ---- 図解: 内側のつまみは中にいる人にしか回せない ----
+function diagram(t, f) {
+  base('7:31'); tx('玄関ドアを上から見た図', 70, 300, 56, '#fff', { bold: true });
+  const inT = LN.l8.start, lockT = LN.l9.start + 0.5, stayT = LN.l10.start + 1.5, stay = t >= stayT, p = 0.5 + 0.5 * Math.sin(t * 8);
+  // 室内と外
+  ctx.fillStyle = stay ? `rgba(255,43,43,${0.16 + 0.08 * p})` : 'rgba(127,155,255,0.10)'; rr(60, 390, 960, 430, 30); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; rr(60, 860, 960, 380, 30); ctx.fill();
+  tx('室内(私の部屋)', 100, 440, 46, stay ? '#fff' : '#b9c6ff', { bold: true }); tx('外(共用廊下)', 980, 1190, 46, DIMC, { bold: true, align: 'right' });
+  // 壁とドア
+  ctx.fillStyle = '#6f7a94'; ctx.fillRect(60, 820, 300, 40); ctx.fillRect(720, 820, 300, 40);
+  ctx.fillStyle = '#d7deee'; ctx.fillRect(360, 826, 360, 28);
+  // つまみ(室内側)と鍵穴(外側)
+  const kx = 640, ky = 800, turn = ease(prog(t, inT + 0.9, inT + 1.5)) - ease(prog(t, lockT, lockT + 0.5));
+  ctx.save(); ctx.translate(kx, ky); ctx.strokeStyle = `rgba(255,217,102,${0.4 + 0.6 * p})`; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(0, 0, 58 + 8 * p, 0, 7); ctx.stroke();
+  ctx.rotate(turn * Math.PI / 2); ctx.fillStyle = '#ffd966'; rr(-36, -15, 72, 30, 15); ctx.fill(); ctx.restore();
+  ctx.fillStyle = '#8a93ad'; ctx.beginPath(); ctx.arc(kx, 872, 16, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#ffd966'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(kx + 50, ky - 40); ctx.lineTo(kx + 110, ky - 110); ctx.stroke(); tx('内側のつまみ', kx + 60, ky - 140, 44, '#ffd966', { bold: true });
+  ctx.strokeStyle = '#8a93ad'; ctx.beginPath(); ctx.moveTo(kx + 14, 888); ctx.lineTo(kx + 60, 950); ctx.stroke(); tx('外からはカギかアプリ', kx + 20, 982, 38, '#8a93ad');
+  // 中にいる誰か
+  const pa = ease(prog(t, inT + 0.3, inT + 0.8));
+  if (pa > 0) { ctx.save(); ctx.globalAlpha = pa; const s = 1 + (stay ? 0.12 * p : 0); if (stay) { ctx.shadowColor = RED; ctx.shadowBlur = 50; }
+    person(470, 640, 1.15 * s, stay ? RED : '#ff8a84'); ctx.shadowBlur = 0;
+    ctx.strokeStyle = stay ? RED : '#ff8a84'; ctx.lineWidth = 18; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(520, 640); ctx.quadraticCurveTo(600, 700, kx - 14, ky - 26); ctx.stroke();
+    tx('?', 470, 566, 54, '#1a0606', { align: 'center', font: SANS, w: 'bold' }); ctx.restore(); }
+  // 施錠も内側から
+  if (t >= lockT) { const a = ease(prog(t, lockT, lockT + 0.3)); ctx.save(); ctx.globalAlpha = a; padlock(150, 1050, 0.5, GREEN, false); tx('施錠 ・ 内側から', 210, 1070, 46, GREEN, { bold: true });
+    ctx.strokeStyle = '#ff5a52'; ctx.lineWidth = 12; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(130, 1150); ctx.lineTo(170, 1190); ctx.moveTo(170, 1150); ctx.lineTo(130, 1190); ctx.stroke(); tx('外には出ていない', 210, 1171, 44, '#ff8a84', { bold: true }); ctx.restore(); }
+  if (stay) { const a = ease(prog(t, stayT, stayT + 0.25)); ctx.save(); ctx.globalAlpha = a; ctx.translate(730, 500); ctx.scale(lerp(1.6, 1, a), lerp(1.6, 1, a)); ctx.font = `800 80px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#000'; ctx.lineWidth = 14; ctx.strokeText('まだ、中にいる', 0, 0); ctx.fillStyle = '#fff'; ctx.fillText('まだ、中にいる', 0, 0); ctx.restore(); }
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.08;
+  const fadeIn = a => { const k = 1 - prog(t, a, a + 0.25); if (k > 0) { ctx.fillStyle = `rgba(4,5,9,${k})`; ctx.fillRect(0, 0, W, H); } };
+  if (t < EV.hit) {
+    if (t < EV.t_hist) { homeHook(t, f); const sh = Math.max(0, 1 - t / 0.4); if (sh) { ctx.fillStyle = `rgba(255,255,255,${0.3 * sh})`; ctx.fillRect(0, 0, W, H); } }
+    else if (t < EV.t_week) { history(t); fadeIn(EV.t_hist); }
+    else if (t < EV.t_diag) { week(t); fadeIn(EV.t_week); }
+    else if (t < EV.t_live) { diagram(t, f); fadeIn(EV.t_diag); }
+    else {
+      // 今夜。暗い部屋でアプリを見ている
+      home(t, f, '3:14', EV.notif + 0.1, EV.dooropen); fadeIn(EV.t_live);
+      ctx.fillStyle = 'rgba(0,0,6,0.35)'; ctx.fillRect(0, 0, W, H);
+      if (t >= EV.notif) banner(t, EV.notif, '玄関が解錠されました', '手動(室内側) ・ 3:14');
+      const z = t >= EV.notif ? Math.max(0, 1 - (t - EV.notif) / 0.5) : 0; if (z) { ctx.fillStyle = `rgba(255,30,30,${0.3 * z})`; ctx.fillRect(0, 0, W, H); }
+      if (t >= LN.now.start - 0.1) { ctx.fillStyle = `rgba(0,0,0,${0.55 * prog(t, LN.now.start - 0.1, LN.now.start + 0.2)})`; ctx.fillRect(0, 0, W, H); ctx.drawImage(cv, (hash(f) - 0.5) * 10, (hash(f + 2) - 0.5) * 10); }
+    }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1500); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5; ctx.fillStyle = f % 2 ? '#300' : '#000'; ctx.fillRect(0, 0, W, H);
+    padlock(540 + (hash(f) - 0.5) * 70, 900 + (hash(f + 4) - 0.5) * 70, 3 + 2.5 * k, f % 3 ? RED : '#fff', true);
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('あなたの家の鍵は', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('昨夜、誰が開けましたか?', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 560, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + 'まだ、中にいるあなたの家の鍵は昨夜、誰が開けましたか?ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
