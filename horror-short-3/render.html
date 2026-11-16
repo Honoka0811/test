@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>睡眠アプリの録音</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration, ENV = EV.env;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', BLUE = '#7f9bff', DIMC = '#8a90ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(3000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+const env = f => ENV[clamp(f, 0, ENV.length - 1) | 0] || 0;
+
+// ---- 共通 ----
+function base(clock) {
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0c1230'); g.addColorStop(0.6, '#070a18'); g.addColorStop(1, '#03040a'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  tx(clock, 60, 52, 34, '#e9e9ee', { font: SANS, w: 'bold' });
+  ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 3; rr(948, 36, 62, 30, 8); ctx.stroke(); ctx.fillStyle = '#e9e9ee'; rr(953, 41, 40, 20, 4); ctx.fill(); ctx.fillRect(1012, 45, 5, 12);
+  // アプリ名(架空)
+  ctx.fillStyle = '#f3d98b'; ctx.beginPath(); ctx.arc(92, 150, 30, 0, 7); ctx.fill(); ctx.fillStyle = '#0c1230'; ctx.beginPath(); ctx.arc(106, 140, 26, 0, 7); ctx.fill();
+  tx('ねむりログ', 140, 152, 46, '#fff', { bold: true });
+}
+function mic(x, y, s, col) {
+  ctx.fillStyle = col; rr(x - 11 * s, y - 26 * s, 22 * s, 38 * s, 11 * s); ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = 4 * s; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(x, y - 2 * s, 20 * s, 0.15, Math.PI - 0.15); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y + 18 * s); ctx.lineTo(x, y + 30 * s); ctx.moveTo(x - 12 * s, y + 30 * s); ctx.lineTo(x + 12 * s, y + 30 * s); ctx.stroke();
+}
+function card(x, y, w, h, o = {}) { ctx.fillStyle = o.fill || 'rgba(255,255,255,0.055)'; rr(x, y, w, h, o.r || 36); ctx.fill(); if (o.stroke) { ctx.save(); ctx.strokeStyle = o.stroke; ctx.lineWidth = o.lw || 4; ctx.shadowColor = o.stroke; ctx.shadowBlur = o.glow || 0; rr(x, y, w, h, o.r || 36); ctx.stroke(); ctx.restore(); } }
+
+// ---- A: 睡眠サマリー ----
+const HYP = [0, 1, 2, 2, 1, 2, 2, 1, 2, 2, 1, 0, 1, 2, 2, 1, 2, 1, 1, 2, 2, 1, 1, 0];
+function summary(t) {
+  base('7:02');
+  tx('昨夜の睡眠', 70, 300, 44, DIMC);
+  tx('7', 70, 430, 170, '#fff', { font: SANS, w: '200' }); tx('時間', 180, 462, 54, '#fff');
+  tx('14', 310, 430, 170, '#fff', { font: SANS, w: '200' }); tx('分', 520, 462, 54, '#fff');
+  tx('23:48  →  7:02', 70, 570, 44, DIMC, { font: SANS });
+  card(50, 660, 980, 420);
+  ['覚醒', '浅い', '深い'].forEach((s, i) => tx(s, 90, 740 + i * 110, 34, DIMC));
+  const k = ease(prog(t, 0.2, 2.6)), x0 = 200, x1 = 990, n = HYP.length;
+  ctx.save(); ctx.beginPath(); ctx.rect(x0 - 5, 680, (x1 - x0) * k + 10, 380); ctx.clip();
+  ctx.strokeStyle = BLUE; ctx.lineWidth = 7; ctx.lineJoin = 'round'; ctx.shadowColor = BLUE; ctx.shadowBlur = 16; ctx.beginPath();
+  HYP.forEach((v, i) => { const x = x0 + (x1 - x0) * i / n, y = 740 + v * 110; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); ctx.lineTo(x0 + (x1 - x0) * (i + 1) / n, y); }); ctx.stroke(); ctx.restore();
+  // 録音バッジ
+  const a = ease(prog(t, 2.4, 2.9)), p = 0.5 + 0.5 * Math.sin(t * 7);
+  ctx.save(); ctx.globalAlpha = a; card(50, 1130, 980, 170, { fill: 'rgba(255,43,43,0.13)', stroke: `rgba(255,70,70,${0.5 + 0.5 * p})`, glow: 26 * p });
+  mic(130, 1212, 1.5, '#ff5a52'); tx('録音された音', 200, 1215, 54, '#fff', { bold: true }); tx('3件', 985, 1215, 62, '#ff5a52', { align: 'right', bold: true }); ctx.restore();
+}
+
+// ---- B: 録音リスト ----
+const ITEMS = [{ time: '2:13', tag: 'いびき', len: '0:12', p: EV.p1, line: 'r1' }, { time: '3:07', tag: '寝言', len: '0:05', p: EV.p2, line: 'r2' }, { time: '3:33', tag: '話し声', len: '0:08', p: EV.p3, line: 'r3', red: true }];
+function miniWave(x, y, w, seed, col) { ctx.fillStyle = col; for (let i = 0; i < 26; i++) { const h = 8 + hash(seed * 31 + i) * 54 * (0.4 + 0.6 * Math.sin(i / 26 * Math.PI)); ctx.fillRect(x + i * (w / 26), y - h / 2, w / 26 - 5, h); } }
+function bigWave(f, y, hmax, col, n = 54, live = false) {
+  const bw = 960 / n;
+  for (let i = 0; i < n; i++) {
+    const v = env(f - (n - 1 - i) * 1) * (0.75 + 0.5 * hash(f * 1.3 + i * 7.1)), h = 6 + v * hmax;
+    ctx.fillStyle = col; rr(60 + i * bw, y - h / 2, bw - 6, h, Math.min(6, (bw - 6) / 2)); ctx.fill();
+  }
+}
+function list(t) {
+  const f = Math.round(t * FPS);
+  base('7:02'); tx('録音された音', 70, 300, 60, '#fff', { bold: true }); tx('昨夜  3件', 1010, 304, 40, DIMC, { align: 'right' });
+  let active = -1; ITEMS.forEach((it, i) => { if (t >= LN[it.line].start - 0.15 && t < (i < 2 ? LN[ITEMS[i + 1].line].start - 0.15 : EV.detail)) active = i; });
+  let playing = null;
+  ITEMS.forEach((it, i) => {
+    const k = ease(prog(t, EV.list + 0.35 + i * 0.3, EV.list + 0.6 + i * 0.3)); if (k <= 0) return;
+    const y = 380 + i * 230, on = active === i, play = t >= it.p[0] && t < it.p[1]; if (play) playing = it;
+    ctx.save(); ctx.globalAlpha = k * (active >= 0 && !on ? 0.4 : 1); ctx.translate(0, (1 - k) * 40);
+    const col = it.red ? '#ff5a52' : BLUE;
+    card(50, y, 980, 200, on ? { fill: it.red ? 'rgba(255,43,43,0.12)' : 'rgba(127,155,255,0.12)', stroke: col, glow: 22 } : {});
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(140, y + 100, 52, 0, 7); ctx.fill(); ctx.fillStyle = '#0a0d1c';
+    if (play) { ctx.fillRect(120, y + 76, 14, 48); ctx.fillRect(146, y + 76, 14, 48); } else { ctx.beginPath(); ctx.moveTo(124, y + 72); ctx.lineTo(166, y + 100); ctx.lineTo(124, y + 128); ctx.closePath(); ctx.fill(); }
+    tx('午前 ' + it.time, 225, y + 66, 54, '#fff', { bold: true });
+    ctx.font = `44px ${GOT}`; const tw = ctx.measureText(it.tag).width + 48;
+    ctx.fillStyle = it.red ? 'rgba(255,43,43,0.25)' : 'rgba(127,155,255,0.2)'; rr(225, y + 106, tw, 64, 32); ctx.fill(); tx(it.tag, 249, y + 140, 44, it.red ? '#ff7b72' : '#b9c6ff', { bold: true });
+    miniWave(590, y + 100, 300, i + 1, on ? col : '#4a5070'); tx(it.len, 990, y + 100, 38, DIMC, { align: 'right', font: SANS });
+    if (it.red && t >= LN.notme.start - 0.1) { const a = ease(prog(t, LN.notme.start - 0.1, LN.notme.start + 0.2)); ctx.globalAlpha = k * a; ctx.fillStyle = '#ff2b2b'; rr(225 + tw + 18, y + 106, 480, 64, 32); ctx.fill(); tx('登録した声と一致しません', 225 + tw + 42, y + 140, 36, '#fff', { bold: true }); }
+    ctx.restore();
+  });
+  // プレーヤー
+  const pa = ease(prog(t, EV.list + 1.3, EV.list + 1.7));
+  ctx.save(); ctx.globalAlpha = pa; card(50, 1085, 980, 250, { fill: 'rgba(0,0,0,0.35)' });
+  if (playing) {
+    bigWave(f, 1195, 170, playing.red ? '#ff5a52' : '#aebcff');
+    const el = t - playing.p[0]; tx('再生中  0:' + String(Math.floor(el)).padStart(2, '0'), 90, 1300, 34, playing.red ? '#ff7b72' : DIMC);
+    ctx.fillStyle = '#fff'; ctx.fillRect(1018, 1110, 4, 170);
+  } else { ctx.fillStyle = '#3a4060'; ctx.fillRect(80, 1193, 920, 4); tx('タップして再生', 540, 1290, 34, '#5d6485', { align: 'center' }); }
+  ctx.restore();
+}
+
+// ---- C: 録音セッションの詳細 ----
+function detail(t) {
+  base('7:02'); tx('録音セッションの詳細', 70, 300, 56, '#fff', { bold: true });
+  const x0 = 90, x1 = 990, fr = 233 / 434, xs = x0 + (x1 - x0) * fr, y = 470;
+  const k = ease(prog(t, EV.detail + 0.2, LN.stop.start + 1.6));
+  ctx.fillStyle = '#1a1f38'; rr(x0, y - 24, x1 - x0, 48, 24); ctx.fill();
+  ctx.save(); rr(x0, y - 24, x1 - x0, 48, 24); ctx.clip();
+  ctx.fillStyle = BLUE; ctx.fillRect(x0, y - 24, (xs - x0) * k, 48);
+  ctx.strokeStyle = '#2b3154'; ctx.lineWidth = 4; for (let x = xs; x < x1 + 60; x += 22) { ctx.beginPath(); ctx.moveTo(x, y + 24); ctx.lineTo(x + 30, y - 24); ctx.stroke(); }
+  ctx.restore();
+  tx('23:48', x0, y + 70, 36, DIMC, { font: SANS }); tx('7:02', x1, y + 70, 36, DIMC, { font: SANS, align: 'right' });
+  if (k >= 1) { const p = 0.5 + 0.5 * Math.sin(t * 8); ctx.fillStyle = RED; ctx.shadowColor = RED; ctx.shadowBlur = 20 * p; ctx.fillRect(xs - 4, y - 60, 8, 120); ctx.shadowBlur = 0; tx('3:41 停止', xs, y - 92, 44, '#ff5a52', { align: 'center', bold: true }); }
+  // 眠っていた区間
+  const sa = ease(prog(t, LN.sleep.start, LN.sleep.start + 0.4));
+  if (sa > 0) { ctx.save(); ctx.globalAlpha = sa; ctx.strokeStyle = '#e9e9ee'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(xs + 10, y + 110); ctx.lineTo(xs + 10, y + 130); ctx.lineTo(x1, y + 130); ctx.lineTo(x1, y + 110); ctx.stroke(); tx('録音されていない 3時間21分', (xs + x1) / 2 + 5, y + 176, 34, '#e9e9ee', { align: 'center' }); ctx.restore(); }
+  const rows = [['録音開始', '23:48', '自動'], ['録音停止', '3:41', '手動(画面をタップ)'], ['起床', '7:02', 'アラーム']];
+  rows.forEach((r, i) => {
+    const a = ease(prog(t, EV.detail + 0.4 + i * 0.2, EV.detail + 0.7 + i * 0.2)), yy = 740 + i * 190, hot = i === 1 && t >= LN.manual.start + 0.9, p = 0.5 + 0.5 * Math.sin(t * 9);
+    ctx.save(); ctx.globalAlpha = a * (t >= LN.manual.start + 0.9 && !hot && i !== 2 ? 0.4 : 1);
+    card(50, yy, 980, 160, hot ? { fill: 'rgba(255,43,43,0.16)', stroke: RED, glow: 12 + 22 * p, lw: 5 } : (i === 2 && t >= LN.sleep.start ? { stroke: '#e9e9ee' } : {}));
+    tx(r[0], 90, yy + 54, 40, DIMC); tx(r[1], 90, yy + 112, 56, '#fff', { font: SANS, w: 'bold' });
+    tx(r[2], 990, yy + 84, hot ? 58 : 48, hot ? '#ff5a52' : '#fff', { align: 'right', bold: true }); ctx.restore();
+  });
+}
+
+// ---- D: いま録音中 ----
+function liveScene(t) {
+  const f = Math.round(t * FPS), k = ease(prog(t, EV.live[0] - 0.3, EV.live[0] + 0.3));
+  ctx.fillStyle = `rgba(0,0,0,${0.82 * k})`; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(0, lerp(-260, 0, k));
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 40; card(40, 96, 1000, 220, { fill: 'rgba(40,42,60,0.97)', r: 46 }); ctx.shadowBlur = 0;
+  if (f % 30 < 20) { ctx.fillStyle = RED; ctx.beginPath(); ctx.arc(110, 166, 18, 0, 7); ctx.fill(); }
+  tx('ねむりログ', 150, 168, 44, '#fff', { bold: true }); tx('今', 990, 166, 36, DIMC, { align: 'right' });
+  tx('録音中 ― 話し声を検出しました', 84, 252, 50, '#ff7b72', { bold: true }); ctx.restore();
+  ctx.save(); ctx.globalAlpha = k; ctx.shadowColor = RED; ctx.shadowBlur = 24; bigWave(f, 820, 620, RED, 40); ctx.restore();
+  const el = Math.max(0, t - EV.live[0]); tx('REC 00:00:0' + Math.floor(el), 540, 1240, 44, '#ff5a52', { align: 'center', font: SANS, w: 'bold' });
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 92 : l.kind === 'clip' ? 80 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.kind === 'clip' && l.id !== 'c2' ? (hash(f) - 0.5) * 7 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.08;
+  const fadeIn = (a) => { const k = 1 - prog(t, a, a + 0.25); if (k > 0) { ctx.fillStyle = `rgba(3,4,10,${k})`; ctx.fillRect(0, 0, W, H); } };
+  if (t < EV.hit) {
+    if (t < EV.list) { summary(t); const sh = Math.max(0, 1 - t / 0.4); if (sh) { ctx.fillStyle = `rgba(255,255,255,${0.3 * sh})`; ctx.fillRect(0, 0, W, H); } }
+    else if (t < EV.detail) { list(t); fadeIn(EV.list); }
+    else { detail(t); fadeIn(EV.detail); if (t >= EV.live[0] - 0.3) liveScene(t); }
+    // 字幕の下地
+    const g = ctx.createLinearGradient(0, 1340, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = g; ctx.fillRect(0, 1340, W, 600);
+    // 再生中・ささやき中は画面がわずかに揺れる
+    if (t >= EV.p3[0] && t < EV.p3[1] || t >= EV.live[0]) { const v = env(f) * 10; if (v > 0.5) { const img = ctx.getTransform(); ctx.drawImage(cv, (hash(f) - 0.5) * v, (hash(f + 2) - 0.5) * v); } }
+  } else if (t < EV.hit + 0.5) {
+    // 波形が画面いっぱいに振り切れる
+    const k = (t - EV.hit) / 0.5; ctx.fillStyle = f % 2 ? '#200' : '#000'; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 40; i++) { const h = H * (0.35 + 0.65 * hash(f * 1.7 + i * 3.3)); ctx.fillStyle = f % 3 ? RED : '#fff'; ctx.fillRect(60 + i * 24, H / 2 - h / 2, 18, h); }
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    ctx.fillStyle = `rgba(0,0,0,${k * 0.5})`; ctx.fillRect(0, 0, W, H); grain = 0.3;
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.75, EV.hit + 1.1); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('1件目の「いびき」を', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('もう一度、よく聞いてください。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 560, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '1件目の「いびき」をもう一度、よく聞いてください。ナレーション四国めたん0123456789:').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>

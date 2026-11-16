@@ -1,0 +1,8 @@
+{
+  "name": "horror-short",
+  "private": true,
+  "description": "縦型ホラーショート動画(四国めたんナレーション)",
+  "dependencies": {
+    "@fontsource/shippori-mincho": "5.3.0"
+  }
+}
