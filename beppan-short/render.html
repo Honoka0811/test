@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>別班は実在するのか?</title>
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/500.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/900.css">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; height: 100vh; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// 時刻 t(秒)のフレームを決定論的に描画する。タイミングは narrate.py が書き出す output/timings.json に従う。
+// capture.js が window.TIMINGS を注入する。
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+const T = window.TIMINGS;
+window.FPS = T.fps; window.DURATION = T.duration;
+
+const C = {
+  bg: '#090C11', panel: '#121822', panel2: '#171F2B', line: '#2A3547',
+  text: '#EEF1F5', muted: '#8E9AAD', dim: '#5A6679',
+  amber: '#F5B841', blue: '#7DB4EA', red: '#E5484D',
+};
+const SANS = '"Noto Sans JP", "IPAGothic", sans-serif';
+const SERIF = '"Noto Serif JP", "IPAGothic", serif';
+
+// ---------- helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const easeOut = x => 1 - Math.pow(1 - clamp(x), 3);
+const easeInOut = x => { x = clamp(x); return x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+const backOut = x => { x = clamp(x); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const ap = (t, t0, d = 0.45) => easeOut((t - t0) / d);        // t0 から d 秒かけて 0→1
+const scene = i => T.scenes[i];
+const cue = (si, ci) => T.scenes[si].chunks[Math.min(ci, T.scenes[si].chunks.length - 1)].t0;
+
+function font(weight, size, fam = SANS) { g.font = `${weight} ${size}px ${fam}`; }
+function text(s, x, y, o = {}) {
+  g.save();
+  font(o.w || 700, o.size || 40, o.fam || SANS);
+  g.letterSpacing = (o.ls || 0) + 'px';
+  g.textAlign = o.align || 'left'; g.textBaseline = o.base || 'alphabetic';
+  g.fillStyle = o.color || C.text; g.globalAlpha *= (o.a === undefined ? 1 : o.a);
+  g.fillText(s, x, y);
+  g.restore();
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+function panel(x, y, w, h, o = {}) {
+  g.save();
+  rr(x, y, w, h, o.r || 18); g.fillStyle = o.fill || C.panel; g.fill();
+  g.lineWidth = 2; g.strokeStyle = o.stroke || C.line; g.stroke();
+  if (o.accent) { g.fillStyle = o.accent; rr(x, y + 22, 7, h - 44, 3.5); g.fill(); }
+  g.restore();
+}
+// 出現アニメ: 下から少し持ち上がりながらフェードイン
+function appear(p, dy, fn) { if (p <= 0) return; g.save(); g.globalAlpha *= p; g.translate(0, (1 - p) * dy); fn(); g.restore(); }
+
+// ---------- 背景 ----------
+const noise = (() => {
+  const n = document.createElement('canvas'); n.width = n.height = 256;
+  const c = n.getContext('2d'), im = c.createImageData(256, 256);
+  let s = 12345;
+  for (let i = 0; i < im.data.length; i += 4) {
+    s = (s * 1664525 + 1013904223) >>> 0; const v = s >>> 24;
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = v; im.data[i + 3] = 255;
+  }
+  c.putImageData(im, 0, 0); return n;
+})();
+function background(t) {
+  g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+  // 上からの淡い光
+  const rg = g.createRadialGradient(W / 2, 520, 60, W / 2, 520, 1100);
+  rg.addColorStop(0, 'rgba(46,62,88,0.55)'); rg.addColorStop(1, 'rgba(9,12,17,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, W, H);
+  // 方眼
+  g.save(); g.strokeStyle = 'rgba(120,140,170,0.055)'; g.lineWidth = 1;
+  const off = (t * 6) % 90;
+  for (let x = 0; x <= W; x += 90) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke(); }
+  for (let y = -90 + off; y <= H; y += 90) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke(); }
+  g.restore();
+}
+function overlay(t) {
+  // 周辺減光
+  const vg = g.createRadialGradient(W / 2, H / 2, 500, W / 2, H / 2, 1250);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  g.fillStyle = vg; g.fillRect(0, 0, W, H);
+  // フィルムグレイン
+  const f = Math.round(t * T.fps);
+  g.save(); g.globalAlpha = 0.05; g.globalCompositeOperation = 'overlay';
+  const ox = (f * 73) % 256, oy = (f * 151) % 256;
+  g.translate(-ox, -oy); g.fillStyle = g.createPattern(noise, 'repeat'); g.fillRect(0, 0, W + 256, H + 256);
+  g.restore();
+}
+
+// ---------- 常時表示のヘッダー ----------
+function header(t, si) {
+  const y = 232;
+  text('CASE FILE', 70, y, { w: 700, size: 24, ls: 6, color: C.dim });
+  text('別班', 262, y, { w: 900, size: 26, ls: 4, color: C.muted });
+  text(`${String(si + 1).padStart(2, '0')} / ${String(T.scenes.length).padStart(2, '0')}`, 1010, y, { w: 700, size: 24, ls: 4, color: C.dim, align: 'right' });
+  g.fillStyle = C.line; g.fillRect(70, y + 22, 940, 3);
+  g.fillStyle = C.amber; g.fillRect(70, y + 22, 940 * clamp(t / T.duration), 3);
+}
+function heading(t, si, label, title, color) {
+  const s = scene(si), p = ap(t, s.start + 0.05, 0.5);
+  appear(p, 24, () => {
+    g.fillStyle = color; g.fillRect(70, 318, 46, 6);
+    text(label, 132, 330, { w: 700, size: 26, ls: 7, color });
+    text(title, 70, 428, { w: 900, size: 70, ls: 1 });
+  });
+}
+
+// ---------- 字幕 ----------
+const NO_HEAD = '、。」）ーっゃゅょッャュョんを';
+function splitLine(s, max) {
+  font(900, 60); g.letterSpacing = '1px';
+  if (g.measureText(s).width <= max) return [s];
+  let best = -1, bestD = 1e9;
+  for (let i = 2; i < s.length - 1; i++) {
+    if (NO_HEAD.includes(s[i]) || '「（'.includes(s[i - 1])) continue;
+    const d = Math.abs(g.measureText(s.slice(0, i)).width - g.measureText(s.slice(i)).width)
+      + ('、。'.includes(s[i - 1]) ? -60 : 0) + (/[はがをにでもとの]/.test(s[i - 1]) ? -30 : 0);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return [s.slice(0, best), s.slice(best)];
+}
+function segments(line, hl) {
+  // 強調語を色分けするために [文字列, 強調か] に分割
+  let segs = [[line, false]];
+  for (const h of hl) {
+    const out = [];
+    for (const [s, on] of segs) {
+      const i = on ? -1 : s.indexOf(h);
+      if (i < 0) { out.push([s, on]); continue; }
+      if (i > 0) out.push([s.slice(0, i), false]);
+      out.push([h, true]);
+      if (i + h.length < s.length) out.push([s.slice(i + h.length), false]);
+    }
+    segs = out;
+  }
+  return segs;
+}
+function captions(t) {
+  const all = T.scenes.flatMap(s => s.chunks);
+  let k = -1;
+  for (let i = 0; i < all.length; i++) if (t >= all[i].t0 - 0.04) k = i;
+  if (k < 0) return;
+  const c = all[k], next = all[k + 1];
+  const end = next ? Math.min(c.t1 + 0.5, next.t0 - 0.04) : c.t1 + 0.5;
+  if (t > end) return;
+  const p = Math.min(ap(t, c.t0 - 0.04, 0.14), 1 - clamp((t - end + 0.1) / 0.1));
+  const lines = splitLine(c.text, 900);
+  const LH = 82, cy = 1372;
+  g.save(); g.globalAlpha = clamp(p);
+  g.translate(0, (1 - easeOut(p)) * 10);
+  lines.forEach((ln, i) => {
+    const y = cy + (i - (lines.length - 1) / 2) * LH;
+    font(900, 60); g.letterSpacing = '1px'; g.textBaseline = 'middle'; g.textAlign = 'left';
+    const segs = segments(ln, c.hl || []);
+    const total = g.measureText(ln).width;
+    let x = W / 2 - total / 2;
+    // 影と縁取りで背景から浮かせる
+    for (const [s, on] of segs) {
+      g.lineJoin = 'round'; g.lineWidth = 14; g.strokeStyle = 'rgba(5,7,10,0.92)'; g.strokeText(s, x, y);
+      x += g.measureText(s).width;
+    }
+    x = W / 2 - total / 2;
+    for (const [s, on] of segs) {
+      g.fillStyle = on ? C.amber : '#FFFFFF'; g.fillText(s, x, y);
+      x += g.measureText(s).width;
+    }
+  });
+  g.restore();
+}
+
+// ---------- 部品 ----------
+function stamp(cx, cy, w, h, label, p, rot = -0.1) {
+  if (p <= 0) return;
+  const sc = 1 + (1 - easeOut(p)) * 1.3;
+  g.save(); g.translate(cx, cy); g.rotate(rot); g.scale(sc, sc); g.globalAlpha *= clamp(p * 2.5) * 0.94;
+  g.strokeStyle = C.red; g.lineWidth = 10; rr(-w / 2, -h / 2, w, h, 16); g.stroke();
+  g.lineWidth = 3; rr(-w / 2 + 16, -h / 2 + 16, w - 32, h - 32, 8); g.stroke();
+  text(label, 0, 6, { fam: SERIF, w: 900, size: h * 0.56, color: C.red, align: 'center', base: 'middle', ls: 10 });
+  g.restore();
+}
+function silhouette(cx, cy, r) {
+  g.save();
+  g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fillStyle = '#0D121A'; g.fill();
+  g.lineWidth = 2; g.strokeStyle = C.line; g.stroke();
+  g.beginPath(); g.arc(cx, cy, r - 2, 0, Math.PI * 2); g.clip();
+  g.fillStyle = '#39465A';
+  g.beginPath(); g.arc(cx, cy - r * 0.2, r * 0.34, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.ellipse(cx, cy + r * 0.86, r * 0.68, r * 0.56, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+// ---------- シーン 1: フック ----------
+function sHook(t) {
+  const si = 0, s = scene(si);
+  // タグ
+  appear(ap(t, cue(si, 0), 0.4), 20, () => {
+    font(700, 34); g.letterSpacing = '2px';
+    const lab = 'ドラマ『VIVANT』で注目', w = g.measureText(lab).width + 68;
+    rr(W / 2 - w / 2, 400, w, 72, 36); g.fillStyle = 'rgba(245,184,65,0.12)'; g.fill();
+    g.strokeStyle = C.amber; g.lineWidth = 2; g.stroke();
+    text(lab, W / 2, 437, { w: 700, size: 34, ls: 2, color: C.amber, align: 'center', base: 'middle' });
+  });
+  appear(ap(t, cue(si, 1), 0.4), 20, () =>
+    text('陸上自衛隊の秘密情報部隊とされる', W / 2, 556, { w: 700, size: 40, color: C.muted, align: 'center', ls: 3 }));
+  // 「別班」: 黒塗りが外れて現れる
+  const tr = cue(si, 2) - 0.12, pr = easeInOut((t - tr) / 0.5);
+  const cy = 830;
+  if (t >= cue(si, 1)) {
+    g.save();
+    const zoom = 1 + 0.03 * clamp((t - tr) / 3);
+    g.translate(W / 2, cy); g.scale(zoom, zoom);
+    if (pr > 0) {
+      g.save(); g.beginPath(); g.rect(-420, -230, 840 * pr, 460); g.clip();
+      g.shadowColor = 'rgba(245,184,65,0.35)'; g.shadowBlur = 60;
+      text('別班', 0, 0, { fam: SERIF, w: 900, size: 330, align: 'center', base: 'middle', ls: 30 });
+      g.restore();
+      text('べ っ ぱ ん', 0, -200, { w: 700, size: 38, color: C.amber, align: 'center', a: ap(t, tr + 0.3, 0.4), ls: 8 });
+    }
+    // 黒塗りバー
+    const pb = ap(t, cue(si, 1), 0.3);
+    g.globalAlpha *= pb;
+    g.fillStyle = '#020304'; g.fillRect(-420 + 840 * pr, -180, 840 * (1 - pr), 360);
+    if (pr < 1) { g.fillStyle = C.amber; g.fillRect(-420 + 840 * pr - 3, -200, 6, 400); }
+    g.restore();
+  }
+  // 問い
+  const pq = (t - cue(si, 3)) / 0.45;
+  if (pq > 0) {
+    g.save(); g.translate(W / 2, 1110); const k = 0.8 + 0.2 * backOut(pq); g.scale(k, k); g.globalAlpha *= clamp(pq * 2);
+    text('実在するのか？', 0, 0, { w: 900, size: 104, color: C.amber, align: 'center', base: 'middle', ls: 2 });
+    g.restore();
+  }
+}
+
+// ---------- シーン 2: 政府見解 ----------
+function sGov(t) {
+  const si = 1;
+  heading(t, si, 'GOVERNMENT', '政府の公式見解', C.blue);
+  stamp(W / 2, 606, 640, 180, '存在しない', (t - cue(si, 1)) / 0.22, -0.07);
+  appear(ap(t, cue(si, 2)), 30, () => {
+    panel(70, 760, 940, 262, { accent: C.blue });
+    text('2013年12月10日　政府答弁書（閣議決定）', 116, 826, { w: 700, size: 32, color: C.blue, ls: 1 });
+    const a1 = 0.35 + 0.65 * ap(t, cue(si, 3), 0.3), a2 = 0.35 + 0.65 * ap(t, cue(si, 4), 0.3);
+    text('「これまで自衛隊に存在したことはなく、', 104, 906, { fam: SERIF, w: 900, size: 44, a: a1 });
+    text('現在も存在していない」', 148, 974, { fam: SERIF, w: 900, size: 44, a: a2 });
+  });
+  appear(ap(t, cue(si, 6)), 30, () => {
+    panel(70, 1050, 940, 210, { accent: C.blue });
+    text('2026年7月28日　防衛相 記者会見', 116, 1112, { w: 700, size: 32, color: C.blue, ls: 1 });
+    text('「これまで存在しておらず、', 104, 1176, { fam: SERIF, w: 900, size: 40 });
+    text('また現在も存在していません」', 144, 1232, { fam: SERIF, w: 900, size: 40 });
+  });
+}
+
+// ---------- シーン 3: 報道 ----------
+function sReport(t) {
+  const si = 2;
+  heading(t, si, 'REPORT', '2013年11月の報道', C.amber);
+  appear(ap(t, cue(si, 1), 0.4), 16, () => text('共同通信が配信したスクープ', 72, 496, { w: 700, size: 36, color: C.muted, ls: 2 }));
+  // ネットワーク図
+  const hub = [W / 2, 884];
+  const nodes = [['ロシア', 190, 690], ['中国', 420, 630], ['韓国', 660, 630], ['東欧', 890, 690]];
+  const tn = cue(si, 4);
+  nodes.forEach(([name, x, y], i) => {
+    const p = easeInOut((t - tn - i * 0.42) / 0.5);
+    if (p <= 0) return;
+    g.save();
+    g.strokeStyle = C.amber; g.lineWidth = 2.5; g.setLineDash([10, 9]); g.lineDashOffset = -t * 30; g.globalAlpha = 0.75;
+    g.beginPath(); g.moveTo(hub[0], hub[1]); g.lineTo(hub[0] + (x - hub[0]) * p, hub[1] + (y - hub[1]) * p); g.stroke();
+    g.restore();
+    const q = ap(t, tn + i * 0.42 + 0.35, 0.3);
+    if (q > 0) {
+      g.save(); g.globalAlpha = q;
+      const pulse = 1 + 0.25 * Math.sin((t - tn) * 4 + i);
+      g.beginPath(); g.arc(x, y, 22 * pulse, 0, Math.PI * 2); g.fillStyle = 'rgba(245,184,65,0.16)'; g.fill();
+      g.beginPath(); g.arc(x, y, 10, 0, Math.PI * 2); g.fillStyle = C.amber; g.fill();
+      text(name, x, y - 40, { w: 900, size: 40, align: 'center' });
+      g.restore();
+    }
+  });
+  appear(ap(t, cue(si, 2) - 0.1, 0.4), 0, () => {
+    g.beginPath(); g.arc(hub[0], hub[1], 66, 0, Math.PI * 2); g.fillStyle = '#0D121A'; g.fill();
+    g.lineWidth = 4; g.strokeStyle = C.amber; g.stroke();
+    text('別班', hub[0], hub[1] + 3, { fam: SERIF, w: 900, size: 46, align: 'center', base: 'middle', ls: 2 });
+  });
+  // 要点
+  const rows = [[2, '冷戦時代から活動'], [3, '首相・防衛相に知らせず'], [5, '身分を偽装した自衛官が情報活動']];
+  rows.forEach(([ci, label], i) => appear(ap(t, cue(si, ci)), 26, () => {
+    const y = 980 + i * 96;
+    panel(70, y, 940, 80, { r: 12, accent: C.amber, fill: C.panel2 });
+    text(label, 112, y + 42, { w: 700, size: 42, base: 'middle', ls: 1 });
+  }));
+}
+
+// ---------- シーン 4: ルーツ ----------
+function sOrigin(t) {
+  const si = 3;
+  heading(t, si, 'ORIGIN', 'ルーツは日米合同の機関', C.amber);
+  const items = [
+    [1, '1950年代', '日米合同の情報訓練', '埼玉・朝霞の米軍キャンプ・ドレイクで開始'],
+    [4, '1961年〜', '通称「ムサシ機関」', '日本側は陸上幕僚監部2部の「別班」に'],
+    [5, 'のちに', '元別班長が著書で公表', '平城弘通『日米秘密情報機関』'],
+  ];
+  const x0 = 118, ys = [580, 810, 1040];
+  // 縦線
+  const tl = clamp((t - cue(si, 1)) / (cue(si, 5) - cue(si, 1) + 0.4));
+  g.fillStyle = C.line; g.fillRect(x0 - 2, ys[0], 4, ys[2] - ys[0]);
+  g.fillStyle = C.amber; g.fillRect(x0 - 2, ys[0], 4, (ys[2] - ys[0]) * easeInOut(tl));
+  items.forEach(([ci, year, title, sub], i) => {
+    const p = ap(t, cue(si, ci)), y = ys[i];
+    g.beginPath(); g.arc(x0, y, 14, 0, Math.PI * 2); g.fillStyle = p > 0 ? C.amber : C.line; g.fill();
+    g.beginPath(); g.arc(x0, y, 6, 0, Math.PI * 2); g.fillStyle = C.bg; g.fill();
+    appear(p, 24, () => {
+      text(year, 176, y + 14, { w: 900, size: 44, color: C.amber, ls: 1 });
+      text(title, 176, y + 84, { w: 900, size: 54 });
+      text(sub, 176, y + 138, { w: 500, size: 32, color: C.muted, ls: 1 });
+    });
+  });
+  appear(ap(t, cue(si, 6), 0.5), 0, () => text('※ 元別班長の著書・各種報道による', 72, 1252, { w: 500, size: 26, color: C.dim, ls: 1 }));
+}
+
+// ---------- シーン 5: 証言 ----------
+function sTestimony(t) {
+  const si = 4;
+  heading(t, si, 'TESTIMONY', '取材に語られた証言', C.amber);
+  appear(ap(t, cue(si, 1)), 30, () => {
+    panel(70, 510, 940, 270, { accent: C.amber });
+    silhouette(196, 645, 76);
+    text('陸上幕僚長 経験者', 310, 600, { w: 700, size: 34, color: C.amber, ls: 2 });
+    text('別班の存在を認める', 306, 692, { fam: SERIF, w: 900, size: 62 });
+  });
+  appear(ap(t, cue(si, 2)), 30, () => {
+    panel(70, 812, 940, 340, { accent: C.amber });
+    silhouette(196, 982, 76);
+    text('情報本部長 経験者', 310, 892, { w: 700, size: 34, color: C.amber, ls: 2 });
+    const a1 = 0.3 + 0.7 * ap(t, cue(si, 3), 0.3), a2 = 0.3 + 0.7 * ap(t, cue(si, 4), 0.3);
+    text('「総理も防衛大臣も', 296, 982, { fam: SERIF, w: 900, size: 50, a: a1 });
+    text('存在さえ', 322, 1052, { fam: SERIF, w: 900, size: 50, a: a2 });
+    text('知らされていない」', 322, 1118, { fam: SERIF, w: 900, size: 50, a: a2 });
+  });
+  appear(ap(t, cue(si, 5), 0.5), 0, () =>
+    text('※ 石井暁『自衛隊の闇組織』（講談社現代新書）による', 72, 1226, { w: 500, size: 26, color: C.dim, ls: 1 }));
+}
+
+// ---------- シーン 6: 結論 ----------
+function sVerdict(t) {
+  const si = 5;
+  heading(t, si, 'VERDICT', '結局、どちらなのか', C.text);
+  const col = (x, color, label, big, sub, p) => appear(p, 30, () => {
+    panel(x, 500, 455, 330, { stroke: color });
+    text(label, x + 227, 566, { w: 700, size: 34, color, align: 'center', ls: 4 });
+    text(big, x + 227, 678, { fam: SERIF, w: 900, size: 68, align: 'center' });
+    g.fillStyle = C.line; g.fillRect(x + 60, 728, 335, 2);
+    text(sub, x + 227, 786, { w: 500, size: 30, color: C.muted, align: 'center', ls: 1 });
+  });
+  col(70, C.blue, '政府', '存在しない', '答弁書・大臣会見', ap(t, cue(si, 0)));
+  col(555, C.amber, '報道・証言', '存在する', '元幹部らの証言', ap(t, cue(si, 1)));
+  appear(ap(t, cue(si, 1) + 0.2, 0.3), 0, () => {
+    g.beginPath(); g.arc(W / 2, 665, 44, 0, Math.PI * 2); g.fillStyle = C.bg; g.fill(); g.lineWidth = 2; g.strokeStyle = C.line; g.stroke();
+    text('VS', W / 2, 667, { w: 900, size: 30, color: C.muted, align: 'center', base: 'middle', ls: 2 });
+  });
+  appear(ap(t, cue(si, 2), 0.5), 30, () =>
+    text('確かめる手段がない', W / 2, 990, { fam: SERIF, w: 900, size: 92, align: 'center', ls: 2 }));
+  appear(ap(t, cue(si, 3), 0.5), 20, () => {
+    g.fillStyle = C.amber; g.fillRect(W / 2 - 60, 1040, 120, 5);
+    text('それこそが、問題の核心', W / 2, 1120, { w: 900, size: 52, color: C.amber, align: 'center', ls: 3 });
+  });
+  appear(ap(t, cue(si, 4), 0.6), 0, () => {
+    text('音声：VOICEVOX：青山龍星', W / 2, 1218, { w: 500, size: 25, color: C.muted, align: 'center', ls: 1 });
+    text('出典：参議院 答弁書（2013）／共同通信（2013）／石井暁『自衛隊の闇組織』ほか', W / 2, 1258, { w: 500, size: 22, color: C.dim, align: 'center' });
+  });
+}
+
+const DRAW = [sHook, sGov, sReport, sOrigin, sTestimony, sVerdict];
+
+window.render = function (t) {
+  t = clamp(t, 0, T.duration);
+  let si = T.scenes.findIndex(s => t < s.end); if (si < 0) si = T.scenes.length - 1;
+  const s = scene(si);
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1;
+  background(t);
+  // シーンの入り/出のフェード
+  const fin = clamp((t - s.start) / 0.22), fout = si === T.scenes.length - 1 ? 1 - clamp((t - (T.duration - 0.5)) / 0.5) : clamp((s.end - t) / 0.18);
+  g.save(); g.globalAlpha = (si === 0 ? clamp(t / 0.3) : fin) * fout;
+  DRAW[si](t);
+  g.restore();
+  g.save(); g.globalAlpha = si === T.scenes.length - 1 ? fout : 1;
+  header(t, si);
+  captions(t);
+  g.restore();
+  overlay(t);
+};
+
+// Web フォントはサブセット分割されているので、全フレームを空描きして必要な分を読み込ませる
+window.ready = (async () => {
+  for (let pass = 0; pass < 3; pass++) {
+    for (let t = 0; t <= T.duration; t += 0.2) window.render(t);
+    await document.fonts.ready;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  window.render(0);
+})();
+</script>
+</body>
+</html>

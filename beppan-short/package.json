@@ -1,0 +1,9 @@
+{
+  "name": "beppan-short",
+  "private": true,
+  "description": "ショート動画「別班は実在するのか?」の生成スクリプト",
+  "dependencies": {
+    "@fontsource/noto-sans-jp": "^5.0.0",
+    "@fontsource/noto-serif-jp": "^5.0.0"
+  }
+}
