@@ -58,8 +58,14 @@ function woman(c, x, y, h, o = {}) {       // 髪の長い女の影。顔は髪�
   c.fillStyle = dress; c.beginPath(); c.moveTo(-0.1 * h, -0.78 * h); c.lineTo(0.1 * h, -0.78 * h); c.quadraticCurveTo(0.13 * h, -0.4 * h, 0.17 * h, -0.04 * h); c.lineTo(-0.17 * h, -0.04 * h); c.quadraticCurveTo(-0.13 * h, -0.4 * h, -0.1 * h, -0.78 * h); c.closePath(); c.fill();
   c.strokeStyle = o.skin || dress; c.lineCap = 'round'; c.lineWidth = 0.045 * h;
   for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(sg * 0.11 * h, -0.75 * h);
-    if (sg > 0 && o.beckon) { const w = Math.sin(o.beckon * 5.2), ex = 0.24 * h, ey = -0.86 * h; c.lineTo(ex, ey); c.lineTo(ex + 0.03 * h - 0.05 * h * (0.5 + 0.5 * w), ey - 0.17 * h + 0.11 * h * (0.5 + 0.5 * w)); }   // ひじを上げ、手先を「おいで」と折る
-    else c.lineTo(sg * 0.14 * h, -0.4 * h); c.stroke(); }
+    if (sg > 0 && o.beckon) {   // 手招き: ひじを曲げて手を顔の横に上げ、手のひらを下にして、手首から先をこちらへ「おいで」と振り下ろす
+      const p = (o.beckon * 1.3) % 1, k = p < 0.3 ? ease(p / 0.3) : 1 - ease((p - 0.3) / 0.7);                        // 速く振り下ろし、ゆっくり戻す
+      const ex = 0.2 * h, ey = -0.6 * h, wx = lerp(0.26, 0.235, k) * h, wy = lerp(-0.9, -0.63, k) * h;                    // ひじは固定。前腕が上からこちらへ倒れる
+      c.lineWidth = 0.05 * h; c.lineTo(ex, ey); c.lineTo(wx, wy); c.stroke();
+      const kh = clamp(k * 1.5), L = lerp(0.13, -0.13, ease(kh)) * h;                                                    // 手は前腕より先に倒れ、指先が下を向く
+      c.strokeStyle = o.hand || o.skin || dress; c.lineWidth = 0.075 * h; c.beginPath(); c.moveTo(wx, wy); c.lineTo(wx - 0.015 * h * kh, wy - L); c.stroke();
+      c.strokeStyle = o.skin || dress; c.lineWidth = 0.045 * h; continue; }
+    c.lineTo(sg * 0.14 * h, -0.4 * h); c.stroke(); }
   c.fillStyle = INK; c.lineWidth = 0.05 * h; c.strokeStyle = INK; c.beginPath(); c.moveTo(-0.045 * h, 0); c.lineTo(-0.045 * h, -0.08 * h); c.moveTo(0.045 * h, 0); c.lineTo(0.045 * h, -0.08 * h); c.stroke();
   c.beginPath(); c.ellipse(0, -0.87 * h, 0.075 * h, 0.09 * h, 0, 0, 7); c.fill();
   c.beginPath(); c.moveTo(-0.085 * h, -0.9 * h); c.bezierCurveTo(-0.13 * h, -0.7 * h, -0.13 * h, -0.5 * h, -0.11 * h, -0.36 * h); c.lineTo(-0.02 * h, -0.4 * h); c.lineTo(0.03 * h, -0.36 * h); c.lineTo(0.11 * h, -0.38 * h); c.bezierCurveTo(0.13 * h, -0.5 * h, 0.13 * h, -0.7 * h, 0.085 * h, -0.9 * h); c.closePath(); c.fill();
@@ -94,7 +100,7 @@ function crossing(t, f, cam, o = {}) {
     ctx.fillStyle = `rgba(235,240,255,${st})`; ctx.beginPath(); ctx.ellipse(704, 612, 12, 6, 0, 0, 7); ctx.fill();
     const fg = ctx.createRadialGradient(600, 950, 10, 600, 950, 170); fg.addColorStop(0, `rgba(170,185,235,${0.22 * st})`); fg.addColorStop(1, 'rgba(170,185,235,0)'); ctx.fillStyle = fg; ctx.fillRect(380, 880, 480, 120); }
   // 女(向こうの遮断機のむこう)
-  if (o.wm && o.wm.y < 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([10, 10, 16], [150, 156, 180], st * 0.55), skin: mix([10, 10, 16], [170, 172, 186], st * 0.55), beckon: o.wm.beckon });
+  if (o.wm && o.wm.y < 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([10, 10, 16], [150, 156, 180], st * 0.55), skin: mix([10, 10, 16], [170, 172, 186], st * 0.55), hand: mix([14, 14, 20], [236, 232, 226], st * 0.75), beckon: o.wm.beckon, lean: o.wm.beckon ? Math.sin(o.wm.beckon * 1.3 * 6.283) * 0.012 : 0 });
   // 向こうの遮断機と警報機
   const fu = barUp(t, 0.25), fa = -fu * 1.38 + (o.shake ? (hash(f) - 0.5) * 0.02 * o.shake : 0);
   ctx.fillStyle = '#0a0b10'; ctx.fillRect(672, 906, 14, 66); stripeBar(678, 934 + (o.shake ? (hash(f + 5) - 0.5) * 3 * o.shake : 0), 252, 7, -fa, red);
@@ -171,8 +177,8 @@ function render(t) {
   if (t < EV.hit) {
     let cam, o = { street: flick };
     if (t < EV.t_far) cam = camL(WIDE, W2, prog(t, 0, EV.t_far));
-    else if (t < EV.t_wide) cam = camL(W2, FAR, ease(prog(t, EV.t_far, EV.t_far + 2.0)));                         // 向こう側の女、手招き
-    else if (t < EV.t_flower) cam = camL(FAR, W2, ease(prog(t, EV.t_wide, EV.t_wide + 1.3)));                      // 遮断機に手をかける
+    else if (t < EV.t_wide) cam = t < EV.beckon - 0.4 ? camL(W2, FAR, ease(prog(t, EV.t_far, EV.t_far + 2.0))) : camL(FAR, { z: 4.3, cx: 578, cy: 842 }, ease(prog(t, EV.beckon - 0.4, EV.beckon + 1.0)));                         // 向こう側の女、手招き
+    else if (t < EV.t_flower) cam = camL({ z: 4.3, cx: 578, cy: 842 }, W2, ease(prog(t, EV.t_wide, EV.t_wide + 1.3)));                      // 遮断機に手をかける
     else if (t < EV.t_back) cam = camL(W2, FLOWER, ease(prog(t, EV.t_flower - 0.2, EV.t_flower + 1.1)));           // 足もとの花束
     else cam = camL(FLOWER, { z: 1.04, cx: 540, cy: 890 }, ease(prog(t, EV.t_back, EV.t_back + 1.2)));             // 電車が通りすぎる
     if (t >= EV.appear && t < EV.train + 0.3) { o.wm = { x: 556, y: 938, h: 150, beckon: t >= EV.beckon ? t : 0 }; if (t < EV.appear + 0.25) o.street = flick * prog(t, EV.appear, EV.appear + 0.25); }
