@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>鳴るはずのない踏切</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(9000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+const INK = '#04050a';
+const shCv = document.createElement('canvas'); shCv.width = W; shCv.height = H; const sh = shCv.getContext('2d');
+const asph = document.createElement('canvas'); asph.width = 512; asph.height = 512;      // アスファルトのざらつき
+{ const c = asph.getContext('2d'), r = rngOf(909); for (let i = 0; i < 5000; i++) { c.fillStyle = r() < 0.5 ? `rgba(255,255,255,${0.03 + r() * 0.07})` : `rgba(0,0,0,${0.08 + r() * 0.2})`; const s = 1 + r() * 3; c.fillRect(r() * 512, r() * 512, s, s * 0.6); } }
+
+// 警報ランプ: 左右交互。消えた直後も少し残光がある
+function lampLevel(t, side) { if (t < EV.alarm || t >= EV.stop + 0.4) return 0; const ph = ((t - EV.alarm) / EV.period) % 2, on = side === 0 ? ph < 1 : ph >= 1, u = (ph % 1); const v = on ? Math.min(1, u * 12) : Math.max(0, 1 - u * 5) * 0.5; return t >= EV.stop ? v * Math.max(0, 1 - (t - EV.stop) / 0.4) : v; }
+// 遮断棒の角度(0=下りている、1=上がっている)
+function barUp(t, delay = 0) { const d = ease(prog(t, EV.down + delay, EV.down + delay + 1.7)), u = ease(prog(t, EV.up + delay, EV.up + delay + 2.2)); return t < EV.up ? 1 - d : u; }
+function stripeBar(x0, y0, len, th, ang, glow) {      // 黄と黒のしま模様の棒。x0,y0 が支点、左へのびる
+  ctx.save(); ctx.translate(x0, y0); ctx.rotate(ang); const n = Math.ceil(len / (th * 2.4));
+  for (let i = 0; i < n; i++) { ctx.fillStyle = i % 2 ? '#0c0c0e' : mix([150, 124, 30], [255, 110, 60], glow * 0.55); ctx.fillRect(-len + i * len / n, -th / 2 + (1 - Math.cos(ang)) * 0, len / n + 0.5, th); }
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-len, th * 0.1, len, th * 0.4); ctx.restore();
+}
+function woman(c, x, y, h, o = {}) {       // 髪の長い女の影。顔は髪で見えない
+  c.save(); c.translate(x, y); c.rotate(o.lean || 0);
+  const dress = o.dress || '#0a0a10';
+  c.fillStyle = dress; c.beginPath(); c.moveTo(-0.1 * h, -0.78 * h); c.lineTo(0.1 * h, -0.78 * h); c.quadraticCurveTo(0.13 * h, -0.4 * h, 0.17 * h, -0.04 * h); c.lineTo(-0.17 * h, -0.04 * h); c.quadraticCurveTo(-0.13 * h, -0.4 * h, -0.1 * h, -0.78 * h); c.closePath(); c.fill();
+  c.strokeStyle = o.skin || dress; c.lineCap = 'round'; c.lineWidth = 0.045 * h;
+  for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(sg * 0.11 * h, -0.75 * h); if (o.grip) c.quadraticCurveTo(sg * 0.2 * h, -0.6 * h, sg * 0.13 * h, -0.5 * h + o.grip * 0.0); else c.lineTo(sg * 0.14 * h, -0.4 * h); c.stroke(); }
+  c.fillStyle = INK; c.lineWidth = 0.05 * h; c.strokeStyle = INK; c.beginPath(); c.moveTo(-0.045 * h, 0); c.lineTo(-0.045 * h, -0.08 * h); c.moveTo(0.045 * h, 0); c.lineTo(0.045 * h, -0.08 * h); c.stroke();
+  c.beginPath(); c.ellipse(0, -0.87 * h, 0.075 * h, 0.09 * h, 0, 0, 7); c.fill();
+  c.beginPath(); c.moveTo(-0.085 * h, -0.9 * h); c.bezierCurveTo(-0.13 * h, -0.7 * h, -0.13 * h, -0.5 * h, -0.11 * h, -0.36 * h); c.lineTo(-0.02 * h, -0.4 * h); c.lineTo(0.03 * h, -0.36 * h); c.lineTo(0.11 * h, -0.38 * h); c.bezierCurveTo(0.13 * h, -0.5 * h, 0.13 * h, -0.7 * h, 0.085 * h, -0.9 * h); c.closePath(); c.fill();
+  c.restore();
+}
+
+// ---- 踏切 ----
+function crossing(t, f, cam, o = {}) {
+  const lL = lampLevel(t, 0), lR = lampLevel(t, 1), red = Math.max(lL, lR), st = o.street ?? 1;       // st = 向こう側の街灯の明るさ
+  ctx.save(); ctx.translate(540 + (cam.sx || 0), 880 + (cam.sy || 0)); ctx.scale(cam.z, cam.z); ctx.translate(-cam.cx, -cam.cy);
+  // 夜空と、遠くの街の明かり
+  const g = ctx.createLinearGradient(0, -200, 0, 900); g.addColorStop(0, '#04060f'); g.addColorStop(0.75, '#0c1226'); g.addColorStop(1, '#1b1d33'); ctx.fillStyle = g; ctx.fillRect(-600, -400, 2300, 1300);
+  const r = rngOf(21); for (let i = 0; i < 70; i++) { ctx.fillStyle = `rgba(255,255,255,${(0.2 + r() * 0.5) * (0.6 + 0.4 * Math.sin(t * (1 + r() * 2) + i))})`; ctx.fillRect(r() * 1300 - 100, r() * 700 - 150, 2, 2); }
+  ctx.fillStyle = '#d9d6c4'; ctx.beginPath(); ctx.arc(830, 250, 34, 0, 7); ctx.fill(); ctx.fillStyle = '#04060f'; ctx.beginPath(); ctx.arc(846, 240, 31, 0, 7); ctx.fill();
+  for (let i = 0; i < 5; i++) { ctx.fillStyle = 'rgba(40,46,74,0.5)'; ctx.beginPath(); ctx.ellipse(((i * 370 + t * 6) % 1700) - 300, 330 + i * 70, 260, 26, 0, 0, 7); ctx.fill(); }
+  // 家並みと電柱
+  ctx.fillStyle = '#070912'; const hr = rngOf(8); let hx = -300; while (hx < 1500) { const w = 90 + hr() * 130, h = 70 + hr() * 90; ctx.fillRect(hx, 880 - h, w, h + 4); ctx.beginPath(); ctx.moveTo(hx - 10, 880 - h); ctx.lineTo(hx + w / 2, 880 - h - 30 - hr() * 30); ctx.lineTo(hx + w + 10, 880 - h); ctx.fill();
+    if (hr() < 0.35) { ctx.fillStyle = 'rgba(255,214,140,0.5)'; ctx.fillRect(hx + 20 + hr() * (w - 50), 880 - h + 24, 16, 20); ctx.fillStyle = '#070912'; } hx += w + 6 + hr() * 30; }
+  for (const px of [120, 960]) { ctx.fillRect(px, 560, 12, 330); ctx.fillRect(px - 44, 590, 100, 8); ctx.fillRect(px - 34, 626, 80, 6); }
+  ctx.strokeStyle = '#05060c'; ctx.lineWidth = 2; for (const dy of [0, 36]) { ctx.beginPath(); ctx.moveTo(-300, 620 + dy); ctx.quadraticCurveTo(-90, 650 + dy, 126, 594 + dy); ctx.quadraticCurveTo(540, 640 + dy, 966, 594 + dy); ctx.quadraticCurveTo(1200, 650 + dy, 1500, 620 + dy); ctx.stroke(); }
+  // 地面、道路、線路
+  ctx.fillStyle = '#080a10'; ctx.fillRect(-600, 880, 2300, 1300);
+  const road = [[500, 880], [580, 880], [1060, 1700], [20, 1700]]; ctx.fillStyle = '#14161d'; ctx.beginPath(); road.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill();
+  ctx.save(); ctx.clip(); ctx.globalAlpha = 0.6; ctx.fillStyle = ctx.createPattern(asph, 'repeat'); ctx.fillRect(0, 880, 1080, 900); ctx.globalAlpha = 1; ctx.restore();
+  ctx.fillStyle = '#0d0e13'; ctx.fillRect(-600, 985, 2300, 150);                                                   // バラスト
+  const rr2 = rngOf(33); for (let i = 0; i < 700; i++) { ctx.fillStyle = `rgba(${rr2() < 0.5 ? '90,92,104' : '0,0,0'},${0.12 + rr2() * 0.25})`; ctx.fillRect(rr2() * 2300 - 600, 988 + rr2() * 144, 3 + rr2() * 6, 2 + rr2() * 3); }
+  ctx.fillStyle = '#1c1d24'; ctx.beginPath(); ctx.moveTo(418, 985); ctx.lineTo(662, 985); ctx.lineTo(750, 1135); ctx.lineTo(330, 1135); ctx.closePath(); ctx.fill();   // 踏切の敷板
+  for (const [y, w] of [[1004, 5], [1034, 6], [1076, 8], [1114, 9]]) { ctx.fillStyle = '#2a2c36'; ctx.fillRect(-600, y, 2300, w); ctx.fillStyle = `rgba(${Math.round(150 + 105 * red)},${Math.round(160 - 60 * red)},${Math.round(190 - 110 * red)},0.55)`; ctx.fillRect(-600, y, 2300, Math.max(1.5, w * 0.3)); }
+  // 向こう側: 街灯の光の輪
+  ctx.fillStyle = '#0a0b12'; ctx.fillRect(735, 600, 9, 290); ctx.fillRect(700, 600, 44, 8);
+  if (st > 0) { const cg = ctx.createRadialGradient(702, 612, 4, 640, 900, 330); cg.addColorStop(0, `rgba(210,220,255,${0.5 * st})`); cg.addColorStop(0.5, `rgba(160,175,230,${0.13 * st})`); cg.addColorStop(1, 'rgba(160,175,230,0)'); ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(702, 610); ctx.lineTo(380, 990); ctx.lineTo(860, 990); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = `rgba(235,240,255,${st})`; ctx.beginPath(); ctx.ellipse(704, 612, 12, 6, 0, 0, 7); ctx.fill();
+    const fg = ctx.createRadialGradient(600, 950, 10, 600, 950, 170); fg.addColorStop(0, `rgba(170,185,235,${0.22 * st})`); fg.addColorStop(1, 'rgba(170,185,235,0)'); ctx.fillStyle = fg; ctx.fillRect(380, 880, 480, 120); }
+  // 女(向こうの遮断機のむこう)
+  if (o.wm && o.wm.y < 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([10, 10, 16], [150, 156, 180], st * 0.55), skin: mix([10, 10, 16], [170, 172, 186], st * 0.55), grip: o.wm.grip, lean: o.wm.lean });
+  // 向こうの遮断機と警報機
+  const fu = barUp(t, 0.25), fa = -fu * 1.38 + (o.shake ? (hash(f) - 0.5) * 0.02 * o.shake : 0);
+  ctx.fillStyle = '#0a0b10'; ctx.fillRect(672, 906, 14, 66); stripeBar(678, 934 + (o.shake ? (hash(f + 5) - 0.5) * 3 * o.shake : 0), 252, 7, -fa, red);
+  ctx.fillRect(402, 800, 7, 172); for (const [dx, lv] of [[-13, lL], [13, lR]]) { ctx.fillStyle = mix([40, 8, 8], [255, 50, 30], lv); ctx.beginPath(); ctx.arc(405 + dx, 836, 8, 0, 7); ctx.fill(); if (lv > 0.05) { const lg = ctx.createRadialGradient(405 + dx, 836, 2, 405 + dx, 836, 60); lg.addColorStop(0, `rgba(255,60,30,${0.5 * lv})`); lg.addColorStop(1, 'rgba(255,60,30,0)'); ctx.fillStyle = lg; ctx.fillRect(330, 770, 150, 130); } }
+  ctx.strokeStyle = '#8a7420'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(388, 800); ctx.lineTo(422, 822); ctx.moveTo(422, 800); ctx.lineTo(388, 822); ctx.stroke();
+  // 線路を渡ってくる女
+  if (o.wm && o.wm.y >= 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([8, 8, 12], [120, 126, 150], st * 0.5), skin: mix([8, 8, 12], [140, 142, 156], st * 0.5) });
+  // 赤い光が地面を照らす
+  if (red > 0.02) { const gx = lL > lR ? 150 : 250, rg = ctx.createRadialGradient(gx, 1250, 20, gx, 1250, 900); rg.addColorStop(0, `rgba(255,40,20,${0.34 * red})`); rg.addColorStop(1, 'rgba(255,40,20,0)'); ctx.fillStyle = rg; ctx.fillRect(-600, 700, 2300, 1300); }
+  // 手前の警報機(左)
+  ctx.fillStyle = '#0b0c10'; ctx.fillRect(186, 330, 26, 1400);
+  ctx.save(); ctx.translate(199, 470); for (const a of [0.62, -0.62]) { ctx.save(); ctx.rotate(a); for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? '#0c0c0e' : mix([150, 124, 30], [255, 120, 60], red * 0.5); ctx.fillRect(-152 + i * 38, -15, 38.5, 30); } ctx.restore(); } ctx.restore();
+  ctx.fillStyle = '#0b0c10'; ctx.fillRect(84, 660, 230, 22); ctx.fillRect(150, 716, 98, 60);                           // ランプの腕と、(点いていない)方向指示器
+  ctx.fillStyle = '#14151a'; ctx.fillRect(158, 724, 82, 44);
+  for (const [lx, lv] of [[110, lL], [288, lR]]) { ctx.fillStyle = '#0b0c10'; ctx.beginPath(); ctx.arc(lx, 640, 50, 0, 7); ctx.fill(); ctx.fillStyle = mix([52, 8, 8], [255, 44, 24], lv); ctx.beginPath(); ctx.arc(lx, 640, 36, 0, 7); ctx.fill();
+    if (lv > 0.03) { const lg = ctx.createRadialGradient(lx, 640, 6, lx, 640, 330); lg.addColorStop(0, `rgba(255,90,60,${0.85 * lv})`); lg.addColorStop(0.15, `rgba(255,40,20,${0.4 * lv})`); lg.addColorStop(1, 'rgba(255,40,20,0)'); ctx.fillStyle = lg; ctx.fillRect(lx - 340, 300, 680, 680); } }
+  // 手前の遮断機(右の支点から左へ)
+  const nu = barUp(t), na = nu * 1.4;
+  ctx.fillStyle = '#0b0c10'; ctx.fillRect(948, 1150, 70, 600); ctx.fillStyle = '#16171c'; ctx.fillRect(940, 1180, 86, 120);
+  stripeBar(975, 1240, 880, 26, na, red);
+  ctx.restore();
+  if (red > 0.02) { ctx.fillStyle = `rgba(255,30,20,${0.06 * red})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => l.kind !== 'kid' && t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.12;
+  const breathe = { sx: Math.sin(t * 0.5) * 5, sy: Math.sin(t * 0.37 + 1) * 4 };
+  const WIDE = { z: 1, cx: 540, cy: 880 }, FAR = { z: 2.7, cx: 560, cy: 880 }, FAR2 = { z: 3.6, cx: 560, cy: 905 };
+  const camL = (a, b, k) => ({ z: lerp(a.z, b.z, k), cx: lerp(a.cx, b.cx, k), cy: lerp(a.cy, b.cy, k), ...breathe });
+  // 向こうの街灯は切れかけ。ふだんは点いているが、ときどき瞬く
+  const flick = t < EV.stop ? (hash(Math.floor(t * 14)) < 0.06 ? 0.25 : 1) * (0.92 + 0.08 * Math.sin(t * 50)) : 1;
+  if (t < EV.hit) {
+    let cam, o = { street: flick };
+    const appear = ease(prog(t, LN.l4.start + 2.0, LN.l4.start + 2.25));       // 「女の人が立っている」で、街灯の輪の中に現れる
+    if (t < EV.t_far) cam = camL(WIDE, { z: 1.12, cx: 540, cy: 900 }, prog(t, 0, EV.t_far));
+    else if (t < EV.t_wide) cam = camL({ z: 1.12, cx: 540, cy: 900 }, FAR, ease(prog(t, EV.t_far, EV.t_far + 2.2)));
+    else if (t < EV.t_far2) cam = camL(FAR, { z: 1.05, cx: 540, cy: 890 }, ease(prog(t, EV.t_wide, EV.t_wide + 1.4)));
+    else if (t < EV.stop) cam = camL({ z: 1.05, cx: 540, cy: 890 }, FAR2, ease(prog(t, EV.t_far2, EV.t_far2 + 2.4)));
+    else cam = camL(FAR2, { z: 1, cx: 540, cy: 900 }, ease(prog(t, EV.stop + 0.3, EV.up + 1.2)));
+    if (t >= LN.l4.start + 2.0 && t < EV.up + 1.0) { const sk = t >= EV.shake ? Math.min(1, (t - EV.shake) / 1.5) : 0;
+      o.wm = { x: 556, y: 938, h: 150, grip: t >= EV.t_far2 ? 1 : 0, lean: sk ? Math.sin(t * 9) * 0.02 * sk : 0 }; o.shake = t < EV.stop ? sk * (0.6 + 0.4 * Math.sin(t * 13)) : 0; if (t < LN.l4.start + 2.25) o.street = flick * appear; }
+    if (t >= EV.up + 1.0) {   // 警報が止まり、遮断機が上がった。街灯がつくたびに、近づいている
+      const POS = [[556, 938, 150], [550, 1060, 250], [546, 1230, 470], [540, 1560, 1050]]; let n = -1; EV.flick.forEach((tf, i) => { if (t >= tf) n = i; });
+      const on = n >= 0 && t < EV.flick[n] + (n === 3 ? 9 : 0.42); o.street = on ? (0.75 + 0.25 * hash(f)) : 0;
+      if (n >= 0) o.wm = { x: POS[n][0], y: POS[n][1], h: POS[n][2] }; else o.wm = { x: 556, y: 938, h: 150 };
+      crossing(t, f, cam, o);
+      if (!on) { ctx.fillStyle = 'rgba(0,0,6,0.55)'; ctx.fillRect(0, 0, W, H); }
+      if (t >= LN.now.start - 0.1) ctx.drawImage(cv, (hash(f) - 0.5) * 10, (hash(f + 2) - 0.5) * 10);
+    } else crossing(t, f, cam, o);
+    const k0 = 1 - prog(t, 0, 0.6); if (k0 > 0) { ctx.fillStyle = `rgba(0,0,0,${k0})`; ctx.fillRect(0, 0, W, H); }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5; crossing(EV.hit - 0.01, f, { z: 1 + 0.3 * k, cx: 540, cy: 900 }, { street: 1, wm: { x: 540 + (hash(f) - 0.5) * 40, y: 1700 + 900 * k, h: 1400 + 2200 * k } });
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('電車の来ない踏切は', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('開くまで、待ってはいけない。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 540, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '電車の来ない踏切は開くまで、待ってはいけない。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
