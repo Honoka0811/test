@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>バス停の約束</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(10000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+const INK = '#05060b';
+const asph = document.createElement('canvas'); asph.width = 512; asph.height = 512;
+{ const c = asph.getContext('2d'), r = rngOf(1010); for (let i = 0; i < 4000; i++) { c.fillStyle = r() < 0.5 ? `rgba(255,255,255,${0.03 + r() * 0.06})` : `rgba(0,0,0,${0.08 + r() * 0.2})`; const s = 1 + r() * 3; c.fillRect(r() * 512, r() * 512, s, s * 0.6); } }
+const GY = 1180, SEAT = 1062;       // 歩道の高さ、ベンチの座面
+
+// ---- 雨 ----
+const DROPS = (() => { const r = rngOf(77), a = []; for (let i = 0; i < 230; i++) a.push([r() * 1500 - 200, r() * 2200, 900 + r() * 700, 34 + r() * 46, 0.1 + r() * 0.2]); return a; })();
+function rainLayer(t, lamp) {
+  ctx.lineCap = 'round';
+  for (const [x0, y0, sp, len, al] of DROPS) { const y = (y0 + t * sp) % 2200 - 200, x = x0 - (y + 200) * 0.16; const inCone = lamp > 0 && y > 400 && y < 1250 && Math.abs(x - (850 - (y - 392) * 0.16)) < (y - 392) * 0.42;
+    ctx.strokeStyle = inCone ? `rgba(215,225,255,${Math.min(0.75, al * 3.2) * lamp})` : `rgba(150,165,205,${al})`; ctx.lineWidth = inCone ? 2.6 : 1.6; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - len * 0.16, y + len); ctx.stroke(); }
+}
+function ripples(t, lamp) {
+  const r = rngOf(9); for (let i = 0; i < 22; i++) { const x = r() * 1300 - 110, y = 1250 + r() * 430, per = 0.9 + r() * 1.1, ph = ((t + r() * 3) % per) / per, s = 0.6 + (y - 1250) / 430;
+    ctx.strokeStyle = `rgba(170,185,225,${0.4 * (1 - ph) * (0.5 + 0.5 * lamp)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(x, y, (6 + ph * 34) * s, (2 + ph * 10) * s, 0, 0, 7); ctx.stroke(); }
+}
+
+// ---- 人物(正面から見た影) ----
+function girl(c, x, t, o = {}) {
+  const sw = Math.sin(t * 3.1) * (o.still ? 0 : 1), tilt = o.tilt || 0;
+  c.save(); c.translate(x, SEAT); c.lineCap = 'round';
+  // 足: ベンチから下がって、ぶらぶらゆれる。長ぐつは黄色
+  for (const sg of [-1, 1]) { const dx = sg * 20 + sw * sg * 9 * (sg > 0 ? 1 : -1) * 0, a = sw * 0.16 * sg; c.save(); c.translate(sg * 20, 6); c.rotate(a); c.strokeStyle = o.body; c.lineWidth = 22; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, 44); c.stroke(); c.fillStyle = o.boots; c.beginPath(); c.roundRect(-14, 40, 28, 46, 9); c.fill(); c.beginPath(); c.ellipse(0, 88, 17, 9, 0, 0, 7); c.fill(); c.restore(); }
+  c.fillStyle = o.body; c.beginPath(); c.moveTo(-40, 12); c.lineTo(40, 12); c.quadraticCurveTo(44, -70, 30, -128); c.lineTo(-30, -128); c.quadraticCurveTo(-44, -70, -40, 12); c.closePath(); c.fill();   // 体(レインコート)
+  // 傘をもつ腕と、傘
+  c.strokeStyle = o.body; c.lineWidth = 16; c.beginPath(); c.moveTo(-28, -112); c.quadraticCurveTo(-52, -70, -34, -60); c.stroke();
+  const ua = (o.umb || 0) + Math.sin(t * 0.9) * 0.02; c.save(); c.translate(-34, -62); c.rotate(ua);
+  c.strokeStyle = '#1a1a20'; c.lineWidth = 5; c.beginPath(); c.moveTo(0, 16); c.lineTo(0, -214); c.stroke();
+  c.fillStyle = o.umbCol; c.beginPath(); c.moveTo(-170, -196); c.quadraticCurveTo(0, -330, 170, -196); for (let i = 3; i >= -4; i--) { const xx = i * 42.5; c.quadraticCurveTo(xx + 21, -214, xx, -196); } c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 3; for (let i = -3; i <= 3; i++) { c.beginPath(); c.moveTo(0, -262); c.quadraticCurveTo(i * 30, -240, i * 42.5, -196); c.stroke(); }
+  c.restore();
+  // 袖をつかむ腕
+  if (o.grab > 0) { c.strokeStyle = o.body; c.lineWidth = 15; c.beginPath(); c.moveTo(28, -110); c.quadraticCurveTo(lerp(40, 80, o.grab), -90, lerp(40, o.gx - x, o.grab), lerp(-60, o.gy - SEAT, o.grab)); c.stroke(); c.fillStyle = o.skin; c.beginPath(); c.arc(lerp(40, o.gx - x, o.grab), lerp(-60, o.gy - SEAT, o.grab), 12, 0, 7); c.fill(); }
+  else { c.strokeStyle = o.body; c.lineWidth = 15; c.beginPath(); c.moveTo(28, -110); c.lineTo(36, -30); c.stroke(); }
+  c.save(); c.translate(0, -128); c.rotate(tilt); c.fillStyle = o.hair; c.beginPath(); c.arc(0, -40, 42, 0, 7); c.fill(); c.beginPath(); c.roundRect(-46, -52, 92, 62, 20); c.fill(); c.restore();   // おかっぱ頭
+  c.restore();
+}
+function adult(c, x, rise, o = {}) {
+  c.save(); c.translate(x, SEAT); c.lineCap = 'round'; const up = rise * 78;
+  c.strokeStyle = o.body; c.lineWidth = 34; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(sg * 26, -up + 4); c.lineTo(sg * 28, GY - SEAT - 8); c.stroke(); c.fillStyle = INK; c.beginPath(); c.ellipse(sg * 30, GY - SEAT - 4, 24, 11, 0, 0, 7); c.fill(); }
+  c.fillStyle = o.body; c.beginPath(); c.moveTo(-64, 14 - up); c.lineTo(64, 14 - up); c.quadraticCurveTo(72, -120 - up, 56, -226 - up); c.lineTo(-56, -226 - up); c.quadraticCurveTo(-72, -120 - up, -64, 14 - up); c.closePath(); c.fill();
+  c.strokeStyle = o.body; c.lineWidth = 26; for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(sg * 58, -206 - up); c.quadraticCurveTo(sg * 84, -110 - up, sg * 40, -52 - up); c.stroke(); }
+  c.fillStyle = '#0d0d12'; c.beginPath(); c.roundRect(-52, -70 - up, 104, 70, 12); c.fill();                    // ひざの上のかばん
+  c.fillStyle = o.hair; c.beginPath(); c.arc(0, -282 - up, 50, 0, 7); c.fill(); c.beginPath(); c.moveTo(-54, -290 - up); c.quadraticCurveTo(-64, -220 - up, -50, -196 - up); c.lineTo(50, -196 - up); c.quadraticCurveTo(64, -220 - up, 54, -290 - up); c.closePath(); c.fill();
+  c.restore();
+}
+
+// ---- バス停 ----
+function stop(t, f, cam, o = {}) {
+  const lamp = o.lamp ?? 1, glow = o.glow || 0;
+  ctx.save(); ctx.translate(540 + (cam.sx || 0), 900 + (cam.sy || 0)); ctx.scale(cam.z, cam.z); ctx.translate(-cam.cx, -cam.cy);
+  const g = ctx.createLinearGradient(0, -200, 0, GY); g.addColorStop(0, '#03050c'); g.addColorStop(1, '#0d1326'); ctx.fillStyle = g; ctx.fillRect(-700, -500, 2500, 1700);
+  // 生け垣と、遠い家の明かり
+  ctx.fillStyle = '#060911'; const r = rngOf(4); ctx.beginPath(); ctx.moveTo(-700, GY); for (let x = -700; x <= 1800; x += 46) ctx.lineTo(x, 760 - r() * 90 - 40 * Math.sin(x * 0.004)); ctx.lineTo(1800, GY); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,214,140,0.35)'; ctx.fillRect(-60, 610, 22, 26); ctx.fillRect(1010, 560, 20, 24);
+  // 街灯と、光の中の雨
+  ctx.fillStyle = '#090b13'; ctx.fillRect(952, 380, 12, 800); ctx.fillRect(850, 380, 112, 9);
+  if (lamp > 0) { const cg = ctx.createRadialGradient(850, 395, 6, 760, 900, 760); cg.addColorStop(0, `rgba(215,225,255,${0.5 * lamp})`); cg.addColorStop(0.5, `rgba(150,170,235,${0.13 * lamp})`); cg.addColorStop(1, 'rgba(150,170,235,0)'); ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(850, 392); ctx.lineTo(330, 1260); ctx.lineTo(1240, 1260); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = `rgba(240,244,255,${lamp})`; ctx.beginPath(); ctx.ellipse(850, 394, 20, 8, 0, 0, 7); ctx.fill(); }
+  // 上屋(屋根、柱、背板)とベンチ
+  const sc = mix([8, 10, 18], [44, 52, 78], lamp * 0.8);
+  ctx.fillStyle = `rgba(120,140,190,${0.07 + 0.05 * lamp})`; ctx.fillRect(232, 690, 628, 400); ctx.strokeStyle = sc; ctx.lineWidth = 8; ctx.strokeRect(232, 690, 628, 400); ctx.beginPath(); ctx.moveTo(546, 690); ctx.lineTo(546, 1090); ctx.stroke();
+  ctx.fillStyle = sc; ctx.fillRect(222, 640, 20, 540); ctx.fillRect(850, 640, 20, 540); ctx.beginPath(); ctx.moveTo(170, 652); ctx.lineTo(910, 612); ctx.lineTo(910, 588); ctx.lineTo(170, 628); ctx.closePath(); ctx.fill();
+  for (let i = 0; i < 6; i++) { const dx = 200 + i * 128, dy = 648 - (dx - 170) * 0.054, ph = ((t * 1.2 + i * 0.37) % 1); ctx.fillStyle = `rgba(190,205,245,${0.7 * (1 - ph * 0.5)})`; ctx.beginPath(); ctx.ellipse(dx, dy + 8 + ph * ph * 520, 3, 7 + ph * 8, 0, 0, 7); if (dy + ph * ph * 520 < GY) ctx.fill(); }   // 屋根のふちから落ちるしずく
+  ctx.fillStyle = mix([8, 9, 14], [52, 46, 44], lamp * 0.8); ctx.fillRect(280, SEAT, 530, 22); ctx.fillRect(300, SEAT + 22, 18, GY - SEAT - 22); ctx.fillRect(772, SEAT + 22, 18, GY - SEAT - 22); ctx.fillRect(280, 960, 530, 16);
+  // 歩道と車道(濡れた路面に光が映る)
+  ctx.fillStyle = '#10131c'; ctx.fillRect(-700, GY, 2500, 40); ctx.fillStyle = '#1b1f2b'; ctx.fillRect(-700, GY + 34, 2500, 12);
+  ctx.fillStyle = '#080a11'; ctx.fillRect(-700, GY + 46, 2500, 900); ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = ctx.createPattern(asph, 'repeat'); ctx.fillRect(-700, GY + 46, 2500, 900); ctx.restore();
+  if (lamp > 0) { const rg = ctx.createLinearGradient(0, GY + 46, 0, 1750); rg.addColorStop(0, `rgba(190,205,255,${0.34 * lamp})`); rg.addColorStop(1, 'rgba(190,205,255,0)'); ctx.fillStyle = rg; ctx.beginPath(); ctx.moveTo(790, GY + 46); ctx.lineTo(910, GY + 46); ctx.lineTo(1000, 1750); ctx.lineTo(700, 1750); ctx.closePath(); ctx.fill(); }
+  // バス停の標識(丸い板、停留所名、時刻表)
+  ctx.fillStyle = mix([10, 12, 20], [70, 76, 96], lamp * 0.6); ctx.fillRect(112, 540, 14, 640); ctx.fillStyle = mix([20, 22, 30], [200, 196, 180], 0.35 + lamp * 0.3); ctx.beginPath(); ctx.arc(119, 486, 66, 0, 7); ctx.fill();
+  ctx.fillStyle = mix([20, 10, 10], [150, 50, 44], 0.4 + lamp * 0.3); ctx.fillRect(58, 470, 122, 32); ctx.fillStyle = mix([20, 22, 30], [190, 186, 170], 0.35 + lamp * 0.3); ctx.fillRect(40, 580, 158, 56); ctx.fillRect(40, 660, 158, 250);
+  ctx.fillStyle = '#16181f'; ctx.font = `28px ${GOT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('あけぼの橋', 119, 609);
+  ctx.fillStyle = 'rgba(20,22,30,0.55)'; for (let i = 0; i < 9; i++) ctx.fillRect(52, 684 + i * 24, 134 - (i % 3) * 22, 6);
+  ctx.fillStyle = 'rgba(90,70,40,0.35)'; ctx.fillRect(40, 850, 158, 60); ctx.fillRect(150, 660, 48, 90);                 // 色あせ、汚れ
+  { const a = o.stick ?? 0; ctx.save(); ctx.translate(119, 790); ctx.rotate(-0.16); ctx.fillStyle = mix([92, 84, 78], [214, 40, 34], a); ctx.fillRect(-84, -44, 168, 88); ctx.fillStyle = `rgba(255,255,255,${0.04 + 0.96 * a})`; ctx.font = `bold 44px ${GOT}`; ctx.fillText('廃 止', 0, -10); ctx.font = `20px ${GOT}`; ctx.fillText('2006年3月31日', 0, 24); ctx.restore(); }
+  // ベンチの二人
+  const lit = lamp * 0.8, gcol = { body: mix([8, 9, 16], [58, 64, 92], lit), hair: mix([4, 4, 8], [16, 16, 24], lit), boots: mix([40, 34, 10], [232, 196, 60], 0.25 + lit * 0.75), umbCol: mix([60, 10, 14], [200, 34, 44], 0.3 + lit * 0.7), skin: mix([20, 20, 26], [214, 212, 216], lit) };
+  if (o.me !== false) adult(ctx, 650, o.rise || 0, { body: mix([8, 9, 14], [40, 44, 62], lit), hair: mix([4, 4, 8], [14, 14, 20], lit) });
+  girl(ctx, 440, t, { ...gcol, tilt: o.tilt || 0, grab: o.grab || 0, gx: 596, gy: SEAT - 96 - (o.rise || 0) * 78, umb: o.umb || 0, still: o.still });
+  if (glow > 0) { const hg = ctx.createRadialGradient(1500, 1300, 40, 1500, 1300, 1500); hg.addColorStop(0, `rgba(255,244,210,${0.6 * glow})`); hg.addColorStop(1, 'rgba(255,244,210,0)'); ctx.fillStyle = hg; ctx.fillRect(-700, 200, 2500, 1700); }
+  ripples(t, lamp); rainLayer(t, lamp);
+  // 目の前を通りすぎるバス(右から左へ)
+  if (o.bus !== undefined && o.bus >= 0 && o.bus <= 1) { const len = 2000, bx = 1500 - o.bus * (len + 2400);
+    for (const [dx, al] of [[110, 0.3], [55, 0.5], [0, 1]]) { ctx.save(); ctx.globalAlpha = al; ctx.translate(bx + dx, 0);
+      ctx.fillStyle = '#12161c'; ctx.beginPath(); ctx.roundRect(0, 700, len, 860, 40); ctx.fill(); ctx.fillStyle = '#243240'; ctx.fillRect(0, 1260, len, 30);
+      for (let w = 0; w < 8; w++) { ctx.fillStyle = '#f6e4b0'; ctx.fillRect(250 + w * 215, 800, 180, 250); ctx.fillStyle = '#2a2620'; for (let s2 = 0; s2 < 2; s2++) ctx.beginPath(), ctx.roundRect(268 + w * 215 + s2 * 86, 960, 62, 90, 12), ctx.fill(); }   // 窓と、空の座席
+      ctx.fillStyle = '#f6e4b0'; ctx.fillRect(40, 780, 160, 300); ctx.fillStyle = '#0a0a0a'; ctx.fillRect(40, 716, 400, 70); ctx.fillStyle = '#ff9a2e'; ctx.font = `bold 54px ${GOT}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText('回 送', 70, 752);
+      for (const wx of [330, len - 380]) { ctx.fillStyle = '#050506'; ctx.beginPath(); ctx.arc(wx, 1560, 120, 0, 7); ctx.fill(); ctx.fillStyle = '#1a1c22'; ctx.beginPath(); ctx.arc(wx, 1560, 58, 0, 7); ctx.fill(); }
+      ctx.restore(); }
+    const hl = ctx.createRadialGradient(bx, 1380, 10, bx, 1380, 800); hl.addColorStop(0, 'rgba(255,248,220,0.95)'); hl.addColorStop(1, 'rgba(255,248,220,0)'); ctx.fillStyle = hl; ctx.fillRect(bx - 800, 600, 1600, 1500);
+    const sr = rngOf(f); ctx.fillStyle = 'rgba(210,222,255,0.5)'; for (let i = 0; i < 90; i++) ctx.fillRect(bx + sr() * len, 1600 + sr() * 160 - sr() * 120, 3 + sr() * 5, 3 + sr() * 5); }   // 水しぶき
+  ctx.restore();
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => l.kind !== 'kid' && t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.1;
+  const breathe = { sx: Math.sin(t * 0.5) * 5, sy: Math.sin(t * 0.37 + 1) * 4 };
+  const WIDE = { z: 1, cx: 540, cy: 900 }, W2 = { z: 1.12, cx: 540, cy: 920 }, BENCH = { z: 1.7, cx: 545, cy: 930 }, SIGN = { z: 3.3, cx: 119, cy: 740 }, LAST = { z: 2.0, cx: 520, cy: 900 };
+  const camL = (a, b, k) => ({ z: lerp(a.z, b.z, k), cx: lerp(a.cx, b.cx, k), cy: lerp(a.cy, b.cy, k), ...breathe });
+  const flick = (hash(Math.floor(t * 14)) < 0.04 ? 0.45 : 1) * (0.94 + 0.06 * Math.sin(t * 50));
+  if (t < EV.hit + 0.5) {
+    let cam, o = { lamp: flick };
+    if (t < EV.t_close) cam = camL(WIDE, W2, prog(t, 0, EV.t_close));
+    else if (t < EV.glow) cam = camL(W2, BENCH, ease(prog(t, EV.t_close, EV.t_close + 1.6)));
+    else if (t < EV.t_sign) cam = camL(BENCH, { z: 1.25, cx: 540, cy: 940 }, ease(prog(t, EV.glow, EV.glow + 1.4)));
+    else if (t < EV.t_end) cam = camL({ z: 1.25, cx: 540, cy: 940 }, SIGN, ease(prog(t, EV.t_sign, EV.t_sign + 1.5)));
+    else cam = camL(SIGN, LAST, ease(prog(t, EV.t_end, EV.t_end + 1.4)));
+    // 立ち上がろうとして、袖をつかまれ、座り直す
+    const up = ease(prog(t, EV.rise, EV.rise + 0.9)), down = ease(prog(t, EV.grab + 1.6, EV.grab + 2.6));
+    o.rise = up * (1 - down) * (t >= EV.grab ? 1 - 0.25 * ease(prog(t, EV.grab, EV.grab + 0.3)) : 1);
+    o.grab = ease(prog(t, EV.grab - 0.25, EV.grab + 0.1));
+    o.glow = ease(prog(t, EV.glow, EV.bus)) ** 2 * (t < EV.bus ? 1 : 0);
+    o.bus = (t - EV.bus) / EV.bus_d; if (o.bus >= 0 && o.bus <= 1) { cam.sx += (hash(f) - 0.5) * 18; cam.sy += (hash(f + 3) - 0.5) * 12; }
+    o.stick = t >= EV.stick ? 0.8 + 0.2 * Math.sin(t * 9) : 0.75 * ease(prog(t, EV.t_sign + 0.9, EV.stick));
+    o.tilt = 0.5 * ease(prog(t, EV.turn, EV.turn + 0.9)); o.umb = 0.16 * ease(prog(t, EV.turn, EV.turn + 0.9)); o.still = t >= EV.grab;
+    if (t >= EV.hit) { o.lamp = 0; }                       // 街灯が消える。赤い傘だけがぼんやり残る
+    stop(t, f, cam, o);
+    if (t >= EV.hit) { ctx.fillStyle = `rgba(0,0,4,${0.55 + 0.4 * prog(t, EV.hit, EV.hit + 0.5)})`; ctx.fillRect(0, 0, W, H); for (let i = 0; i < 6; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 120 | 0, dx = (hash(f * 7 + i) - 0.5) * 260 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); } grain = 0.25; }
+    else if (t >= LN.g4.start - 0.1) ctx.drawImage(cv, (hash(f) - 0.5) * 8, (hash(f + 2) - 0.5) * 8);
+    const z = t >= EV.grab ? Math.max(0, 1 - (t - EV.grab) / 0.4) : 0; if (z) { ctx.fillStyle = `rgba(255,30,30,${0.18 * z})`; ctx.fillRect(0, 0, W, H); }
+    const k0 = 1 - prog(t, 0, 0.6); if (k0 > 0) { ctx.fillStyle = `rgba(0,0,0,${k0})`; ctx.fillRect(0, 0, W, H); }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 56px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('来るはずのない人を待つ子と', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('「いっしょに待つ」約束は、しないこと。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 540, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '来るはずのない人を待つ子と「いっしょに待つ」約束は、しないこと。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
