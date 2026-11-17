@@ -57,7 +57,9 @@ function woman(c, x, y, h, o = {}) {       // 髪の長い女の影。顔は髪�
   const dress = o.dress || '#0a0a10';
   c.fillStyle = dress; c.beginPath(); c.moveTo(-0.1 * h, -0.78 * h); c.lineTo(0.1 * h, -0.78 * h); c.quadraticCurveTo(0.13 * h, -0.4 * h, 0.17 * h, -0.04 * h); c.lineTo(-0.17 * h, -0.04 * h); c.quadraticCurveTo(-0.13 * h, -0.4 * h, -0.1 * h, -0.78 * h); c.closePath(); c.fill();
   c.strokeStyle = o.skin || dress; c.lineCap = 'round'; c.lineWidth = 0.045 * h;
-  for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(sg * 0.11 * h, -0.75 * h); if (o.grip) c.quadraticCurveTo(sg * 0.2 * h, -0.6 * h, sg * 0.13 * h, -0.5 * h + o.grip * 0.0); else c.lineTo(sg * 0.14 * h, -0.4 * h); c.stroke(); }
+  for (const sg of [-1, 1]) { c.beginPath(); c.moveTo(sg * 0.11 * h, -0.75 * h);
+    if (sg > 0 && o.beckon) { const w = Math.sin(o.beckon * 5.2), ex = 0.24 * h, ey = -0.86 * h; c.lineTo(ex, ey); c.lineTo(ex + 0.03 * h - 0.05 * h * (0.5 + 0.5 * w), ey - 0.17 * h + 0.11 * h * (0.5 + 0.5 * w)); }   // ひじを上げ、手先を「おいで」と折る
+    else c.lineTo(sg * 0.14 * h, -0.4 * h); c.stroke(); }
   c.fillStyle = INK; c.lineWidth = 0.05 * h; c.strokeStyle = INK; c.beginPath(); c.moveTo(-0.045 * h, 0); c.lineTo(-0.045 * h, -0.08 * h); c.moveTo(0.045 * h, 0); c.lineTo(0.045 * h, -0.08 * h); c.stroke();
   c.beginPath(); c.ellipse(0, -0.87 * h, 0.075 * h, 0.09 * h, 0, 0, 7); c.fill();
   c.beginPath(); c.moveTo(-0.085 * h, -0.9 * h); c.bezierCurveTo(-0.13 * h, -0.7 * h, -0.13 * h, -0.5 * h, -0.11 * h, -0.36 * h); c.lineTo(-0.02 * h, -0.4 * h); c.lineTo(0.03 * h, -0.36 * h); c.lineTo(0.11 * h, -0.38 * h); c.bezierCurveTo(0.13 * h, -0.5 * h, 0.13 * h, -0.7 * h, 0.085 * h, -0.9 * h); c.closePath(); c.fill();
@@ -92,14 +94,36 @@ function crossing(t, f, cam, o = {}) {
     ctx.fillStyle = `rgba(235,240,255,${st})`; ctx.beginPath(); ctx.ellipse(704, 612, 12, 6, 0, 0, 7); ctx.fill();
     const fg = ctx.createRadialGradient(600, 950, 10, 600, 950, 170); fg.addColorStop(0, `rgba(170,185,235,${0.22 * st})`); fg.addColorStop(1, 'rgba(170,185,235,0)'); ctx.fillStyle = fg; ctx.fillRect(380, 880, 480, 120); }
   // 女(向こうの遮断機のむこう)
-  if (o.wm && o.wm.y < 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([10, 10, 16], [150, 156, 180], st * 0.55), skin: mix([10, 10, 16], [170, 172, 186], st * 0.55), grip: o.wm.grip, lean: o.wm.lean });
+  if (o.wm && o.wm.y < 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([10, 10, 16], [150, 156, 180], st * 0.55), skin: mix([10, 10, 16], [170, 172, 186], st * 0.55), beckon: o.wm.beckon });
   // 向こうの遮断機と警報機
   const fu = barUp(t, 0.25), fa = -fu * 1.38 + (o.shake ? (hash(f) - 0.5) * 0.02 * o.shake : 0);
   ctx.fillStyle = '#0a0b10'; ctx.fillRect(672, 906, 14, 66); stripeBar(678, 934 + (o.shake ? (hash(f + 5) - 0.5) * 3 * o.shake : 0), 252, 7, -fa, red);
   ctx.fillRect(402, 800, 7, 172); for (const [dx, lv] of [[-13, lL], [13, lR]]) { ctx.fillStyle = mix([40, 8, 8], [255, 50, 30], lv); ctx.beginPath(); ctx.arc(405 + dx, 836, 8, 0, 7); ctx.fill(); if (lv > 0.05) { const lg = ctx.createRadialGradient(405 + dx, 836, 2, 405 + dx, 836, 60); lg.addColorStop(0, `rgba(255,60,30,${0.5 * lv})`); lg.addColorStop(1, 'rgba(255,60,30,0)'); ctx.fillStyle = lg; ctx.fillRect(330, 770, 150, 130); } }
   ctx.strokeStyle = '#8a7420'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(388, 800); ctx.lineTo(422, 822); ctx.moveTo(422, 800); ctx.lineTo(388, 822); ctx.stroke();
   // 線路を渡ってくる女
-  if (o.wm && o.wm.y >= 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: mix([8, 8, 12], [120, 126, 150], st * 0.5), skin: mix([8, 8, 12], [140, 142, 156], st * 0.5) });
+  // 来るはずのない電車(右から左へ)。窓の明かりが流れる
+  if (o.train !== undefined && o.train >= 0 && o.train <= 1) { const len = 4200, tx0 = 1500 - o.train * (len + 2200), warm = Math.sin(Math.min(1, o.train * 6) * Math.PI / 2);
+    for (const [dx, al] of [[90, 0.35], [45, 0.55], [0, 1]]) { ctx.save(); ctx.globalAlpha = al; ctx.translate(tx0 + dx, 0);
+      for (let c2 = 0; c2 < 4; c2++) { const cx0 = c2 * 1050; ctx.fillStyle = '#161b1d'; ctx.beginPath(); ctx.roundRect(cx0, 640, 1030, 470, 26); ctx.fill(); ctx.fillStyle = '#0c0e10'; ctx.fillRect(cx0 + 10, 1090, 1010, 40); ctx.fillStyle = '#2c3a3a'; ctx.fillRect(cx0, 930, 1030, 16);
+        for (let w = 0; w < 6; w++) { ctx.fillStyle = '#ffe9b4'; ctx.fillRect(cx0 + 50 + w * 165, 740, 118, 130); } for (const d of [215, 545, 875]) { ctx.fillStyle = '#161b1d'; ctx.fillRect(cx0 + d - 30, 720, 60, 330); ctx.fillStyle = '#ffe9b4'; ctx.fillRect(cx0 + d - 22, 750, 44, 110); } }
+      ctx.restore(); }
+    if (o.train < 0.12) { const hl = ctx.createRadialGradient(tx0, 960, 10, tx0, 960, 700); hl.addColorStop(0, 'rgba(255,250,225,0.95)'); hl.addColorStop(1, 'rgba(255,250,225,0)'); ctx.fillStyle = hl; ctx.fillRect(tx0 - 700, 260, 1400, 1400); }
+    const wg = ctx.createLinearGradient(0, 1100, 0, 1500); wg.addColorStop(0, `rgba(255,224,160,${0.28 * warm})`); wg.addColorStop(1, 'rgba(255,224,160,0)'); ctx.fillStyle = wg; ctx.fillRect(-600, 1100, 2300, 400); }
+  // 道ばたに供えられた花束と缶
+  { const fl = o.flowerLit || 0, lit = 0.3 + 0.25 * red * (1 - fl) + fl * 0.7, col = (dark, light) => mix(dark, light, lit);
+    ctx.save(); ctx.translate(350, 1372); ctx.rotate(0.95); ctx.scale(1.25, 1.25);                                   // 横たえた花束: 包み紙、茎、菊の花
+    ctx.strokeStyle = col([8, 14, 10], [70, 120, 70]); ctx.lineWidth = 5; ctx.lineCap = 'round'; for (let i = -2; i <= 2; i++) { ctx.beginPath(); ctx.moveTo(i * 3, 96); ctx.lineTo(i * 14, -30); ctx.stroke(); }
+    ctx.fillStyle = col([20, 20, 26], [236, 232, 222]); ctx.beginPath(); ctx.moveTo(-12, 70); ctx.lineTo(12, 70); ctx.lineTo(62, -26); ctx.quadraticCurveTo(0, -4, -62, -26); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = col([30, 10, 14], [150, 50, 70]); ctx.fillRect(-16, 52, 32, 10);                                  // リボン
+    ctx.fillStyle = col([8, 16, 10], [80, 130, 80]); for (const [lx, ly, la] of [[-50, -40, -0.7], [50, -40, 0.7], [-22, -34, -0.3], [24, -34, 0.3]]) { ctx.beginPath(); ctx.ellipse(lx, ly, 9, 24, la, 0, 7); ctx.fill(); }
+    for (const [fx, fy, fr, yel] of [[-38, -58, 21, 0], [0, -70, 24, 1], [38, -58, 21, 0], [-18, -94, 19, 1], [20, -96, 20, 0]]) {
+      ctx.fillStyle = yel ? col([26, 22, 10], [246, 210, 90]) : col([24, 24, 28], [250, 248, 240]);
+      for (let p = 0; p < 12; p++) { ctx.beginPath(); ctx.ellipse(fx + Math.cos(p * 0.5236) * fr * 0.62, fy + Math.sin(p * 0.5236) * fr * 0.62, fr * 0.5, fr * 0.2, p * 0.5236, 0, 7); ctx.fill(); }
+      ctx.fillStyle = yel ? col([20, 14, 6], [200, 140, 40]) : col([26, 22, 10], [240, 205, 80]); ctx.beginPath(); ctx.arc(fx, fy, fr * 0.3, 0, 7); ctx.fill(); }
+    ctx.restore();
+    ctx.fillStyle = col([10, 12, 20], [70, 110, 170]); ctx.beginPath(); ctx.roundRect(236, 1330, 30, 56, 5); ctx.fill(); ctx.fillStyle = col([20, 20, 26], [210, 212, 218]); ctx.fillRect(236, 1330, 30, 7); }   // 供えられた缶
+  // こちら側に立つ女(街灯を背にした影)
+  if (o.wm && o.wm.y >= 990) woman(ctx, o.wm.x, o.wm.y, o.wm.h, { dress: '#040407', skin: '#040407' });
   // 赤い光が地面を照らす
   if (red > 0.02) { const gx = lL > lR ? 150 : 250, rg = ctx.createRadialGradient(gx, 1250, 20, gx, 1250, 900); rg.addColorStop(0, `rgba(255,40,20,${0.34 * red})`); rg.addColorStop(1, 'rgba(255,40,20,0)'); ctx.fillStyle = rg; ctx.fillRect(-600, 700, 2300, 1300); }
   // 手前の警報機(左)
@@ -110,7 +134,7 @@ function crossing(t, f, cam, o = {}) {
   for (const [lx, lv] of [[110, lL], [288, lR]]) { ctx.fillStyle = '#0b0c10'; ctx.beginPath(); ctx.arc(lx, 640, 50, 0, 7); ctx.fill(); ctx.fillStyle = mix([52, 8, 8], [255, 44, 24], lv); ctx.beginPath(); ctx.arc(lx, 640, 36, 0, 7); ctx.fill();
     if (lv > 0.03) { const lg = ctx.createRadialGradient(lx, 640, 6, lx, 640, 330); lg.addColorStop(0, `rgba(255,90,60,${0.85 * lv})`); lg.addColorStop(0.15, `rgba(255,40,20,${0.4 * lv})`); lg.addColorStop(1, 'rgba(255,40,20,0)'); ctx.fillStyle = lg; ctx.fillRect(lx - 340, 300, 680, 680); } }
   // 手前の遮断機(右の支点から左へ)
-  const nu = barUp(t), na = nu * 1.4;
+  const nu = barUp(t), na = nu * 1.4 + (o.lift || 0);
   ctx.fillStyle = '#0b0c10'; ctx.fillRect(948, 1150, 70, 600); ctx.fillStyle = '#16171c'; ctx.fillRect(940, 1180, 86, 120);
   stripeBar(975, 1240, 880, 26, na, red);
   ctx.restore();
@@ -140,28 +164,28 @@ function render(t) {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
   let grain = 0.12;
   const breathe = { sx: Math.sin(t * 0.5) * 5, sy: Math.sin(t * 0.37 + 1) * 4 };
-  const WIDE = { z: 1, cx: 540, cy: 880 }, FAR = { z: 2.7, cx: 560, cy: 880 }, FAR2 = { z: 3.6, cx: 560, cy: 905 };
+  const WIDE = { z: 1, cx: 540, cy: 880 }, W2 = { z: 1.1, cx: 540, cy: 900 }, FAR = { z: 2.9, cx: 580, cy: 870 }, FLOWER = { z: 2.5, cx: 350, cy: 1265 };
   const camL = (a, b, k) => ({ z: lerp(a.z, b.z, k), cx: lerp(a.cx, b.cx, k), cy: lerp(a.cy, b.cy, k), ...breathe });
   // 向こうの街灯は切れかけ。ふだんは点いているが、ときどき瞬く
-  const flick = t < EV.stop ? (hash(Math.floor(t * 14)) < 0.06 ? 0.25 : 1) * (0.92 + 0.08 * Math.sin(t * 50)) : 1;
+  const flick = (hash(Math.floor(t * 14)) < 0.05 ? 0.3 : 1) * (0.92 + 0.08 * Math.sin(t * 50));
   if (t < EV.hit) {
     let cam, o = { street: flick };
-    const appear = ease(prog(t, LN.l4.start + 2.0, LN.l4.start + 2.25));       // 「女の人が立っている」で、街灯の輪の中に現れる
-    if (t < EV.t_far) cam = camL(WIDE, { z: 1.12, cx: 540, cy: 900 }, prog(t, 0, EV.t_far));
-    else if (t < EV.t_wide) cam = camL({ z: 1.12, cx: 540, cy: 900 }, FAR, ease(prog(t, EV.t_far, EV.t_far + 2.2)));
-    else if (t < EV.t_far2) cam = camL(FAR, { z: 1.05, cx: 540, cy: 890 }, ease(prog(t, EV.t_wide, EV.t_wide + 1.4)));
-    else if (t < EV.stop) cam = camL({ z: 1.05, cx: 540, cy: 890 }, FAR2, ease(prog(t, EV.t_far2, EV.t_far2 + 2.4)));
-    else cam = camL(FAR2, { z: 1, cx: 540, cy: 900 }, ease(prog(t, EV.stop + 0.3, EV.up + 1.2)));
-    if (t >= LN.l4.start + 2.0 && t < EV.up + 1.0) { const sk = t >= EV.shake ? Math.min(1, (t - EV.shake) / 1.5) : 0;
-      o.wm = { x: 556, y: 938, h: 150, grip: t >= EV.t_far2 ? 1 : 0, lean: sk ? Math.sin(t * 9) * 0.02 * sk : 0 }; o.shake = t < EV.stop ? sk * (0.6 + 0.4 * Math.sin(t * 13)) : 0; if (t < LN.l4.start + 2.25) o.street = flick * appear; }
-    if (t >= EV.up + 1.0) {   // 警報が止まり、遮断機が上がった。街灯がつくたびに、近づいている
-      const POS = [[556, 938, 150], [550, 1060, 250], [546, 1230, 470], [540, 1560, 1050]]; let n = -1; EV.flick.forEach((tf, i) => { if (t >= tf) n = i; });
-      const on = n >= 0 && t < EV.flick[n] + (n === 3 ? 9 : 0.42); o.street = on ? (0.75 + 0.25 * hash(f)) : 0;
-      if (n >= 0) o.wm = { x: POS[n][0], y: POS[n][1], h: POS[n][2] }; else o.wm = { x: 556, y: 938, h: 150 };
-      crossing(t, f, cam, o);
-      if (!on) { ctx.fillStyle = 'rgba(0,0,6,0.55)'; ctx.fillRect(0, 0, W, H); }
-      if (t >= LN.now.start - 0.1) ctx.drawImage(cv, (hash(f) - 0.5) * 10, (hash(f + 2) - 0.5) * 10);
-    } else crossing(t, f, cam, o);
+    if (t < EV.t_far) cam = camL(WIDE, W2, prog(t, 0, EV.t_far));
+    else if (t < EV.t_wide) cam = camL(W2, FAR, ease(prog(t, EV.t_far, EV.t_far + 2.0)));                         // 向こう側の女、手招き
+    else if (t < EV.t_flower) cam = camL(FAR, W2, ease(prog(t, EV.t_wide, EV.t_wide + 1.3)));                      // 遮断機に手をかける
+    else if (t < EV.t_back) cam = camL(W2, FLOWER, ease(prog(t, EV.t_flower - 0.2, EV.t_flower + 1.1)));           // 足もとの花束
+    else cam = camL(FLOWER, { z: 1.04, cx: 540, cy: 890 }, ease(prog(t, EV.t_back, EV.t_back + 1.2)));             // 電車が通りすぎる
+    if (t >= EV.appear && t < EV.train + 0.3) { o.wm = { x: 556, y: 938, h: 150, beckon: t >= EV.beckon ? t : 0 }; if (t < EV.appear + 0.25) o.street = flick * prog(t, EV.appear, EV.appear + 0.25); }
+    // 遮断棒に手をかけると少し持ち上がり、離すと落ちる
+    o.lift = t >= EV.touch && t < EV.release ? 0.05 * ease(prog(t, EV.touch, EV.touch + 0.5)) + (hash(f) - 0.5) * 0.004 : t >= EV.release ? 0.05 * Math.max(0, 1 - (t - EV.release) / 0.12) : 0;
+    o.flowerLit = ease(prog(t, EV.t_flower, EV.t_flower + 0.8)) * (1 - prog(t, EV.t_back, EV.t_back + 1));
+    const tp = (t - EV.train) / EV.train_d; o.train = tp;
+    if (tp >= 0 && tp <= 1) { cam.sx += (hash(f) - 0.5) * 26; cam.sy += (hash(f + 3) - 0.5) * 18; o.shake = 1; o.lift += (hash(f + 7) - 0.5) * 0.02; }
+    if (t >= EV.off && t < EV.on) o.street = 0;
+    if (t >= EV.on) { o.street = 0.8 + 0.2 * hash(f); o.wm = { x: 540, y: 1580 + 60 * prog(t, EV.on, EV.hit), h: 1050 + 160 * prog(t, EV.on, EV.hit) }; }
+    crossing(t, f, cam, o);
+    if (t >= EV.off && t < EV.on) { ctx.fillStyle = 'rgba(0,0,6,0.6)'; ctx.fillRect(0, 0, W, H); }
+    if (t >= EV.on) ctx.drawImage(cv, (hash(f) - 0.5) * 10, (hash(f + 2) - 0.5) * 10);
     const k0 = 1 - prog(t, 0, 0.6); if (k0 > 0) { ctx.fillStyle = `rgba(0,0,0,${k0})`; ctx.fillRect(0, 0, W, H); }
     const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
   } else if (t < EV.hit + 0.5) {

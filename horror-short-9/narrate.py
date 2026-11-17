@@ -9,12 +9,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SR = 48000
 # 四国めたんのスタイル: 2=ノーマル 0=あまあま 6=ツンツン 36=ささやき 37=ヒソヒソ
 STYLES = {'n': 2, 'k0': 0, 'k1': 0, 'k2': 6, 'k3': 2, 'w': 36, 'h': 37}
-PARAMS = {'n': dict(speed=1.06, pitch=-0.03, into=0.9, vol=1.0),
+PARAMS = {'n': dict(speed=1.09, pitch=-0.03, into=0.9, vol=1.0),
           'k0': dict(speed=0.8, pitch=0.06, into=1.3, vol=1.0),     # 鬼の「私」(子ども)
           'k1': dict(speed=0.82, pitch=0.11, into=1.3, vol=1.0),    # 友達3人の返事
           'k2': dict(speed=0.86, pitch=0.05, into=1.3, vol=1.0),
           'k3': dict(speed=0.78, pitch=0.13, into=1.3, vol=1.0),
-          'w': dict(speed=0.62, pitch=-0.08, into=1.0, vol=1.9),    # 4人目の返事
+          'w': dict(speed=0.8, pitch=-0.04, into=1.1, vol=1.9),    # 4人目の返事
           'h': dict(speed=0.66, pitch=-0.07, into=1.0, vol=2.0)}
 START = 0.4
 

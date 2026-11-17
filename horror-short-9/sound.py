@@ -34,14 +34,18 @@ def ramp(t0, t1, v0=0.0, v1=1.0):
     return (v0 + (v1 - v0) * np.clip((t - t0) / max(t1 - t0, 1e-6), 0, 1)).astype(np.float32)
 
 T_ALARM = 0.45                                   # 警報が鳴りだす
-T_DOWN = L['l3']['start'] - 0.2                  # 遮断機が下りる
-T_STOPA = L['l11']['start'] + 1.25               # 警報が止まる
-T_UP = T_STOPA + 0.9                             # 遮断機が上がる
-FLICK = [T_UP + 1.5, T_UP + 2.35, T_UP + 3.1, T_UP + 3.75]   # 街灯がつくたびに、近づいている
+T_DOWN = L['l1']['end'] - 2.3                    # 遮断機が下りる
+T_TRAIN = L['l10']['start'] + 1.45               # 来るはずのない電車が通る
+TRAIN_D = 3.6
+T_STOPA = T_TRAIN + TRAIN_D + 0.5                # 警報が止まる
+T_UP = T_STOPA + 0.5                             # 遮断機が上がる
+T_OFF = L['now']['start'] - 0.9                  # 街灯が消える
+T_ON = L['now']['start'] + 1.0                   # ついたとき、すぐ目の前にいる
 HIT = L['now']['end'] + 0.5
 PERIOD = 0.46                                    # 警報の間隔(左右のランプが交互に光る)
-EV = dict(alarm=T_ALARM, down=T_DOWN, stop=T_STOPA, up=T_UP, flick=FLICK, period=PERIOD, t_far=L['l4']['start'] + 1.6, t_wide=L['l6']['start'] - 0.3,
-          t_far2=L['l8']['start'] + 1.2, shake=L['l10']['start'], hit=HIT)
+EV = dict(alarm=T_ALARM, down=T_DOWN, stop=T_STOPA, up=T_UP, period=PERIOD, t_far=L['l4']['start'] + 1.3, appear=L['l4']['start'] + 2.0, beckon=L['l5']['start'] + 0.6,
+          t_wide=L['l7']['start'] - 0.3, touch=L['l7']['start'] + 1.6, t_flower=L['l7']['start'] + 3.3, t_back=L['l10']['start'] - 0.5, release=L['l10']['start'] + 0.9,
+          train=T_TRAIN, train_d=TRAIN_D, off=T_OFF, on=T_ON, hit=HIT)
 
 def drone():
     t = np.arange(N) / SR; x = np.zeros(N, np.float32)
@@ -71,6 +75,18 @@ def rattle(d=3.0):
     while t0 < d - 0.3:
         t = tt(0.12); f = rng.uniform(900, 1700); add(x, t0, (np.sin(2 * np.pi * f * t) + 0.6 * np.sin(2 * np.pi * f * 2.4 * t)) * np.exp(-t * 55) + highpass(rng.standard_normal(len(t)).astype(np.float32), 2500) * np.exp(-t * 90) * 0.6, rng.uniform(0.4, 1.0)); t0 += rng.uniform(0.07, 0.22)
     return x
+def train():
+    """目の前を通りすぎる電車: 轟音、レールの継ぎ目の音、警笛"""
+    d = TRAIN_D + 1.2; t = tt(d); env = np.clip(t / 0.25, 0, 1) * np.clip((d - t) / 1.3, 0, 1)
+    x = lowpass(rng.standard_normal(len(t)).astype(np.float32), 900) * 1.6 + highpass(lowpass(rng.standard_normal(len(t)).astype(np.float32), 5000), 1500) * 0.5
+    x = x * env * (0.8 + 0.2 * np.sin(2 * np.pi * 17 * t))
+    k = 0.0
+    while k < TRAIN_D:
+        tk = tt(0.16); th = (np.sin(2 * np.pi * 95 * tk) * np.exp(-tk * 30) + lowpass(rng.standard_normal(len(tk)).astype(np.float32), 2500) * np.exp(-tk * 50) * 1.5).astype(np.float32)
+        add(x, k, th, 2.2); add(x, k + 0.13, th, 1.8); k += 0.42
+    th = tt(1.1); f = 420 * (1 - 0.07 * th / 1.1); horn = (np.sin(2 * np.pi * np.cumsum(f) / SR) + 0.8 * np.sin(2 * np.pi * np.cumsum(f * 1.19) / SR) + 0.4 * np.sign(np.sin(2 * np.pi * np.cumsum(f * 2) / SR))) * np.clip(th / 0.05, 0, 1) * np.clip((1.1 - th) / 0.4, 0, 1)
+    add(x, 0.0, lowpass(horn.astype(np.float32), 3000), 0.9)
+    return x.astype(np.float32)
 def heel():
     t = tt(0.2); return (np.sin(2 * np.pi * 1150 * t) * np.exp(-t * 70) + 0.6 * np.sin(2 * np.pi * 320 * t) * np.exp(-t * 40) + highpass(rng.standard_normal(len(t)).astype(np.float32), 1500) * np.exp(-t * 110) * 0.7).astype(np.float32)
 def zap():
@@ -87,12 +103,12 @@ def strings():
             f = midi(n) * (1 + 0.04 * prog ** 2) * (1 + 0.004 * np.sin(2 * np.pi * (4.5 + k * 0.37) * t + k)); ph = 2 * np.pi * np.cumsum(f) / SR
             y += ((np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.33 * np.sin(3 * ph)) * (0.6 + 0.4 * np.sin(2 * np.pi * (0.23 + 0.05 * k) * t + k))).astype(np.float32)
         return y * (ramp(a, b) ** 2 * peak) * (1 - ramp(b - 0.05, b + 0.15))
-    return lowpass(cluster(L['l4']['start'], L['l6']['start'], 0.3) + cluster(L['l8']['start'], T_STOPA, 0.8) + cluster(T_UP, HIT, 1.0), 5200) * 0.034
+    return lowpass(cluster(L['l4']['start'], L['l7']['start'], 0.35) + cluster(L['l7']['start'], T_TRAIN, 0.9) + cluster(T_UP + 1.0, HIT, 1.0), 5200) * 0.034
 def heartbeat():
     x = np.zeros(N, np.float32)
     def thump(f0, g):
         t = tt(0.28); f = f0 * (1 + 1.2 * np.exp(-t * 40)); return (np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 16) * g).astype(np.float32)
-    a = T_STOPA + 0.3; t0 = a
+    a = L['l7']['start']; t0 = a
     while t0 < HIT - 0.3:
         p = np.clip((t0 - a) / (HIT - a), 0, 1); g = 0.45 + 0.55 * p
         add(x, t0, thump(52, 1.0), g); add(x, t0 + 0.2, thump(44, 0.7), g); t0 += 0.9 - 0.4 * p
@@ -114,28 +130,30 @@ def main():
     segs = np.load(os.path.join(HERE, 'output', 'segs.npz'))
     hall = [reverb_ir(3.8, 1), reverb_ir(3.8, 2)]; street = [reverb_ir(1.4, 3, 3500), reverb_ir(1.4, 4, 3500)]
     big = np.zeros(N, np.float32); mech = np.zeros(N, np.float32); farfx = np.zeros(N, np.float32); lamp = np.zeros(N, np.float32)
-    add(big, 0.0, taiko(0.5)); add(big, L['l4']['start'] + 2.2, taiko(0.6)); add(big, L['l9']['start'] + 1.2, taiko(0.6)); add(big, T_STOPA, taiko(0.85))
+    add(big, 0.0, taiko(0.5)); add(big, EV['appear'], taiko(0.6)); add(big, EV['t_flower'], taiko(0.7))
     add(mech, T_DOWN, motor(1.7), 0.07); add(mech, T_DOWN + 1.7, clack(), 0.3)
+    add(mech, EV['touch'], rattle(0.5), 0.12); add(mech, EV['release'], clack(), 0.3)          # 遮断棒に手をかける / 離す
+    tr = train(); add(big, T_TRAIN, tr, 0.42)
+    add(farfx, T_TRAIN + 0.2, rattle(TRAIN_D), 0.07)                                             # 風圧で遮断棒が揺れる
     add(mech, T_UP, motor(2.2), 0.08); add(mech, T_UP + 2.2, clack(), 0.25)
-    add(farfx, EV['shake'] + 0.2, rattle(L['l10']['end'] - L['l10']['start'] + 1.6), 0.10)     # 向こうの遮断棒が揺さぶられる
-    for i, tf in enumerate(FLICK):
-        add(lamp, tf, zap(), 0.10)
-        if i: add(farfx, tf - 0.42, heel(), 0.25 + 0.2 * i); add(farfx, tf - 0.12, heel(), 0.3 + 0.2 * i)   # 暗い間に、足音だけが近づく
+    add(lamp, T_OFF, zap(), 0.08); add(lamp, T_ON, zap(), 0.14)
     add(big, HIT, stinger(), 0.75)
-    nar = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
-    for l in TL['lines']: add(last if l['id'] == 'now' else nar, l['start'], segs[l['id']])
-    hop = SR // 20; rms = np.sqrt(np.mean(nar[:N // hop * hop].reshape(-1, hop) ** 2, axis=1)); e = np.zeros_like(rms)
+    nar = np.zeros(N, np.float32); last = np.zeros(N, np.float32); far = np.zeros(N, np.float32)
+    for l in TL['lines']: add(last if l['id'] == 'now' else far if l['id'] == 'call' else nar, l['start'], segs[l['id']])
+    far = lowpass(far, 2800) * 1.3                                  # 踏切の向こうから聞こえる声
+    allv = nar + far
+    hop = SR // 20; rms = np.sqrt(np.mean(allv[:N // hop * hop].reshape(-1, hop) ** 2, axis=1)); e = np.zeros_like(rms)
     for i, x in enumerate(rms): e[i] = max(x, (e[i - 1] if i else 0) * 0.9)
     e = np.pad(np.repeat(e, hop), (0, N - len(e) * hop)); duck = 1 - 0.55 * np.clip(e / 0.08, 0, 1)
     duck = np.convolve(duck, np.ones(SR // 10) / (SR // 10), mode='same').astype(np.float32)
     al = alarm() * 0.085
-    bedm = drone() * ramp(0, 0.6, 0.35, 1) * (1 - 0.7 * ramp(T_STOPA, T_STOPA + 0.1) * (1 - ramp(T_UP + 1.0, T_UP + 3.0))) + strings() + wind() * 0.5
+    bedm = drone() * ramp(0, 0.6, 0.35, 1) * (1 - 0.7 * ramp(T_STOPA, T_STOPA + 0.1) * (1 - ramp(T_UP + 1.5, T_UP + 3.5))) + strings() + wind() * 0.5
     hb = heartbeat(); out = []
     for ch in range(2):
         music = bedm * (1 - ramp(HIT, HIT + 0.1) * 0.75)
         alm = (al + conv(al, street[ch]) * 0.35) * (1.0 if ch == 0 else 0.7)                       # 警報機は左手前
         sfx = big + conv(big, hall[ch]) * 0.25 + hb + (mech + conv(mech, street[ch]) * 0.5) * (0.7 if ch == 0 else 1.0) + farfx * 0.6 + conv(farfx, street[ch]) * 0.9 + lamp * (0.6 if ch == 0 else 1.0)
-        out.append((music + alm) * duck + sfx + nar + conv(nar, street[ch]) * 0.03 + last * (1.0 if ch == 0 else 0.75) + conv(last, hall[ch]) * 0.6)
+        out.append((music + alm) * duck + sfx + nar + conv(nar, street[ch]) * 0.03 + far * 0.5 + conv(far, street[ch]) * 0.9 + last * (1.0 if ch == 0 else 0.75) + conv(last, hall[ch]) * 0.6)
     y = np.stack(out, axis=1); y[-int(0.08 * SR):] *= np.linspace(1, 0, int(0.08 * SR))[:, None]
     y = np.tanh(y / 0.9) * 0.9; print('peak', float(np.max(np.abs(y))))
     def save(name, a):
