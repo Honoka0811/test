@@ -1,0 +1,7 @@
+fonts/
+__pycache__/
+output/mix.wav
+output/video_silent.mp4
+output/thumbnail.png
+output/still_*.png
+output/sheet*.png

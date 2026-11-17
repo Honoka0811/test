@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>SF小説10選</title>
+<link rel="stylesheet" href="fonts/noto-sans-jp/500.css">
+<link rel="stylesheet" href="fonts/noto-sans-jp/700.css">
+<link rel="stylesheet" href="fonts/noto-sans-jp/900.css">
+<style>
+  html,body{margin:0;background:#05060f;}
+  canvas{display:block;margin:0 auto;max-height:100vh;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 読むと未来予知ができるかも？SF小説10選 (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーンの開始/終了時刻は narrate.py が書き出す output/timeline.js から読む。
+// ------------------------------------------------------------
+const W = 1080, H = 1920, FPS = 30;
+const TL = window.TIMELINE, SCENES = TL.scenes, DURATION = TL.total;
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const FONT = '"Noto Sans JP","IPAPGothic",sans-serif';
+const C = { ink: '#ffffff', ink2: '#c3c8e6', ink3: '#7f86ad', panel: 'rgba(14,18,44,0.78)', line: 'rgba(255,255,255,0.14)', hook: '#FFE14D' };
+const BOOKS = SCENES.filter(s => s.kind === 'book');
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+const easeOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const easeBack = t => { t = clamp(t); const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+
+function setFont(size, weight) { ctx.font = `${weight} ${size}px ${FONT}`; }
+function text(str, x, y, o = {}) {
+  let { size = 48, weight = 700, color = C.ink, align = 'left', alpha = 1, maxW = 0, glow = null, stroke = 0 } = o;
+  if (alpha <= 0) return 0;
+  ctx.save();
+  setFont(size, weight);
+  if (maxW) { const w = ctx.measureText(str).width; if (w > maxW) { size *= maxW / w; setFont(size, weight); } }
+  ctx.globalAlpha *= alpha; ctx.textAlign = align; ctx.textBaseline = 'alphabetic';
+  if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = size * 0.35; }
+  if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = 'rgba(5,6,15,0.9)'; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+  const w = ctx.measureText(str).width;
+  ctx.restore();
+  return w;
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function wrap(str, size, weight, maxW) {
+  setFont(size, weight);
+  const wd = x => ctx.measureText(x).width;
+  if (wd(str) <= maxW) return [str];
+  // 2 行に分ける: 句読点の直後を優先し、左右の長さがなるべく揃う位置で折る
+  let best = null;
+  for (let k = 2; k < str.length - 1; k++) {
+    if ('、。！？」』）ー'.includes(str[k])) continue;            // 行頭禁則
+    const a = str.slice(0, k), b = str.slice(k);
+    if (wd(a) > maxW || wd(b) > maxW) continue;
+    const score = Math.abs(wd(a) - wd(b)) - ('、。'.includes(str[k - 1]) ? maxW * 0.45 : 0);
+    if (!best || score < best.score) best = { score, lines: [a, b] };
+  }
+  return best ? best.lines : [str];
+}
+
+// ---------- 背景 ----------
+function background(t, accent) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#060818'); g.addColorStop(0.55, '#0c0b2a'); g.addColorStop(1, '#1a0b33');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // アクセントの光
+  const rg = ctx.createRadialGradient(W / 2, 620, 0, W / 2, 620, 760);
+  rg.addColorStop(0, rgba(accent, 0.30)); rg.addColorStop(1, rgba(accent, 0));
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  // 星
+  for (let i = 0; i < 130; i++) {
+    const x = rnd(i) * W, sp = 6 + rnd(i + 500) * 22;
+    const y = ((rnd(i + 99) * H - t * sp) % H + H) % H;
+    const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * (0.6 + rnd(i + 7) * 1.8) + i));
+    ctx.globalAlpha = tw * (0.25 + rnd(i + 31) * 0.6);
+    ctx.fillStyle = '#fff';
+    const s = 1.5 + rnd(i + 13) * 3;
+    ctx.fillRect(x, y, s, s);
+  }
+  ctx.globalAlpha = 1;
+  // 下部のパース付きグリッド
+  ctx.save();
+  const hy = 1560;
+  ctx.strokeStyle = rgba(accent, 0.34); ctx.lineWidth = 2;
+  for (let i = -14; i <= 14; i++) { ctx.beginPath(); ctx.moveTo(W / 2 + i * 26, hy); ctx.lineTo(W / 2 + i * 210, H); ctx.stroke(); }
+  for (let k = 0; k < 9; k++) {
+    const p = ((k + (t * 0.55) % 1) / 9); const y = hy + (H - hy) * p * p;
+    ctx.globalAlpha = 0.25 + 0.75 * p; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const fg = ctx.createLinearGradient(0, hy - 10, 0, hy + 150);
+  fg.addColorStop(0, '#120b2e'); fg.addColorStop(1, 'rgba(18,11,46,0)');
+  ctx.fillStyle = fg; ctx.fillRect(0, hy - 10, W, 160);
+  ctx.restore();
+}
+
+// ---------- アイコン (cx, cy を中心に半径 r 程度。t はシーン内時刻) ----------
+const ICONS = {
+  moon(r, t, col) {
+    ctx.fillStyle = '#f4ecd0'; ctx.shadowColor = col; ctx.shadowBlur = 50;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(150,140,110,0.5)';
+    [[-0.22, -0.2, 0.13], [0.2, 0.05, 0.17], [-0.1, 0.28, 0.09], [0.25, -0.3, 0.07], [-0.36, 0.08, 0.06]].forEach(([x, y, s]) => {
+      ctx.beginPath(); ctx.arc(x * r, y * r, s * r, 0, 7); ctx.fill();
+    });
+    // 砲弾型の宇宙船が月を回る
+    const a = t * 1.5 - 1.2, ox = Math.cos(a) * r * 0.95, oy = Math.sin(a) * r * 0.42 - r * 0.05;
+    ctx.strokeStyle = rgba(col, 0.55); ctx.lineWidth = 5; ctx.setLineDash([4, 14]);
+    ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.95, r * 0.42, 0, a - 1.6, a); ctx.stroke(); ctx.setLineDash([]);
+    if (Math.sin(a) > -0.35) {
+      ctx.save(); ctx.translate(ox, oy); ctx.rotate(Math.atan2(Math.cos(a) * 0.42, -Math.sin(a) * 0.95));
+      const s = r * 0.13;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(s * 1.5, 0); ctx.quadraticCurveTo(s * 0.6, -s, -s, -s * 0.8); ctx.lineTo(-s, s * 0.8); ctx.quadraticCurveTo(s * 0.6, s, s * 1.5, 0); ctx.fill();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-s, -s * 0.6); ctx.lineTo(-s * (1.9 + 0.4 * Math.sin(t * 30)), 0); ctx.lineTo(-s, s * 0.6); ctx.fill();
+      ctx.restore();
+    }
+  },
+  flask(r, t, col) {
+    const w = r * 0.5, top = -r * 0.8, bot = r * 0.75;
+    ctx.save();
+    ctx.beginPath(); ctx.moveTo(-w * 0.32, top); ctx.lineTo(-w * 0.32, -r * 0.25); ctx.lineTo(-w * 1.15, bot - 30);
+    ctx.quadraticCurveTo(-w * 1.3, bot, -w, bot); ctx.lineTo(w, bot); ctx.quadraticCurveTo(w * 1.3, bot, w * 1.15, bot - 30);
+    ctx.lineTo(w * 0.32, -r * 0.25); ctx.lineTo(w * 0.32, top); ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
+    ctx.save(); ctx.clip();
+    const lv = r * 0.05 + Math.sin(t * 2) * 6;
+    ctx.fillStyle = rgba(col, 0.85); ctx.beginPath(); ctx.moveTo(-r, lv);
+    for (let x = -r; x <= r; x += 20) ctx.lineTo(x, lv + Math.sin(x * 0.03 + t * 4) * 8);
+    ctx.lineTo(r, r); ctx.lineTo(-r, r); ctx.fill();
+    // 中の胎児のような丸と泡
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(0, r * 0.42 + Math.sin(t * 1.7) * 6, r * 0.14, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(r * 0.09, r * 0.27 + Math.sin(t * 1.7) * 6, r * 0.085, 0, 7); ctx.fill();
+    for (let i = 0; i < 9; i++) {
+      const p = (t * (0.35 + rnd(i) * 0.4) + rnd(i + 3)) % 1;
+      ctx.globalAlpha = 1 - p; ctx.beginPath(); ctx.arc((rnd(i + 9) - 0.5) * w * 1.6 * (1 - p * 0.6), bot - p * r * 1.1, 5 + rnd(i + 5) * 9, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-w * 0.5, top); ctx.lineTo(w * 0.5, top); ctx.stroke();
+    ctx.restore();
+  },
+  eye(r, t, col) {
+    const w = r * 0.98, h = r * 0.56, blink = Math.abs(Math.sin(t * 1.1)) < 0.06 ? 0.15 : 1;
+    ctx.save(); ctx.scale(1, blink);
+    ctx.beginPath(); ctx.moveTo(-w, 0); ctx.quadraticCurveTo(0, -h * 1.9, w, 0); ctx.quadraticCurveTo(0, h * 1.9, -w, 0); ctx.closePath();
+    ctx.fillStyle = '#f6f6ff'; ctx.shadowColor = col; ctx.shadowBlur = 45; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.save(); ctx.clip();
+    const ix = Math.sin(t * 1.6) * w * 0.3;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ix, 0, h * 0.82, 0, 7); ctx.fill();
+    ctx.fillStyle = '#12050a'; ctx.beginPath(); ctx.arc(ix, 0, h * 0.4, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ix - h * 0.25, -h * 0.25, h * 0.13, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.stroke();
+    ctx.restore();
+    // スキャンライン
+    const sy = ((t * 0.5) % 1) * r * 1.8 - r * 0.9;
+    ctx.fillStyle = rgba(col, 0.55); ctx.fillRect(-r, sy, r * 2, 5);
+  },
+  robot(r, t, col) {
+    const s = r * 0.62;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -s * 1.02); ctx.lineTo(0, -s * 1.4); ctx.stroke();
+    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 30 + 20 * Math.sin(t * 6);
+    ctx.beginPath(); ctx.arc(0, -s * 1.45, s * 0.12, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#dfe7f5'; rr(-s * 1.12, -s * 0.2, s * 0.2, s * 0.5, 8); ctx.fill(); rr(s * 0.92, -s * 0.2, s * 0.2, s * 0.5, 8); ctx.fill();
+    ctx.fillStyle = '#1b2440'; rr(-s, -s, s * 2, s * 1.9, s * 0.3); ctx.fill(); ctx.stroke();
+    const blink = (t % 2.4) > 2.25 ? 0.12 : 1;
+    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 30;
+    [-1, 1].forEach(k => { ctx.beginPath(); ctx.ellipse(k * s * 0.45, -s * 0.25, s * 0.2, s * 0.2 * blink, 0, 0, 7); ctx.fill(); });
+    ctx.shadowBlur = 0;
+    for (let i = 0; i < 7; i++) {
+      const hh = s * (0.08 + 0.2 * Math.abs(Math.sin(t * 9 + i * 1.3)));
+      ctx.fillRect(-s * 0.56 + i * s * 0.17, s * 0.42 - hh / 2, s * 0.1, hh);
+    }
+  },
+  earbud(r, t, col) {
+    const bud = (x, flip) => {
+      ctx.save(); ctx.translate(x, -r * 0.1); ctx.scale(flip, 1); ctx.rotate(-0.12);
+      ctx.fillStyle = '#fff'; ctx.shadowColor = col; ctx.shadowBlur = 30;
+      rr(-r * 0.075, 0, r * 0.15, r * 0.72, r * 0.075); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(r * 0.04, 0, r * 0.2, r * 0.23, 0, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = '#2b3050'; ctx.beginPath(); ctx.ellipse(r * 0.13, -r * 0.01, r * 0.05, r * 0.11, 0, 0, 7); ctx.fill();
+      // 音の波
+      ctx.strokeStyle = col; ctx.lineWidth = 8; ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const p = (t * 1.3 + i / 3) % 1;
+        ctx.globalAlpha = 1 - p; ctx.beginPath(); ctx.arc(r * 0.2, 0, r * (0.12 + p * 0.42), -0.8, 0.8); ctx.stroke();
+      }
+      ctx.restore();
+    };
+    bud(-r * 0.62, 1); bud(r * 0.62, -1);
+    ctx.fillStyle = col; ctx.globalAlpha = 0.9;
+    for (let i = 0; i < 3; i++) {
+      const y = r * 0.1 - ((t * 0.5 + i * 0.33) % 1) * r * 0.9, x = Math.sin(t * 2 + i * 2) * r * 0.1;
+      text('♪', x, y, { size: r * 0.3, weight: 900, color: col, align: 'center', alpha: 1 - ((t * 0.5 + i * 0.33) % 1) });
+    }
+  },
+  virus(r, t, col) {
+    const one = (x, y, s, rot) => {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = s * 0.11; ctx.lineCap = 'round';
+      for (let i = 0; i < 12; i++) {
+        const a = i / 12 * Math.PI * 2;
+        ctx.beginPath(); ctx.moveTo(Math.cos(a) * s * 0.6, Math.sin(a) * s * 0.6); ctx.lineTo(Math.cos(a) * s * 0.92, Math.sin(a) * s * 0.92); ctx.stroke();
+        ctx.beginPath(); ctx.arc(Math.cos(a) * s, Math.sin(a) * s, s * 0.11, 0, 7); ctx.fill();
+      }
+      ctx.shadowColor = col; ctx.shadowBlur = 40;
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.66, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      [[-0.2, -0.2, 0.16], [0.25, 0.05, 0.11], [-0.05, 0.3, 0.09]].forEach(([a, b, c]) => { ctx.beginPath(); ctx.arc(a * s, b * s, c * s, 0, 7); ctx.fill(); });
+      ctx.restore();
+    };
+    const grow = easeOut(seg(t, 0.6, 2.5));
+    [[-0.78, -0.55, 0.2], [0.8, -0.4, 0.24], [-0.7, 0.62, 0.17], [0.72, 0.65, 0.2], [0.05, -0.92, 0.13]].forEach(([x, y, s], i) => {
+      ctx.globalAlpha = grow; one(x * r * (0.5 + 0.5 * grow), y * r * (0.5 + 0.5 * grow), s * r, -t * 0.8 + i);
+    });
+    ctx.globalAlpha = 1; one(0, 0, r * 0.52, t * 0.5);
+  },
+  hal(r, t, col) {
+    ctx.fillStyle = '#0b0c14'; rr(-r * 0.55, -r * 0.95, r * 1.1, r * 1.9, 24); ctx.fill();
+    ctx.strokeStyle = '#9aa3c0'; ctx.lineWidth = 7; ctx.stroke();
+    ctx.fillStyle = '#9aa3c0'; for (let i = 0; i < 6; i++) ctx.fillRect(-r * 0.36, r * 0.55 + i * r * 0.055, r * 0.72, 5);
+    const cy = -r * 0.25, pulse = 0.75 + 0.25 * Math.sin(t * 3.2);
+    ctx.fillStyle = '#c9d0e6'; ctx.beginPath(); ctx.arc(0, cy, r * 0.44, 0, 7); ctx.fill();
+    ctx.fillStyle = '#05060a'; ctx.beginPath(); ctx.arc(0, cy, r * 0.39, 0, 7); ctx.fill();
+    const g = ctx.createRadialGradient(0, cy, 0, 0, cy, r * 0.36);
+    g.addColorStop(0, '#fff3a0'); g.addColorStop(0.16 * pulse, '#ffb020'); g.addColorStop(0.4, col); g.addColorStop(1, 'rgba(80,0,0,0.2)');
+    ctx.shadowColor = col; ctx.shadowBlur = 70 * pulse; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, cy, r * 0.33, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(-r * 0.13, cy - r * 0.15, r * 0.1, r * 0.05, -0.6, 0, 7); ctx.fill();
+  },
+  network(r, t, col) {
+    const N = [[0, 0], [-0.75, -0.5], [0.7, -0.6], [-0.85, 0.35], [0.85, 0.3], [-0.2, 0.85], [0.4, 0.8], [-0.1, -0.9]];
+    const E = [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [0, 7], [1, 7], [2, 7], [1, 3], [2, 4], [5, 6], [3, 5], [4, 6]];
+    ctx.strokeStyle = rgba(col, 0.6); ctx.lineWidth = 5;
+    E.forEach(([a, b], i) => {
+      const [x1, y1] = N[a], [x2, y2] = N[b];
+      ctx.beginPath(); ctx.moveTo(x1 * r, y1 * r); ctx.lineTo(x2 * r, y2 * r); ctx.stroke();
+      const p = (t * 0.8 + rnd(i)) % 1;
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(lerp(x1, x2, p) * r, lerp(y1, y2, p) * r, 8, 0, 7); ctx.fill();
+    });
+    N.forEach(([x, y], i) => {
+      ctx.fillStyle = i ? '#eaffff' : col; ctx.shadowColor = col; ctx.shadowBlur = 30;
+      ctx.beginPath(); ctx.arc(x * r, y * r, i ? r * 0.1 : r * 0.24 + Math.sin(t * 4) * 5, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    });
+    // 中央は受話器(声の網)
+    ctx.strokeStyle = '#06222a'; ctx.lineWidth = r * 0.07; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(0, r * 0.12, r * 0.17, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+  },
+  cyber(r, t, col) {
+    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r * 0.98, 0, 7); ctx.clip();
+    ctx.fillStyle = '#020a04'; ctx.fillRect(-r, -r, r * 2, r * 2);
+    ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 14;
+    for (let k = 0; k < 9; k++) {
+      const p = ((k + t * 0.9) % 9) / 9, s = r * Math.pow(p, 1.8) * 1.5 + 6;
+      ctx.globalAlpha = 0.25 + 0.75 * p; ctx.lineWidth = 2 + p * 5;
+      ctx.save(); ctx.rotate(0.25 * Math.sin(t * 0.7) * (1 - p)); ctx.strokeRect(-s, -s, s * 2, s * 2); ctx.restore();
+    }
+    ctx.globalAlpha = 0.5; ctx.lineWidth = 3;
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + 0.26; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * r * 1.5, Math.sin(a) * r * 1.5); ctx.stroke(); }
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    for (let i = 0; i < 14; i++) {
+      const p = (t * (0.25 + rnd(i) * 0.3) + rnd(i + 20)) % 1;
+      text(String(Math.floor(rnd(i + Math.floor(t * 6)) * 2)), (rnd(i + 40) - 0.5) * r * 1.8, -r + p * r * 2, { size: 34, weight: 900, color: col, align: 'center', alpha: 0.8 * (1 - p) });
+    }
+    ctx.restore();
+    ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(0, 0, r * 0.98, 0, 7); ctx.stroke();
+  },
+  goggles(r, t, col) {
+    const w = r * 0.95, h = r * 0.52;
+    ctx.strokeStyle = '#8a90b5'; ctx.lineWidth = r * 0.12; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-w, -h * 0.1); ctx.quadraticCurveTo(0, -h * 2.3, w, -h * 0.1); ctx.stroke();
+    ctx.fillStyle = '#f2f3fb'; rr(-w, -h, w * 2, h * 2, h * 0.55); ctx.fill();
+    ctx.save(); rr(-w * 0.86, -h * 0.72, w * 1.72, h * 1.44, h * 0.4); ctx.fillStyle = '#120a2c'; ctx.fill(); ctx.clip();
+    // レンズの中の仮想世界
+    const g = ctx.createLinearGradient(0, -h, 0, h); g.addColorStop(0, '#2a0f55'); g.addColorStop(1, '#0a0420');
+    ctx.fillStyle = g; ctx.fillRect(-w, -h, w * 2, h * 2);
+    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 30; ctx.beginPath(); ctx.arc(0, h * 0.05, h * 0.42, Math.PI, 0); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = col; ctx.lineWidth = 3;
+    for (let i = -8; i <= 8; i++) { ctx.beginPath(); ctx.moveTo(i * 10, h * 0.05); ctx.lineTo(i * 60, h); ctx.stroke(); }
+    for (let k = 0; k < 5; k++) { const p = (k + (t * 0.8) % 1) / 5, y = h * 0.05 + h * 0.7 * p * p; ctx.beginPath(); ctx.moveTo(-w, y); ctx.lineTo(w, y); ctx.stroke(); }
+    ctx.restore();
+    ctx.fillStyle = '#f2f3fb'; ctx.beginPath(); ctx.moveTo(-h * 0.3, h * 0.72); ctx.quadraticCurveTo(0, h * 0.2, h * 0.3, h * 0.72); ctx.lineTo(h * 0.3, h); ctx.lineTo(-h * 0.3, h); ctx.fill();
+    for (let i = 0; i < 6; i++) {
+      const a = t * 0.9 + i * 1.05, rad = r * (1.0 + 0.08 * Math.sin(t * 2 + i));
+      text('✦', Math.cos(a) * rad, Math.sin(a) * rad * 0.8 + 16, { size: 34 + 14 * Math.sin(t * 3 + i), weight: 900, color: col, align: 'center', alpha: 0.9 });
+    }
+  },
+  book(r, t, col) {
+    // 開いた本から光が出る(イントロ用)
+    ctx.save();
+    for (let i = 0; i < 9; i++) {
+      const a = -Math.PI / 2 + (i - 4) * 0.2, len = r * (1.25 + 0.25 * Math.sin(t * 3 + i * 1.7));
+      const g = ctx.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+      g.addColorStop(0, rgba(col, 0.75)); g.addColorStop(1, rgba(col, 0));
+      ctx.strokeStyle = g; ctx.lineWidth = 16; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, r * 0.1); ctx.lineTo(Math.cos(a) * len, r * 0.1 + Math.sin(a) * len); ctx.stroke();
+    }
+    const page = k => {
+      ctx.beginPath(); ctx.moveTo(0, r * 0.15); ctx.quadraticCurveTo(k * r * 0.5, -r * 0.1, k * r * 1.05, r * 0.05);
+      ctx.lineTo(k * r * 1.05, r * 0.7); ctx.quadraticCurveTo(k * r * 0.5, r * 0.52, 0, r * 0.8); ctx.closePath();
+    };
+    [-1, 1].forEach(k => {
+      page(k); ctx.fillStyle = '#fbfbff'; ctx.shadowColor = col; ctx.shadowBlur = 40; ctx.fill(); ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#2b2f55'; ctx.lineWidth = 6; ctx.stroke();
+      ctx.strokeStyle = 'rgba(43,47,85,0.35)'; ctx.lineWidth = 5;
+      for (let i = 0; i < 4; i++) { const y = r * (0.2 + i * 0.12); ctx.beginPath(); ctx.moveTo(k * r * 0.14, y + r * 0.05); ctx.quadraticCurveTo(k * r * 0.5, y - r * 0.1, k * r * 0.9, y); ctx.stroke(); }
+    });
+    ctx.restore();
+  },
+};
+
+function drawIcon(name, cx, cy, r, t, col, a) {
+  ctx.save();
+  ctx.translate(cx, cy + Math.sin(t * 1.8) * 8);
+  const s = 0.6 + 0.4 * easeBack(a);
+  ctx.scale(s, s); ctx.globalAlpha = clamp(a * 2);
+  // 台座の円
+  ctx.fillStyle = 'rgba(10,12,34,0.55)'; ctx.beginPath(); ctx.arc(0, 0, r * 1.22, 0, 7); ctx.fill();
+  ctx.strokeStyle = rgba(col, 0.75); ctx.lineWidth = 5; ctx.setLineDash([26, 16]); ctx.lineDashOffset = -t * 40;
+  ctx.beginPath(); ctx.arc(0, 0, r * 1.22, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  ICONS[name](r, t, col);
+  ctx.restore();
+}
+
+// ---------- 共通パーツ ----------
+function header(idx, col, sceneT, sceneDur) {
+  text('未来を言い当てた SF小説10選', W / 2, 132, { size: 36, weight: 700, color: C.ink2, align: 'center' });
+  const n = 10, gap = 10, w = (960 - gap * (n - 1)) / n;
+  for (let i = 0; i < n; i++) {
+    const x = 60 + i * (w + gap);
+    rr(x, 162, w, 12, 6); ctx.fillStyle = 'rgba(255,255,255,0.16)'; ctx.fill();
+    const f = i < idx ? 1 : i === idx ? clamp(sceneT / sceneDur) : 0;
+    if (f > 0) { rr(x, 162, w * f, 12, 6); ctx.fillStyle = i === idx ? col : 'rgba(255,255,255,0.75)'; ctx.fill(); }
+  }
+}
+function subtitle(str, a) {
+  if (!str) return;
+  const size = 50, lines = wrap(str, size, 900, 900), lh = size * 1.38;
+  const y0 = 1462 - (lines.length - 1) * lh / 2;
+  ctx.save(); ctx.globalAlpha = a;
+  lines.forEach((l, i) => text(l, W / 2, y0 + i * lh, { size, weight: 900, align: 'center', stroke: 16 }));
+  ctx.restore();
+}
+function pill(label, x, y, bg, fg) {
+  setFont(34, 900); const w = ctx.measureText(label).width + 44;
+  rr(x, y - 44, w, 60, 30); ctx.fillStyle = bg; ctx.fill();
+  text(label, x + w / 2, y, { size: 34, weight: 900, color: fg, align: 'center' });
+  return w;
+}
+
+// ---------- シーン ----------
+function sceneBook(sc, t, dur) {
+  const idx = BOOKS.indexOf(sc), col = sc.color;
+  background(sc.start + t, col);
+  header(idx, col, t, dur);
+
+  // 番号と発表年
+  const a0 = easeOut(seg(t, 0, 0.3));
+  ctx.save(); ctx.globalAlpha = a0; ctx.translate(-40 * (1 - a0), 0);
+  const nw = text(String(idx + 1).padStart(2, '0'), 60, 345, { size: 150, weight: 900, color: col, glow: rgba(col, 0.8) });
+  text('/10', 60 + nw + 10, 345, { size: 50, weight: 700, color: C.ink3 });
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha = a0; ctx.translate(40 * (1 - a0), 0);
+  text('年', 1020, 345, { size: 50, weight: 700, color: C.ink2, align: 'right' });
+  text(String(sc.year), 962, 345, { size: 116, weight: 900, align: 'right' });
+  text('発表', 1020, 232, { size: 30, weight: 700, color: C.ink3, align: 'right' });
+  ctx.restore();
+
+  drawIcon(sc.icon, W / 2, 620, 185, t, col, seg(t, 0.05, 0.4));
+
+  // タイトル・著者
+  const a1 = easeOut(seg(t, 0.12, 0.3));
+  ctx.save(); ctx.translate(0, 30 * (1 - a1));
+  text('『' + sc.title + '』', W / 2, 955, { size: 96, weight: 900, align: 'center', alpha: a1, maxW: 1040, glow: rgba(col, 0.55) });
+  text(sc.author, W / 2, 1025, { size: 42, weight: 700, color: C.ink2, align: 'center', alpha: a1 });
+  ctx.restore();
+
+  // 小説では → 現実では
+  const a2 = easeOut(seg(t, 0.3, 0.3)), a3 = seg(t, Math.min(dur * 0.42, 2.2), 0.3);
+  ctx.save(); ctx.globalAlpha = a2; ctx.translate(0, 30 * (1 - a2));
+  rr(50, 1068, 980, 290, 32); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = rgba(col, 0.6); ctx.lineWidth = 3; ctx.stroke();
+  let pw = pill('小説では', 82, 1148, 'rgba(255,255,255,0.16)', C.ink);
+  text(sc.pred, 82 + pw + 22, 1150, { size: 46, weight: 700, maxW: 890 - pw - 22 });
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(82, 1200); ctx.lineTo(998, 1200); ctx.stroke();
+  text('▼', W / 2, 1212, { size: 30, weight: 900, color: col, align: 'center', alpha: clamp(a3 * 2) });
+  ctx.save(); ctx.globalAlpha *= clamp(a3 * 2);
+  const s3 = 0.85 + 0.15 * easeBack(a3);
+  ctx.translate(82, 1296); ctx.scale(s3, s3);
+  pw = pill('現実では', 0, 0, col, '#0a0c1e');
+  text(sc.real, pw + 22, 6, { size: 58, weight: 900, color: col, maxW: 890 - pw - 22, glow: rgba(col, 0.6) });
+  ctx.restore();
+  ctx.restore();
+
+  subtitle(sc.sub.split('\n')[1], easeOut(seg(t, 0.15, 0.25)));
+}
+
+function sceneIntro(sc, t, dur) {
+  background(t, '#7C5CFF');
+  const hook = C.hook;
+  const a0 = easeOut(seg(t, 0.0, 0.3)), a1 = seg(t, 0.25, 0.4), a2 = easeOut(seg(t, 0.75, 0.3));
+  text('読むと', W / 2, 362 + 30 * (1 - a0), { size: 110, weight: 900, align: 'center', alpha: a0 });
+  ctx.save(); ctx.translate(W / 2, 620); const s = 0.5 + 0.5 * easeBack(a1) + 0.02 * Math.sin(t * 5); ctx.scale(s, s); ctx.rotate(-0.03);
+  text('未来予知', 0, 0, { size: 250, weight: 900, color: hook, align: 'center', alpha: clamp(a1 * 3), glow: 'rgba(255,225,77,0.9)', stroke: 22, maxW: 1030 });
+  ctx.restore();
+  text('ができるかも？', W / 2, 775 + 30 * (1 - a2), { size: 104, weight: 900, align: 'center', alpha: a2 });
+
+  drawIcon('book', W / 2, 1010, 132, t, hook, seg(t, 0.4, 0.5));
+
+  // 「SF小説10選」バッジ(ナレーション後半で出す)
+  const tb = Math.min(dur * 0.5, 2.3), a3 = seg(t, tb, 0.35);
+  if (a3 > 0) {
+    ctx.save(); ctx.translate(W / 2, 1405); const sb = 0.6 + 0.4 * easeBack(a3); ctx.scale(sb, sb); ctx.rotate(-0.035); ctx.globalAlpha = clamp(a3 * 3);
+    rr(-470, -120, 940, 220, 40); ctx.fillStyle = '#FF3D7F'; ctx.shadowColor = '#FF3D7F'; ctx.shadowBlur = 50; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.stroke();
+    text('SF小説 10選', 0, 48, { size: 150, weight: 900, align: 'center', maxW: 860 });
+    ctx.restore();
+  }
+  text('未来を言い当てた名作たち', W / 2, 1238, { size: 46, weight: 700, color: C.ink2, align: 'center', alpha: easeOut(seg(t, tb - 0.1, 0.3)) });
+}
+
+function sceneOutro(sc, t, dur) {
+  background(sc.start + t, '#7C5CFF');
+  const a0 = easeOut(seg(t, 0, 0.3));
+  text('次の未来は、', W / 2, 250, { size: 84, weight: 900, align: 'center', alpha: a0 });
+  text('もう本の中にあるかも。', W / 2, 365, { size: 84, weight: 900, color: C.hook, align: 'center', alpha: a0, glow: 'rgba(255,225,77,0.6)', maxW: 980 });
+  BOOKS.forEach((b, i) => {
+    const a = easeOut(seg(t, 0.25 + i * 0.09, 0.3)), y = 478 + i * 82;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(40 * (1 - a), 0);
+    rr(60, y - 56, 960, 72, 18); ctx.fillStyle = 'rgba(14,18,44,0.7)'; ctx.fill();
+    rr(60, y - 56, 12, 72, 6); ctx.fillStyle = b.color; ctx.fill();
+    text(String(b.year), 96, y - 3, { size: 40, weight: 900, color: b.color });
+    text(b.title, 222, y - 3, { size: 44, weight: 900, maxW: 420 });
+    text(b.author, 1000, y - 5, { size: 28, weight: 500, color: C.ink2, align: 'right', maxW: 330 });
+    ctx.restore();
+  });
+  const a2 = seg(t, 1.6, 0.35);
+  ctx.save(); ctx.translate(W / 2, 1385); const s = 0.7 + 0.3 * easeBack(a2) + 0.015 * Math.sin(t * 5); ctx.scale(s, s);
+  text('あなたはどれを読む？', 0, 0, { size: 92, weight: 900, color: '#fff', align: 'center', alpha: clamp(a2 * 3), stroke: 16, glow: 'rgba(255,61,127,0.9)', maxW: 980 });
+  ctx.restore();
+  const a3 = easeOut(seg(t, 1.9, 0.4));
+  text('音声  ' + TL.voice + '　／　BGM  オリジナル', W / 2, 1478, { size: 32, weight: 700, color: C.ink2, align: 'center', alpha: a3 });
+  text('※ 作品と現実の対応には諸説あります', W / 2, 1526, { size: 26, weight: 500, color: C.ink3, align: 'center', alpha: a3 });
+}
+
+function render(t) {
+  t = clamp(t, 0, DURATION - 1e-6);
+  const sc = SCENES.find(s => t >= s.start && t < s.end) || SCENES[SCENES.length - 1];
+  const lt = t - sc.start, dur = sc.end - sc.start;
+  ctx.save();
+  if (sc.kind === 'intro') sceneIntro(sc, lt, dur);
+  else if (sc.kind === 'outro') sceneOutro(sc, lt, dur);
+  else sceneBook(sc, lt, dur);
+  ctx.restore();
+  // シーン切り替えのフラッシュ
+  const fl = 1 - seg(lt, 0, 0.18);
+  if (fl > 0 && sc !== SCENES[0]) { ctx.fillStyle = `rgba(255,255,255,${0.35 * fl * fl})`; ctx.fillRect(0, 0, W, H); }
+  // 最後は黒へフェード
+  const fo = seg(t, DURATION - 0.35, 0.35);
+  if (fo > 0) { ctx.fillStyle = `rgba(5,6,15,${fo})`; ctx.fillRect(0, 0, W, H); }
+}
+
+// フォント(必要な文字のサブセット)を読み込んでから描画する
+const ALLTEXT = JSON.stringify(TL) + '未来を言い当てたSF小説10選読むと予知ができるかも？名作たち次のはもう本の中にある。あなたはどれを読む音声オリジナル※作品と現実の対応には諸説あります小説では発表年▼♪✦／0123456789';
+window.ready = Promise.all([500, 700, 900].map(w => document.fonts.load(`${w} 40px "Noto Sans JP"`, ALLTEXT))).then(() => render(0));
+window.render = render; window.FPS = FPS; window.DURATION = DURATION;
+
+// ブラウザで直接開いたときはプレビュー再生
+if (!navigator.webdriver) window.ready.then(() => {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+});
+</script>
+</body>
+</html>
