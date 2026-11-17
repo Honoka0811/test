@@ -196,8 +196,8 @@ function render(t) {
   } else {
     if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
     const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('電車の来ない踏切は', W / 2, 860);
-    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('開くまで、待ってはいけない。', W / 2, 960);
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('向こうから手招きされても', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('遮断機は、くぐってはいけない。', W / 2, 960);
     ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
   }
   subtitle(t);
@@ -206,6 +206,6 @@ function render(t) {
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '電車の来ない踏切は開くまで、待ってはいけない。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '向こうから手招きされても遮断機は、くぐってはいけない。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>
