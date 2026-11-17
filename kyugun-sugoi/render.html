@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>旧日本軍のここがすごい</title>
+<style>
+@font-face { font-family: "Dela"; src: url("fonts/DelaGothicOne-Regular.ttf"); }
+@font-face { font-family: "Noto"; src: url("fonts/NotoSansJP.ttf"); font-weight: 100 900; }
+html, body { margin: 0; background: #000; }
+canvas { display: block; height: 100vh; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// 時刻 t 秒のフレームを決定論的に描く。capture.js が 1 フレームずつ render(t) を呼ぶ。
+const TL = window.TIMELINE;
+window.FPS = TL.fps; window.DURATION = TL.duration;
+const W = 1080, H = 1920;
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+
+const C = { bg0: '#070c18', bg1: '#16203a', gold: '#F5C451', red: '#E5493F', white: '#F4F6FB',
+            mute: '#93A3C4', dim: '#56668A', panel: 'rgba(255,255,255,0.06)', steel: '#C9D3E6' };
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const prog = (t, a, d) => clamp((t - a) / d);
+const eOut = x => 1 - Math.pow(1 - x, 3);
+const eIO = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const eBack = x => { const c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const lerp = (a, b, x) => a + (b - a) * x;
+const fmt = n => Math.round(n).toLocaleString('en-US');
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+
+function font(size, fam = 'Noto', weight = 900) { g.font = `${weight} ${size}px "${fam}", "IPAGothic", sans-serif`; }
+function text(s, x, y, o = {}) {
+  if (o.fam === 'Dela' && /[\u3400-\u9fff]/.test(s)) o = Object.assign({}, o, { fam: 'Noto' });
+  font(o.size || 48, o.fam || 'Noto', o.weight || 900);
+  g.textAlign = o.align || 'center'; g.textBaseline = o.base || 'middle';
+  if (o.maxW) { const w = g.measureText(s).width; if (w > o.maxW) font((o.size || 48) * o.maxW / w, o.fam || 'Noto', o.weight || 900); }
+  if (o.stroke) { g.lineJoin = 'round'; g.lineWidth = o.strokeW || 14; g.strokeStyle = o.stroke; g.strokeText(s, x, y); }
+  g.fillStyle = o.color || C.white; g.fillText(s, x, y);
+}
+function rr(x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+// 拡大しながら出現するブロック
+function pop(p, cx, cy, fn) {
+  if (p <= 0) return;
+  g.save(); g.globalAlpha *= clamp(p * 2.5); g.translate(cx, cy); const s = eBack(clamp(p)); g.scale(s, s); g.translate(-cx, -cy); fn(); g.restore();
+}
+// 下から滑り込むブロック
+function rise(p, fn, dy = 50) { if (p <= 0) return; g.save(); g.globalAlpha *= clamp(p * 1.6); g.translate(0, (1 - eOut(clamp(p))) * dy); fn(); g.restore(); }
+
+// ---------- 背景 ----------
+function background(t, hue) {
+  const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, C.bg1); gr.addColorStop(1, C.bg0);
+  g.fillStyle = gr; g.fillRect(0, 0, W, H);
+  // 斜めに流れる格子
+  g.save(); g.globalAlpha = 0.07; g.strokeStyle = '#9db4e8'; g.lineWidth = 2;
+  const off = (t * 24) % 120;
+  for (let i = -20; i < 30; i++) { g.beginPath(); g.moveTo(i * 120 + off, 0); g.lineTo(i * 120 + off - 700, H); g.stroke(); }
+  g.restore();
+  // 上部の光
+  const rg = g.createRadialGradient(W / 2, 640, 50, W / 2, 640, 900);
+  rg.addColorStop(0, hue || 'rgba(245,196,81,0.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, W, H);
+}
+function vignette() {
+  const v = g.createRadialGradient(W / 2, H / 2, 600, W / 2, H / 2, 1250);
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = v; g.fillRect(0, 0, W, H);
+}
+
+// ---------- 共通パーツ ----------
+function header(n) {
+  rr(60, 96, 470, 68, 34); g.fillStyle = 'rgba(0,0,0,0.45)'; g.fill();
+  g.strokeStyle = 'rgba(245,196,81,0.6)'; g.lineWidth = 2; g.stroke();
+  text('旧日本軍のここがすごい', 295, 131, { size: 34, color: C.gold });
+  for (let i = 1; i <= 5; i++) {
+    const x = 640 + i * 62, on = i <= n;
+    g.beginPath(); g.arc(x, 130, i === n ? 24 : 18, 0, 7); g.fillStyle = on ? (i === n ? C.red : C.gold) : 'rgba(255,255,255,0.12)'; g.fill();
+    text(String(i), x, 132, { size: i === n ? 28 : 22, color: on ? '#fff' : C.dim, fam: 'Dela' });
+  }
+}
+function heading(lt, n, title, sub) {
+  pop(prog(lt, 0.05, 0.4), 540, 300, () => {
+    rr(390, 250, 300, 96, 48); g.fillStyle = C.red; g.fill();
+    text('その' + n, 540, 300, { size: 62, fam: 'Dela' });
+  });
+  pop(prog(lt, 0.25, 0.45), 540, 450, () => text(title, 540, 450, { size: 150, fam: 'Dela', color: C.white, stroke: 'rgba(0,0,0,0.6)', strokeW: 18, maxW: 980 }));
+  rise(prog(lt, 0.6, 0.4), () => text(sub, 540, 566, { size: 40, color: C.gold, weight: 700, maxW: 960 }), 20);
+}
+function bigStat(p, label, value, unit, y, color) {
+  rise(p, () => {
+    text(label, 540, y - 105, { size: 44, color: C.mute, weight: 700 });
+    const kf = /[\u3400-\u9fff]/.test(value) ? 'Noto' : 'Dela';
+    font(190, kf); const wv = g.measureText(value).width; font(84, 'Dela'); const wu = g.measureText(unit).width;
+    const x0 = 540 - (wv + wu + 14) / 2;
+    text(value, x0, y + 20, { size: 190, fam: 'Dela', align: 'left', color: color || C.gold, stroke: 'rgba(0,0,0,0.55)', strokeW: 16 });
+    text(unit, x0 + wv + 14, y + 52, { size: 84, fam: 'Dela', align: 'left', color: color || C.gold, stroke: 'rgba(0,0,0,0.55)', strokeW: 12 });
+  }, 60);
+}
+// 比較バー rows: [{label, val, text, hi}]
+function bars(lt, t0, rows, y, max) {
+  rows.forEach((r, i) => {
+    const p = prog(lt, t0 + i * 0.22, 0.7); if (p <= 0) return;
+    const yy = y + i * 118, w = 900 * (r.val / max) * eOut(p);
+    g.save(); g.globalAlpha = clamp(p * 3);
+    text(r.label, 90, yy, { size: 36, align: 'left', color: r.hi ? C.white : C.mute, weight: r.hi ? 900 : 700 });
+    rr(90, yy + 28, 900, 44, 10); g.fillStyle = 'rgba(255,255,255,0.07)'; g.fill();
+    rr(90, yy + 28, Math.max(w, 12), 44, 10); g.fillStyle = r.hi ? C.red : C.dim; g.fill();
+    text(r.text, 990, yy, { size: r.hi ? 44 : 36, align: 'right', color: r.hi ? C.gold : C.mute, fam: 'Dela' });
+    g.restore();
+  });
+}
+function note(s, p = 1) { g.save(); g.globalAlpha *= p; text(s, 540, 1690, { size: 26, color: C.dim, weight: 500, maxW: 980 }); g.restore(); }
+
+// 字幕
+function wrap(s, maxW) {
+  const lines = []; let cur = '';
+  for (const ch of s) {
+    if (g.measureText(cur + ch).width > maxW && cur && !'、。!?'.includes(ch)) { lines.push(cur); cur = ch; } else cur += ch;
+  }
+  if (cur) lines.push(cur);
+  if (lines.length === 2) {            // 読点や助詞の後ろで切り直して、2 行の長さをそろえる
+    let best = null;
+    for (let k = 3; k <= s.length - 3; k++) {
+      const ch = s[k - 1]; if (!'、をはがにも'.includes(ch) || '、。!?'.includes(s[k])) continue;
+      const m = Math.max(g.measureText(s.slice(0, k)).width, g.measureText(s.slice(k)).width) + (ch === '、' ? 0 : 60);
+      if (m <= maxW + 60 && (!best || m < best.m)) best = { m, k };
+    }
+    if (best) return [s.slice(0, best.k), s.slice(best.k)];
+  }
+  return lines;
+}
+function caption(t, sc) {
+  const c = sc.cues.find(c => t >= c.start - 0.08 && t < c.end + 0.25); if (!c) return;
+  const p = Math.min(prog(t, c.start - 0.08, 0.14), 1 - prog(t, c.end + 0.13, 0.12));
+  font(56); const lines = wrap(c.text, 900), lh = 82, h = lines.length * lh + 44, y0 = 1500 - h / 2;
+  g.save(); g.globalAlpha = p; g.translate(0, (1 - p) * 14);
+  rr(54, y0, 972, h, 26); g.fillStyle = 'rgba(0,0,0,0.72)'; g.fill();
+  g.fillStyle = C.gold; g.fillRect(54, y0 + 20, 8, h - 40);
+  lines.forEach((l, i) => text(l, 540, y0 + 22 + lh / 2 + i * lh, { size: 56 }));
+  g.restore();
+}
+
+// ---------- イラスト ----------
+function zero(cx, cy, s, rot, t) {      // 零戦(平面形)
+  g.save(); g.translate(cx, cy); g.rotate(rot); g.scale(s, s);
+  const body = '#C7CFBF', dark = '#8E9887';
+  g.shadowColor = 'rgba(0,0,0,0.5)'; g.shadowBlur = 30; g.shadowOffsetY = 26;
+  for (const m of [1, -1]) {
+    g.save(); g.scale(m, 1);
+    g.beginPath(); g.moveTo(0, -78); g.lineTo(60, -72); g.bezierCurveTo(150, -62, 235, -44, 262, -30); g.bezierCurveTo(280, -18, 276, 2, 252, 6);
+    g.lineTo(0, 30); g.closePath(); g.fillStyle = body; g.fill();
+    g.beginPath(); g.moveTo(0, 122); g.lineTo(64, 126); g.bezierCurveTo(88, 130, 90, 150, 70, 154); g.lineTo(0, 160); g.closePath(); g.fill();
+    g.restore();
+  }
+  g.shadowColor = 'transparent';
+  for (const m of [1, -1]) {              // 補助翼の線と日の丸
+    g.strokeStyle = dark; g.lineWidth = 2; g.beginPath(); g.moveTo(m * 120, 12); g.lineTo(m * 250, -2); g.stroke();
+    g.beginPath(); g.arc(m * 185, -28, 26, 0, 7); g.fillStyle = '#C8362E'; g.fill();
+  }
+  g.beginPath(); g.moveTo(-24, -128); g.bezierCurveTo(-26, -40, -16, 80, -5, 176); g.lineTo(5, 176); g.bezierCurveTo(16, 80, 26, -40, 24, -128); g.closePath(); g.fillStyle = body; g.fill();
+  g.beginPath(); g.ellipse(0, -138, 25, 34, 0, 0, 7); g.fillStyle = '#23262b'; g.fill();      // カウリング
+  rr(-13, -84, 26, 84, 12); g.fillStyle = '#3d5568'; g.fill(); g.strokeStyle = '#dfe7ee'; g.lineWidth = 2; g.stroke(); // 風防
+  g.beginPath(); g.ellipse(0, -172, 92, 9, 0, 0, 7); g.fillStyle = 'rgba(255,255,255,0.28)'; g.fill();   // プロペラ
+  g.beginPath(); g.arc(0, -172, 9, 0, 7); g.fillStyle = '#6b4a2a'; g.fill();
+  g.restore();
+}
+function torpedo(x, y, len, color) {     // 魚雷(右向き)
+  const h = len * 0.085;
+  g.save(); g.translate(x, y);
+  g.beginPath(); g.moveTo(-len, -h * 0.35); g.lineTo(-len * 0.86, -h / 2); g.lineTo(-len * 0.12, -h / 2);
+  g.bezierCurveTo(-len * 0.02, -h / 2, 0, -h * 0.2, 0, 0); g.bezierCurveTo(0, h * 0.2, -len * 0.02, h / 2, -len * 0.12, h / 2);
+  g.lineTo(-len * 0.86, h / 2); g.lineTo(-len, h * 0.35); g.closePath(); g.fillStyle = color; g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(-len * 0.3, -h / 2, 5, h);
+  g.beginPath(); g.moveTo(-len * 0.9, -h / 2); g.lineTo(-len * 1.0, -h * 1.1); g.lineTo(-len * 1.03, -h * 1.1); g.lineTo(-len * 0.99, 0);
+  g.lineTo(-len * 1.03, h * 1.1); g.lineTo(-len * 1.0, h * 1.1); g.lineTo(-len * 0.9, h / 2); g.closePath(); g.fill();
+  g.restore();
+}
+function yamato(cx, cy, s) {             // 戦艦大和(側面・艦首は右)
+  g.save(); g.translate(cx, cy); g.scale(s, s);
+  g.fillStyle = C.steel;
+  g.beginPath(); g.moveTo(-440, -26); g.lineTo(-250, -30); g.lineTo(-60, -44); g.lineTo(260, -38); g.bezierCurveTo(360, -42, 420, -52, 452, -62);
+  g.lineTo(436, 0); g.bezierCurveTo(430, 14, 420, 20, 404, 20); g.lineTo(-420, 20); g.lineTo(-436, 0); g.closePath(); g.fill();
+  const R = (x, y, w, h) => g.fillRect(x, y - h, w, h);
+  R(-150, -44, 240, 26); R(-110, -70, 170, 26);            // 上部構造物
+  R(-6, -96, 54, 110); R(-12, -206, 60, 22); R(2, -184, 36, 90); R(-20, -150, 76, 12); R(-2, -232, 30, 26); R(-40, -218, 96, 6); // 艦橋と測距儀
+  g.fillRect(12, -290, 5, 60);
+  g.beginPath(); g.moveTo(-74, -70); g.lineTo(-96, -168); g.lineTo(-52, -168); g.lineTo(-22, -70); g.closePath(); g.fill();   // 傾斜煙突
+  g.beginPath(); g.moveTo(-122, -70); g.lineTo(-150, -210); g.lineTo(-144, -210); g.lineTo(-108, -70); g.closePath(); g.fill(); // 後部マスト
+  R(-190, -44, 34, 46);
+  const turret = (x, y, dir) => {        // 主砲塔
+    g.beginPath(); g.moveTo(x - 40, y); g.lineTo(x - 36, y - 34); g.lineTo(x + 36, y - 34); g.lineTo(x + 40, y); g.closePath(); g.fill();
+    g.save(); g.translate(x + dir * 30, y - 22); g.rotate(-dir * 0.09); g.fillRect(dir > 0 ? 0 : -112, -5, 112, 10); g.restore();
+  };
+  turret(250, -38, 1); turret(160, -66, 1); R(120, -40, 80, 26); turret(-250, -30, -1); R(-235, -30, 40, 16);
+  g.fillStyle = 'rgba(229,73,63,0.9)'; g.fillRect(-420, 8, 824, 12);   // 喫水線下
+  g.restore();
+}
+function carrier(cx, cy, s, a) {         // 空母(真上から・艦首は上)
+  g.save(); g.translate(cx, cy); g.scale(s, s); g.globalAlpha *= a;
+  g.beginPath(); g.moveTo(-24, -150); g.bezierCurveTo(-10, -172, 10, -172, 24, -150); g.lineTo(27, 150); g.lineTo(-27, 150); g.closePath(); g.fillStyle = '#3b4a66'; g.fill();
+  rr(-32, -140, 64, 284, 6); g.fillStyle = '#B79B6B'; g.fill();
+  g.strokeStyle = 'rgba(255,255,255,0.75)'; g.lineWidth = 3; g.setLineDash([14, 12]); g.beginPath(); g.moveTo(0, -128); g.lineTo(0, 132); g.stroke(); g.setLineDash([]);
+  g.fillStyle = 'rgba(255,255,255,0.8)'; for (const y of [-70, 40]) g.fillRect(-18, y, 36, 3);
+  rr(30, -34, 14, 50, 3); g.fillStyle = '#56668A'; g.fill();
+  g.beginPath(); g.arc(0, -104, 13, 0, 7); g.fillStyle = '#C8362E'; g.fill();
+  g.restore();
+}
+function plane(x, y, s, a) {             // 小さな機影
+  g.save(); g.translate(x, y); g.scale(s, s); g.globalAlpha *= a; g.fillStyle = '#E9EEF8';
+  g.beginPath(); g.moveTo(0, -14); g.lineTo(3, -4); g.lineTo(18, 0); g.lineTo(18, 4); g.lineTo(3, 4); g.lineTo(2, 12); g.lineTo(7, 14); g.lineTo(7, 16);
+  g.lineTo(-7, 16); g.lineTo(-7, 14); g.lineTo(-2, 12); g.lineTo(-3, 4); g.lineTo(-18, 4); g.lineTo(-18, 0); g.lineTo(-3, -4); g.closePath(); g.fill();
+  g.restore();
+}
+function sub(cx, cy, s) {                // 伊400型(側面・艦首は右)
+  g.save(); g.translate(cx, cy); g.scale(s, s); g.fillStyle = C.steel;
+  g.beginPath(); g.moveTo(-450, 0); g.bezierCurveTo(-400, -22, -300, -30, -200, -32); g.lineTo(330, -32); g.bezierCurveTo(400, -30, 440, -16, 456, -2);
+  g.bezierCurveTo(440, 22, 380, 34, 300, 36); g.lineTo(-260, 36); g.bezierCurveTo(-340, 34, -410, 20, -450, 0); g.closePath(); g.fill();
+  rr(-150, -74, 250, 46, 22); g.fill();                    // 格納筒
+  g.beginPath(); g.moveTo(-96, -74); g.lineTo(-84, -128); g.lineTo(0, -128); g.lineTo(22, -74); g.closePath(); g.fill();   // 艦橋
+  g.fillRect(-60, -176, 5, 50); g.fillRect(-36, -158, 5, 32); g.fillRect(-80, -140, 60, 6);
+  g.fillRect(100, -38, 300, 6);                            // カタパルト
+  g.fillRect(-300, -46, 28, 14); g.fillRect(-290, -52, 46, 5);   // 後部砲
+  g.beginPath(); g.moveTo(-452, -4); g.lineTo(-478, -30); g.lineTo(-462, -30); g.lineTo(-430, -8); g.closePath(); g.fill();
+  g.fillStyle = 'rgba(229,73,63,0.9)'; g.beginPath(); g.moveTo(-440, 6); g.bezierCurveTo(-400, 22, -340, 34, -260, 36); g.lineTo(300, 36);
+  g.bezierCurveTo(380, 34, 436, 22, 452, 4); g.lineTo(446, 2); g.lineTo(-436, 2); g.closePath(); g.fill();
+  g.restore();
+}
+function sea(y, t, a = 1) {
+  g.save(); g.globalAlpha *= a;
+  for (let k = 0; k < 3; k++) {
+    g.beginPath(); g.moveTo(0, y + k * 16);
+    for (let x = 0; x <= W; x += 30) g.lineTo(x, y + k * 16 + Math.sin(x * 0.012 + t * (1.2 + k * 0.4) + k * 2) * 6);
+    g.lineTo(W, y + 80); g.lineTo(0, y + 80); g.closePath();
+    g.fillStyle = `rgba(63,110,190,${0.20 + k * 0.08})`; g.fill();
+  }
+  g.restore();
+}
+
+// ---------- シーン ----------
+const S = {};
+S.title = (lt, sc, t) => {
+  background(t, 'rgba(229,73,63,0.22)');
+  // 放射状の集中線
+  g.save(); g.translate(540, 760); g.globalAlpha = 0.10 * eOut(prog(lt, 0, 0.6));
+  for (let i = 0; i < 28; i++) { g.rotate(Math.PI * 2 / 28); g.beginPath(); g.moveTo(0, 0); g.lineTo(-46, -1500); g.lineTo(46, -1500); g.closePath(); g.fillStyle = i % 2 ? C.gold : '#fff'; g.fill(); }
+  g.restore();
+  pop(prog(lt, 0.1, 0.45), 540, 560, () => text('旧日本軍の', 540, 560, { size: 150, fam: 'Dela', stroke: 'rgba(0,0,0,0.7)', strokeW: 20 }));
+  pop(prog(lt, 0.45, 0.45), 540, 760, () => {
+    text('ここが', 540, 740, { size: 190, fam: 'Dela', color: C.gold, stroke: 'rgba(0,0,0,0.7)', strokeW: 22 });
+  });
+  pop(prog(lt, 0.8, 0.5), 540, 970, () => {
+    g.save(); g.translate(540, 970); g.rotate(-0.05); text('すごい!', 0, 0, { size: 250, fam: 'Dela', color: C.red, stroke: '#fff', strokeW: 26 }); g.restore();
+  });
+  const c1 = sc.cues[1].start - sc.start;
+  pop(prog(lt, c1, 0.45), 540, 1240, () => {
+    rr(300, 1160, 480, 150, 75); g.fillStyle = C.gold; g.fill();
+    text('技術編 5選', 540, 1238, { size: 78, fam: 'Dela', color: '#1b1403' });
+  });
+};
+
+S.zero = (lt, sc, t) => {
+  background(t, 'rgba(120,170,255,0.16)'); header(1);
+  // 流れる雲
+  for (let i = 0; i < 9; i++) { const y = ((rnd(i) * 900 + t * (160 + rnd(i + 9) * 160)) % 760) + 560, x = rnd(i + 3) * W;
+    g.fillStyle = 'rgba(255,255,255,0.05)'; rr(x - 8, y, 16, 120 + rnd(i + 5) * 120, 8); g.fill(); }
+  heading(lt, 1, '零戦', '零式艦上戦闘機(1940年 制式採用)');
+  const pin = eOut(prog(lt, 0.5, 0.9));
+  zero(540 + Math.sin(t * 1.3) * 26, lerp(1500, 800, pin) + Math.cos(t * 1.7) * 12, 1.08, 0.12 + Math.sin(t * 1.3) * 0.05, t);
+  const c1 = sc.cues[1].start - sc.start, c2 = sc.cues[2].start - sc.start;
+  const hold = 1 - prog(lt, c2 - 0.25, 0.3);
+  if (hold > 0) { g.save(); g.globalAlpha = hold; const p = prog(lt, c1, 0.9);
+    bigStat(prog(lt, c1, 0.4), '航続距離(増槽付き)', '約' + fmt(3350 * eOut(p)), 'km', 1180); g.restore(); }
+  if (lt > c2 - 0.1) {
+    bars(lt, c2 - 0.05, [
+      { label: '零戦二一型(日)', val: 3350, text: '約3,350km', hi: true },
+      { label: 'F4F-4 ワイルドキャット(米)', val: 1240, text: '約1,240km' },
+      { label: 'Bf109E(独)', val: 660, text: '約660km' },
+    ], 1050, 3350);
+  }
+  note('※最大航続距離の概数。搭載状態・資料により幅があります');
+};
+
+S.torpedo = (lt, sc, t) => {
+  background(t, 'rgba(70,150,255,0.18)'); header(2);
+  heading(lt, 2, '酸素魚雷', '九三式魚雷(純酸素を酸化剤に使用)');
+  const c1 = sc.cues[1].start - sc.start, c2 = sc.cues[2].start - sc.start;
+  // 射程レース
+  const lane = (y, label, km, col, p, bubbles) => {
+    const x0 = 90, full = 900, x = x0 + full * (km / 40) * p;
+    text(label, x0, y - 62, { size: 36, align: 'left', color: bubbles ? C.mute : C.white, weight: bubbles ? 700 : 900 });
+    g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x0, y + 34, full, 4);
+    for (let k = 0; k <= 4; k++) { g.fillRect(x0 + full * k / 4 - 1, y + 28, 2, 16); text(k * 10 + 'km', x0 + full * k / 4, y + 66, { size: 22, color: C.dim, weight: 500 }); }
+    if (bubbles) {    // はっきり見える泡の航跡
+      for (let i = 0; i < 40; i++) { const bx = x0 + (x - x0 - 180) * (i / 40); if (bx < x0) continue;
+        g.beginPath(); g.arc(bx, y + (rnd(i) - 0.5) * 26, 5 + rnd(i + 7) * 7, 0, 7); g.fillStyle = `rgba(255,255,255,${0.25 + rnd(i + 2) * 0.3})`; g.fill(); }
+    } else {          // ほぼ見えない航跡
+      const gr = g.createLinearGradient(x0, 0, x, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,0.10)');
+      g.fillStyle = gr; g.fillRect(x0, y - 4, Math.max(0, x - x0 - 180), 8);
+    }
+    torpedo(Math.max(x, x0 + 170), y, 170, col);
+    if (p >= 1) text(km + 'km', 990, y - 62, { size: 44, fam: 'Dela', align: 'right', color: bubbles ? C.mute : C.gold });
+  };
+  const pr = eIO(prog(lt, c1, 1.5));
+  rise(prog(lt, 0.7, 0.4), () => {
+    lane(760, '九三式酸素魚雷(日)', 40, '#E8ECF4', pr, false);
+    lane(960, 'Mk15(米)', 13.7, '#7C8BAA', eIO(prog(lt, c1, 1.5 * 13.7 / 40 + 0.2)), true);
+  });
+  const hold = 1 - prog(lt, c2 - 0.2, 0.3);
+  g.save(); g.globalAlpha = hold; bigStat(prog(lt, c1 + 0.1, 0.4), '最大射程(36ノット時)', '40', 'km', 1260); g.restore();
+  pop(prog(lt, c2 + 0.05, 0.4), 540, 1220, () => {
+    rr(110, 1100, 860, 220, 30); g.fillStyle = C.panel; g.fill(); g.strokeStyle = 'rgba(245,196,81,0.5)'; g.lineWidth = 3; g.stroke();
+    text('排気は水に溶ける二酸化炭素', 540, 1170, { size: 46, color: C.white });
+    text('→ 泡の航跡がほぼ出ない', 540, 1252, { size: 58, fam: 'Dela', color: C.gold });
+  });
+  note('※九三式一型改二:36ノットで約40km。Mk15:26.5ノットで約13.7km(概数)');
+};
+
+S.yamato = (lt, sc, t) => {
+  background(t, 'rgba(245,196,81,0.16)'); header(3);
+  heading(lt, 3, '戦艦大和', '1941年12月 就役 / 満載排水量 約7万2千トン');
+  const c1 = sc.cues[1].start - sc.start, c2 = sc.cues[2].start - sc.start;
+  const p = eOut(prog(lt, 0.5, 1.0));
+  g.save(); g.globalAlpha = clamp(p * 2); sea(890, t); yamato(lerp(-300, 540, p), 900 + Math.sin(t * 1.4) * 4, 1.05); sea(916, t + 2, 0.7); g.restore();
+  // 主砲口径の比較
+  const hold = 1 - prog(lt, c2 - 0.2, 0.3);
+  if (hold > 0) { g.save(); g.globalAlpha = hold;
+    const items = [['大和(日)', 46, '46cm', true], ['アイオワ級(米)', 40.6, '40.6cm', false], ['ビスマルク(独)', 38, '38cm', false]];
+    items.forEach((it, i) => pop(prog(lt, c1 + i * 0.25, 0.45), 200 + i * 340, 1190, () => {
+      const r = it[1] * 2.6, x = 200 + i * 340;
+      g.beginPath(); g.arc(x, 1190, r, 0, 7); g.fillStyle = it[3] ? C.red : 'rgba(255,255,255,0.10)'; g.fill();
+      g.lineWidth = 5; g.strokeStyle = it[3] ? C.gold : C.dim; g.stroke();
+      text(it[2], x, 1190, { size: it[3] ? 60 : 44, fam: 'Dela', color: it[3] ? '#fff' : C.mute });
+      text(it[0], x, 1350, { size: 34, color: it[3] ? C.white : C.mute, weight: it[3] ? 900 : 700 });
+    }));
+    rise(prog(lt, c1, 0.3), () => text('主砲の口径', 540, 1030, { size: 44, color: C.mute, weight: 700 }), 20);
+    g.restore(); }
+  if (lt > c2 - 0.1) {
+    const q = prog(lt, c2, 0.8);
+    bigStat(prog(lt, c2, 0.4), '主砲弾 1発の重さ', '約' + (1.46 * eOut(q)).toFixed(2), 't', 1190);
+    rise(prog(lt, c2 + 0.9, 0.4), () => text('小型乗用車 およそ1.5台分 / 最大射程 約42km', 540, 1350, { size: 38, color: C.white, weight: 700 }), 20);
+  }
+  note('※九一式徹甲弾 約1,460kg。数値は概数です');
+};
+
+S.kido = (lt, sc, t) => {
+  background(t, 'rgba(90,150,255,0.18)'); header(4);
+  heading(lt, 4, '空母機動部隊', '第一航空艦隊(1941年4月 編成)');
+  const names = ['赤城', '加賀', '蒼龍', '飛龍', '翔鶴', '瑞鶴'];
+  const c1 = sc.cues[1].start - sc.start;
+  names.forEach((n, i) => {
+    const p = prog(lt, c1 - 0.3 + i * 0.3, 0.5); if (p <= 0) return;
+    const x = 165 + i * 150, y = 870 + (i % 2 ? 40 : 0);
+    // 航跡
+    g.save(); g.globalAlpha = 0.25 * clamp(p * 2); const gr = g.createLinearGradient(0, y + 110, 0, y + 250); gr.addColorStop(0, '#fff'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(x - 14, y + 108); g.lineTo(x + 14, y + 108); g.lineTo(x + 30, y + 250); g.lineTo(x - 30, y + 250); g.closePath(); g.fill(); g.restore();
+    carrier(x, y + (1 - eOut(p)) * 120 + Math.sin(t * 1.2 + i) * 4, 0.72, clamp(p * 2));
+    g.save(); g.globalAlpha = clamp(p * 2); text(n, x, y - 150, { size: 36, color: C.white }); g.restore();
+  });
+  // 発艦する攻撃隊
+  const tp = lt - (c1 + 2.0);
+  if (tp > 0) for (let i = 0; i < 42; i++) {
+    const d = tp - rnd(i) * 1.6; if (d < 0) continue;
+    const x = 110 + rnd(i + 20) * 860, y = 760 - d * 230 - rnd(i + 40) * 60;
+    if (y < 610) continue; plane(x, y, 1.1, clamp((y - 610) / 60) * 0.9);
+  }
+  const p2 = prog(lt, c1 + 1.9, 0.5);
+  rise(p2, () => {
+    const cells = [['空母', '6', '隻'], ['搭載機', '約400', '機']];
+    cells.forEach((c, i) => { const x = 290 + i * 500;
+      rr(x - 220, 1150, 440, 190, 28); g.fillStyle = C.panel; g.fill(); g.strokeStyle = 'rgba(245,196,81,0.45)'; g.lineWidth = 3; g.stroke();
+      text(c[0], x, 1192, { size: 34, color: C.mute, weight: 700 });
+      font(96, /[\u3400-\u9fff]/.test(c[1]) ? 'Noto' : 'Dela'); const w = g.measureText(c[1]).width;
+      text(c[1], x - 26, 1276, { size: 96, fam: 'Dela', color: C.gold }); text(c[2], x - 26 + w / 2 + 34, 1290, { size: 50, fam: 'Dela', color: C.gold });
+    });
+  }, 50);
+  note('※真珠湾攻撃時の概数。空母の集中運用は各国海軍に影響を与えました');
+};
+
+S.i400 = (lt, sc, t) => {
+  background(t, 'rgba(60,200,190,0.15)'); header(5);
+  heading(lt, 5, '伊400型潜水艦', '潜水空母(1944年 就役)');
+  const c1 = sc.cues[1].start - sc.start;
+  const p = eOut(prog(lt, 0.5, 1.0));
+  g.save(); g.globalAlpha = clamp(p * 2);
+  sub(lerp(1400, 540, p), 830 + Math.sin(t * 1.3) * 4, 1.0); sea(852, t, 0.9);
+  g.restore();
+  // 全長
+  rise(prog(lt, 1.2, 0.4), () => {
+    g.strokeStyle = C.gold; g.lineWidth = 3; g.beginPath(); g.moveTo(90, 975); g.lineTo(996, 975); g.moveTo(90, 960); g.lineTo(90, 990); g.moveTo(996, 960); g.lineTo(996, 990); g.stroke();
+    rr(420, 949, 240, 52, 26); g.fillStyle = '#0d1424'; g.fill(); text('全長 122m', 540, 976, { size: 36, color: C.gold });
+  }, 20);
+  // 攻撃機 ×3
+  for (let i = 0; i < 3; i++) pop(prog(lt, c1 + 0.2 + i * 0.22, 0.4), 150 + i * 100, 1130, () => plane(150 + i * 100, 1130, 2.6, 1));
+  rise(prog(lt, c1 + 0.2, 0.4), () => { text('攻撃機「晴嵐」', 250, 1225, { size: 36, color: C.mute, weight: 700 }); text('×3機', 250, 1300, { size: 70, fam: 'Dela', color: C.gold }); }, 30);
+  // 地球 1 周半
+  const cq = sc.cues[1].start - sc.start + 1.3, q = eIO(prog(lt, cq, 2.2)), ex = 760, ey = 1180, er = 120;
+  pop(prog(lt, cq - 0.3, 0.45), ex, ey, () => {
+    const gr = g.createRadialGradient(ex - 40, ey - 40, 10, ex, ey, er); gr.addColorStop(0, '#5fa8ff'); gr.addColorStop(1, '#173a7a');
+    g.beginPath(); g.arc(ex, ey, er, 0, 7); g.fillStyle = gr; g.fill();
+    g.save(); g.beginPath(); g.arc(ex, ey, er, 0, 7); g.clip(); g.fillStyle = 'rgba(120,220,150,0.75)';
+    [[-50, -30, 60, 40], [30, 20, 50, 60], [-70, 50, 40, 30], [60, -60, 40, 26]].forEach(b => { g.beginPath(); g.ellipse(ex + b[0], ey + b[1], b[2], b[3], 0.4, 0, 7); g.fill(); });
+    g.restore();
+    g.save(); g.translate(ex, ey); g.rotate(-0.35); g.scale(1, 0.34);
+    g.lineWidth = 10; g.strokeStyle = 'rgba(255,255,255,0.15)'; g.beginPath(); g.arc(0, 0, er + 50, 0, 7); g.stroke();
+    g.strokeStyle = C.gold; g.lineCap = 'round'; g.beginPath(); g.arc(0, 0, er + 50, Math.PI * 0.5, Math.PI * 0.5 + Math.PI * 2 * Math.min(1.7 * q, 1)); g.stroke();
+    if (q * 1.7 > 1) { g.strokeStyle = C.red; g.beginPath(); g.arc(0, 0, er + 50, Math.PI * 0.5, Math.PI * 0.5 + Math.PI * 2 * (1.7 * q - 1)); g.stroke(); }
+    const a = Math.PI * 0.5 + Math.PI * 2 * 1.7 * q; g.beginPath(); g.arc(Math.cos(a) * (er + 50), Math.sin(a) * (er + 50), 16, 0, 7); g.fillStyle = '#fff'; g.fill();
+    g.restore();
+  });
+  rise(prog(lt, cq, 0.4), () => text('航続距離 約6万9千km', 760, 1350, { size: 40, color: C.gold }), 20);
+  note('※14ノットで約37,500海里(地球1周 約4万km)。第二次大戦期で最大の潜水艦');
+};
+
+S.outro = (lt, sc, t) => {
+  background(t, 'rgba(229,73,63,0.14)');
+  const c1 = sc.cues[1].start - sc.start;
+  const items = [['零戦', '航続距離 約3,000km'], ['酸素魚雷', '射程 最大40km'], ['戦艦大和', '46cm主砲'], ['空母機動部隊', '空母6隻を集中運用'], ['伊400型', '地球1周半の航続力']];
+  text('まとめ', 540, 250, { size: 90, fam: 'Dela', color: C.gold });
+  items.forEach((it, i) => rise(prog(lt, 0.15 + i * 0.16, 0.4), () => {
+    const y = 380 + i * 112;
+    rr(90, y - 46, 900, 92, 20); g.fillStyle = C.panel; g.fill();
+    g.beginPath(); g.arc(146, y, 30, 0, 7); g.fillStyle = C.red; g.fill(); text(String(i + 1), 146, y + 2, { size: 34, fam: 'Dela' });
+    text(it[0], 200, y, { size: 44, align: 'left' }); text(it[1], 960, y, { size: 36, align: 'right', color: C.gold, weight: 700 });
+  }, 30));
+  pop(prog(lt, 1.6, 0.45), 540, 1040, () => {
+    text('技術は一流', 540, 1010, { size: 110, fam: 'Dela', stroke: 'rgba(0,0,0,0.6)', strokeW: 16 });
+  });
+  pop(prog(lt, 2.6, 0.45), 540, 1170, () => text('でも、国力と補給の差は埋まらず', 540, 1160, { size: 54, color: C.red, stroke: 'rgba(0,0,0,0.6)', strokeW: 10 }));
+  rise(prog(lt, c1, 0.5), () => text('歴史から学ぼう', 540, 1290, { size: 84, fam: 'Dela', color: C.gold, stroke: 'rgba(0,0,0,0.6)', strokeW: 14 }), 30);
+  text('VOICEVOX:四国めたん / BGM:オリジナル / 数値は概数', 540, 1690, { size: 28, color: C.mute, weight: 500 });
+};
+
+function render(t) {
+  t = clamp(t, 0, TL.duration - 1e-3);
+  const i = TL.scenes.findIndex(s => t < s.end), sc = TL.scenes[i < 0 ? TL.scenes.length - 1 : i], lt = t - sc.start;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.clearRect(0, 0, W, H);
+  S[sc.id](lt, sc, t);
+  vignette();
+  caption(t, sc);
+  // シーン切り替えのフラッシュと、最後のフェードアウト
+  const f = Math.max(1 - prog(lt, 0, 0.22), i > 0 || lt > 1 ? prog(t, sc.end - 0.10, 0.10) * (sc === TL.scenes[TL.scenes.length - 1] ? 0 : 1) : 0);
+  if (f > 0 && t > 0.01) { g.fillStyle = `rgba(255,255,255,${0.85 * f})`; g.fillRect(0, 0, W, H); }
+  const out = prog(t, TL.duration - 0.5, 0.5); if (out > 0) { g.fillStyle = `rgba(0,0,0,${out})`; g.fillRect(0, 0, W, H); }
+  // 進行バー
+  g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(0, H - 8, W, 8); g.fillStyle = C.red; g.fillRect(0, H - 8, W * t / TL.duration, 8);
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生(capture.js は ?capture を付けて止める)
+Promise.all([document.fonts.load('100px "Dela"'), document.fonts.load('900 50px "Noto"'), document.fonts.load('500 50px "Noto"'), document.fonts.load('700 50px "Noto"')]).then(() => {
+  window.READY = true;
+  if (location.search.includes('capture')) return;
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % TL.duration); requestAnimationFrame(loop); })();
+});
+</script>
+</body>
+</html>

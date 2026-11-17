@@ -1,0 +1,4 @@
+__pycache__/
+output/shots/
+output/video_silent.mp4
+output/mix.wav
