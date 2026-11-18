@@ -10,6 +10,7 @@ g() { echo "$M" | python3 -I -c "import json,sys; print(json.load(sys.stdin)['$1
 ffmpeg -y -hide_banner -loglevel error -i output/video_silent.mp4 -i output/mix.wav -c:v libx264 -crf 21 -preset slow -pix_fmt yuv420p \
   -af "loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=$(g input_i):measured_TP=$(g input_tp):measured_LRA=$(g input_lra):measured_thresh=$(g input_thresh):offset=$(g target_offset):linear=true,volume=1.3dB" \
   -ac 2 -ar 48000 -c:a aac -b:a 192k -shortest -movflags +faststart output/beppan_short.mp4
-node capture.js --still 5.3 output/thumbnail.png && ffmpeg -y -loglevel error -i output/thumbnail.png -q:v 2 output/thumbnail.jpg && rm output/thumbnail.png
+TH=$(python3 -c "import json;d=json.load(open('output/timings.json'));print(round(d['scenes'][0]['end']-0.4,2))")
+node capture.js --still "$TH" output/thumbnail.png && ffmpeg -y -loglevel error -i output/thumbnail.png -q:v 2 output/thumbnail.jpg && rm output/thumbnail.png
 ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,channels:format=duration,size -of default=nw=1 output/beppan_short.mp4
 ffmpeg -hide_banner -i output/beppan_short.mp4 -af ebur128=peak=true -f null - 2>&1 | grep -E "^\s+(I|Peak):" | tr -s ' '

@@ -33,13 +33,14 @@ print('voice:', next(c.name + '/' + s.name for c in synth.metas() for s in c.sty
 
 def mora_len(m): return (m.consonant_length or 0.0) + m.vowel_length
 
-def speak(chunks):
+def speak(chunks, style=None):
+    style = style or STYLE
     """1 シーン分を 1 回で合成し、(波形, [(句の開始秒, 終了秒)]) を返す"""
     text = ''.join(c[1] for c in chunks)
-    q = synth.create_audio_query(text, STYLE)
+    q = synth.create_audio_query(text, style)
     q.speed_scale = SPEED; q.pre_phoneme_length = 0.05; q.post_phoneme_length = 0.1
     q.intonation_scale = 1.1
-    wav = synth.synthesis(q, STYLE)
+    wav = synth.synthesis(q, style)
     with wave.open(io.BytesIO(wav)) as w:
         sr = w.getframerate()
         x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
@@ -71,8 +72,10 @@ def speak(chunks):
     return x, spans, kana
 
 parts, scenes, t = [], [], LEAD
-for sid, chunks in SCENES:
-    x, spans, kana = speak(chunks)
+for sc in SCENES:
+    sid, chunks = sc[0], sc[1]
+    t += {'evidence': 0.35, 'end': 0.9}.get(sid, 0.0)   # 「ところが」の後と、結びの前に溜めを作る
+    x, spans, kana = speak(chunks, sc[2] if len(sc) > 2 else None)
     print(f'{t:6.2f}s  {len(x) / SR:5.2f}s  {sid}: {kana}')
     f = 480; x[:f] *= np.linspace(0, 1, f); x[-f:] *= np.linspace(1, 0, f)
     parts.append((t, x))
