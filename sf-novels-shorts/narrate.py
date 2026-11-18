@@ -26,7 +26,7 @@ os.makedirs(OUT, exist_ok=True)
 SR = 48000
 LEAD = 0.22     # シーン開始から声が出るまで
 TAIL = 0.30     # 声が終わってから次のシーンまで
-END_HOLD = 1.3  # 最後のカードを見せる余韻
+END_HOLD = 1.1  # 最後のカードを見せる余韻
 SPEED = float(os.environ.get('VOICEVOX_SPEED', '1.26'))
 STYLE = int(os.environ.get('VOICEVOX_STYLE', '2'))
 
@@ -109,7 +109,7 @@ def ts(x):
     return f'{h:02d}:{m:02d}:{s:02d},{ms:03d}'
 with open(os.path.join(OUT, 'subtitles_ja.srt'), 'w', encoding='utf-8') as f:
     for i, sc in enumerate(timeline, 1):
-        f.write(f"{i}\n{ts(sc['voiceStart'])} --> {ts(min(sc['voiceEnd'] + 0.25, sc['end']))}\n{sc['sub']}\n\n")
+        f.write(f"{i}\n{ts(sc['voiceStart'])} --> {ts(min(sc['voiceEnd'] + 0.25, sc['end']))}\n{sc['sub'].replace('|', '')}\n\n")
 
 # ---------- BGM をダッキングしながらミックス ----------
 music = bgm_mod.generate(TOTAL)

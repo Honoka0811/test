@@ -55,6 +55,7 @@ function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
 function wrap(str, size, weight, maxW) {
   setFont(size, weight);
   const wd = x => ctx.measureText(x).width;
+  if (str.includes('|')) return str.split('|');   // 原稿側で改行位置を指定
   if (wd(str) <= maxW) return [str];
   // 2 行に分ける: 句読点の直後を優先し、左右の長さがなるべく揃う位置で折る
   let best = null;
@@ -106,155 +107,147 @@ function background(t, accent) {
 
 // ---------- アイコン (cx, cy を中心に半径 r 程度。t はシーン内時刻) ----------
 const ICONS = {
-  moon(r, t, col) {
-    ctx.fillStyle = '#f4ecd0'; ctx.shadowColor = col; ctx.shadowBlur = 50;
-    ctx.beginPath(); ctx.arc(0, 0, r * 0.62, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(150,140,110,0.5)';
-    [[-0.22, -0.2, 0.13], [0.2, 0.05, 0.17], [-0.1, 0.28, 0.09], [0.25, -0.3, 0.07], [-0.36, 0.08, 0.06]].forEach(([x, y, s]) => {
-      ctx.beginPath(); ctx.arc(x * r, y * r, s * r, 0, 7); ctx.fill();
-    });
-    // 砲弾型の宇宙船が月を回る
-    const a = t * 1.5 - 1.2, ox = Math.cos(a) * r * 0.95, oy = Math.sin(a) * r * 0.42 - r * 0.05;
-    ctx.strokeStyle = rgba(col, 0.55); ctx.lineWidth = 5; ctx.setLineDash([4, 14]);
-    ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.95, r * 0.42, 0, a - 1.6, a); ctx.stroke(); ctx.setLineDash([]);
-    if (Math.sin(a) > -0.35) {
-      ctx.save(); ctx.translate(ox, oy); ctx.rotate(Math.atan2(Math.cos(a) * 0.42, -Math.sin(a) * 0.95));
-      const s = r * 0.13;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(s * 1.5, 0); ctx.quadraticCurveTo(s * 0.6, -s, -s, -s * 0.8); ctx.lineTo(-s, s * 0.8); ctx.quadraticCurveTo(s * 0.6, s, s * 1.5, 0); ctx.fill();
-      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-s, -s * 0.6); ctx.lineTo(-s * (1.9 + 0.4 * Math.sin(t * 30)), 0); ctx.lineTo(-s, s * 0.6); ctx.fill();
+  fortytwo(r, t, col) {
+    // 「生命、宇宙、そして万物についての答え」= 42
+    ctx.strokeStyle = rgba(col, 0.5); ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.02, r * 0.36, -0.35, 0, 7); ctx.stroke();
+    text('42', 0, r * 0.4, { size: r * 1.15, weight: 900, color: col, align: 'center', glow: rgba(col, 0.9), stroke: 14 });
+    const a = t * 1.6;
+    ctx.save(); ctx.rotate(-0.35);
+    ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 25;
+    ctx.beginPath(); ctx.arc(Math.cos(a) * r * 1.02, Math.sin(a) * r * 0.36, r * 0.075, 0, 7); ctx.fill();
+    ctx.restore();
+  },
+  galaxy(r, t, col) {
+    for (let i = 0; i < 260; i++) {
+      const p = rnd(i + 1), arm = i % 2, a = p * 5.2 + arm * Math.PI + t * 0.35 + (rnd(i + 70) - 0.5) * 0.5;
+      const rad = (0.08 + p * 0.95) * r;
+      ctx.globalAlpha = (1 - p * 0.6) * (0.5 + 0.5 * Math.abs(Math.sin(t * 2 + i)));
+      ctx.fillStyle = i % 5 === 0 ? '#fff' : col;
+      ctx.beginPath(); ctx.arc(Math.cos(a) * rad, Math.sin(a) * rad * 0.72, 2.5 + rnd(i + 9) * 5, 0, 7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 0.34);
+    g.addColorStop(0, '#fff'); g.addColorStop(0.35, rgba(col, 0.9)); g.addColorStop(1, rgba(col, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 0.34, 0, 7); ctx.fill();
+  },
+  threebody(r, t, col) {
+    const pos = (k, tt) => [
+      r * 0.62 * (Math.sin(tt * (0.9 + k * 0.23) + k * 2.1) * 0.75 + Math.sin(tt * 1.7 + k * 4) * 0.25),
+      r * 0.62 * (Math.cos(tt * (1.1 - k * 0.17) + k * 1.3) * 0.75 + Math.sin(tt * 1.3 + k * 2.5) * 0.25)];
+    const cols = ['#FFE14D', col, '#FF5A5F'];
+    for (let k = 0; k < 3; k++) {
+      for (let j = 24; j >= 1; j--) {            // 軌跡
+        const [x, y] = pos(k, t - j * 0.035);
+        ctx.globalAlpha = 0.5 * (1 - j / 24); ctx.fillStyle = cols[k];
+        ctx.beginPath(); ctx.arc(x, y, r * 0.06 * (1 - j / 30), 0, 7); ctx.fill();
+      }
+      const [x, y] = pos(k, t);
+      ctx.globalAlpha = 1; ctx.fillStyle = cols[k]; ctx.shadowColor = cols[k]; ctx.shadowBlur = 50;
+      ctx.beginPath(); ctx.arc(x, y, r * (0.17 - k * 0.02), 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.beginPath(); ctx.arc(x, y, r * 0.07, 0, 7); ctx.fill();
+    }
+    // 翻弄される惑星
+    ctx.fillStyle = '#7fd4ff'; ctx.beginPath(); ctx.arc(Math.sin(t * 2.3) * r * 0.85, Math.cos(t * 1.9) * r * 0.8, r * 0.055, 0, 7); ctx.fill();
+  },
+  rocket(r, t, col) {
+    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r * 1.15, 0, 7); ctx.clip();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    for (let i = 0; i < 14; i++) {               // 流れる星
+      const p = (t * (0.9 + rnd(i) * 0.9) + rnd(i + 5)) % 1, x = (rnd(i + 11) - 0.5) * r * 2.4, d = (1 - p * 2) * r * 1.3;
+      ctx.globalAlpha = 0.3 + rnd(i + 3) * 0.6; ctx.beginPath(); ctx.moveTo(x - d, -x * 0.2 + d); ctx.lineTo(x - d - 26, -x * 0.2 + d + 26); ctx.stroke();
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+    ctx.save(); ctx.rotate(Math.PI / 4); ctx.translate(0, Math.sin(t * 5) * 5);
+    const w = r * 0.3, h = r * 0.85;
+    // 炎
+    const fl = h * (0.55 + 0.15 * Math.sin(t * 28));
+    const fg = ctx.createLinearGradient(0, h * 0.45, 0, h * 0.45 + fl); fg.addColorStop(0, '#fff'); fg.addColorStop(0.3, '#FFE14D'); fg.addColorStop(1, 'rgba(255,90,60,0)');
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.moveTo(-w * 0.6, h * 0.45); ctx.quadraticCurveTo(0, h * 0.45 + fl * 1.6, w * 0.6, h * 0.45); ctx.fill();
+    // 尾翼
+    ctx.fillStyle = col; [-1, 1].forEach(k => { ctx.beginPath(); ctx.moveTo(k * w * 0.8, h * 0.05); ctx.lineTo(k * w * 1.8, h * 0.6); ctx.lineTo(k * w * 0.8, h * 0.45); ctx.fill(); });
+    // 胴体
+    ctx.fillStyle = '#f4f6ff'; ctx.shadowColor = col; ctx.shadowBlur = 35;
+    ctx.beginPath(); ctx.moveTo(0, -h); ctx.bezierCurveTo(w * 1.3, -h * 0.4, w, h * 0.2, w * 0.8, h * 0.5); ctx.lineTo(-w * 0.8, h * 0.5); ctx.bezierCurveTo(-w, h * 0.2, -w * 1.3, -h * 0.4, 0, -h); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, -h * 0.25, w * 0.42, 0, 7); ctx.fill();
+    ctx.fillStyle = '#10243a'; ctx.beginPath(); ctx.arc(0, -h * 0.25, w * 0.28, 0, 7); ctx.fill();
+    ctx.restore();
+  },
+  fleet(r, t, col) {
+    // 照準と、V 字編隊の艦隊
+    ctx.strokeStyle = rgba(col, 0.7); ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.95, 0, 7); ctx.stroke();
+    ctx.save(); ctx.rotate(t * 0.5);
+    for (let i = 0; i < 4; i++) { ctx.rotate(Math.PI / 2); ctx.beginPath(); ctx.moveTo(r * 0.8, 0); ctx.lineTo(r * 1.08, 0); ctx.stroke(); }
+    ctx.restore();
+    const ship = (x, y, s, c) => {
+      ctx.save(); ctx.translate(x, y + Math.sin(t * 3 + x) * 5);
+      ctx.fillStyle = rgba(col, 0.5 + 0.3 * Math.sin(t * 20 + x)); ctx.beginPath(); ctx.moveTo(-s * 0.3, s * 0.55); ctx.lineTo(0, s * 1.3); ctx.lineTo(s * 0.3, s * 0.55); ctx.fill();
+      ctx.fillStyle = c; ctx.shadowColor = col; ctx.shadowBlur = 25;
+      ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(s * 0.8, s * 0.7); ctx.lineTo(0, s * 0.35); ctx.lineTo(-s * 0.8, s * 0.7); ctx.closePath(); ctx.fill();
       ctx.restore();
-    }
+    };
+    [[-0.6, 0.42], [0.6, 0.42], [-0.3, 0.12], [0.3, 0.12]].forEach(([x, y]) => ship(x * r, y * r, r * 0.14, '#dff9ff'));
+    ship(0, -r * 0.25, r * 0.2, col);
   },
-  flask(r, t, col) {
-    const w = r * 0.5, top = -r * 0.8, bot = r * 0.75;
-    ctx.save();
-    ctx.beginPath(); ctx.moveTo(-w * 0.32, top); ctx.lineTo(-w * 0.32, -r * 0.25); ctx.lineTo(-w * 1.15, bot - 30);
-    ctx.quadraticCurveTo(-w * 1.3, bot, -w, bot); ctx.lineTo(w, bot); ctx.quadraticCurveTo(w * 1.3, bot, w * 1.15, bot - 30);
-    ctx.lineTo(w * 0.32, -r * 0.25); ctx.lineTo(w * 0.32, top); ctx.closePath();
-    ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fill();
-    ctx.save(); ctx.clip();
-    const lv = r * 0.05 + Math.sin(t * 2) * 6;
-    ctx.fillStyle = rgba(col, 0.85); ctx.beginPath(); ctx.moveTo(-r, lv);
-    for (let x = -r; x <= r; x += 20) ctx.lineTo(x, lv + Math.sin(x * 0.03 + t * 4) * 8);
-    ctx.lineTo(r, r); ctx.lineTo(-r, r); ctx.fill();
-    // 中の胎児のような丸と泡
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.beginPath(); ctx.arc(0, r * 0.42 + Math.sin(t * 1.7) * 6, r * 0.14, 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.arc(r * 0.09, r * 0.27 + Math.sin(t * 1.7) * 6, r * 0.085, 0, 7); ctx.fill();
-    for (let i = 0; i < 9; i++) {
-      const p = (t * (0.35 + rnd(i) * 0.4) + rnd(i + 3)) % 1;
-      ctx.globalAlpha = 1 - p; ctx.beginPath(); ctx.arc((rnd(i + 9) - 0.5) * w * 1.6 * (1 - p * 0.6), bot - p * r * 1.1, 5 + rnd(i + 5) * 9, 0, 7); ctx.fill();
-    }
+  helmet(r, t, col) {
+    // パワードスーツのヘルメット
+    ctx.fillStyle = '#39405e'; rr(-r * 0.5, r * 0.5, r, r * 0.4, 20); ctx.fill();
+    ctx.fillStyle = '#e8ecf8'; ctx.shadowColor = col; ctx.shadowBlur = 35;
+    ctx.beginPath(); ctx.moveTo(-r * 0.78, r * 0.25); ctx.bezierCurveTo(-r * 0.9, -r * 1.05, r * 0.9, -r * 1.05, r * 0.78, r * 0.25);
+    ctx.lineTo(r * 0.5, r * 0.72); ctx.lineTo(-r * 0.5, r * 0.72); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = '#9aa3c0'; rr(-r * 0.95, -r * 0.2, r * 0.22, r * 0.5, 14); ctx.fill(); rr(r * 0.73, -r * 0.2, r * 0.22, r * 0.5, 14); ctx.fill();
+    // バイザー
+    ctx.save(); rr(-r * 0.58, -r * 0.3, r * 1.16, r * 0.42, r * 0.18); ctx.fillStyle = '#101426'; ctx.fill(); ctx.clip();
+    const sx = ((t * 0.7) % 1) * r * 2 - r;
+    const g = ctx.createLinearGradient(sx - r * 0.5, 0, sx + r * 0.5, 0); g.addColorStop(0, rgba(col, 0.25)); g.addColorStop(0.5, col); g.addColorStop(1, rgba(col, 0.25));
+    ctx.fillStyle = g; ctx.fillRect(-r, -r * 0.2, r * 2, r * 0.22);
     ctx.restore();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineJoin = 'round'; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-w * 0.5, top); ctx.lineTo(w * 0.5, top); ctx.stroke();
-    ctx.restore();
+    ctx.fillStyle = '#39405e'; for (let i = -2; i <= 2; i++) ctx.fillRect(i * r * 0.11 - 5, r * 0.34, 10, r * 0.24);
+    ctx.fillStyle = col; rr(-r * 0.07, -r * 0.82, r * 0.14, r * 0.42, 8); ctx.fill();
   },
-  eye(r, t, col) {
-    const w = r * 0.98, h = r * 0.56, blink = Math.abs(Math.sin(t * 1.1)) < 0.06 ? 0.15 : 1;
-    ctx.save(); ctx.scale(1, blink);
-    ctx.beginPath(); ctx.moveTo(-w, 0); ctx.quadraticCurveTo(0, -h * 1.9, w, 0); ctx.quadraticCurveTo(0, h * 1.9, -w, 0); ctx.closePath();
-    ctx.fillStyle = '#f6f6ff'; ctx.shadowColor = col; ctx.shadowBlur = 45; ctx.fill(); ctx.shadowBlur = 0;
-    ctx.save(); ctx.clip();
-    const ix = Math.sin(t * 1.6) * w * 0.3;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ix, 0, h * 0.82, 0, 7); ctx.fill();
-    ctx.fillStyle = '#12050a'; ctx.beginPath(); ctx.arc(ix, 0, h * 0.4, 0, 7); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ix - h * 0.25, -h * 0.25, h * 0.13, 0, 7); ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.stroke();
-    ctx.restore();
-    // スキャンライン
-    const sy = ((t * 0.5) % 1) * r * 1.8 - r * 0.9;
-    ctx.fillStyle = rgba(col, 0.55); ctx.fillRect(-r, sy, r * 2, 5);
-  },
-  robot(r, t, col) {
-    const s = r * 0.62;
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 9; ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(0, -s * 1.02); ctx.lineTo(0, -s * 1.4); ctx.stroke();
-    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 30 + 20 * Math.sin(t * 6);
-    ctx.beginPath(); ctx.arc(0, -s * 1.45, s * 0.12, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = '#dfe7f5'; rr(-s * 1.12, -s * 0.2, s * 0.2, s * 0.5, 8); ctx.fill(); rr(s * 0.92, -s * 0.2, s * 0.2, s * 0.5, 8); ctx.fill();
-    ctx.fillStyle = '#1b2440'; rr(-s, -s, s * 2, s * 1.9, s * 0.3); ctx.fill(); ctx.stroke();
-    const blink = (t % 2.4) > 2.25 ? 0.12 : 1;
-    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 30;
-    [-1, 1].forEach(k => { ctx.beginPath(); ctx.ellipse(k * s * 0.45, -s * 0.25, s * 0.2, s * 0.2 * blink, 0, 0, 7); ctx.fill(); });
+  sheep(r, t, col) {
+    const bob = Math.sin(t * 2.5) * 5;
+    ctx.fillStyle = '#8a7fb0';
+    [-0.38, -0.15, 0.15, 0.38].forEach((x, i) => rrFill(x * r - r * 0.06, r * 0.3, r * 0.12, r * 0.42 + (i % 2 ? bob : -bob), 8));
+    ctx.fillStyle = '#f6f3ff'; ctx.shadowColor = col; ctx.shadowBlur = 35;
+    [[-0.5, 0, 0.3], [-0.2, -0.22, 0.34], [0.2, -0.2, 0.33], [0.48, 0.02, 0.29], [0.2, 0.2, 0.32], [-0.2, 0.22, 0.32], [0, 0, 0.36]].forEach(([x, y, s]) => {
+      ctx.beginPath(); ctx.arc(x * r, y * r + bob * 0.4, s * r, 0, 7); ctx.fill();
+    });
     ctx.shadowBlur = 0;
-    for (let i = 0; i < 7; i++) {
-      const hh = s * (0.08 + 0.2 * Math.abs(Math.sin(t * 9 + i * 1.3)));
-      ctx.fillRect(-s * 0.56 + i * s * 0.17, s * 0.42 - hh / 2, s * 0.1, hh);
-    }
+    ctx.fillStyle = '#2b2440'; ctx.beginPath(); ctx.ellipse(-r * 0.74, -r * 0.12 + bob * 0.4, r * 0.2, r * 0.25, 0.3, 0, 7); ctx.fill();
+    ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(-r * 0.79, -r * 0.16 + bob * 0.4, r * 0.05, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    // 稲妻(電気羊)
+    const on = Math.sin(t * 9) > -0.4 ? 1 : 0.35;
+    ctx.globalAlpha = on; ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 30;
+    ctx.beginPath(); [[0.12, -0.3], [-0.14, 0.04], [0.02, 0.04], [-0.1, 0.34], [0.2, -0.04], [0.04, -0.04]].forEach(([x, y], i) => i ? ctx.lineTo(x * r, y * r + bob * 0.4) : ctx.moveTo(x * r, y * r + bob * 0.4));
+    ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    for (let i = 0; i < 3; i++) text('z', r * (0.55 + i * 0.16), -r * (0.5 + i * 0.2) - ((t * 20) % 20), { size: 30 + i * 12, weight: 900, color: col, alpha: 0.5 + 0.5 * Math.sin(t * 3 + i) });
   },
-  earbud(r, t, col) {
-    const bud = (x, flip) => {
-      ctx.save(); ctx.translate(x, -r * 0.1); ctx.scale(flip, 1); ctx.rotate(-0.12);
-      ctx.fillStyle = '#fff'; ctx.shadowColor = col; ctx.shadowBlur = 30;
-      rr(-r * 0.075, 0, r * 0.15, r * 0.72, r * 0.075); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(r * 0.04, 0, r * 0.2, r * 0.23, 0, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-      ctx.fillStyle = '#2b3050'; ctx.beginPath(); ctx.ellipse(r * 0.13, -r * 0.01, r * 0.05, r * 0.11, 0, 0, 7); ctx.fill();
-      // 音の波
-      ctx.strokeStyle = col; ctx.lineWidth = 8; ctx.lineCap = 'round';
-      for (let i = 0; i < 3; i++) {
-        const p = (t * 1.3 + i / 3) % 1;
-        ctx.globalAlpha = 1 - p; ctx.beginPath(); ctx.arc(r * 0.2, 0, r * (0.12 + p * 0.42), -0.8, 0.8); ctx.stroke();
-      }
-      ctx.restore();
+  dune(r, t, col) {
+    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r * 1.1, 0, 7); ctx.clip();
+    const g = ctx.createLinearGradient(0, -r, 0, r); g.addColorStop(0, '#3a1244'); g.addColorStop(0.6, '#c2542d'); g.addColorStop(1, '#ffb347');
+    ctx.fillStyle = g; ctx.fillRect(-r * 1.2, -r * 1.2, r * 2.4, r * 2.4);
+    ctx.fillStyle = '#fff3d6'; ctx.beginPath(); ctx.arc(r * 0.45, -r * 0.55, r * 0.17, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ffd9a0'; ctx.beginPath(); ctx.arc(r * 0.05, -r * 0.72, r * 0.09, 0, 7); ctx.fill();
+    const layer = (y0, amp, sp, c) => {
+      ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(-r * 1.2, r * 1.2);
+      for (let x = -r * 1.2; x <= r * 1.2; x += 12) ctx.lineTo(x, y0 + Math.sin(x * 0.012 + t * sp) * amp + Math.sin(x * 0.03 + 1) * amp * 0.3);
+      ctx.lineTo(r * 1.2, r * 1.2); ctx.fill();
     };
-    bud(-r * 0.62, 1); bud(r * 0.62, -1);
-    ctx.fillStyle = col; ctx.globalAlpha = 0.9;
-    for (let i = 0; i < 3; i++) {
-      const y = r * 0.1 - ((t * 0.5 + i * 0.33) % 1) * r * 0.9, x = Math.sin(t * 2 + i * 2) * r * 0.1;
-      text('♪', x, y, { size: r * 0.3, weight: 900, color: col, align: 'center', alpha: 1 - ((t * 0.5 + i * 0.33) % 1) });
+    layer(r * 0.15, r * 0.12, 0.25, '#a84a24');
+    // 砂虫
+    const up = 0.5 + 0.5 * Math.sin(t * 1.1 - 1);
+    ctx.strokeStyle = '#5a2a14'; ctx.lineWidth = r * 0.3; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.arc(-r * 0.2, r * 0.75, r * 0.55, Math.PI, Math.PI + Math.PI * (0.35 + 0.55 * up)); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,200,140,0.35)'; ctx.lineWidth = 4;
+    for (let i = 1; i < 9; i++) {
+      const a = Math.PI + Math.PI * (0.35 + 0.55 * up) * i / 9;
+      ctx.beginPath(); ctx.moveTo(-r * 0.2 + Math.cos(a) * r * 0.4, r * 0.75 + Math.sin(a) * r * 0.4); ctx.lineTo(-r * 0.2 + Math.cos(a) * r * 0.7, r * 0.75 + Math.sin(a) * r * 0.7); ctx.stroke();
     }
-  },
-  virus(r, t, col) {
-    const one = (x, y, s, rot) => {
-      ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-      ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = s * 0.11; ctx.lineCap = 'round';
-      for (let i = 0; i < 12; i++) {
-        const a = i / 12 * Math.PI * 2;
-        ctx.beginPath(); ctx.moveTo(Math.cos(a) * s * 0.6, Math.sin(a) * s * 0.6); ctx.lineTo(Math.cos(a) * s * 0.92, Math.sin(a) * s * 0.92); ctx.stroke();
-        ctx.beginPath(); ctx.arc(Math.cos(a) * s, Math.sin(a) * s, s * 0.11, 0, 7); ctx.fill();
-      }
-      ctx.shadowColor = col; ctx.shadowBlur = 40;
-      ctx.beginPath(); ctx.arc(0, 0, s * 0.66, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      [[-0.2, -0.2, 0.16], [0.25, 0.05, 0.11], [-0.05, 0.3, 0.09]].forEach(([a, b, c]) => { ctx.beginPath(); ctx.arc(a * s, b * s, c * s, 0, 7); ctx.fill(); });
-      ctx.restore();
-    };
-    const grow = easeOut(seg(t, 0.6, 2.5));
-    [[-0.78, -0.55, 0.2], [0.8, -0.4, 0.24], [-0.7, 0.62, 0.17], [0.72, 0.65, 0.2], [0.05, -0.92, 0.13]].forEach(([x, y, s], i) => {
-      ctx.globalAlpha = grow; one(x * r * (0.5 + 0.5 * grow), y * r * (0.5 + 0.5 * grow), s * r, -t * 0.8 + i);
-    });
-    ctx.globalAlpha = 1; one(0, 0, r * 0.52, t * 0.5);
-  },
-  hal(r, t, col) {
-    ctx.fillStyle = '#0b0c14'; rr(-r * 0.55, -r * 0.95, r * 1.1, r * 1.9, 24); ctx.fill();
-    ctx.strokeStyle = '#9aa3c0'; ctx.lineWidth = 7; ctx.stroke();
-    ctx.fillStyle = '#9aa3c0'; for (let i = 0; i < 6; i++) ctx.fillRect(-r * 0.36, r * 0.55 + i * r * 0.055, r * 0.72, 5);
-    const cy = -r * 0.25, pulse = 0.75 + 0.25 * Math.sin(t * 3.2);
-    ctx.fillStyle = '#c9d0e6'; ctx.beginPath(); ctx.arc(0, cy, r * 0.44, 0, 7); ctx.fill();
-    ctx.fillStyle = '#05060a'; ctx.beginPath(); ctx.arc(0, cy, r * 0.39, 0, 7); ctx.fill();
-    const g = ctx.createRadialGradient(0, cy, 0, 0, cy, r * 0.36);
-    g.addColorStop(0, '#fff3a0'); g.addColorStop(0.16 * pulse, '#ffb020'); g.addColorStop(0.4, col); g.addColorStop(1, 'rgba(80,0,0,0.2)');
-    ctx.shadowColor = col; ctx.shadowBlur = 70 * pulse; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, cy, r * 0.33, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(-r * 0.13, cy - r * 0.15, r * 0.1, r * 0.05, -0.6, 0, 7); ctx.fill();
-  },
-  network(r, t, col) {
-    const N = [[0, 0], [-0.75, -0.5], [0.7, -0.6], [-0.85, 0.35], [0.85, 0.3], [-0.2, 0.85], [0.4, 0.8], [-0.1, -0.9]];
-    const E = [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [0, 7], [1, 7], [2, 7], [1, 3], [2, 4], [5, 6], [3, 5], [4, 6]];
-    ctx.strokeStyle = rgba(col, 0.6); ctx.lineWidth = 5;
-    E.forEach(([a, b], i) => {
-      const [x1, y1] = N[a], [x2, y2] = N[b];
-      ctx.beginPath(); ctx.moveTo(x1 * r, y1 * r); ctx.lineTo(x2 * r, y2 * r); ctx.stroke();
-      const p = (t * 0.8 + rnd(i)) % 1;
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(lerp(x1, x2, p) * r, lerp(y1, y2, p) * r, 8, 0, 7); ctx.fill();
-    });
-    N.forEach(([x, y], i) => {
-      ctx.fillStyle = i ? '#eaffff' : col; ctx.shadowColor = col; ctx.shadowBlur = 30;
-      ctx.beginPath(); ctx.arc(x * r, y * r, i ? r * 0.1 : r * 0.24 + Math.sin(t * 4) * 5, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-    });
-    // 中央は受話器(声の網)
-    ctx.strokeStyle = '#06222a'; ctx.lineWidth = r * 0.07; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.arc(0, r * 0.12, r * 0.17, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+    layer(r * 0.5, r * 0.1, -0.35, '#d9772f'); layer(r * 0.78, r * 0.07, 0.5, '#f0a04a');
+    ctx.restore();
+    ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(0, 0, r * 1.1, 0, 7); ctx.stroke();
   },
   cyber(r, t, col) {
     ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r * 0.98, 0, 7); ctx.clip();
@@ -334,7 +327,7 @@ function drawIcon(name, cx, cy, r, t, col, a) {
 
 // ---------- 共通パーツ ----------
 function header(idx, col, sceneT, sceneDur) {
-  text('未来を言い当てた SF小説10選', W / 2, 132, { size: 36, weight: 700, color: C.ink2, align: 'center' });
+  text('天才が読んだ・名作を生んだ SF小説10選', W / 2, 132, { size: 36, weight: 700, color: C.ink2, align: 'center' });
   const n = 10, gap = 10, w = (960 - gap * (n - 1)) / n;
   for (let i = 0; i < n; i++) {
     const x = 60 + i * (w + gap);
@@ -351,6 +344,7 @@ function subtitle(str, a) {
   lines.forEach((l, i) => text(l, W / 2, y0 + i * lh, { size, weight: 900, align: 'center', stroke: 16 }));
   ctx.restore();
 }
+function rrFill(x, y, w, h, r) { rr(x, y, w, h, r); ctx.fill(); }
 function pill(label, x, y, bg, fg) {
   setFont(34, 900); const w = ctx.measureText(label).width + 44;
   rr(x, y - 44, w, 60, 30); ctx.fillStyle = bg; ctx.fill();
@@ -385,19 +379,17 @@ function sceneBook(sc, t, dur) {
   text(sc.author, W / 2, 1025, { size: 42, weight: 700, color: C.ink2, align: 'center', alpha: a1 });
   ctx.restore();
 
-  // 小説では → 現実では
-  const a2 = easeOut(seg(t, 0.3, 0.3)), a3 = seg(t, Math.min(dur * 0.42, 2.2), 0.3);
+  // 誰が読んだ / 何の元ネタか
+  const a2 = easeOut(seg(t, 0.2, 0.3)), a3 = seg(t, Math.min(dur * 0.4, 2.0), 0.3);
   ctx.save(); ctx.globalAlpha = a2; ctx.translate(0, 30 * (1 - a2));
   rr(50, 1068, 980, 290, 32); ctx.fillStyle = C.panel; ctx.fill(); ctx.strokeStyle = rgba(col, 0.6); ctx.lineWidth = 3; ctx.stroke();
-  let pw = pill('小説では', 82, 1148, 'rgba(255,255,255,0.16)', C.ink);
-  text(sc.pred, 82 + pw + 22, 1150, { size: 46, weight: 700, maxW: 890 - pw - 22 });
-  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(82, 1200); ctx.lineTo(998, 1200); ctx.stroke();
-  text('▼', W / 2, 1212, { size: 30, weight: 900, color: col, align: 'center', alpha: clamp(a3 * 2) });
+  let pw = pill(sc.tag, 82, 1150, col, '#0a0c1e');
+  text(sc.who, 82 + pw + 22, 1156, { size: 62, weight: 900, color: col, maxW: 890 - pw - 22, glow: rgba(col, 0.6) });
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(82, 1212); ctx.lineTo(998, 1212); ctx.stroke();
   ctx.save(); ctx.globalAlpha *= clamp(a3 * 2);
-  const s3 = 0.85 + 0.15 * easeBack(a3);
-  ctx.translate(82, 1296); ctx.scale(s3, s3);
-  pw = pill('現実では', 0, 0, col, '#0a0c1e');
-  text(sc.real, pw + 22, 6, { size: 58, weight: 900, color: col, maxW: 890 - pw - 22, glow: rgba(col, 0.6) });
+  const s3 = 0.9 + 0.1 * easeBack(a3);
+  ctx.translate(W / 2, 1296); ctx.scale(s3, s3);
+  text(sc.fact, 0, 0, { size: 48, weight: 900, align: 'center', maxW: 900 });
   ctx.restore();
   ctx.restore();
 
@@ -425,22 +417,22 @@ function sceneIntro(sc, t, dur) {
     text('SF小説 10選', 0, 48, { size: 150, weight: 900, align: 'center', maxW: 860 });
     ctx.restore();
   }
-  text('未来を言い当てた名作たち', W / 2, 1238, { size: 46, weight: 700, color: C.ink2, align: 'center', alpha: easeOut(seg(t, tb - 0.1, 0.3)) });
+  text('天才が読んだ・名作を生んだ', W / 2, 1238, { size: 46, weight: 700, color: C.ink2, align: 'center', alpha: easeOut(seg(t, tb - 0.1, 0.3)) });
 }
 
 function sceneOutro(sc, t, dur) {
   background(sc.start + t, '#7C5CFF');
   const a0 = easeOut(seg(t, 0, 0.3));
-  text('次の未来は、', W / 2, 250, { size: 84, weight: 900, align: 'center', alpha: a0 });
-  text('もう本の中にあるかも。', W / 2, 365, { size: 84, weight: 900, color: C.hook, align: 'center', alpha: a0, glow: 'rgba(255,225,77,0.6)', maxW: 980 });
+  text('未来を作る人は、', W / 2, 250, { size: 84, weight: 900, align: 'center', alpha: a0 });
+  text('SFを読んでいる。', W / 2, 365, { size: 84, weight: 900, color: C.hook, align: 'center', alpha: a0, glow: 'rgba(255,225,77,0.6)', maxW: 980 });
   BOOKS.forEach((b, i) => {
     const a = easeOut(seg(t, 0.25 + i * 0.09, 0.3)), y = 478 + i * 82;
     ctx.save(); ctx.globalAlpha = a; ctx.translate(40 * (1 - a), 0);
     rr(60, y - 56, 960, 72, 18); ctx.fillStyle = 'rgba(14,18,44,0.7)'; ctx.fill();
     rr(60, y - 56, 12, 72, 6); ctx.fillStyle = b.color; ctx.fill();
     text(String(b.year), 96, y - 3, { size: 40, weight: 900, color: b.color });
-    text(b.title, 222, y - 3, { size: 44, weight: 900, maxW: 420 });
-    text(b.author, 1000, y - 5, { size: 28, weight: 500, color: C.ink2, align: 'right', maxW: 330 });
+    text(b.title, 222, y - 3, { size: 44, weight: 900, maxW: 400 });
+    text(b.who, 1000, y - 5, { size: 30, weight: 700, color: b.color, align: 'right', maxW: 350 });
     ctx.restore();
   });
   const a2 = seg(t, 1.6, 0.35);
@@ -449,7 +441,7 @@ function sceneOutro(sc, t, dur) {
   ctx.restore();
   const a3 = easeOut(seg(t, 1.9, 0.4));
   text('音声  ' + TL.voice + '　／　BGM  オリジナル', W / 2, 1478, { size: 32, weight: 700, color: C.ink2, align: 'center', alpha: a3 });
-  text('※ 作品と現実の対応には諸説あります', W / 2, 1526, { size: 26, weight: 500, color: C.ink3, align: 'center', alpha: a3 });
+  text('※ 影響関係には諸説あります', W / 2, 1526, { size: 26, weight: 500, color: C.ink3, align: 'center', alpha: a3 });
 }
 
 function render(t) {
@@ -470,7 +462,7 @@ function render(t) {
 }
 
 // フォント(必要な文字のサブセット)を読み込んでから描画する
-const ALLTEXT = JSON.stringify(TL) + '未来を言い当てたSF小説10選読むと予知ができるかも？名作たち次のはもう本の中にある。あなたはどれを読む音声オリジナル※作品と現実の対応には諸説あります小説では発表年▼♪✦／0123456789';
+const ALLTEXT = JSON.stringify(TL) + '天才が読んだ・名作を生んだ未来を作る人はSFを読んでいる。影響関係42z未来を言い当てたSF小説10選読むと予知ができるかも？名作たち次のはもう本の中にある。あなたはどれを読む音声オリジナル※作品と現実の対応には諸説あります小説では発表年▼♪✦／0123456789';
 window.ready = Promise.all([500, 700, 900].map(w => document.fonts.load(`${w} 40px "Noto Sans JP"`, ALLTEXT))).then(() => render(0));
 window.render = render; window.FPS = FPS; window.DURATION = DURATION;
 
