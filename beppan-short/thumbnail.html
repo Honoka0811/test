@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>別班 サムネイル</title>
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/900.css">
+<style>
+  /* ?v=tall … 1080×1920(ショート用) / ?v=wide … 1280×720(通常サムネ) */
+  :root { --bg: #07090D; --amber: #F5B841; --red: #E5484D; --blue: #7DB4EA; --text: #F2F4F7; --muted: #9AA6B8; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--bg); }
+  .card { position: relative; overflow: hidden; background:
+      radial-gradient(ellipse at 50% 46%, rgba(120,40,46,0.55), rgba(7,9,13,0) 62%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0 1px, transparent 1px 4px),
+      linear-gradient(rgba(120,140,170,0.05) 1px, transparent 1px) 0 0 / 90px 90px,
+      linear-gradient(90deg, rgba(120,140,170,0.05) 1px, transparent 1px) 0 0 / 90px 90px,
+      var(--bg);
+    font-family: "Noto Sans JP", sans-serif; color: var(--text); }
+  .card::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,0.75) 100%); }
+  .serif { font-family: "Noto Serif JP", serif; font-weight: 900; }
+  .hl { color: var(--red); text-shadow: 0 0 40px rgba(229,72,77,0.7); }
+  .am { color: var(--amber); text-shadow: 0 0 40px rgba(245,184,65,0.55); }
+  .outline { -webkit-text-stroke: 0; paint-order: stroke fill; }
+  .beppan { position: relative; display: inline-block; line-height: 1; letter-spacing: 0.06em;
+    text-shadow: 0 0 60px rgba(245,184,65,0.45), 0 8px 0 rgba(0,0,0,0.6); }
+  .bar { position: absolute; background: #010203; box-shadow: 0 0 0 2px rgba(150,160,180,0.25); }
+  .stamp { position: absolute; border: 10px solid var(--red); border-radius: 14px; color: var(--red);
+    font-family: "Noto Serif JP", serif; font-weight: 900; letter-spacing: 0.08em; text-align: center;
+    background: rgba(7,9,13,0.35); box-shadow: inset 0 0 0 5px var(--bg), inset 0 0 0 9px var(--red); }
+  .tag { display: inline-block; border: 3px solid var(--amber); border-radius: 999px; color: var(--amber);
+    background: rgba(245,184,65,0.12); font-weight: 700; letter-spacing: 0.06em; }
+  .cls { position: absolute; color: var(--red); font-weight: 700; letter-spacing: 0.35em; }
+  .cls::before { content: "●"; margin-right: 0.4em; }
+
+  /* ---- 縦 ---- */
+  .tall { width: 1080px; height: 1920px; text-align: center; }
+  .tall .cls { top: 230px; left: 0; right: 0; font-size: 34px; }
+  .tall .q1 { position: absolute; top: 330px; left: 0; right: 0; font-size: 128px; line-height: 1.25; }
+  .tall .bp { position: absolute; top: 700px; left: 0; right: 0; }
+  .tall .beppan { font-size: 440px; }
+  .tall .bp .bar { left: -30px; right: -30px; top: 62%; height: 70px; transform: rotate(-3deg); }
+  .tall .stamp { right: 60px; top: 1000px; font-size: 64px; padding: 18px 34px; transform: rotate(-9deg); }
+  .tall .sub { position: absolute; top: 1330px; left: 0; right: 0; font-size: 66px; font-weight: 900; letter-spacing: 0.08em; }
+  .tall .tag { position: absolute; top: 1460px; left: 50%; transform: translateX(-50%); font-size: 44px; padding: 14px 44px; white-space: nowrap; }
+
+  /* ---- 横 ---- */
+  .wide { width: 1280px; height: 720px; }
+  .wide .cls { top: 44px; left: 56px; font-size: 26px; }
+  .wide .bp { position: absolute; left: 36px; top: 150px; }
+  .wide .beppan { font-size: 290px; }
+  .wide .bp .bar { left: -20px; right: -20px; top: 60%; height: 52px; transform: rotate(-3deg); }
+  .wide .stamp { left: 300px; top: 450px; font-size: 44px; padding: 10px 22px; transform: rotate(-9deg); }
+  .wide .q1 { position: absolute; right: 56px; top: 140px; font-size: 80px; line-height: 1.25; text-align: right; }
+  .wide .tag { position: absolute; right: 56px; top: 420px; font-size: 32px; padding: 10px 30px; }
+  .wide .sub { position: absolute; right: 56px; top: 510px; font-size: 40px; font-weight: 900; color: var(--muted); letter-spacing: 0.08em; }
+</style>
+</head>
+<body>
+<div id="card" class="card">
+  <div class="cls">CLASSIFIED</div>
+  <div class="q1 serif">日本の<span class="hl">テロ</span>を<br><span class="am">防いでいる…？</span></div>
+  <div class="bp"><span class="beppan serif">別班<span class="bar"></span></span></div>
+  <div class="stamp">存在しない<br>はずの部隊</div>
+  <div class="sub">陸上自衛隊の秘密部隊</div>
+  <div class="tag">VIVANTの「別班」は実在する？</div>
+</div>
+<script>
+  const v = new URLSearchParams(location.search).get('v') || 'tall';
+  document.getElementById('card').classList.add(v);
+</script>
+</body>
+</html>

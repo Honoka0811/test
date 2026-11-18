@@ -4,7 +4,7 @@
 報道・証言で確認できる事実を土台に、「日本で大規模テロが起きないのは別班が防いでいるから?」という噂・仮説を「噂」「もし〜なら」の形で重ねている。
 
 - 完成動画: `output/beppan_short.mp4`(ナレーション+BGM、-14 LUFS)
-- 字幕: `output/subtitles_ja.srt` / サムネイル: `output/thumbnail.jpg` / 原稿: `narration_script.txt`
+- 字幕: `output/subtitles_ja.srt` / サムネイル: `output/thumbnail_tall.jpg`・`output/thumbnail_wide.jpg`(`thumbnail.html` を `node thumbnail.js` で撮影) / 原稿: `narration_script.txt`
 - ナレーション: **VOICEVOX:青山龍星**(結びのシーンだけ「しっとり」スタイル)。公開時はこのクレジット表記が必要。動画の最後にも表示
 - BGM: `bgm.py` が numpy だけで合成する自作のサスペンス調トラック(外部音源なし・権利表記不要)
 
