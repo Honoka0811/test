@@ -11,5 +11,5 @@ ffmpeg -y -hide_banner -loglevel error -i output/silent.mp4 -i output/mix.wav \
   -c:v libx264 -preset slow -crf 23 -maxrate 5M -bufsize 10M -pix_fmt yuv420p \
   -af "loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=$(g input_i):measured_TP=$(g input_tp):measured_LRA=$(g input_lra):measured_thresh=$(g input_thresh):offset=$(g target_offset):linear=true,volume=-0.5dB,alimiter=limit=0.84:attack=2:release=50:level=false" \
   -ar 48000 -ac 2 -c:a aac -b:a 192k -shortest -movflags +faststart output/bus_tei.mp4
-ffmpeg -y -loglevel error -ss 14.0 -i output/bus_tei.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
+ffmpeg -y -loglevel error -ss 42.25 -i output/bus_tei.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
 echo "wrote output/bus_tei.mp4"

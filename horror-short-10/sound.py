@@ -33,17 +33,20 @@ def ramp(t0, t1, v0=0.0, v1=1.0):
     t = np.arange(N) / SR
     return (v0 + (v1 - v0) * np.clip((t - t0) / max(t1 - t0, 1e-6), 0, 1)).astype(np.float32)
 
-T_GLOW = L['l3']['start'] + 0.2                  # バスのライトが近づく
-T_RISE = L['l3']['start'] + 1.7                  # 立ち上がろうとする
-T_GRAB = L['l4']['start'] + 0.5                  # 袖をつかまれる
+T_GLOW = L['l3']['start'] - 0.6                  # バスのライトが近づく
+T_RISE = L['l3']['start'] + 1.0                  # 立ち上がろうとする
+T_GRAB = L['l3']['start'] + 3.0                  # 袖をつかまれる
 T_BUS = L['l5']['start'] - 0.5                   # バスが目の前を通りすぎる
 BUS_D = 2.7
 T_SIGN = L['l6']['start'] + 0.3                  # 時刻表に寄る
 T_STICK = L['l6']['start'] + 2.6                 # 「廃止」
-T_END = L['l7']['start'] - 0.3
+T_WIDE = L['l7']['start'] - 0.3
+T_FLASH0 = 1.45                                  # 冒頭の遠い雷(一瞬だけ人影が映る)
+T_FLASH = L['l7']['start'] + 1.35                # 雷が光って、まわりの人影が見える
 T_TURN = L['g4']['start'] - 0.6                  # 女の子がこちらを向く
-HIT = L['g4']['end'] + 0.5                       # 街灯が消える
-EV = dict(t_close=L['g1']['start'] - 0.5, glow=T_GLOW, rise=T_RISE, grab=T_GRAB, bus=T_BUS, bus_d=BUS_D, t_sign=T_SIGN, stick=T_STICK, t_end=T_END, turn=T_TURN, hit=HIT)
+HIT = L['g4']['end'] + 0.5                       # 街灯が消え、もう一度雷が光る
+EV = dict(t_close=L['g1']['start'] - 0.5, glow=T_GLOW, rise=T_RISE, grab=T_GRAB, bus=T_BUS, bus_d=BUS_D, t_sign=T_SIGN, stick=T_STICK, t_wide=T_WIDE,
+          flash0=T_FLASH0, flash=T_FLASH, turn=T_TURN, hit=HIT)
 
 def drone():
     t = np.arange(N) / SR; x = np.zeros(N, np.float32)
@@ -92,6 +95,12 @@ def approach():
     return x * (t / 4.5) ** 2.5
 def thunder():
     t = tt(4.0); x = lowpass(rng.standard_normal(len(t)).astype(np.float32), 160) * np.exp(-t * 1.1) * (1 + 0.6 * np.sin(2 * np.pi * 3.1 * t)); x[:2400] *= np.linspace(0, 1, 2400); return x * 4
+def crack():
+    """近くに落ちる雷: 鋭い破裂音のあと、長いとどろき"""
+    t = tt(5.0); x = lowpass(rng.standard_normal(len(t)).astype(np.float32), 170) * np.exp(-t * 0.9) * (1 + 0.6 * np.sin(2 * np.pi * 2.7 * t)) * 5
+    tc = tt(0.5); add(x, 0.0, highpass(lowpass(rng.standard_normal(len(tc)).astype(np.float32), 6000), 300) * np.exp(-tc * 9) * 2.2)
+    add(x, 0.33, highpass(lowpass(rng.standard_normal(len(tc)).astype(np.float32), 4000), 200) * np.exp(-tc * 12) * 1.3)
+    return x.astype(np.float32)
 def strings():
     t = np.arange(N) / SR
     def cluster(a, b, peak):
@@ -100,7 +109,7 @@ def strings():
             f = midi(n) * (1 + 0.04 * prog ** 2) * (1 + 0.004 * np.sin(2 * np.pi * (4.5 + k * 0.37) * t + k)); ph = 2 * np.pi * np.cumsum(f) / SR
             y += ((np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.33 * np.sin(3 * ph)) * (0.6 + 0.4 * np.sin(2 * np.pi * (0.23 + 0.05 * k) * t + k))).astype(np.float32)
         return y * (ramp(a, b) ** 2 * peak) * (1 - ramp(b - 0.05, b + 0.15))
-    return lowpass(cluster(L['g2']['end'], T_BUS, 0.5) + cluster(T_SIGN, HIT, 1.0), 5200) * 0.034
+    return lowpass(cluster(L['g2']['end'], T_BUS, 0.5) + cluster(T_SIGN, T_FLASH, 0.7) + cluster(T_FLASH + 0.5, HIT, 1.0), 5200) * 0.034
 def heartbeat():
     x = np.zeros(N, np.float32)
     def thump(f0, g):
@@ -129,7 +138,7 @@ def main():
     segs = np.load(os.path.join(HERE, 'output', 'segs.npz'))
     hall = [reverb_ir(3.8, 1), reverb_ir(3.8, 2)]; street = [reverb_ir(1.2, 3, 3500), reverb_ir(1.2, 4, 3500)]
     big = np.zeros(N, np.float32); veh = np.zeros(N, np.float32); fx = np.zeros(N, np.float32)
-    add(big, 0.0, taiko(0.5)); add(big, 1.4, thunder(), 0.10); add(big, T_GRAB, taiko(0.8)); add(big, T_STICK, taiko(0.85))
+    add(big, 0.0, taiko(0.5)); add(big, T_FLASH0 + 0.9, thunder(), 0.10); add(big, T_GRAB, taiko(0.8)); add(big, T_STICK, taiko(0.85)); add(big, T_FLASH + 0.12, crack(), 0.5); add(big, HIT + 0.1, crack(), 0.45)
     add(veh, T_BUS - 4.3, approach(), 0.10); add(veh, T_BUS - 0.5, bus(), 0.2)
     add(fx, HIT - 0.05, zap(), 0.16); add(big, HIT, stinger(), 0.7)
     nar = np.zeros(N, np.float32); girl = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
@@ -140,7 +149,7 @@ def main():
     e = np.pad(np.repeat(e, hop), (0, N - len(e) * hop)); duck = 1 - 0.5 * np.clip(e / 0.08, 0, 1)
     duck = np.convolve(duck, np.ones(SR // 10) / (SR // 10), mode='same').astype(np.float32)
     rn = rain(); lb = lullaby(); bedm = drone() * ramp(0, 0.6, 0.35, 1) + strings()
-    hush = 1 - 0.6 * ramp(T_STICK, T_STICK + 0.3)                          # 「廃止」のあと、雨音が遠のく
+    hush = 1 - 0.6 * ramp(T_STICK, T_STICK + 0.3) * (1 - ramp(T_FLASH, T_FLASH + 0.3) * 0.6)                          # 「廃止」のあと、雨音が遠のく
     hb = heartbeat(); out = []
     for ch in range(2):
         r2 = rn if ch == 0 else np.roll(rn, 7919)
