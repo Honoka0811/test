@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>内側から曇る窓</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(11000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+const mixA = (a, b, k) => a.map((v, i) => lerp(v, b[i], k));
+// ---- 簡易3D: 道路は y=0、X は左右、Z は前方の距離(m) ----
+const HOR = 700, F = 1000, CAMH = 1.25;
+let WDY = 0, WDX = 0;
+const P = (X, Y, Z) => [540 + F * X / Z + WDX, HOR + F * (CAMH - Y) / Z + WDY];
+function quad(a, b, c, d, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill(); }
+const PORTAL = 160, SPEED = 13;
+function dist(t) {
+  const K = [[0, 40], [EV.l2s, 118], [EV.l2e, 141], [EV.t_in, PORTAL]];
+  if (t >= EV.t_in) return PORTAL + SPEED * (t - EV.t_in);
+  for (let i = 1; i < K.length; i++) if (t <= K[i][0]) return lerp(K[i - 1][1], K[i][1], (t - K[i - 1][0]) / (K[i][0] - K[i - 1][0]));
+  return K[0][1];
+}
+const D_OUT = PORTAL + SPEED * (EV.t_out - EV.t_in);       // トンネルの出口(世界座標)
+
+// ---- 外(夜の山道) ----
+function sky() {
+  const g = ctx.createLinearGradient(0, 0, 0, HOR + 40); g.addColorStop(0, '#02030a'); g.addColorStop(1, '#0d1326'); ctx.fillStyle = g; ctx.fillRect(-400, -400, 1900, HOR + 450);
+  const r = rngOf(3); for (let i = 0; i < 50; i++) { ctx.fillStyle = `rgba(255,255,255,${0.15 + r() * 0.35})`; ctx.fillRect(r() * 1080, r() * 520 + 140, 2, 2); }
+  ctx.fillStyle = '#05070f'; ctx.beginPath(); ctx.moveTo(-400, HOR + 10 + WDY); const m = rngOf(8); for (let x = -400; x <= 1500; x += 60) ctx.lineTo(x, HOR - 70 - m() * 90 - 70 * Math.sin(x * 0.004) + WDY); ctx.lineTo(1500, HOR + 10 + WDY); ctx.closePath(); ctx.fill();
+}
+function road(d, zMax, lit = 1) {
+  for (let z = zMax; z > 1.6; z -= z > 60 ? 6 : z > 20 ? 2 : 0.7) {
+    const z2 = Math.max(1.6, z - (z > 60 ? 6 : z > 20 ? 2 : 0.7)), L = clamp(1 - z / 38) ** 1.4 * lit;
+    quad(P(-3.6, 0, z), P(3.6, 0, z), P(3.6, 0, z2), P(-3.6, 0, z2), mix([6, 7, 10], [62, 64, 72], L));
+    quad(P(-6, 0, z), P(-3.6, 0, z), P(-3.6, 0, z2), P(-6, 0, z2), mix([4, 5, 7], [32, 36, 30], L));
+    quad(P(3.6, 0, z), P(6, 0, z), P(6, 0, z2), P(3.6, 0, z2), mix([4, 5, 7], [32, 36, 30], L));
+    const ec = `rgba(220,220,210,${0.15 + 0.7 * L})`; quad(P(-3.45, 0, z), P(-3.3, 0, z), P(-3.3, 0, z2), P(-3.45, 0, z2), ec); quad(P(3.3, 0, z), P(3.45, 0, z), P(3.45, 0, z2), P(3.3, 0, z2), ec);
+  }
+  for (let k = Math.floor(d / 9); k < (d + zMax) / 9; k++) { const z0 = k * 9 - d, z1 = z0 + 3; if (z1 < 1.8 || z0 > zMax) continue; const L = clamp(1 - z0 / 38) ** 1.4 * lit; quad(P(-0.08, 0, Math.max(1.8, z0)), P(0.08, 0, Math.max(1.8, z0)), P(0.08, 0, z1), P(-0.08, 0, z1), `rgba(235,200,90,${0.12 + 0.75 * L})`); }
+}
+function cedars(d, inTunnelW) {
+  const items = [];
+  for (let k = Math.floor((d - 10) / 7); k < (d + 140) / 7; k++) for (const sd of [-1, 1]) {
+    const zw = k * 7 + hash(k * 2 + sd) * 5; if (zw > PORTAL - 14 && zw < D_OUT + 8) continue;
+    const z = zw - d; if (z < 2 || z > 140) continue; items.push([z, sd * (6.5 + hash(k * 3 + sd) * 5), 9 + hash(k + sd * 7) * 7]);
+  }
+  items.sort((a, b) => b[0] - a[0]);
+  for (const [z, x, h] of items) { const L = clamp(1 - z / 30) * clamp(1.4 - Math.abs(x / z) * 0.8) * 0.55, c = mix([3, 5, 6], [26, 40, 30], L);
+    const b = P(x, 0, z), tp = P(x, h, z), w = F * 1.7 / z; ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(tp[0], tp[1]); ctx.lineTo(b[0] + w, b[1] - (b[1] - tp[1]) * 0.18); ctx.lineTo(b[0] - w, b[1] - (b[1] - tp[1]) * 0.18); ctx.closePath(); ctx.fill(); ctx.fillRect(b[0] - w * 0.12, b[1] - (b[1] - tp[1]) * 0.2, w * 0.24, (b[1] - tp[1]) * 0.2); }
+}
+function guard(d) {
+  ctx.strokeStyle = 'rgba(150,150,150,0.5)'; ctx.lineWidth = 2;
+  for (let k = Math.floor(d / 4); k < (d + 70) / 4; k++) { const zw = k * 4; if (zw > PORTAL - 6 && zw < D_OUT + 4) continue; const z = zw - d; if (z < 2) continue; const L = clamp(1 - z / 30); const a = P(-4.2, 0, z), b = P(-4.2, 0.8, z); ctx.strokeStyle = `rgba(190,190,180,${0.1 + 0.6 * L})`; ctx.lineWidth = Math.max(1, 0.12 * F / z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+}
+
+// ---- トンネルの中 ----
+function tunnelInner(d, z0, lampsOn) {
+  const zEnd = D_OUT - d, zMax = Math.min(240, zEnd);
+  if (zMax <= z0) return;
+  const glow = zw => lampsOn ? 0.25 + 0.75 * Math.max(0, Math.cos(2 * Math.PI * ((zw - PORTAL) % 12) / 12)) ** 6 : 0;
+  for (let z = zMax; z > Math.max(1.6, z0); z -= z > 60 ? 3 : z > 20 ? 1.2 : 0.5) {
+    const z2 = Math.max(Math.max(1.6, z0), z - (z > 60 ? 3 : z > 20 ? 1.2 : 0.5)), g = glow(z + d), fade = clamp(1 - z / 230), hl = clamp(1 - z / 30) ** 1.5;
+    const W = mixA([10, 8, 6], [168, 112, 52], g * fade * 0.9), Rd = mixA([8, 7, 6], [96, 66, 34], g * fade * 0.85);
+    quad(P(-3.8, 0, z), P(3.8, 0, z), P(3.8, 0, z2), P(-3.8, 0, z2), mix(Rd, [70, 68, 66], hl * 0.5));
+    for (const sd of [-1, 1]) { quad(P(sd * 3.8, 0, z), P(sd * 4.6, 0.6, z), P(sd * 4.6, 0.6, z2), P(sd * 3.8, 0, z2), mix(W.map(v => v * 0.8), [80, 78, 74], hl * 0.4));
+      quad(P(sd * 4.6, 0.6, z), P(sd * 4.6, 4.2, z), P(sd * 4.6, 4.2, z2), P(sd * 4.6, 0.6, z2), mix(W, [90, 86, 80], hl * 0.3));
+      quad(P(sd * 4.6, 4.2, z), P(sd * 2.6, 6.4, z), P(sd * 2.6, 6.4, z2), P(sd * 4.6, 4.2, z2), mix(W.map(v => v * 0.85), [60, 58, 54], hl * 0.2)); }
+    quad(P(-2.6, 6.4, z), P(2.6, 6.4, z), P(2.6, 6.4, z2), P(-2.6, 6.4, z2), mix(W.map(v => v * 0.6), [40, 40, 40], hl * 0.1));
+  }
+  for (let k = Math.floor((d + z0 - PORTAL) / 9); k < (d + zMax - PORTAL) / 9; k++) { const za = PORTAL + k * 9 - d, zb = za + 3; if (zb < Math.max(1.8, z0) || za > zMax) continue; quad(P(-0.08, 0, Math.max(1.8, z0, za)), P(0.08, 0, Math.max(1.8, z0, za)), P(0.08, 0, zb), P(-0.08, 0, zb), `rgba(240,200,110,${0.5 * clamp(1 - za / 120)})`); }
+  if (lampsOn) for (let k = Math.ceil((d + z0 - PORTAL) / 12); k < (d + zMax - PORTAL) / 12; k++) { const z = PORTAL + k * 12 - d; if (z < 2) continue; for (const sd of [-1, 1]) { const p = P(sd * 3.7, 5.1, z), w = 0.9 * F / z, h = 0.22 * F / z;
+    ctx.fillStyle = `rgba(255,190,110,${clamp(1.2 - z / 240)})`; ctx.fillRect(p[0] - w / 2, p[1] - h / 2, w, h); const gl = ctx.createRadialGradient(p[0], p[1], 1, p[0], p[1], w * 1.6); gl.addColorStop(0, 'rgba(255,170,80,0.45)'); gl.addColorStop(1, 'rgba(255,170,80,0)'); ctx.fillStyle = gl; ctx.fillRect(p[0] - w * 1.6, p[1] - w * 1.6, w * 3.2, w * 3.2); } }
+  if (zEnd < 240 && zEnd > 1.6) { const a = P(-4.6, 0, zEnd), b = P(4.6, 6.4, zEnd); ctx.fillStyle = '#04060c'; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(a[0], b[1] + (a[1] - b[1]) * 0.35); ctx.quadraticCurveTo((a[0] + b[0]) / 2, b[1] - (a[1] - b[1]) * 0.12, b[0], b[1] + (a[1] - b[1]) * 0.35); ctx.lineTo(b[0], a[1]); ctx.closePath(); ctx.fill(); }
+}
+function portal(t, d) {
+  const zp = PORTAL - d; if (zp < 1.7) return;
+  const L = clamp(1 - zp / 60) ** 1.2;
+  // 山の斜面
+  const hl = P(-60, 0, zp), hr = P(60, 0, zp), top = P(0, 26, zp); ctx.fillStyle = '#04060b'; ctx.beginPath(); ctx.moveTo(hl[0], hl[1]); ctx.lineTo(hl[0], top[1] + 60); ctx.quadraticCurveTo(540, top[1] - 40, hr[0], top[1] + 80); ctx.lineTo(hr[0], hr[1]); ctx.closePath(); ctx.fill();
+  // 奥(アーチの中だけ見える)
+  const arch = () => { const a = P(-4.6, 0, zp), b = P(4.6, 0, zp), c = P(4.6, 4.2, zp), e = P(-4.6, 4.2, zp), tp = P(0, 7.2, zp); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(e[0], e[1]); ctx.quadraticCurveTo(e[0], tp[1], tp[0], tp[1]); ctx.quadraticCurveTo(c[0], tp[1], c[0], c[1]); ctx.lineTo(b[0], b[1]); ctx.closePath(); };
+  ctx.save(); arch(); ctx.clip(); ctx.fillStyle = '#020203'; ctx.fillRect(-500, -500, 2100, 2500); tunnelInner(d, zp, true); ctx.restore();
+  // 坑門(コンクリートの壁)
+  const f0 = P(-9, 0, zp), f1 = P(9, 10, zp); ctx.save(); ctx.beginPath(); ctx.rect(f0[0], f1[1], f1[0] - f0[0], f0[1] - f1[1]); arch(); ctx.fillStyle = mix([12, 12, 14], [118, 116, 108], L * 0.8); ctx.fill('evenodd');
+  ctx.strokeStyle = `rgba(0,0,0,${0.3})`; ctx.lineWidth = Math.max(1, 0.06 * F / zp); for (let i = 1; i < 6; i++) { const y = P(0, i * 1.7, zp)[1]; ctx.beginPath(); ctx.moveTo(f0[0], y); ctx.lineTo(f1[0], y); ctx.stroke(); }
+  const pl = P(-1.6, 8.5, zp), pr = P(1.6, 7.6, zp); ctx.fillStyle = mix([14, 14, 14], [180, 176, 160], L); ctx.fillRect(pl[0], pl[1], pr[0] - pl[0], pr[1] - pl[1]); ctx.fillStyle = mix([4, 4, 4], [30, 30, 30], L); ctx.font = `bold ${Math.max(6, 0.62 * F / zp)}px ${GOT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('旧 峠 隧 道', (pl[0] + pr[0]) / 2, (pl[1] + pr[1]) / 2); ctx.restore();
+  // 慰霊碑と花
+  const zm = zp - 6; if (zm > 1.7) { const Lm = clamp(1 - zm / 40) ** 1.1, b0 = P(4.4, 0, zm), b1 = P(5.6, 0.3, zm), s0 = P(4.6, 0.3, zm), s1 = P(5.4, 2.1, zm);
+    ctx.fillStyle = mix([8, 8, 9], [96, 96, 92], Lm); ctx.fillRect(b0[0], b1[1], b1[0] - b0[0], b0[1] - b1[1]);
+    ctx.fillStyle = mix([10, 10, 12], [128, 128, 122], Lm); ctx.beginPath(); ctx.roundRect(s0[0], s1[1], s1[0] - s0[0], s0[1] - s1[1], (s1[0] - s0[0]) * 0.18); ctx.fill();
+    const fs = (s1[0] - s0[0]) * 0.36; ctx.fillStyle = mix([4, 4, 4], [24, 24, 26], Lm); ctx.font = `800 ${fs}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    '慰霊碑'.split('').forEach((ch, i) => ctx.fillText(ch, (s0[0] + s1[0]) / 2, s1[1] + (s0[1] - s1[1]) * (0.24 + i * 0.25)));
+    ctx.font = `800 ${fs * 0.32}px ${MIN}`; ['崩落事故', '犠牲者'].forEach((col, j) => col.split('').forEach((ch, i) => ctx.fillText(ch, s0[0] + (s1[0] - s0[0]) * (0.14 + 0.72 * j), s1[1] + (s0[1] - s1[1]) * (0.2 + i * 0.13))));
+    for (const fx of [4.55, 5.45]) { const fb = P(fx, 0.3, zm - 0.3), r = 0.07 * F / zm; for (let i = 0; i < 7; i++) { ctx.fillStyle = mix([10, 10, 10], i % 3 ? [230, 226, 214] : [226, 190, 80], Lm * 0.95); ctx.beginPath(); ctx.arc(fb[0] + (hash(i * 7 + fx) - 0.5) * r * 3, fb[1] - r * (1.5 + hash(i + fx) * 2.5), r, 0, 7); ctx.fill(); } ctx.fillStyle = mix([6, 10, 6], [40, 80, 46], Lm); ctx.fillRect(fb[0] - r * 0.3, fb[1] - r * 1.6, r * 0.6, r * 1.6); } }
+}
+
+// ---- ガラス: 外側の雨粒とワイパー、内側の曇りと手形 ----
+const SHIELD = [[110, 150], [970, 150], [1100, 1160], [1100, 1290], [-20, 1290], [-20, 1160]];
+const clipShield = c => { c.beginPath(); SHIELD.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.closePath(); };
+const fogCv = document.createElement('canvas'); fogCv.width = W; fogCv.height = H; const fc = fogCv.getContext('2d');
+const fogTex = document.createElement('canvas'); fogTex.width = W; fogTex.height = 1300;      // 曇りのむら(なめらかな濃淡)
+{ const c = fogTex.getContext('2d'), r = rngOf(4321); for (let i = 0; i < 260; i++) { const x = r() * W, y = r() * 1300, rad = 40 + r() * 180, g = c.createRadialGradient(x, y, 0, x, y, rad), lt = r() < 0.55;
+    g.addColorStop(0, lt ? `rgba(220,228,240,${0.10 + r() * 0.12})` : `rgba(30,36,50,${0.08 + r() * 0.10})`); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x - rad, y - rad, rad * 2, rad * 2); }
+  for (let i = 0; i < 1800; i++) { c.fillStyle = `rgba(235,240,250,${0.05 + r() * 0.12})`; const s2 = 1 + r() * 2.2; c.beginPath(); c.arc(r() * W, r() * 1300, s2, 0, 7); c.fill(); } }   // 細かい水滴
+const PRINTS = [[300, 560, 1.0, -0.15], [760, 470, 0.7, 0.2], [190, 860, 0.62, -0.3], [620, 780, 1.05, 0.05], [880, 860, 0.64, 0.25], [430, 380, 0.82, -0.05], [520, 1010, 1.12, 0.1]];
+function hand(c, x, y, s, rot, k) {     // 手のひらを押しつけた跡(指は上向き)
+  c.save(); c.translate(x, y); c.rotate(rot); c.scale(s * lerp(0.92, 1, k), s * lerp(0.92, 1, k)); c.lineCap = 'round';
+  c.beginPath(); c.ellipse(0, 20, 44, 52, 0, 0, 7); c.fill();
+  [[-30, -26, 52, -0.18], [-10, -36, 66, -0.05], [11, -36, 70, 0.04], [31, -28, 58, 0.16]].forEach(([fx, fy, l, a]) => { c.save(); c.translate(fx, fy); c.rotate(a); c.lineWidth = 19; c.beginPath(); c.moveTo(0, 8); c.lineTo(0, -l + 8); c.stroke(); c.restore(); });
+  c.save(); c.translate(-40, 22); c.rotate(-0.9); c.lineWidth = 21; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -46); c.stroke(); c.restore();
+  c.lineWidth = 6; for (const dx of [-26, 2, 30]) { c.beginPath(); c.moveTo(dx, 66); c.lineTo(dx + 2, 66 + 60 * k * (0.6 + hash(dx) * 0.8)); c.stroke(); }   // 垂れるしずく
+  c.restore();
+}
+function glass(t, f) {
+  // 雨粒(外側)。ワイパーが通ると消える
+  if (t > EV.t_out) { const lastWipe = EV.wipe + 0.62 * Math.max(-1, Math.min(3, Math.floor((t - EV.wipe) / 0.62))), since = t >= EV.wipe ? (t - lastWipe) : (t - EV.t_out), n = Math.min(160, Math.floor(since * 26));
+    const r = rngOf(t >= EV.wipe ? 50 + Math.floor((t - EV.wipe) / 0.62) : 49); ctx.save(); clipShield(ctx); ctx.clip();
+    for (let i = 0; i < n; i++) { const x = r() * 1080, y = 160 + r() * 1100, s = 2 + r() * 5; ctx.fillStyle = 'rgba(170,185,215,0.35)'; ctx.beginPath(); ctx.ellipse(x, y, s * 0.8, s, 0, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(x - s * 0.3, y - s * 0.5, 1.5, 1.5); }
+    ctx.restore(); }
+  // ワイパー(外側)
+  const wp = t - EV.wipe, ang = wp >= 0 && wp < 0.62 * 4 ? (() => { const k = (wp % 0.62) / 0.62, up = Math.floor(wp / 0.62) % 2 === 0; return lerp(3.05, 1.75, ease(up ? k : 1 - k)); })() : 3.05;
+  ctx.strokeStyle = '#030305'; ctx.lineCap = 'round';
+  for (const [px, ln] of [[330, 600], [760, 560]]) { const ex = px + Math.cos(ang) * ln, ey = 1255 - Math.sin(ang) * ln; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(px, 1255); ctx.lineTo(ex, ey); ctx.stroke(); ctx.lineWidth = 7; const bx = Math.cos(ang) * 0.55, by = -Math.sin(ang) * 0.55; ctx.beginPath(); ctx.moveTo(px + Math.cos(ang) * 60, 1255 - Math.sin(ang) * 60); ctx.lineTo(ex + bx * 20, ey + by * 20); ctx.stroke(); }
+  // 曇り(内側)。まわりから広がり、手形の跡だけが透ける
+  const fa = ease(prog(t, EV.fog, EV.fogfull)); if (fa <= 0) return;
+  fc.globalCompositeOperation = 'source-over'; fc.clearRect(0, 0, W, H); fc.save(); clipShield(fc); fc.clip();
+  fc.fillStyle = `rgba(118,128,146,${0.8 * Math.min(1, fa * 1.25)})`; fc.fillRect(0, 0, W, H);
+  fc.globalAlpha = Math.min(1, fa * 1.4); fc.drawImage(fogTex, 0, 0); fc.globalAlpha = 1;
+  fc.globalCompositeOperation = 'destination-out';
+  const ca = (1 - fa) ** 0.8; if (ca > 0.01) { const g = fc.createRadialGradient(540, 660, 60, 540, 660, 760); g.addColorStop(0, `rgba(0,0,0,${ca})`); g.addColorStop(1, 'rgba(0,0,0,0)'); fc.fillStyle = g; fc.fillRect(0, 0, W, H); }   // まん中ほど、最後まで透けている
+  fc.fillStyle = fc.strokeStyle = 'rgba(0,0,0,0.92)';
+  EV.prints.forEach((tp, i) => { const k = prog(t, tp, tp + 0.25); if (k <= 0) return; const [x, y, s, r] = PRINTS[i]; fc.globalAlpha = Math.min(1, k * 1.4); hand(fc, x, y + 12 * ease(prog(t, tp + 0.2, tp + 1.6)), s, r, ease(prog(t, tp, tp + 2.2))); });
+  fc.restore(); ctx.drawImage(fogCv, 0, 0);
+}
+
+// ---- 車内 ----
+function bust(c, x, y, s, col, rim) {
+  c.save(); c.translate(x, y); c.scale(s, s); c.fillStyle = col;
+  c.beginPath(); c.moveTo(-46, 60); c.quadraticCurveTo(-44, 14, -20, 6); c.lineTo(20, 6); c.quadraticCurveTo(44, 14, 46, 60); c.closePath(); c.fill();
+  c.beginPath(); c.ellipse(0, -14, 17, 21, 0, 0, 7); c.fill(); c.fillRect(-7, 0, 14, 10);
+  if (rim) { c.strokeStyle = rim; c.lineWidth = 1.6; c.beginPath(); c.ellipse(0, -14, 17, 21, 0, Math.PI * 1.05, Math.PI * 1.75); c.stroke(); c.beginPath(); c.moveTo(-44, 40); c.quadraticCurveTo(-42, 14, -20, 7); c.stroke(); }
+  c.restore();
+}
+function mirror(t, f, inT, pulse) {
+  const mx = 360, my = 180, mw = 360, mh = 118;
+  ctx.fillStyle = '#06070b'; ctx.fillRect(531, 0, 18, my + 4);
+  ctx.save(); ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 22); ctx.clip();
+  ctx.fillStyle = '#05060a'; ctx.fillRect(mx, my, mw, mh);
+  // リアガラス(後ろの景色)
+  ctx.fillStyle = inT ? mix([20, 12, 6], [120, 74, 30], pulse * 0.7) : '#0b1022'; ctx.beginPath(); ctx.moveTo(mx + 40, my + 6); ctx.lineTo(mx + mw - 40, my + 6); ctx.lineTo(mx + mw - 18, my + 58); ctx.lineTo(mx + 18, my + 58); ctx.closePath(); ctx.fill();
+  const fa = ease(prog(t, EV.fog + 1, EV.fogfull)); if (fa > 0) { ctx.fillStyle = `rgba(140,150,166,${0.7 * fa})`; ctx.fill(); }
+  // 後部座席
+  ctx.fillStyle = '#14161c'; ctx.fillRect(mx, my + 70, mw, mh); for (const hx of [mx + 72, mx + 180, mx + 288]) { ctx.fillStyle = '#1b1e26'; ctx.beginPath(); ctx.roundRect(hx - 26, my + 48, 52, 32, 10); ctx.fill(); }
+  // 乗っている人たち
+  const rim = 'rgba(150,170,220,0.55)', col = '#020204';
+  if (t >= EV.bump + 0.05 && t < EV.bump + 0.2) bust(ctx, mx + 288, my + 64, 0.95, col, rim);       // 沈んだ瞬間、一瞬だけ映る
+  if (t >= EV.full) {
+    const ln = ease(prog(t, EV.lean, EV.hit - 0.3));
+    bust(ctx, mx + 100, my + 44, 0.7, col, rim); bust(ctx, mx + 262, my + 40, 0.66, col, rim);                     // リアガラスの前にも、顔を寄せている
+    bust(ctx, mx + 70, my + 62, 0.98, col, rim); bust(ctx, mx + 292, my + 64, 0.96, col, rim); bust(ctx, mx + 128, my + 80, 0.62, col, rim);   // 子どもも
+    bust(ctx, lerp(mx + 182, mx + 250, ln), lerp(my + 66, my + 120, ln), lerp(1.02, 3.4, ln * ln), col, rim);        // まん中の人が、身を乗り出してくる
+  }
+  ctx.restore();
+  ctx.strokeStyle = '#0a0b10'; ctx.lineWidth = 9; ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 22); ctx.stroke();
+  const sh = ctx.createLinearGradient(mx, my, mx + mw, my + mh); sh.addColorStop(0, 'rgba(255,255,255,0.06)'); sh.addColorStop(0.5, 'rgba(255,255,255,0)'); ctx.fillStyle = sh; ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 22); ctx.fill();
+}
+function cabin(t, f, inT, pulse, speed) {
+  // 天井と A ピラー
+  ctx.fillStyle = '#040408'; ctx.fillRect(-300, -300, 1700, 452); ctx.beginPath(); ctx.moveTo(-300, -300); ctx.lineTo(110, 150); ctx.lineTo(-20, 1160); ctx.lineTo(-300, 1160); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(1400, -300); ctx.lineTo(970, 150); ctx.lineTo(1100, 1160); ctx.lineTo(1400, 1160); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#07080d'; ctx.beginPath(); ctx.moveTo(-300, 1290); ctx.quadraticCurveTo(540, 1180, 1400, 1290); ctx.lineTo(1400, 2300); ctx.lineTo(-300, 2300); ctx.closePath(); ctx.fill();
+  // メーター
+  for (const [gx, gv] of [[400, speed / 120], [680, 0.35 + speed / 400]]) { const g = ctx.createRadialGradient(gx, 1470, 10, gx, 1470, 120); g.addColorStop(0, 'rgba(60,140,255,0.22)'); g.addColorStop(1, 'rgba(60,140,255,0)'); ctx.fillStyle = g; ctx.fillRect(gx - 130, 1340, 260, 260);
+    ctx.strokeStyle = 'rgba(110,170,255,0.75)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(gx, 1470, 92, Math.PI * 0.8, Math.PI * 2.2); ctx.stroke();
+    for (let i = 0; i <= 10; i++) { const a = Math.PI * (0.8 + 1.4 * i / 10); ctx.beginPath(); ctx.moveTo(gx + Math.cos(a) * 80, 1470 + Math.sin(a) * 80); ctx.lineTo(gx + Math.cos(a) * 90, 1470 + Math.sin(a) * 90); ctx.stroke(); }
+    const a = Math.PI * (0.8 + 1.4 * clamp(gv)); ctx.strokeStyle = '#ff6a3a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(gx, 1470); ctx.lineTo(gx + Math.cos(a) * 78, 1470 + Math.sin(a) * 78); ctx.stroke(); }
+  // ハンドルと手
+  ctx.strokeStyle = '#030306'; ctx.lineWidth = 74; ctx.beginPath(); ctx.arc(540, 1900, 560, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120,140,190,0.12)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(540, 1900, 594, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke();
+  for (const a of [Math.PI * 1.17, Math.PI * 1.83]) { const hx = 540 + Math.cos(a) * 560, hy = 1900 + Math.sin(a) * 560; ctx.fillStyle = '#0c0b0e'; ctx.beginPath(); ctx.ellipse(hx, hy, 58, 46, a + Math.PI / 2, 0, 7); ctx.fill(); ctx.fillStyle = '#08080a'; ctx.fillRect(hx - 40 + (a > 4.5 ? 30 : -30), hy + 30, 80, 400); }
+  mirror(t, f, inT, pulse);
+  // トンネルの照明が、車内を順番に照らしていく
+  if (inT) { ctx.fillStyle = `rgba(255,150,60,${0.1 * pulse})`; ctx.fillRect(-300, -300, 1700, 2600); }
+  const dg = ctx.createRadialGradient(540, 1460, 40, 540, 1460, 700); dg.addColorStop(0, 'rgba(70,120,255,0.07)'); dg.addColorStop(1, 'rgba(70,120,255,0)'); ctx.fillStyle = dg; ctx.fillRect(-300, 900, 1700, 1400);
+}
+
+function scene(t, f) {
+  const d = dist(t), inT = d >= PORTAL && d < D_OUT, speed = t < EV.l2s ? 24 : t < EV.l2e ? 12 : 47;
+  const blackout = t >= EV.bump - 0.42 && t < EV.bump - 0.06;
+  WDY = -16 * ease(prog(t, EV.bump, EV.bump + 0.18)); const sh = t >= EV.bump ? Math.exp(-(t - EV.bump) * 6) : 0; WDY += (hash(f) - 0.5) * 30 * sh + Math.sin(t * 7) * 1.2; WDX = (hash(f + 1) - 0.5) * 12 * sh;
+  ctx.save(); clipShield(ctx); ctx.clip();
+  if (!inT) { sky(); if (d < PORTAL) portal(t, d); road(d, d < PORTAL ? PORTAL - d : 120); guard(d); cedars(d); }
+  else { ctx.fillStyle = '#020203'; ctx.fillRect(-300, -300, 1700, 2600); tunnelInner(d, 0, !blackout); if (blackout) { ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(-300, -300, 1700, 2600); } }
+  // ヘッドライトの光
+  const hg = ctx.createRadialGradient(540, 1150, 30, 540, 1050, 640); hg.addColorStop(0, 'rgba(255,250,225,0.10)'); hg.addColorStop(1, 'rgba(255,250,225,0)'); ctx.fillStyle = hg; ctx.fillRect(-300, 400, 1700, 1000);
+  ctx.restore();
+  glass(t, f);
+  const pulse = inT && !blackout ? Math.max(0, Math.cos(2 * Math.PI * ((d - PORTAL + 6) % 12) / 12)) ** 4 : 0;
+  cabin(t, f, inT, pulse, speed + (hash(Math.floor(t * 2)) - 0.5) * 2);
+  if (blackout) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-300, -300, 1700, 2600); }
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => l.kind !== 'kid' && t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.1;
+  // カメラ: 慰霊碑に寄る → 戻る → バックミラーに寄る
+  const zm = ease(prog(t, EV.l2s + 1.0, EV.l2s + 2.4)) * (1 - ease(prog(t, EV.l2e - 0.4, EV.t_in))), zr = ease(prog(t, EV.mirror, EV.mirror + 1.4)), zl = ease(prog(t, EV.lean, EV.hit));
+  const d = dist(t), mon = P(5.0, 1.2, Math.max(2, PORTAL - 6 - d));
+  let z = 1 + 1.25 * zm, cx = lerp(540, mon[0], zm), cy = lerp(960, mon[1], zm);
+  if (zr > 0) { z = lerp(1, 2.6, zr) + 0.6 * zl; cx = lerp(540, 540, zr); cy = lerp(960, 240 + 10 * zl, zr); }
+  if (t < EV.hit + 0.5) {
+    ctx.save(); ctx.translate(540, 960); ctx.scale(z, z); ctx.translate(-cx, -cy);
+    if (t < EV.hit) scene(t, f);
+    else { const k = (t - EV.hit) / 0.5; ctx.translate(540, 240); ctx.scale(1 + 1.6 * k, 1 + 1.6 * k); ctx.translate(-540, -240); scene(EV.hit - 0.02, f); }
+    ctx.restore();
+    if (t >= EV.hit) { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); } grain = 0.3; }
+    else if (t >= LN.now.start - 0.1) ctx.drawImage(cv, (hash(f) - 0.5) * 8, (hash(f + 2) - 0.5) * 8);
+    const zf = t >= EV.full ? Math.max(0, 1 - (t - EV.full) / 0.4) : 0; if (zf) { ctx.fillStyle = `rgba(255,30,30,${0.2 * zf})`; ctx.fillRect(0, 0, W, H); }
+    const k0 = 1 - prog(t, 0, 0.7); if (k0 > 0) { ctx.fillStyle = `rgba(0,0,0,${k0})`; ctx.fillRect(0, 0, W, H); }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else {
+    if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('帰る家のない人たちは', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('空いている席を、さがしている。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  subtitle(t);
+  noise(grain, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 540, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '慰霊碑崩落事故犠牲者帰る家のない人たちは空いている席を、さがしている。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
