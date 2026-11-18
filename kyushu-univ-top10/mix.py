@@ -13,7 +13,8 @@ FINAL = os.path.join(OUT, 'kyushu_univ_top10.mp4')
 
 with wave.open(os.path.join(OUT, 'narration.wav')) as w:
     voice = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
-total = json.loads(open(os.path.join(HERE, 'timeline.js'), encoding='utf-8').read().split('=', 1)[1].rstrip().rstrip(';'))['total']
+TL = json.loads(open(os.path.join(HERE, 'timeline.js'), encoding='utf-8').read().split('=', 1)[1].rstrip().rstrip(';'))
+total = TL['total']
 n = int(total * SR)
 voice = np.pad(voice, (0, max(0, n - len(voice))))[:n]
 music = bgm.generate(total)[:n]
@@ -29,7 +30,35 @@ envl = np.pad(np.repeat(envl, hop), (0, n - len(rms) * hop))
 speech = np.clip(envl / 0.10, 0, 1)
 gain = 0.55 - (0.55 - 0.22) * speech
 gain = np.convolve(gain, np.ones(SR // 10) / (SR // 10), mode='same')
-mixed = music * gain[:, None] + voice[:, None]
+# ---------- 効果音(シーン頭のシュッ + 順位バッジのドン) ----------
+rng = np.random.default_rng(3)
+def whoosh(d=0.32):
+    n = int(d * SR); x = rng.standard_normal(n)
+    k = np.linspace(40, 4, n).astype(int)          # だんだん明るくなるノイズ
+    cs = np.cumsum(np.r_[0, x]); idx = np.arange(n)
+    y = (cs[idx + 1] - cs[np.maximum(0, idx + 1 - k)]) / k
+    return y * np.sin(np.linspace(0, np.pi, n)) ** 2 * 0.55
+def hit(big=False):
+    n = int((1.2 if big else 0.6) * SR); tt = np.arange(n) / SR
+    f = 60 + 140 * np.exp(-tt * 25)
+    boom = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-tt * (4 if big else 7))
+    root = [523.25, 659.25, 783.99, 1046.5] if big else [783.99, 1174.66]
+    bell = sum(np.sin(2 * np.pi * fr * tt) for fr in root) / len(root) * np.exp(-tt * (2.5 if big else 6))
+    noise = rng.standard_normal(n) * np.exp(-tt * (6 if big else 30)) * (0.25 if big else 0.12)
+    return boom * 0.8 + bell * 0.35 + noise
+sfx = np.zeros(n, np.float32)
+def place(x, at):
+    i = int(at * SR); j = min(n, i + len(x))
+    if 0 <= i < n: sfx[i:j] += x[:j - i]
+for sc in TL['scenes']:
+    if sc['kind'] == 'rank':
+        if sc['start'] > 0.2: place(whoosh(), sc['start'] - 0.2)
+        place(hit(sc['rank'] <= 1) * (1.0 if sc['rank'] <= 3 else 0.7), sc['start'] + 0.24)
+    elif sc['kind'] == 'intro':
+        place(hit(True) * 0.8, sc['start'] + 0.05)
+sfx *= 0.35
+
+mixed = music * gain[:, None] + voice[:, None] + sfx[:, None]
 mixed /= max(1.0, np.max(np.abs(mixed)) / 0.95)
 MIX = os.path.join(OUT, 'mix.wav')
 with wave.open(MIX, 'wb') as w:
