@@ -109,11 +109,12 @@ function portal(t, d) {
   // 山の斜面
   const hl = P(-60, 0, zp), hr = P(60, 0, zp), top = P(0, 26, zp); ctx.fillStyle = '#04060b'; ctx.beginPath(); ctx.moveTo(hl[0], hl[1]); ctx.lineTo(hl[0], top[1] + 60); ctx.quadraticCurveTo(540, top[1] - 40, hr[0], top[1] + 80); ctx.lineTo(hr[0], hr[1]); ctx.closePath(); ctx.fill();
   // 奥(アーチの中だけ見える)
-  const arch = () => { const a = P(-4.6, 0, zp), b = P(4.6, 0, zp), c = P(4.6, 4.2, zp), e = P(-4.6, 4.2, zp), tp = P(0, 7.2, zp); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(e[0], e[1]); ctx.quadraticCurveTo(e[0], tp[1], tp[0], tp[1]); ctx.quadraticCurveTo(c[0], tp[1], c[0], c[1]); ctx.lineTo(b[0], b[1]); ctx.closePath(); };
+  const arch = (fresh = true) => { const a = P(-4.6, 0, zp), b = P(4.6, 0, zp), c = P(4.6, 4.2, zp), e = P(-4.6, 4.2, zp), tp = P(0, 7.2, zp); if (fresh) ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(e[0], e[1]); ctx.quadraticCurveTo(e[0], tp[1], tp[0], tp[1]); ctx.quadraticCurveTo(c[0], tp[1], c[0], c[1]); ctx.lineTo(b[0], b[1]); ctx.closePath(); };
   ctx.save(); arch(); ctx.clip(); ctx.fillStyle = '#020203'; ctx.fillRect(-500, -500, 2100, 2500); tunnelInner(d, zp, true); ctx.restore();
   // 坑門(コンクリートの壁)
-  const f0 = P(-9, 0, zp), f1 = P(9, 10, zp); ctx.save(); ctx.beginPath(); ctx.rect(f0[0], f1[1], f1[0] - f0[0], f0[1] - f1[1]); arch(); ctx.fillStyle = mix([12, 12, 14], [118, 116, 108], L * 0.8); ctx.fill('evenodd');
+  const f0 = P(-9, 0, zp), f1 = P(9, 10, zp); ctx.save(); ctx.beginPath(); ctx.rect(f0[0], f1[1], f1[0] - f0[0], f0[1] - f1[1]); arch(false); ctx.fillStyle = mix([12, 12, 14], [118, 116, 108], L * 0.8); ctx.fill('evenodd');
   ctx.strokeStyle = `rgba(0,0,0,${0.3})`; ctx.lineWidth = Math.max(1, 0.06 * F / zp); for (let i = 1; i < 6; i++) { const y = P(0, i * 1.7, zp)[1]; ctx.beginPath(); ctx.moveTo(f0[0], y); ctx.lineTo(f1[0], y); ctx.stroke(); }
+  ctx.save(); arch(); ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = Math.max(2, 0.35 * F / zp); ctx.stroke(); ctx.restore();
   const pl = P(-1.6, 8.5, zp), pr = P(1.6, 7.6, zp); ctx.fillStyle = mix([14, 14, 14], [180, 176, 160], L); ctx.fillRect(pl[0], pl[1], pr[0] - pl[0], pr[1] - pl[1]); ctx.fillStyle = mix([4, 4, 4], [30, 30, 30], L); ctx.font = `bold ${Math.max(6, 0.62 * F / zp)}px ${GOT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('旧 峠 隧 道', (pl[0] + pr[0]) / 2, (pl[1] + pr[1]) / 2); ctx.restore();
   // 慰霊碑と花
   const zm = zp - 6; if (zm > 1.7) { const Lm = clamp(1 - zm / 40) ** 1.1, b0 = P(-5.6, 0, zm), b1 = P(-4.4, 0.3, zm), s0 = P(-5.4, 0.3, zm), s1 = P(-4.6, 2.1, zm);
