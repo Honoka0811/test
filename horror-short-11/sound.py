@@ -38,7 +38,7 @@ T_BUMP = L['l3']['start'] - 0.75                 # 車が沈む(誰かが乗り�
 T_OUT = L['l5']['start'] + 0.2                   # トンネルを抜ける
 T_FOG = T_OUT + 0.4                              # 窓が曇りはじめる
 T_WIPE = L['l6']['start'] + 0.55                 # ワイパー(2往復)
-PRINTS = [L['l8']['start'] + 2.0 + 0.55 * k for k in range(7)]   # 手形が1つずつ増える
+PRINTS = [L['l8']['start'] + 2.0 + 0.6 * k for k in range(6)]   # 手形が1つずつ増える
 T_VOICE = L['v']['start']
 T_MIRROR = L['l10']['start'] - 0.2               # バックミラーに寄る
 T_FULL = L['l10']['start'] + 1.65                # 後ろの席が、いっぱい
@@ -74,9 +74,9 @@ def breath(d):
     env = np.where(t < d * 0.4, np.sin(np.pi * t / (d * 0.8)) * 0.6, np.clip(np.sin(np.pi * (t - d * 0.4) / (d * 1.2)), 0, 1) ** 1.5)
     return (n * env).astype(np.float32)
 def breathing():
-    """何人もの息。曇りが広がるにつれて、増えていく"""
+    """3人の息。曇りが広がるにつれて、増えていく"""
     x = np.zeros(N, np.float32)
-    for k, (per, ph, g) in enumerate([(3.3, 0.0, 1.0), (3.9, 1.3, 0.8), (2.9, 2.2, 0.7), (4.4, 0.7, 0.9), (3.6, 1.8, 0.6)]):
+    for k, (per, ph, g) in enumerate([(3.3, 0.0, 1.0), (3.9, 1.3, 0.85), (3.0, 2.2, 0.8)]):          # 3人の息
         t0 = T_FOG + 0.5 + k * 1.4 + ph
         while t0 < HIT - 0.5:
             add(x, t0, breath(per * 0.7), g); t0 += per
@@ -160,7 +160,7 @@ def main():
     for l in TL['lines']:
         if l['id'] == 'v':                                   # 後ろの席から、何人もの声が重なって聞こえる
             v = segs['v']
-            for k, d, g in [(1.0, 0.0, 1.0), (0.86, 0.12, 0.8), (1.16, 0.22, 0.7), (0.78, 0.35, 0.6), (1.05, 0.5, 0.5)]: add(back, l['start'] + d, resample(v, k), g)
+            for k, d, g in [(1.0, 0.0, 1.0), (0.86, 0.14, 0.85), (1.13, 0.26, 0.75)]: add(back, l['start'] + d, resample(v, k), g)      # 後ろの席の3人
         elif l['id'] == 'now': add(last, l['start'], segs['now'])
         else: add(nar, l['start'], segs[l['id']])
     allv = nar

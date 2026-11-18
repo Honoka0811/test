@@ -134,7 +134,7 @@ const fogTex = document.createElement('canvas'); fogTex.width = W; fogTex.height
 { const c = fogTex.getContext('2d'), r = rngOf(4321); for (let i = 0; i < 260; i++) { const x = r() * W, y = r() * 1300, rad = 40 + r() * 180, g = c.createRadialGradient(x, y, 0, x, y, rad), lt = r() < 0.55;
     g.addColorStop(0, lt ? `rgba(220,228,240,${0.10 + r() * 0.12})` : `rgba(30,36,50,${0.08 + r() * 0.10})`); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x - rad, y - rad, rad * 2, rad * 2); }
   for (let i = 0; i < 1800; i++) { c.fillStyle = `rgba(235,240,250,${0.05 + r() * 0.12})`; const s2 = 1 + r() * 2.2; c.beginPath(); c.arc(r() * W, r() * 1300, s2, 0, 7); c.fill(); } }   // 細かい水滴
-const PRINTS = [[300, 560, 1.0, -0.15], [760, 470, 0.7, 0.2], [190, 860, 0.62, -0.3], [620, 780, 1.05, 0.05], [880, 860, 0.64, 0.25], [430, 380, 0.82, -0.05], [520, 1010, 1.12, 0.1]];
+const PRINTS = [[420, 640, 1.0, -0.12], [610, 560, 0.94, 0.14], [330, 880, 0.96, -0.25], [560, 860, 1.05, 0.04], [700, 760, 0.92, 0.22], [470, 420, 0.9, -0.05]];
 function hand(c, x, y, s, rot, k) {     // 手のひらを押しつけた跡(指は上向き)
   c.save(); c.translate(x, y); c.rotate(rot); c.scale(s * lerp(0.92, 1, k), s * lerp(0.92, 1, k)); c.lineCap = 'round';
   c.beginPath(); c.ellipse(0, 20, 44, 52, 0, 0, 7); c.fill();
@@ -161,7 +161,7 @@ function glass(t, f) {
   fc.globalCompositeOperation = 'destination-out';
   const ca = (1 - fa) ** 0.8; if (ca > 0.01) { const g = fc.createRadialGradient(540, 660, 60, 540, 660, 760); g.addColorStop(0, `rgba(0,0,0,${ca})`); g.addColorStop(1, 'rgba(0,0,0,0)'); fc.fillStyle = g; fc.fillRect(0, 0, W, H); }   // まん中ほど、最後まで透けている
   fc.fillStyle = fc.strokeStyle = 'rgba(0,0,0,0.92)';
-  EV.prints.forEach((tp, i) => { const k = prog(t, tp, tp + 0.25); if (k <= 0) return; const [x, y, s, r] = PRINTS[i]; fc.globalAlpha = Math.min(1, k * 1.4); hand(fc, x, y + 12 * ease(prog(t, tp + 0.2, tp + 1.6)), s, r, ease(prog(t, tp, tp + 2.2))); });
+  EV.prints.forEach((tp, i) => { const k = prog(t, tp, tp + 0.25); if (k <= 0 || i >= PRINTS.length) return; const [x, y, s, r] = PRINTS[i]; fc.globalAlpha = Math.min(1, k * 1.4); hand(fc, x, y + 12 * ease(prog(t, tp + 0.2, tp + 1.6)), s, r, ease(prog(t, tp, tp + 2.2))); });
   fc.restore(); ctx.drawImage(fogCv, 0, 0);
 }
 
@@ -188,9 +188,8 @@ function mirror(t, f, inT, pulse) {
   if (t >= EV.bump + 0.05 && t < EV.bump + 0.2) bust(ctx, mx + 288, my + 64, 0.95, col, rim);       // 沈んだ瞬間、一瞬だけ映る
   if (t >= EV.full) {
     const ln = ease(prog(t, EV.lean, EV.hit - 0.3));
-    bust(ctx, mx + 100, my + 44, 0.7, col, rim); bust(ctx, mx + 262, my + 40, 0.66, col, rim);                     // リアガラスの前にも、顔を寄せている
-    bust(ctx, mx + 70, my + 62, 0.98, col, rim); bust(ctx, mx + 292, my + 64, 0.96, col, rim); bust(ctx, mx + 128, my + 80, 0.62, col, rim);   // 子どもも
-    bust(ctx, lerp(mx + 182, mx + 250, ln), lerp(my + 66, my + 120, ln), lerp(1.02, 3.4, ln * ln), col, rim);        // まん中の人が、身を乗り出してくる
+    bust(ctx, mx + 70, my + 58, 1.08, col, rim); bust(ctx, mx + 290, my + 58, 1.06, col, rim);                     // 左右の席
+    bust(ctx, lerp(mx + 180, mx + 240, ln), lerp(my + 60, my + 120, ln), lerp(1.08, 3.4, ln * ln), col, rim);        // まん中の席の人が、前の席のあいだから身を乗り出してくる
   }
   ctx.restore();
   ctx.strokeStyle = '#0a0b10'; ctx.lineWidth = 9; ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 22); ctx.stroke();
