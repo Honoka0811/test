@@ -40,9 +40,9 @@ function tx(s, x, y, size, col, o = {}) {
 const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
 const mixA = (a, b, k) => a.map((v, i) => lerp(v, b[i], k));
 // ---- 簡易3D: 道路は y=0、X は左右、Z は前方の距離(m) ----
-const HOR = 700, F = 1000, CAMH = 1.25;
+const HOR = 700, F = 1000, CAMH = 1.25, CAMX = -1.75;      // 左車線のまん中を走る
 let WDY = 0, WDX = 0;
-const P = (X, Y, Z) => [540 + F * X / Z + WDX, HOR + F * (CAMH - Y) / Z + WDY];
+const P = (X, Y, Z) => [540 + F * (X - CAMX) / Z + WDX, HOR + F * (CAMH - Y) / Z + WDY];
 function quad(a, b, c, d, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill(); }
 const PORTAL = 160, SPEED = 13;
 function dist(t) {
@@ -81,7 +81,7 @@ function cedars(d, inTunnelW) {
 }
 function guard(d) {
   ctx.strokeStyle = 'rgba(150,150,150,0.5)'; ctx.lineWidth = 2;
-  for (let k = Math.floor(d / 4); k < (d + 70) / 4; k++) { const zw = k * 4; if (zw > PORTAL - 6 && zw < D_OUT + 4) continue; const z = zw - d; if (z < 2) continue; const L = clamp(1 - z / 30); const a = P(-4.2, 0, z), b = P(-4.2, 0.8, z); ctx.strokeStyle = `rgba(190,190,180,${0.1 + 0.6 * L})`; ctx.lineWidth = Math.max(1, 0.12 * F / z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+  for (let k = Math.floor(d / 4); k < (d + 70) / 4; k++) { const zw = k * 4; if (zw > PORTAL - 6 && zw < D_OUT + 4) continue; const z = zw - d; if (z < 2) continue; const L = clamp(1 - z / 30); const a = P(4.2, 0, z), b = P(4.2, 0.8, z); ctx.strokeStyle = `rgba(190,190,180,${0.1 + 0.6 * L})`; ctx.lineWidth = Math.max(1, 0.12 * F / z); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
 }
 
 // ---- トンネルの中 ----
@@ -116,13 +116,13 @@ function portal(t, d) {
   ctx.strokeStyle = `rgba(0,0,0,${0.3})`; ctx.lineWidth = Math.max(1, 0.06 * F / zp); for (let i = 1; i < 6; i++) { const y = P(0, i * 1.7, zp)[1]; ctx.beginPath(); ctx.moveTo(f0[0], y); ctx.lineTo(f1[0], y); ctx.stroke(); }
   const pl = P(-1.6, 8.5, zp), pr = P(1.6, 7.6, zp); ctx.fillStyle = mix([14, 14, 14], [180, 176, 160], L); ctx.fillRect(pl[0], pl[1], pr[0] - pl[0], pr[1] - pl[1]); ctx.fillStyle = mix([4, 4, 4], [30, 30, 30], L); ctx.font = `bold ${Math.max(6, 0.62 * F / zp)}px ${GOT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('旧 峠 隧 道', (pl[0] + pr[0]) / 2, (pl[1] + pr[1]) / 2); ctx.restore();
   // 慰霊碑と花
-  const zm = zp - 6; if (zm > 1.7) { const Lm = clamp(1 - zm / 40) ** 1.1, b0 = P(4.4, 0, zm), b1 = P(5.6, 0.3, zm), s0 = P(4.6, 0.3, zm), s1 = P(5.4, 2.1, zm);
+  const zm = zp - 6; if (zm > 1.7) { const Lm = clamp(1 - zm / 40) ** 1.1, b0 = P(-5.6, 0, zm), b1 = P(-4.4, 0.3, zm), s0 = P(-5.4, 0.3, zm), s1 = P(-4.6, 2.1, zm);
     ctx.fillStyle = mix([8, 8, 9], [96, 96, 92], Lm); ctx.fillRect(b0[0], b1[1], b1[0] - b0[0], b0[1] - b1[1]);
     ctx.fillStyle = mix([10, 10, 12], [128, 128, 122], Lm); ctx.beginPath(); ctx.roundRect(s0[0], s1[1], s1[0] - s0[0], s0[1] - s1[1], (s1[0] - s0[0]) * 0.18); ctx.fill();
     const fs = (s1[0] - s0[0]) * 0.36; ctx.fillStyle = mix([4, 4, 4], [24, 24, 26], Lm); ctx.font = `800 ${fs}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     '慰霊碑'.split('').forEach((ch, i) => ctx.fillText(ch, (s0[0] + s1[0]) / 2, s1[1] + (s0[1] - s1[1]) * (0.24 + i * 0.25)));
     ctx.font = `800 ${fs * 0.32}px ${MIN}`; ['崩落事故', '犠牲者'].forEach((col, j) => col.split('').forEach((ch, i) => ctx.fillText(ch, s0[0] + (s1[0] - s0[0]) * (0.14 + 0.72 * j), s1[1] + (s0[1] - s1[1]) * (0.2 + i * 0.13))));
-    for (const fx of [4.55, 5.45]) { const fb = P(fx, 0.3, zm - 0.3), r = 0.07 * F / zm; for (let i = 0; i < 7; i++) { ctx.fillStyle = mix([10, 10, 10], i % 3 ? [230, 226, 214] : [226, 190, 80], Lm * 0.95); ctx.beginPath(); ctx.arc(fb[0] + (hash(i * 7 + fx) - 0.5) * r * 3, fb[1] - r * (1.5 + hash(i + fx) * 2.5), r, 0, 7); ctx.fill(); } ctx.fillStyle = mix([6, 10, 6], [40, 80, 46], Lm); ctx.fillRect(fb[0] - r * 0.3, fb[1] - r * 1.6, r * 0.6, r * 1.6); } }
+    for (const fx of [-5.45, -4.55]) { const fb = P(fx, 0.3, zm - 0.3), r = 0.07 * F / zm; for (let i = 0; i < 7; i++) { ctx.fillStyle = mix([10, 10, 10], i % 3 ? [230, 226, 214] : [226, 190, 80], Lm * 0.95); ctx.beginPath(); ctx.arc(fb[0] + (hash(i * 7 + fx) - 0.5) * r * 3, fb[1] - r * (1.5 + hash(i + fx) * 2.5), r, 0, 7); ctx.fill(); } ctx.fillStyle = mix([6, 10, 6], [40, 80, 46], Lm); ctx.fillRect(fb[0] - r * 0.3, fb[1] - r * 1.6, r * 0.6, r * 1.6); } }
 }
 
 // ---- ガラス: 外側の雨粒とワイパー、内側の曇りと手形 ----
@@ -173,8 +173,8 @@ function bust(c, x, y, s, col, rim) {
   c.restore();
 }
 function mirror(t, f, inT, pulse) {
-  const mx = 360, my = 180, mw = 360, mh = 118;
-  ctx.fillStyle = '#06070b'; ctx.fillRect(531, 0, 18, my + 4);
+  const mx = 150, my = 180, mw = 360, mh = 118;
+  ctx.fillStyle = '#06070b'; ctx.fillRect(mx + mw / 2 - 9, 0, 18, my + 4);
   ctx.save(); ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 22); ctx.clip();
   ctx.fillStyle = '#05060a'; ctx.fillRect(mx, my, mw, mh);
   // リアガラス(後ろの景色)
@@ -254,13 +254,13 @@ function render(t) {
   let grain = 0.1;
   // カメラ: 慰霊碑に寄る → 戻る → バックミラーに寄る
   const zm = ease(prog(t, EV.l2s + 1.0, EV.l2s + 2.4)) * (1 - ease(prog(t, EV.l2e - 0.4, EV.t_in))), zr = ease(prog(t, EV.mirror, EV.mirror + 1.4)), zl = ease(prog(t, EV.lean, EV.hit));
-  const d = dist(t), mon = P(5.0, 1.2, Math.max(2, PORTAL - 6 - d));
+  const d = dist(t), mon = P(-5.0, 1.2, Math.max(2, PORTAL - 6 - d));
   let z = 1 + 1.25 * zm, cx = lerp(540, mon[0], zm), cy = lerp(960, mon[1], zm);
-  if (zr > 0) { z = lerp(1, 2.6, zr) + 0.6 * zl; cx = lerp(540, 540, zr); cy = lerp(960, 240 + 10 * zl, zr); }
+  if (zr > 0) { z = lerp(1, 2.6, zr) + 0.6 * zl; cx = lerp(540, 330, zr); cy = lerp(960, 240 + 10 * zl, zr); }
   if (t < EV.hit + 0.5) {
     ctx.save(); ctx.translate(540, 960); ctx.scale(z, z); ctx.translate(-cx, -cy);
     if (t < EV.hit) scene(t, f);
-    else { const k = (t - EV.hit) / 0.5; ctx.translate(540, 240); ctx.scale(1 + 1.6 * k, 1 + 1.6 * k); ctx.translate(-540, -240); scene(EV.hit - 0.02, f); }
+    else { const k = (t - EV.hit) / 0.5; ctx.translate(330, 240); ctx.scale(1 + 1.6 * k, 1 + 1.6 * k); ctx.translate(-330, -240); scene(EV.hit - 0.02, f); }
     ctx.restore();
     if (t >= EV.hit) { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
       for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); } grain = 0.3; }
@@ -271,7 +271,7 @@ function render(t) {
   } else {
     if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
     const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('帰る家のない人たちは', W / 2, 860);
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('家に帰れない人たちは', W / 2, 860);
     ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('空いている席を、さがしている。', W / 2, 960);
     ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
   }
@@ -281,6 +281,6 @@ function render(t) {
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '慰霊碑崩落事故犠牲者帰る家のない人たちは空いている席を、さがしている。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '慰霊碑崩落事故犠牲者家に帰れない人たちは空いている席を、さがしている。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>
