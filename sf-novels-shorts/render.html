@@ -461,8 +461,41 @@ function render(t) {
   if (fo > 0) { ctx.fillStyle = `rgba(5,6,15,${fo})`; ctx.fillRect(0, 0, W, H); }
 }
 
+// ---------- サムネイル(専用レイアウト) ----------
+function renderThumb() {
+  const t = 2.0;
+  background(t, '#7C5CFF');
+  text('読むと', W / 2, 330, { size: 120, weight: 900, align: 'center', stroke: 18 });
+  ctx.save(); ctx.translate(W / 2, 600); ctx.rotate(-0.03);
+  text('未来予知', 0, 0, { size: 260, weight: 900, color: C.hook, align: 'center', glow: 'rgba(255,225,77,0.9)', stroke: 24, maxW: 1040 });
+  ctx.restore();
+  text('ができるかも？', W / 2, 760, { size: 110, weight: 900, align: 'center', stroke: 18 });
+  // 名前のチップ
+  const rows = [[['イーロン・マスク', '#F5C451'], ['オバマ', '#FF8A3D']], [['ビル・ゲイツ', '#5ED6A0'], ['ガンダムの元ネタ', '#FF5A5F']]];
+  const CS = 58, PADX = 30, GAP = 36;
+  rows.forEach((row, ri) => {
+    setFont(CS, 900);
+    const ws = row.map(([l]) => ctx.measureText(l).width + PADX * 2);
+    let x = (W - ws.reduce((a, b) => a + b, 0) - GAP * (row.length - 1)) / 2;
+    row.forEach(([label, col], i) => {
+      ctx.save(); ctx.translate(x + ws[i] / 2, 925 + ri * 138); ctx.rotate((i + ri) % 2 ? 0.025 : -0.025);
+      rr(-ws[i] / 2, -76, ws[i], 106, 53); ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = 35; ctx.fill(); ctx.shadowBlur = 0;
+      text(label, 0, 0, { size: CS, weight: 900, color: '#0a0c1e', align: 'center' });
+      ctx.restore();
+      x += ws[i] + GAP;
+    });
+  });
+  text('が登場！', W / 2, 1225, { size: 84, weight: 900, align: 'center', stroke: 16 });
+  ctx.save(); ctx.translate(W / 2, 1420); ctx.rotate(-0.035);
+  rr(-480, -125, 960, 230, 44); ctx.fillStyle = '#FF3D7F'; ctx.shadowColor = '#FF3D7F'; ctx.shadowBlur = 60; ctx.fill(); ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 10; ctx.stroke();
+  text('SF小説 10選', 0, 52, { size: 160, weight: 900, align: 'center', maxW: 880 });
+  ctx.restore();
+}
+window.renderThumb = renderThumb;
+
 // フォント(必要な文字のサブセット)を読み込んでから描画する
-const ALLTEXT = JSON.stringify(TL) + '天才が読んだ・名作を生んだ未来を作る人はSFを読んでいる。影響関係42z未来を言い当てたSF小説10選読むと予知ができるかも？名作たち次のはもう本の中にある。あなたはどれを読む音声オリジナル※作品と現実の対応には諸説あります小説では発表年▼♪✦／0123456789';
+const ALLTEXT = JSON.stringify(TL) + 'イーロン・マスクオバマビル・ゲイツガンダムの元ネタが登場！天才が読んだ・名作を生んだ未来を作る人はSFを読んでいる。影響関係42z未来を言い当てたSF小説10選読むと予知ができるかも？名作たち次のはもう本の中にある。あなたはどれを読む音声オリジナル※作品と現実の対応には諸説あります小説では発表年▼♪✦／0123456789';
 window.ready = Promise.all([500, 700, 900].map(w => document.fonts.load(`${w} 40px "Noto Sans JP"`, ALLTEXT))).then(() => render(0));
 window.render = render; window.FPS = FPS; window.DURATION = DURATION;
 

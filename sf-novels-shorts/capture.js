@@ -1,5 +1,6 @@
 // render.html を 1 フレームずつ撮影し、ffmpeg で mp4(無音)にエンコードする
 // 使い方: node capture.js [出力mp4]
+//         node capture.js --thumb             サムネイルだけ output/thumbnail.png に書き出す
 //         node capture.js --stills 1.5,8,20   指定秒の静止画だけ output/still_*.png に書き出す(確認用)
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
@@ -17,6 +18,11 @@ const fs = require('fs');
   const { FPS, DURATION } = await page.evaluate(() => ({ FPS: window.FPS, DURATION: window.DURATION }));
   const grab = async t => Buffer.from((await page.evaluate(t => { window.render(t); return document.getElementById('c').toDataURL('image/png'); }, t)).split(',')[1], 'base64');
 
+  const thumb = async () => {
+    const png = Buffer.from((await page.evaluate(() => { window.renderThumb(); return document.getElementById('c').toDataURL('image/png'); })).split(',')[1], 'base64');
+    fs.writeFileSync(path.join(outDir, 'thumbnail.png'), png); console.log('wrote thumbnail.png');
+  };
+  if (process.argv[2] === '--thumb') { await thumb(); await browser.close(); return; }
   if (process.argv[2] === '--stills') {
     for (const s of process.argv[3].split(',')) {
       const f = path.join(outDir, `still_${s}.png`);
@@ -39,9 +45,7 @@ const fs = require('fs');
   }
   ff.stdin.end();
   await done;
-  // サムネイル(イントロの決めフレーム)
-  const intro = await page.evaluate(() => window.TIMELINE.scenes[0]);
-  fs.writeFileSync(path.join(outDir, 'thumbnail.png'), await grab(intro.end - 0.4));
+  await thumb();
   await browser.close();
   console.log('wrote', out);
 })().catch(e => { console.error(e); process.exit(1); });
