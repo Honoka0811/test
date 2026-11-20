@@ -46,7 +46,7 @@ const P = (X, Y, Z) => [540 + F * (X - CAMX) / Z + WDX, HOR + F * (CAMH - Y) / Z
 function quad(a, b, c, d, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill(); }
 const PORTAL = 160, SPEED = 13;
 function dist(t) {
-  const K = [[0, 40], [EV.l2s, 118], [EV.l2e, 141], [EV.t_in, PORTAL]];
+  const K = [[0, 70], [EV.l2s + 2.4, 118], [EV.l2e - 0.8, 140], [EV.t_in, PORTAL]];
   if (t >= EV.t_in) return PORTAL + SPEED * (t - EV.t_in);
   for (let i = 1; i < K.length; i++) if (t <= K[i][0]) return lerp(K[i - 1][1], K[i][1], (t - K[i - 1][0]) / (K[i][0] - K[i - 1][0]));
   return K[0][1];
@@ -143,14 +143,37 @@ function hand(c, x, y, s, rot, k) {     // 手のひらを押しつけた跡(指
   c.lineWidth = 6; for (const dx of [-26, 2, 30]) { c.beginPath(); c.moveTo(dx, 66); c.lineTo(dx + 2, 66 + 60 * k * (0.6 + hash(dx) * 0.8)); c.stroke(); }   // 垂れるしずく
   c.restore();
 }
+const wipePath = k => { const a = lerp(3.4, 3.4 + 6.283 * 1.35, k), r = lerp(240, 30, k); return [550 + Math.cos(a) * r, 730 + Math.sin(a) * r * 0.75]; };   // 袖を動かした道すじ(外から内へ、うずを巻く)
+// ---- 本当の外: 落ちてきた土と岩が、ガラスに押しつけられている ----
+const rubbleCv = document.createElement('canvas'); rubbleCv.width = W; rubbleCv.height = 1320;
+{ const c = rubbleCv.getContext('2d'), r = rngOf(777); c.fillStyle = '#1a140f'; c.fillRect(0, 0, W, 1320);
+  for (let i = 0; i < 2600; i++) { c.fillStyle = r() < 0.5 ? `rgba(120,96,70,${0.1 + r() * 0.25})` : `rgba(0,0,0,${0.15 + r() * 0.3})`; c.fillRect(r() * W, r() * 1320, 2 + r() * 4, 2 + r() * 3); }
+  const rocks = []; for (let i = 0; i < 64; i++) rocks.push([r() * 1180 - 50, 120 + r() * 1220, 50 + r() * 190]); rocks.sort((a, b) => a[2] - b[2]);
+  for (const [x, y, rad] of rocks.reverse()) { const n = 7 + Math.floor(r() * 4), g = c.createLinearGradient(x, y + rad, x, y - rad); g.addColorStop(0, '#8a7764'); g.addColorStop(0.5, '#4a3d31'); g.addColorStop(1, '#1d1712');
+    c.fillStyle = g; c.beginPath(); for (let k = 0; k < n; k++) { const a = k / n * 6.283 + r() * 0.4, rr2 = rad * (0.7 + r() * 0.35); k ? c.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2 * 0.85) : c.moveTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2 * 0.85); } c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.55)'; c.lineWidth = 3; c.stroke(); c.strokeStyle = 'rgba(210,190,160,0.12)'; c.lineWidth = 2; c.beginPath(); c.moveTo(x - rad * 0.5, y + rad * 0.6); c.lineTo(x + rad * 0.4, y + rad * 0.65); c.stroke(); }
+  c.fillStyle = '#000'; c.beginPath(); for (let k = 0; k < 9; k++) { const a = k / 9 * 6.283, rr2 = 70 + r() * 30; k ? c.lineTo(560 + Math.cos(a) * rr2, 700 + Math.sin(a) * rr2 * 0.8) : c.moveTo(560 + Math.cos(a) * rr2, 700 + Math.sin(a) * rr2 * 0.8); } c.closePath(); c.fill(); }   // 岩のすき間
+function rubble(t, f) {
+  ctx.drawImage(rubbleCv, 0, 0);
+  const hg = ctx.createRadialGradient(540, 1330, 60, 540, 1100, 900); hg.addColorStop(0, 'rgba(255,236,200,0.38)'); hg.addColorStop(1, 'rgba(255,236,200,0)'); ctx.fillStyle = hg; ctx.fillRect(0, 0, W, 1320);
+  const r = rngOf(31); for (let i = 0; i < 60; i++) { const x = (r() * 1080 + t * (8 + r() * 10)) % 1080, y = 300 + ((r() * 1000 + t * (14 + r() * 20)) % 1000); ctx.fillStyle = `rgba(230,210,180,${0.12 + 0.2 * r()})`; ctx.fillRect(x, y, 2.4, 2.4); }   // 舞う土ぼこり
+  // 岩のすき間から出てくる手(ガラスの外側)
+  const e = prog(t, EV.knock - 0.9, EV.knock - 0.2); if (e > 0) { const tap = Math.max(0, ...[0, 0.38].map(dt => Math.exp(-(((t - EV.knock - dt) / 0.06) ** 2)))), open = ease(prog(t, LN.now.start - 0.3, LN.now.start + 0.3));
+    ctx.save(); ctx.translate(560, 700 + (1 - ease(e)) * 40); const s = (0.75 + 0.25 * ease(e)) * (1 + 0.12 * tap) * (1 + 0.2 * open + 0.25 * prog(t, LN.now.start, EV.hit)); ctx.scale(s, s); ctx.globalAlpha = ease(e);
+    ctx.fillStyle = ctx.strokeStyle = '#a8a094';
+    if (open < 0.5) { ctx.beginPath(); ctx.roundRect(-46, -40, 92, 80, 26); ctx.fill(); ctx.fillStyle = 'rgba(60,46,34,0.6)'; for (let i = 0; i < 4; i++) ctx.fillRect(-38 + i * 21, -36, 14, 8); }
+    else hand(ctx, 0, 0, 1.05, 0.05, 0);
+    ctx.fillStyle = 'rgba(70,52,36,0.35)'; ctx.fillRect(-50, 10, 100, 40); ctx.restore(); }
+  // ガラスのひび
+  ctx.strokeStyle = 'rgba(230,235,245,0.35)'; ctx.lineWidth = 2; const cr = rngOf(5); for (let i = 0; i < 9; i++) { let x = 330, y = 430; ctx.beginPath(); ctx.moveTo(x, y); const a = cr() * 6.283; for (let k = 0; k < 6; k++) { x += Math.cos(a + (cr() - 0.5) * 0.6) * (30 + cr() * 50); y += Math.sin(a + (cr() - 0.5) * 0.6) * (30 + cr() * 50); ctx.lineTo(x, y); } ctx.stroke(); }
+}
 function glass(t, f) {
   // 雨粒(外側)。ワイパーが通ると消える
-  if (t > EV.t_out) { const lastWipe = EV.wipe + 0.62 * Math.max(-1, Math.min(3, Math.floor((t - EV.wipe) / 0.62))), since = t >= EV.wipe ? (t - lastWipe) : (t - EV.t_out), n = Math.min(160, Math.floor(since * 26));
-    const r = rngOf(t >= EV.wipe ? 50 + Math.floor((t - EV.wipe) / 0.62) : 49); ctx.save(); clipShield(ctx); ctx.clip();
+  if (t > EV.t_out) { const n = t >= EV.wipe ? 0 : Math.min(140, Math.floor((t - EV.t_out) * 14)); const r = rngOf(49); ctx.save(); clipShield(ctx); ctx.clip();
     for (let i = 0; i < n; i++) { const x = r() * 1080, y = 160 + r() * 1100, s = 2 + r() * 5; ctx.fillStyle = 'rgba(170,185,215,0.35)'; ctx.beginPath(); ctx.ellipse(x, y, s * 0.8, s, 0, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(x - s * 0.3, y - s * 0.5, 1.5, 1.5); }
     ctx.restore(); }
   // ワイパー(外側)
-  const wp = t - EV.wipe, ang = wp >= 0 && wp < 0.62 * 4 ? (() => { const k = (wp % 0.62) / 0.62, up = Math.floor(wp / 0.62) % 2 === 0; return lerp(3.05, 1.75, ease(up ? k : 1 - k)); })() : 3.05;
+  const ang = 3.05;
   ctx.strokeStyle = '#030305'; ctx.lineCap = 'round';
   for (const [px, ln] of [[330, 600], [760, 560]]) { const ex = px + Math.cos(ang) * ln, ey = 1255 - Math.sin(ang) * ln; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(px, 1255); ctx.lineTo(ex, ey); ctx.stroke(); ctx.lineWidth = 7; const bx = Math.cos(ang) * 0.55, by = -Math.sin(ang) * 0.55; ctx.beginPath(); ctx.moveTo(px + Math.cos(ang) * 60, 1255 - Math.sin(ang) * 60); ctx.lineTo(ex + bx * 20, ey + by * 20); ctx.stroke(); }
   // 曇り(内側)。まわりから広がり、手形の跡だけが透ける
@@ -162,6 +185,7 @@ function glass(t, f) {
   const ca = (1 - fa) ** 0.8; if (ca > 0.01) { const g = fc.createRadialGradient(540, 660, 60, 540, 660, 760); g.addColorStop(0, `rgba(0,0,0,${ca})`); g.addColorStop(1, 'rgba(0,0,0,0)'); fc.fillStyle = g; fc.fillRect(0, 0, W, H); }   // まん中ほど、最後まで透けている
   fc.fillStyle = fc.strokeStyle = 'rgba(0,0,0,0.92)';
   EV.prints.forEach((tp, i) => { const k = prog(t, tp, tp + 0.25); if (k <= 0 || i >= PRINTS.length) return; const [x, y, s, r] = PRINTS[i]; fc.globalAlpha = Math.min(1, k * 1.4); hand(fc, x, y + 12 * ease(prog(t, tp + 0.2, tp + 1.6)), s, r, ease(prog(t, tp, tp + 2.2))); });
+  if (t >= EV.wipe) { const k = prog(t, EV.wipe, EV.wipe + 1.2); for (let i = 0; i <= 60 * k; i++) { const p = wipePath(i / 60); const g = fc.createRadialGradient(p[0], p[1], 40, p[0], p[1], 125); g.addColorStop(0, 'rgba(0,0,0,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)'); fc.globalAlpha = 1; fc.fillStyle = g; fc.fillRect(p[0] - 130, p[1] - 130, 260, 260); } }
   fc.restore(); ctx.drawImage(fogCv, 0, 0);
 }
 
@@ -179,13 +203,12 @@ function mirror(t, f, inT, pulse) {
   ctx.save(); ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 22); ctx.clip();
   ctx.fillStyle = '#05060a'; ctx.fillRect(mx, my, mw, mh);
   // リアガラス(後ろの景色)
-  ctx.fillStyle = inT ? mix([20, 12, 6], [120, 74, 30], pulse * 0.7) : '#0b1022'; ctx.beginPath(); ctx.moveTo(mx + 40, my + 6); ctx.lineTo(mx + mw - 40, my + 6); ctx.lineTo(mx + mw - 18, my + 58); ctx.lineTo(mx + 18, my + 58); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = t >= EV.cut ? '#2a2018' : inT ? mix([20, 12, 6], [120, 74, 30], pulse * 0.7) : '#0b1022'; ctx.beginPath(); ctx.moveTo(mx + 40, my + 6); ctx.lineTo(mx + mw - 40, my + 6); ctx.lineTo(mx + mw - 18, my + 58); ctx.lineTo(mx + 18, my + 58); ctx.closePath(); ctx.fill();
   const fa = ease(prog(t, EV.fog + 1, EV.fogfull)); if (fa > 0) { ctx.fillStyle = `rgba(140,150,166,${0.7 * fa})`; ctx.fill(); }
   // 後部座席
   ctx.fillStyle = '#14161c'; ctx.fillRect(mx, my + 70, mw, mh); for (const hx of [mx + 72, mx + 180, mx + 288]) { ctx.fillStyle = '#1b1e26'; ctx.beginPath(); ctx.roundRect(hx - 26, my + 48, 52, 32, 10); ctx.fill(); }
   // 乗っている人たち
   const rim = 'rgba(150,170,220,0.55)', col = '#020204';
-  if (t >= EV.bump + 0.05 && t < EV.bump + 0.2) bust(ctx, mx + 288, my + 64, 0.95, col, rim);       // 沈んだ瞬間、一瞬だけ映る
   if (t >= EV.full) {
     const ln = ease(prog(t, EV.lean, EV.hit - 0.3));
     bust(ctx, mx + 70, my + 58, 1.08, col, rim); bust(ctx, mx + 290, my + 58, 1.06, col, rim);                     // 左右の席
@@ -214,19 +237,34 @@ function cabin(t, f, inT, pulse, speed) {
   const dg = ctx.createRadialGradient(540, 1460, 40, 540, 1460, 700); dg.addColorStop(0, 'rgba(70,120,255,0.07)'); dg.addColorStop(1, 'rgba(70,120,255,0)'); ctx.fillStyle = dg; ctx.fillRect(-300, 900, 1700, 1400);
 }
 
+function sleeve(t) {     // 袖でガラスをふく腕(車内)
+  const k = prog(t, EV.wipe - 0.25, EV.wipe + 1.5); if (k <= 0 || k >= 1) return;
+  const p = wipePath(clamp((t - EV.wipe) / 1.2)), out = Math.max(ease(prog(t, EV.wipe - 0.25, EV.wipe)) === 1 ? 0 : 1 - ease(prog(t, EV.wipe - 0.25, EV.wipe)), ease(prog(t, EV.wipe + 1.2, EV.wipe + 1.5)));
+  const hx = lerp(p[0], 1250, out), hy = lerp(p[1], 1800, out), ex = lerp(hx, 1150, 0.55) + 90, ey = lerp(hy, 1900, 0.55) + 40;
+  const seg = (x0, y0, x1, y1, w0, w1, col) => { const a = Math.atan2(y1 - y0, x1 - x0), nx = -Math.sin(a), ny = Math.cos(a); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x0 + nx * w0, y0 + ny * w0); ctx.lineTo(x1 + nx * w1, y1 + ny * w1); ctx.lineTo(x1 - nx * w1, y1 - ny * w1); ctx.lineTo(x0 - nx * w0, y0 - ny * w0); ctx.closePath(); ctx.fill(); };
+  seg(1300, 2150, ex, ey, 230, 120, '#1c2030'); seg(ex, ey, hx, hy, 120, 60, '#252a39');                                   // 手前は太く、ガラスへ向かって細く(遠近)
+  ctx.fillStyle = '#252a39'; ctx.beginPath(); ctx.arc(ex, ey, 120, 0, 7); ctx.fill();
+  const an = Math.atan2(hy - ey, hx - ex), ux = Math.cos(an), uy = Math.sin(an);
+  ctx.strokeStyle = 'rgba(150,165,205,0.2)'; ctx.lineWidth = 4; for (let i = 0; i < 4; i++) { const u = 0.2 + i * 0.18, w = lerp(110, 60, u); ctx.beginPath(); ctx.moveTo(lerp(ex, hx, u) - uy * w, lerp(ey, hy, u) + ux * w); ctx.quadraticCurveTo(lerp(ex, hx, u) + ux * 18, lerp(ey, hy, u) + uy * 18, lerp(ex, hx, u) + uy * w, lerp(ey, hy, u) - ux * w); ctx.stroke(); }   // 袖のしわ
+  ctx.fillStyle = '#30364a'; ctx.beginPath(); ctx.ellipse(hx - ux * 10, hy - uy * 10, 70, 58, an, 0, 7); ctx.fill();          // 袖口をにぎってまるめた手
+  ctx.fillStyle = '#c7b6a4'; for (let i = -1.5; i <= 1.5; i++) { ctx.beginPath(); ctx.ellipse(hx - ux * 34 - uy * i * 24, hy - uy * 34 + ux * i * 24, 15, 12, an, 0, 7); ctx.fill(); }   // 袖をにぎる指(4本)
+  ctx.beginPath(); ctx.ellipse(hx - ux * 62 + uy * 42, hy - uy * 62 - ux * 42, 15, 22, an + 0.6, 0, 7); ctx.fill();                  // 親指
+}
 function scene(t, f) {
   const d = dist(t), inT = d >= PORTAL && d < D_OUT, speed = t < EV.l2s ? 24 : t < EV.l2e ? 12 : 47;
-  const blackout = t >= EV.bump - 0.42 && t < EV.bump - 0.06;
+  const blackout = t >= EV.bo0 && t < EV.bo1;
   WDY = -16 * ease(prog(t, EV.bump, EV.bump + 0.18)); const sh = t >= EV.bump ? Math.exp(-(t - EV.bump) * 6) : 0; WDY += (hash(f) - 0.5) * 30 * sh + Math.sin(t * 7) * 1.2; WDX = (hash(f + 1) - 0.5) * 12 * sh;
   ctx.save(); clipShield(ctx); ctx.clip();
-  if (!inT) { sky(); if (d < PORTAL) portal(t, d); road(d, d < PORTAL ? PORTAL - d : 120); guard(d); cedars(d); }
+  if (t >= EV.wipe) rubble(t, f);
+  else if (!inT) { sky(); if (d < PORTAL) portal(t, d); road(d, d < PORTAL ? PORTAL - d : 120); guard(d); cedars(d); }
   else { ctx.fillStyle = '#020203'; ctx.fillRect(-300, -300, 1700, 2600); tunnelInner(d, 0, !blackout); if (blackout) { ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(-300, -300, 1700, 2600); } }
   // ヘッドライトの光
-  const hg = ctx.createRadialGradient(540, 1150, 30, 540, 1050, 640); hg.addColorStop(0, 'rgba(255,250,225,0.10)'); hg.addColorStop(1, 'rgba(255,250,225,0)'); ctx.fillStyle = hg; ctx.fillRect(-300, 400, 1700, 1000);
+  if (t < EV.wipe) { const hg = ctx.createRadialGradient(540, 1150, 30, 540, 1050, 640); hg.addColorStop(0, 'rgba(255,250,225,0.10)'); hg.addColorStop(1, 'rgba(255,250,225,0)'); ctx.fillStyle = hg; ctx.fillRect(-300, 400, 1700, 1000); }
   ctx.restore();
   glass(t, f);
   const pulse = inT && !blackout ? Math.max(0, Math.cos(2 * Math.PI * ((d - PORTAL + 6) % 12) / 12)) ** 4 : 0;
-  cabin(t, f, inT, pulse, speed + (hash(Math.floor(t * 2)) - 0.5) * 2);
+  cabin(t, f, inT && t < EV.wipe, pulse, t >= EV.cut ? 0 : speed + (hash(Math.floor(t * 2)) - 0.5) * 2);
+  if (t >= EV.wipe) sleeve(t);
   if (blackout) { ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-300, -300, 1700, 2600); }
 }
 
@@ -253,14 +291,16 @@ function render(t) {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
   let grain = 0.1;
   // カメラ: 慰霊碑に寄る → 戻る → バックミラーに寄る
-  const zm = ease(prog(t, EV.l2s + 1.0, EV.l2s + 2.4)) * (1 - ease(prog(t, EV.l2e - 0.4, EV.t_in))), zr = ease(prog(t, EV.mirror, EV.mirror + 1.4)), zl = ease(prog(t, EV.lean, EV.hit));
+  const zm = ease(prog(t, EV.l2s + 2.6, EV.l2s + 3.8)) * (1 - ease(prog(t, EV.l2e - 1.0, EV.l2e - 0.1))), zr = ease(prog(t, EV.mirror, EV.mirror + 1.2)) * (1 - ease(prog(t, EV.unmirror, EV.unmirror + 0.9)));
+  const zh = ease(prog(t, EV.cut + 0.4, LN.l12.end)) * 0.35 + ease(prog(t, EV.knock - 0.6, EV.hit)) * 0.5;
   const d = dist(t), mon = P(-5.0, 1.2, Math.max(2, PORTAL - 6 - d));
   let z = 1 + 1.25 * zm, cx = lerp(540, mon[0], zm), cy = lerp(960, mon[1], zm);
-  if (zr > 0) { z = lerp(1, 2.6, zr) + 0.6 * zl; cx = lerp(540, 330, zr); cy = lerp(960, 240 + 10 * zl, zr); }
+  if (zr > 0) { z = lerp(1, 2.6, zr); cx = lerp(540, 330, zr); cy = lerp(960, 240, zr); }
+  if (zh > 0) { z = 1 + zh; cx = lerp(540, 560, zh / 0.85); cy = lerp(960, 720, zh / 0.85); }
   if (t < EV.hit + 0.5) {
     ctx.save(); ctx.translate(540, 960); ctx.scale(z, z); ctx.translate(-cx, -cy);
     if (t < EV.hit) scene(t, f);
-    else { const k = (t - EV.hit) / 0.5; ctx.translate(330, 240); ctx.scale(1 + 1.6 * k, 1 + 1.6 * k); ctx.translate(-330, -240); scene(EV.hit - 0.02, f); }
+    else { const k = (t - EV.hit) / 0.5; ctx.translate(560, 700); ctx.scale(1 + 1.8 * k, 1 + 1.8 * k); ctx.translate(-560, -700); scene(EV.hit - 0.02, f); }
     ctx.restore();
     if (t >= EV.hit) { ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
       for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); } grain = 0.3; }
@@ -271,8 +311,8 @@ function render(t) {
   } else {
     if (t < EV.hit + 0.6) noise(0.7, f, 5, 'source-over');
     const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('家に帰れない人たちは', W / 2, 860);
-    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('空いている席を、さがしている。', W / 2, 960);
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('あの日の帰り道の車は', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('まだ、あのトンネルに埋まっている。', W / 2, 960);
     ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
   }
   subtitle(t);
@@ -281,6 +321,6 @@ function render(t) {
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '慰霊碑崩落事故犠牲者家に帰れない人たちは空いている席を、さがしている。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '慰霊碑崩落事故犠牲者あの日の帰り道の車はまだ、あのトンネルに埋まっている。ナレーション四国めたん0123456789').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>

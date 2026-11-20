@@ -9,7 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SR = 48000
 # 四国めたんのスタイル: 2=ノーマル 36=ささやき 37=ヒソヒソ
 STYLES = {'n': 2, 'w': 36, 'h': 37}
-PARAMS = {'n': dict(speed=1.17, pitch=-0.03, into=0.9, vol=1.0),
+PARAMS = {'n': dict(speed=1.2, pitch=-0.03, into=0.9, vol=1.0),
           'w': dict(speed=0.72, pitch=-0.06, into=1.0, vol=1.9),    # 後ろの席の声
           'h': dict(speed=0.66, pitch=-0.07, into=1.0, vol=2.0)}
 START = 0.4
