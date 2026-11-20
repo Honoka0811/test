@@ -7,28 +7,20 @@ import json, re, sys, wave, urllib.request, urllib.parse, os
 
 HOST = "http://localhost:50021"
 SPEAKER = 2  # 四国めたん ノーマル
-SPEED = 1.3
-LEAD = 0.15   # シーン開始からナレーション開始まで
-TAIL = 0.3   # ナレーション終了後の余白
+SPEED = 1.45
+LEAD = 0.05   # シーン開始からナレーション開始まで
+TAIL = 0.12   # ナレーション終了後の余白
 
 # (ナレーション, 字幕, 最低シーン秒数)
 SCENES = [
-    ("クロードコードって知ってる？話題のAIエンジニアを、サクッと解説しますわ！",
-     "Claude Codeって知ってる？", 2.5),
-    ("ひとことで言えば、自分で手を動かすAI。アンソロピック製の、コーディングエージェントですの。",
-     "ひとことで言えば<br>自分で手を動かすAI", 3.5),
-    ("コードを読む、書く、実行する。ギットの操作まで、まるごとお任せ！",
-     "読む・書く・実行する<br>Git操作までお任せ！", 3.5),
-    ("使い方は、日本語で頼むだけ。調査も修正もテストも、自分で進めてくれますわ。",
-     "日本語で頼むだけ<br>調査→修正→テストまで自動", 6.0),
-    ("ターミナル、エディタ、アプリにウェブ。どこでも使えますの。",
-     "ターミナル・エディタ・アプリ・Web<br>どこでも使える", 3.0),
-    ("ルールの記憶に、外部ツール連携、自動化まで。カスタマイズも自在ですわ。",
-     "ルール記憶・外部連携・自動化<br>カスタマイズも自在", 3.0),
-    ("大事な操作は、ちゃんと許可を求めるから安心！",
-     "大事な操作は<br>ちゃんと許可を求めるから安心", 3.0),
-    ("まずは小さなタスクから、試してみてちょうだい！",
-     "まずは小さなタスクから<br>試してみてね！", 3.5),
+    ("クロードコード、サクッと解説しますわ！", "Claude Code<br>サクッと解説！", 1.4),
+    ("自分でコードを書いて動かす、AIエージェントですの。", "自分でコードを書いて動かす<br>AIエージェント", 1.6),
+    ("読む、書く、実行、ギットまでお任せ！", "読む・書く・実行・Gitまで<br>お任せ！", 1.8),
+    ("日本語で頼めば、修正もテストも全自動！", "日本語で頼めば<br>修正もテストも全自動！", 3.3),
+    ("ターミナルでも、エディタでも、ウェブでも！", "ターミナルでも<br>エディタでも、Webでも！", 1.6),
+    ("外部ツール連携や、自動化も自在ですわ。", "外部ツール連携や<br>自動化も自在", 1.6),
+    ("大事な操作は許可制だから安心！", "大事な操作は<br>許可制だから安心！", 1.6),
+    ("さっそく試してみてちょうだい！", "さっそく<br>試してみてね！", 2.0),
 ]
 
 def post(path, params, body=None):
@@ -49,7 +41,7 @@ def main():
         q["intonationScale"] = 1.25
         q["pitchScale"] = 0.02
         for ph in q["accent_phrases"]:
-            if ph.get("pause_mora"): ph["pause_mora"]["vowel_length"] *= 0.5
+            if ph.get("pause_mora"): ph["pause_mora"]["vowel_length"] *= 0.3
         q["postPhonemeLength"] = 0.05
         wav = post("/synthesis", {"speaker": SPEAKER}, q)
         path = os.path.join(out, f"n{i}.wav")
@@ -60,7 +52,7 @@ def main():
         starts.append(round(t, 2)); offsets.append(round(t + LEAD, 2))
         t += dur; ends.append(round(t, 2))
         print(f"scene{i+1}: {d:.2f}s voice -> {dur:.2f}s scene")
-    total = round(t + 0.6, 2)  # 最後に少し余韻
+    total = round(t + 0.4, 2)  # 最後に少し余韻
     ends[-1] = total
 
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video.html")
