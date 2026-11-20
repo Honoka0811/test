@@ -1,6 +1,6 @@
 {
  "fps": 30,
- "end": 45.0,
+ "end": 44.2,
  "scene": "scene_tv.html",
  "audio": "audio_tv.py",
  "vf": "gblur=sigma=1.3,noise=c0s=16:c0f=t:c1s=8:c1f=t:c2s=8:c2f=t,format=yuv420p",
@@ -11,9 +11,7 @@
   21.6
  ],
  "corrupt": 33.5,
- "off": 37.0,
- "glass": 37.4,
- "cut": 44.7,
+ "cut": 43.6,
  "cards": [
   {
    "t": 1.9,
@@ -166,10 +164,17 @@
    ]
   }
  ],
- "stages": [
-  39.3,
+ "dead": 37.0,
+ "msg1": 37.6,
+ "msg2": 39.2,
+ "slaps": [
+  39.9,
+  40.3,
   40.6,
-  41.8
+  40.8,
+  40.95
  ],
- "snap": 44.0
+ "crack": 41.3,
+ "shatter": 41.9,
+ "lunge": 43.3
 }
