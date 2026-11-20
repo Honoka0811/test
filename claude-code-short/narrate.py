@@ -7,9 +7,9 @@ import json, re, sys, wave, urllib.request, urllib.parse, os
 
 HOST = "http://localhost:50021"
 SPEAKER = 2  # 四国めたん ノーマル
-SPEED = 1.45
-LEAD = 0.05   # シーン開始からナレーション開始まで
-TAIL = 0.12   # ナレーション終了後の余白
+SPEED = 1.3
+LEAD = 0.15   # シーン開始からナレーション開始まで
+TAIL = 0.35   # ナレーション終了後の余白
 
 # (ナレーション, 字幕, 最低シーン秒数)
 SCENES = [
@@ -18,7 +18,7 @@ SCENES = [
     ("チャットAIは提案だけ。クロードコードは、直してテストまで自分でやりますの！",
      "チャットAIは提案だけ<br>Claude Codeは直して確かめるまで！", 2.2),
     ("読む、書く、実行、ギットまでお任せ！", "読む・書く・実行・Gitまで<br>お任せ！", 1.8),
-    ("日本語で頼めば、修正もテストも全自動！", "日本語で頼めば<br>修正もテストも全自動！", 3.3),
+    ("日本語で頼めば、修正もテストも全自動！", "日本語で頼めば<br>修正もテストも全自動！", 5.0),
     ("ターミナルでも、エディタでも、ウェブでも！", "ターミナルでも<br>エディタでも、Webでも！", 1.6),
     ("外部ツール連携や、自動化も自在ですわ。", "外部ツール連携や<br>自動化も自在", 1.6),
     ("大事な操作は許可制だから安心！", "大事な操作は<br>許可制だから安心！", 1.6),
@@ -43,7 +43,7 @@ def main():
         q["intonationScale"] = 1.25
         q["pitchScale"] = 0.02
         for ph in q["accent_phrases"]:
-            if ph.get("pause_mora"): ph["pause_mora"]["vowel_length"] *= 0.3
+            if ph.get("pause_mora"): ph["pause_mora"]["vowel_length"] *= 0.6
         q["postPhonemeLength"] = 0.05
         wav = post("/synthesis", {"speaker": SPEAKER}, q)
         path = os.path.join(out, f"n{i}.wav")
@@ -54,7 +54,7 @@ def main():
         starts.append(round(t, 2)); offsets.append(round(t + LEAD, 2))
         t += dur; ends.append(round(t, 2))
         print(f"scene{i+1}: {d:.2f}s voice -> {dur:.2f}s scene")
-    total = round(t + 0.4, 2)  # 最後に少し余韻
+    total = round(t + 0.8, 2)  # 最後に少し余韻
     ends[-1] = total
 
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video.html")

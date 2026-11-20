@@ -6,15 +6,15 @@ import json, sys, subprocess
 S = sys.argv[1]
 tm = json.load(open(f"{S}/voice/timing.json"))
 D = tm["duration"]
-BEAT = 0.35  # 約171BPM
-BAR = 1.4    # コードチェンジ間隔（4拍）
+BEAT = 0.4   # 150BPM
+BAR = 3.2    # コードチェンジ間隔（8拍）
 c = lambda a, b: f"if(lt(mod(t,{BAR*2}),{BAR}),{a},{b})"
 E = (f"0.05*(sin(2*PI*{c(220,174.61)}*t)+sin(2*PI*{c(261.63,220)}*t)+sin(2*PI*{c(329.63,261.63)}*t))"
      f"*(0.7+0.3*sin(2*PI*0.5*t))"
      f"+0.4*sin(2*PI*55*t)*exp(-16*mod(t,{BEAT}))"
      f"+0.05*sin(2*PI*{c(659.25,523.25)}*t)*exp(-10*mod(t,{BEAT/2}))")
 inputs = ["-f", "lavfi", "-t", str(D), "-i", f"aevalsrc='{E}':s=44100"]
-fl = [f"[0]afade=t=in:d=0.1,afade=t=out:st={D-0.8}:d=0.8,lowpass=f=5000,volume=0.35,"
+fl = [f"[0]afade=t=in:d=0.3,afade=t=out:st={D-1.5}:d=1.5,lowpass=f=5000,volume=0.35,"
       f"aformat=channel_layouts=stereo[bgm]"]
 for i, o in enumerate(tm["offsets"]):
     inputs += ["-i", f"{S}/voice/n{i}.wav"]
