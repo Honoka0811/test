@@ -131,7 +131,10 @@ function inside(t, f, o) {
   if (o.eyes > 0) { for (const ex of [hx + 30, hx + 74]) { ctx.fillStyle = `rgba(230,225,210,${0.85 * o.eyes})`; ctx.beginPath(); ctx.ellipse(ex, hy + 150, 11, 5.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = `rgba(0,0,0,${o.eyes})`; ctx.beginPath(); ctx.arc(ex + 2, hy + 150, 4, 0, 7); ctx.fill(); } }
   ctx.fillStyle = '#9a958b'; ctx.fillRect(hx + 18 + sh, hy + 6, hs - 12, hs - 12); ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 3; ctx.strokeRect(hx + 18 + sh, hy + 6, hs - 12, hs - 12);   // ずれたふた
   ctx.strokeStyle = '#c9c7c0'; ctx.lineWidth = 10; ctx.strokeRect(hx - 5, hy - 5, hs + 10, hs + 10);                                                          // アルミの枠
-  ctx.fillStyle = 'rgba(40,34,28,0.42)'; [[hx + 4, hy + 40], [hx - 6, hy + 92], [hx + 2, hy + 150], [hx + 8, hy + 210], [hx + 60, hy - 14], [hx + 120, hy - 16], [hx + 220, hy + hs + 10]].forEach(([x, y], i) => { ctx.beginPath(); ctx.ellipse(x, y, 13, 8, (i % 3) * 0.4, 0, 7); ctx.fill(); });   // 指の跡
+  if (o.hair > 0) { const r = rngOf(88); ctx.lineCap = 'round';
+    for (let i = 0; i < 70; i++) { const x0 = hx + 8 + r() * (sh * 0.9), y0 = hy + 20 + r() * 120, len = (260 + r() * 520) * o.hair, sw = Math.sin(t * 0.8 + i) * 10;   // すき間から、こちらへたれてくる髪
+      ctx.strokeStyle = i % 4 ? 'rgba(10,9,11,0.92)' : 'rgba(90,86,88,0.7)'; ctx.lineWidth = 2 + r() * 3; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.bezierCurveTo(x0 + sw, y0 + len * 0.35, x0 - 20 + sw, y0 + len * 0.7, x0 - 10 + r() * 30 + sw * 1.4, y0 + len); ctx.stroke(); } }
+  if (o.mem > 0) { ctx.save(); ctx.beginPath(); ctx.rect(hx, hy, 18 + sh, hs); ctx.clip(); ctx.globalAlpha = o.mem * 0.9; ctx.filter = 'blur(1.5px)'; ghostFace(ctx, hx + (18 + sh) * 0.5 - 22, hy + 110, 1.25, {}); ctx.filter = 'none'; ctx.restore(); }   // 上から見下ろす、前の住人の顔
   if (o.fingers > 0) { const k = o.fingers, ex = hx + 18 + sh; for (let i = 0; i < 4; i++) { const fy = hy + 70 + i * 34, len = 46 * k; ctx.fillStyle = '#9d9184'; ctx.beginPath(); ctx.roundRect(ex - len + 6, fy, len + 8, 24, 12); ctx.fill();
       ctx.fillStyle = 'rgba(214,200,186,0.85)'; ctx.beginPath(); ctx.roundRect(ex + 2, fy + 4, 10, 16, 5); ctx.fill(); ctx.strokeStyle = 'rgba(60,46,36,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(ex - 14, fy + 4); ctx.lineTo(ex - 14, fy + 20); ctx.stroke(); } }   // ふたのふちにかかる指(爪が見える)
   // 枕棚とハンガーパイプ、かかっている服
@@ -228,7 +231,7 @@ function render(t) {
       const on = t >= EV.light, s = prog(t, EV.light, EV.hatch + 0.6), sk = ease(s);
       const z = lerp(1, 1.35, ease(prog(t, EV.hatch + 0.5, EV.hatch + 2.5))) + 0.25 * ease(prog(t, EV.slide, EV.hit));
       const beam = on ? [lerp(240, 560, sk) + Math.sin(t * 2.1) * 10, lerp(1450, 930, sk) + Math.sin(t * 1.7) * 8, lerp(360, 440, sk)] : [540, 960, 0.1];
-      if (on) inside(t, f, { z, cx: 560, cy: 430, beam, shift: 26 + 96 * ease(prog(t, EV.slide, EV.slide + 1.4)), dust: t >= EV.creak ? t - EV.creak : 0, fingers: ease(prog(t, LN.now.start - 0.3, LN.now.start + 0.4)), eyes: ease(prog(t, LN.now.start + 0.6, LN.now.start + 1.2)) });
+      if (on) inside(t, f, { z, cx: 560, cy: 430, beam, hair: ease(prog(t, EV.hatch + 1.0, EV.hatch + 3.2)), mem: ease(prog(t, EV.mem, EV.mem + 0.8)) * (1 - ease(prog(t, LN.l8c.end + 0.2, LN.l8c.end + 0.8))), shift: 92 + 70 * ease(prog(t, EV.slide, EV.slide + 1.4)), dust: t >= EV.creak ? t - EV.creak : 0, fingers: ease(prog(t, LN.now.start - 0.3, LN.now.start + 0.4)), eyes: ease(prog(t, LN.now.start + 0.6, LN.now.start + 1.2)) });
       else { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); }
       const shk = t >= EV.creak ? Math.exp(-(t - EV.creak) * 5) : 0; if (shk > 0.02) ctx.drawImage(cv, (hash(f) - 0.5) * 14 * shk, (hash(f + 3) - 0.5) * 14 * shk);
       if (t >= LN.now.start - 0.1) ctx.drawImage(cv, (hash(f) - 0.5) * 7, (hash(f + 2) - 0.5) * 7);

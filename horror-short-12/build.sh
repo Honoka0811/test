@@ -13,5 +13,5 @@ ffmpeg -y -hide_banner -loglevel error -i output/silent.mp4 -i output/mix.wav \
   -ar 48000 -ac 2 -c:a aac -b:a 192k -shortest -movflags +faststart output/closet_no_onna.mp4
 # AAC にしたあとのピークも上限を超えないよう、もう一度だけリミッターをかける
 ffmpeg -y -hide_banner -loglevel error -i output/closet_no_onna.mp4 -c:v copy -af "volume=-0.5dB,alimiter=limit=0.84:attack=2:release=50:level=false" -ar 48000 -c:a aac -b:a 192k -movflags +faststart output/tmp.mp4 && mv output/tmp.mp4 output/closet_no_onna.mp4
-ffmpeg -y -loglevel error -ss 25.6 -i output/closet_no_onna.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
+ffmpeg -y -loglevel error -ss 47.5 -i output/closet_no_onna.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
 echo "wrote output/closet_no_onna.mp4"
