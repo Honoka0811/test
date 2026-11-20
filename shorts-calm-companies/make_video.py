@@ -102,8 +102,8 @@ def env(n, attack=0.005, decay=0.1):
 def se_pop():
     n = int(SR * 0.12)
     t = np.arange(n) / SR
-    f = 1100 * np.exp(-t * 12) + 380
-    return 0.5 * np.sin(2 * np.pi * np.cumsum(f) / SR) * env(n, 0.002, 0.04)
+    f = 500 * np.exp(-t * 14) + 330
+    return 0.5 * np.sin(2 * np.pi * np.cumsum(f) / SR) * env(n, 0.004, 0.035)
 
 
 def se_whoosh():
@@ -115,7 +115,7 @@ def se_whoosh():
     lo = np.convolve(noise, np.ones(k1) / k1, "same") - np.convolve(noise, np.ones(k2) / k2, "same")
     t = np.arange(n) / SR
     shape = np.sin(np.pi * t / t[-1]) ** 2
-    return 0.22 * lo * shape
+    return 0.12 * lo * shape
 
 
 def se_slam():
@@ -124,7 +124,7 @@ def se_slam():
     f = 160 * np.exp(-t * 6) + 50
     body = np.sin(2 * np.pi * np.cumsum(f) / SR) * env(n, 0.002, 0.18)
     click = np.random.default_rng(2).standard_normal(n) * env(n, 0.001, 0.01)
-    return 0.7 * body + 0.15 * click
+    return 0.6 * body + 0.04 * click
 
 
 def se_chime():
@@ -344,7 +344,7 @@ class Subtitle:
         self.box = Image.new("RGBA", (W - 120, self.h), (0, 0, 0, 0))
         ImageDraw.Draw(self.box).rounded_rectangle([0, 0, W - 121, self.h - 1], radius=36,
                                                    fill=(255, 255, 255, 235), outline=METAN, width=5)
-        self.cy = H - 360 - self.h / 2
+        self.cy = H - 250 - self.h / 2
         self.nchars = sum(len(l) for l in self.lines)
         # フレームごとの音量（RMS）
         hop = SR // FPS
@@ -403,7 +403,7 @@ class IntroScene:
         rng = random.Random(3)
         self.sparks = [(rng.uniform(0, 6.28), rng.uniform(260, 420), rng.choice([YELLOW, METAN, ACCENT]))
                        for _ in range(14)]
-        self.se = [(0.05, "whoosh"), (0.35, "pop"), (0.6, "pop"), (0.95, "slam")]
+        self.se = [(0.35, "pop"), (0.95, "slam")]
 
     def draw(self, img, t, dur):
         po = ease_in_cubic(prog(t, dur - OUT_T, OUT_T))
@@ -433,28 +433,116 @@ class IntroScene:
                 d.ellipse([x - sz, y - sz, x + sz, y + sz], fill=col + (int(255 * (1 - ps)),))
 
 
+PW, PH = W - 188, 480          # 写真の大きさ
+CARD_TOP, CARD_H = 340, 1010
+PHOTO_TOP = CARD_TOP + 24
+PHOTOS = json.loads((HERE / "photos" / "photos.json").read_text()) if (HERE / "photos" / "photos.json").exists() else {}
+
+
+def illustration(kind):
+    """写真が用意できない会社用のイラスト（泡・カプセル）。"""
+    rng = random.Random(kind)
+    im = Image.new("RGBA", (int(PW * 1.15), int(PH * 1.15)))
+    arr = np.zeros((im.height, im.width, 4), dtype=np.uint8)
+    t = np.linspace(0, 1, im.height)[:, None]
+    top, bot = ((170, 214, 240), (222, 240, 250)) if kind == "bubble" else ((214, 236, 226), (246, 236, 242))
+    for i in range(3):
+        arr[:, :, i] = (top[i] * (1 - t) + bot[i] * t).astype(np.uint8)
+    arr[:, :, 3] = 255
+    im = Image.fromarray(arr, "RGBA")
+    layer = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    if kind == "bubble":
+        for _ in range(26):
+            r = rng.randint(20, 110)
+            x, y = rng.uniform(0, im.width), rng.uniform(0, im.height)
+            d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, 60), outline=(255, 255, 255, 210), width=4)
+            d.ellipse([x - r * 0.55, y - r * 0.6, x - r * 0.2, y - r * 0.3], fill=(255, 255, 255, 220))
+    else:
+        cols = [(204, 74, 138), (62, 140, 110), (255, 214, 102), (120, 170, 220)]
+        for _ in range(16):
+            w_, h_ = rng.randint(110, 170), rng.randint(46, 64)
+            cap = Image.new("RGBA", (w_, h_), (0, 0, 0, 0))
+            cd = ImageDraw.Draw(cap)
+            c1 = rng.choice(cols)
+            cd.rounded_rectangle([0, 0, w_ - 1, h_ - 1], radius=h_ // 2, fill=(255, 255, 255, 255))
+            cd.rounded_rectangle([w_ // 2, 0, w_ - 1, h_ - 1], radius=h_ // 2, fill=c1 + (255,))
+            cd.rectangle([w_ // 2, 0, w_ // 2 + h_ // 2, h_ - 1], fill=c1 + (255,))
+            cd.ellipse([10, 8, 30, 20], fill=(255, 255, 255, 200))
+            cap = cap.rotate(rng.uniform(0, 180), expand=True, resample=Image.BICUBIC)
+            layer.alpha_composite(cap, (int(rng.uniform(-40, im.width - 80)), int(rng.uniform(-30, im.height - 60))))
+    im.alpha_composite(layer.filter(ImageFilter.GaussianBlur(0.6)))
+    return im
+
+
+def cover(path):
+    src = Image.open(path).convert("RGBA")
+    cw, ch = int(PW * 1.15), int(PH * 1.15)
+    sc = max(cw / src.width, ch / src.height)
+    src = src.resize((int(src.width * sc) + 1, int(src.height * sc) + 1), Image.LANCZOS)
+    l, t = (src.width - cw) // 2, int((src.height - ch) * 0.35)
+    return src.crop((l, t, l + cw, t + ch))
+
+
 class CompanyScene:
     def __init__(self, c, i, name, tag, reasons):
         self.c, self.i = c, i
-        card = Image.new("RGBA", (W - 140 + 80, 830 + 80), (0, 0, 0, 0))
-        ImageDraw.Draw(card).rounded_rectangle([40, 54, 40 + W - 140, 54 + 830], radius=50, fill=(40, 70, 60, 60))
+        card = Image.new("RGBA", (W - 140 + 80, CARD_H + 80), (0, 0, 0, 0))
+        ImageDraw.Draw(card).rounded_rectangle([40, 54, 40 + W - 140, 54 + CARD_H], radius=50, fill=(40, 70, 60, 60))
         card = card.filter(ImageFilter.GaussianBlur(18))
-        ImageDraw.Draw(card).rounded_rectangle([40, 40, 40 + W - 140, 40 + 830], radius=50, fill=(255, 255, 255))
+        ImageDraw.Draw(card).rounded_rectangle([40, 40, 40 + W - 140, 40 + CARD_H], radius=50, fill=(255, 255, 255))
         self.card = card
-        r = 95
+        # 写真（なければイラスト）
+        info = PHOTOS.get(str(i + 1))
+        if info:
+            self.src = cover(HERE / "photos" / info["file"])
+            cap_text, credit = "写真：" + info["caption"], f"© {info['creator']} / {info['license']}"
+        else:
+            self.src = illustration("bubble" if i == 3 else "capsule")
+            cap_text, credit = "イメージ", None
+        self.mask = Image.new("L", (PW, PH), 0)
+        ImageDraw.Draw(self.mask).rounded_rectangle([0, 0, PW - 1, PH - 1], radius=34, fill=255)
+        ov = Image.new("RGBA", (PW, PH), (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        # 下側を少し暗くして文字を読みやすく
+        for y in range(PH - 120, PH):
+            od.line([(0, y), (PW, y)], fill=(0, 0, 0, int(110 * (y - (PH - 120)) / 120)))
+        cp = pill_img(cap_text, font(BOLD, 30), (0, 0, 0, 150), (255, 255, 255), padx=20, h=50)
+        ov.alpha_composite(cp, (20, 20))
+        if credit:
+            ct = text_img(credit, font(MED, 22), (255, 255, 255, 235))
+            ov.alpha_composite(ct, (PW - ct.width - 16, PH - ct.height - 10))
+        self.overlay = ov
+        self.pan = 1 if i % 2 == 0 else -1
+        r = 80
         badge = Image.new("RGBA", (r * 2 + 20, r * 2 + 20), (0, 0, 0, 0))
         bd = ImageDraw.Draw(badge)
+        bd.ellipse([4, 4, 16 + r * 2, 16 + r * 2], fill=(255, 255, 255))
         bd.ellipse([10, 10, 10 + r * 2, 10 + r * 2], fill=ACCENT)
         bd.ellipse([22, 22, r * 2 - 2, r * 2 - 2], outline=(255, 255, 255, 90), width=4)
-        num = text_img(str(i + 1), font(BOLD, 110), (255, 255, 255))
+        num = text_img(str(i + 1), font(BOLD, 92), (255, 255, 255))
         badge.alpha_composite(num, ((badge.width - num.width) // 2, (badge.height - num.height) // 2 - 4))
         self.badge = badge
         self.tag = pill_img(tag, font(BOLD, 38), ACCENT_SOFT, ACCENT, h=62)
-        self.name = fit_text_img(name, BOLD, W - 220, 120, INK)
+        self.name = fit_text_img(name, BOLD, W - 220, 110, INK)
         self.reasons = [text_img(r, font(BOLD, 52), SUB_INK) for r in reasons]
         # 理由の下に引く黄色マーカー
         self.markers = [Image.new("RGBA", (im.width - 10, 22), YELLOW + (170,)) for im in self.reasons]
-        self.se = [(0.02, "whoosh"), (0.25, "pop"), (0.55, "whoosh"), (0.95, "pop"), (1.25, "pop")]
+        self.se = [(0.02, "whoosh"), (0.3, "pop")]
+
+    def photo_frame(self, t, dur):
+        """写真をゆっくりズーム＆パン（ケン・バーンズ効果）。"""
+        p = min(max(t / dur, 0), 1)
+        s = 1.0 + 0.13 * p                       # 1.0（全体）→ 1.13（寄り）
+        cw, ch = self.src.size
+        bw, bh = cw / s, ch / s
+        cx = cw / 2 + self.pan * (cw - bw) / 2 * (2 * p - 1) * 0.8
+        cy = ch / 2
+        box = (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2)
+        fr = self.src.resize((PW, PH), Image.BILINEAR, box=box)
+        fr.alpha_composite(self.overlay)
+        fr.putalpha(self.mask)
+        return fr
 
     def draw(self, img, t, dur):
         c = self.c
@@ -479,33 +567,41 @@ class CompanyScene:
         a_out = 1 - po
         # カード：下からバウンドして登場し、ゆらゆら浮く
         pc = ease_out_back(prog(t, 0.0, 0.45), 1.4)
-        float_y = 6 * math.sin(t * 2.2)
-        cy0 = 775 + 500 * (1 - pc) + float_y
-        place(img, self.card, W / 2 + ox, cy0, alpha=min(1, prog(t, 0, 0.2)) * a_out,
-              angle=3 * (1 - pc))
-        dy = cy0 - 775  # カード内の要素はカードの動きに追従
-        # 番号バッジ：ポンと弾ける
-        pb = ease_out_back(prog(t, 0.25, 0.4), 2.6)
+        float_y = 5 * math.sin(t * 2.2)
+        base_cy = CARD_TOP + CARD_H / 2
+        cy0 = base_cy + 500 * (1 - pc) + float_y
+        place(img, self.card, W / 2 + ox, cy0, alpha=min(1, prog(t, 0, 0.2)) * a_out, angle=3 * (1 - pc))
+        dy = cy0 - base_cy  # カード内の要素はカードの動きに追従
+        # 写真：ふわっと拡大しながら現れる
+        pp = ease_out_cubic(prog(t, 0.1, 0.5))
+        if pp > 0:
+            place(img, self.photo_frame(t, dur), W / 2 + ox, PHOTO_TOP + PH / 2 + dy,
+                  scale=0.92 + 0.08 * pp, alpha=pp * a_out)
+        photo_bottom = PHOTO_TOP + PH
+        # 番号バッジ：写真の左下でポンと弾ける
+        pb = ease_out_back(prog(t, 0.3, 0.4), 2.6)
         pulse = 1 + 0.04 * math.sin(t * 5)
-        place(img, self.badge, W / 2 + ox, 500 + dy, scale=pb * pulse, alpha=a_out,
-              angle=-20 * (1 - ease_out_cubic(prog(t, 0.25, 0.4))))
+        place(img, self.badge, 94 + 40 + 90 + ox, photo_bottom + dy, scale=pb * pulse, alpha=a_out,
+              angle=-20 * (1 - ease_out_cubic(prog(t, 0.3, 0.4))))
         # 業界タグ
         pt = ease_out_cubic(prog(t, 0.45, 0.3))
-        place(img, self.tag, W / 2 + ox, 660 + dy - 30 * (1 - pt), alpha=pt * a_out)
+        place(img, self.tag, W / 2 + 60 + ox, photo_bottom + 50 + dy - 20 * (1 - pt), alpha=pt * a_out)
         # 社名：右からスライドイン
         pn = ease_out_back(prog(t, 0.55, 0.45), 1.3)
-        place(img, self.name, W / 2 + 700 * (1 - pn) + ox, 790 + dy, alpha=min(1, prog(t, 0.55, 0.2)) * a_out)
+        place(img, self.name, W / 2 + 700 * (1 - pn) + ox, photo_bottom + 160 + dy,
+              alpha=min(1, prog(t, 0.55, 0.2)) * a_out)
         # 区切り線が伸びる
         pl = ease_out_cubic(prog(t, 0.85, 0.3))
+        ly = photo_bottom + 250 + dy
         if pl > 0:
             hw = 90 * pl
-            d.rounded_rectangle([W / 2 - hw + ox, 900 + dy - 3, W / 2 + hw + ox, 900 + dy + 3], radius=3,
+            d.rounded_rectangle([W / 2 - hw + ox, ly - 3, W / 2 + hw + ox, ly + 3], radius=3,
                                 fill=ACCENT + (int(255 * a_out),))
         # 理由：1行ずつ浮かび上がり、マーカーが引かれる
         for j, (im, mk) in enumerate(zip(self.reasons, self.markers)):
             st = 0.95 + 0.3 * j
             pr = ease_out_cubic(prog(t, st, 0.35))
-            y = 985 + j * 90 + dy + 30 * (1 - pr)
+            y = ly + 65 + j * 85 + 30 * (1 - pr)
             pm = ease_out_cubic(prog(t, st + 0.3, 0.4))
             if pm > 0:
                 mw = max(1, int(mk.width * pm))
@@ -522,7 +618,7 @@ class OutroScene:
         self.l2 = text_img("自分の目で", font(BOLD, 110), ACCENT, 12, (255, 255, 255))
         self.l3 = text_img("確かめよう！", font(BOLD, 130), ACCENT, 12, (255, 255, 255))
         self.check = text_img("✔", font(BOLD, 120), YELLOW, 8, (255, 255, 255))
-        self.se = [(0.05, "whoosh"), (0.3, "pop"), (1.0, "pop"), (1.6, "slam"), (2.0, "chime")]
+        self.se = [(0.3, "pop"), (1.75, "chime")]
 
     def draw(self, img, t, dur):
         place(img, self.c.header, W / 2, 170)
@@ -579,7 +675,7 @@ def main():
     # ナレーション中は BGM を少し下げる（ダッキング）
     vol = np.convolve(np.abs(voice_tr), np.ones(SR // 5) / (SR // 5), "same")
     duck = 1 - 0.45 * np.clip(vol * 12, 0, 1)
-    mix = voice_tr * 1.0 + se_tr * 0.55 + music * 0.32 * duck
+    mix = voice_tr * 1.0 + se_tr * 0.16 + music * 0.30 * duck
     mix = mix[:int(total * SR)]
     mix /= max(1.0, np.abs(mix).max() / 0.95)
     audio_path = BUILD / "mix.wav"
