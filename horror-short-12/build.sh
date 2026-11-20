@@ -9,7 +9,7 @@ M=$(ffmpeg -hide_banner -i output/mix.wav -af loudnorm=I=-14:TP=-1.5:LRA=11:prin
 g() { echo "$M" | python3 -I -c "import json,sys; print(json.load(sys.stdin)['$1'])"; }
 ffmpeg -y -hide_banner -loglevel error -i output/silent.mp4 -i output/mix.wav \
   -c:v libx264 -preset slow -crf 23 -maxrate 5M -bufsize 10M -pix_fmt yuv420p \
-  -af "loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=$(g input_i):measured_TP=$(g input_tp):measured_LRA=$(g input_lra):measured_thresh=$(g input_thresh):offset=$(g target_offset):linear=true,volume=-0.5dB,alimiter=limit=0.84:attack=2:release=50:level=false" \
+  -af "loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=$(g input_i):measured_TP=$(g input_tp):measured_LRA=$(g input_lra):measured_thresh=$(g input_thresh):offset=$(g target_offset):linear=true,volume=-0.5dB,alimiter=limit=0.76:attack=2:release=50:level=false" \
   -ar 48000 -ac 2 -c:a aac -b:a 192k -shortest -movflags +faststart output/closet_no_onna.mp4
 ffmpeg -y -loglevel error -ss 21.5 -i output/closet_no_onna.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
 echo "wrote output/closet_no_onna.mp4"
