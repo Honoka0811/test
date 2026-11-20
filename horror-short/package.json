@@ -1,3 +1,1 @@
-{ "name": "horror-short", "private": true, "version": "1.0.0",
-  "scripts": { "build": "bash build.sh" },
-  "dependencies": { "@fontsource/noto-sans-jp": "^5.0.0" } }
+{"name":"horror-short","private":true,"version":"1.0.0","scripts":{"build":"bash build.sh"},"dependencies":{"@fontsource/noto-sans-jp":"^5.0.0","@fontsource/noto-serif-jp":"^5.3.1"}}

@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const TL = JSON.parse(fs.readFileSync(path.resolve(process.env.TIMELINE || path.join(__dirname, 'timeline.json')), 'utf8'));
-const url = 'file://' + path.join(__dirname, 'scene.html');
+const url = 'file://' + path.join(__dirname, TL.scene || 'scene.html');
 const WORKERS = 4;
 
 async function openPage(browser) {

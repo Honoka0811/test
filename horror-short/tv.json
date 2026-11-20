@@ -1,0 +1,17 @@
+{
+ "fps": 30, "end": 41.8,
+ "scene": "scene_tv.html", "audio": "audio_tv.py",
+ "vf": "gblur=sigma=1.3,noise=c0s=16:c0f=t:c1s=8:c1f=t:c2s=8:c2f=t,format=yuv420p",
+ "signoffEnd": 1.5, "alertStart": 1.9,
+ "shift": [21.0, 21.6], "corrupt": 33.5, "off": 37.0, "glass": 37.4, "jump": 40.5, "cut": 41.2,
+ "cards": [
+  {"t": 1.9, "title": true, "lines": [{"dt": 0, "cls": "big", "text": "緊急放送"}, {"dt": 0.9, "text": "これは訓練では"}, {"dt": 0.9, "text": "ありません"}]},
+  {"t": 5.2, "lines": [{"dt": 0, "cls": "sub", "text": "午前2時13分 現在"}, {"dt": 0.6, "text": "この地域で"}, {"dt": 1.2, "cls": "warn", "text": "人ではないものが"}, {"dt": 1.9, "text": "確認されています"}]},
+  {"t": 9.5, "num": "指示 1", "lines": [{"dt": 0.5, "text": "窓の外を"}, {"dt": 1.0, "text": "見ないでください"}]},
+  {"t": 13.5, "num": "指示 2", "lines": [{"dt": 0.5, "text": "家族の声で"}, {"dt": 0.9, "text": "呼ばれても"}, {"dt": 1.5, "text": "返事をしないでください"}]},
+  {"t": 17.5, "num": "指示 3", "lines": [{"dt": 0.5, "text": "玄関を"}, {"dt": 1.0, "text": "開けないでください"}]},
+  {"t": 21.6, "dark": true, "lines": [{"dt": 0, "cls": "sub", "text": "すでに 家の中にいる場合"}, {"dt": 1.5, "text": "この放送を"}, {"dt": 2.0, "text": "見ているふりを"}, {"dt": 2.5, "text": "続けてください"}]},
+  {"t": 26.2, "dark": true, "lines": [{"dt": 0, "text": "それは"}, {"dt": 0.8, "text": "あなたが気づいたことに"}, {"dt": 1.8, "cls": "warn", "text": "気づいています"}]},
+  {"t": 30.0, "dark": true, "lines": [{"dt": 0, "text": "絶対に"}, {"dt": 0.7, "cls": "big2", "text": "ふりむかないで"}, {"dt": 0.7, "cls": "big2", "text": "ください"}]}
+ ]
+}

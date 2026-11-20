@@ -4,5 +4,6 @@
 
 - #1 完成品: `horror_short.mp4`(台本 `timeline.json`)
 - #2 完成品: `horror_short_2.mp4`(台本 `timeline2.json`)
+- 緊急放送編 完成品: `horror_tv.mp4`(台本 `tv.json` / 画面 `scene_tv.html` / 音 `audio_tv.py`、ビルドは `./build.sh tv.json horror_tv.mp4`)
 - 台本ファイルを書き換えるとセリフ・間・相手の名前・配色を変更できる
 - 再ビルド: `npm install && ./build.sh timeline2.json horror_short_2.mp4`(引数なしで #1)
