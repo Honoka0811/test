@@ -44,6 +44,8 @@
   #glass canvas { position: absolute; left: 0; top: 0; }
   #glare { background: linear-gradient(115deg, rgba(255,255,255,0) 30%, rgba(160,180,210,.035) 45%, rgba(255,255,255,0) 60%); }
   #dot { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border-radius: 50%; background: #fff; box-shadow: 0 0 30px 12px rgba(255,255,255,.8); }
+  #snap { background: #000; display: none; align-items: center; justify-content: center; text-align: center; }
+  #snap div { font-family: "Noto Serif JP", serif; font-weight: 900; font-size: 104px; line-height: 1.25; color: #d1121a; }
   #black { background: #000; display: none; }
 </style>
 </head>
@@ -73,11 +75,10 @@
   </div>
   <div class="layer" id="glass">
     <canvas id="room" width="540" height="960"></canvas>
-    <canvas id="fig" width="540" height="960"></canvas>
-    <canvas id="face" width="540" height="960"></canvas>
     <div class="layer" id="glare"></div>
     <div id="dot"></div>
   </div>
+  <div class="layer" id="snap"><div>気づき<br>ましたね</div></div>
   <div class="layer" id="crt"></div>
   <div class="layer" id="black"></div>
 </div>
@@ -89,39 +90,86 @@ let TL, cards = [], flood = [];
 const TICK1 = '屋内に留まり、この放送の指示に従ってください　　　　';
 const TICK2 = '屋内に留まり、この放送の指示に従ってください　　　　うしろにいます　　　　';
 
-function faceOn(g, cx, cy, k) {
-  g.save(); g.translate(cx, cy); g.scale(k, k);
-  g.filter = `blur(${14 * k}px)`;
-  const gr = g.createRadialGradient(0, -20, 20, 0, 0, 230);
-  gr.addColorStop(0, 'rgba(215,210,200,.9)'); gr.addColorStop(.6, 'rgba(150,145,140,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-  g.fillStyle = gr; g.beginPath(); g.ellipse(0, 0, 150, 225, 0, 0, 7); g.fill();
-  g.filter = `blur(${7 * k}px)`; g.fillStyle = '#000';
-  g.beginPath(); g.ellipse(-60, -58, 30, 40, .25, 0, 7); g.fill();
-  g.beginPath(); g.ellipse(62, -48, 34, 46, -.1, 0, 7); g.fill();
-  g.beginPath(); g.ellipse(4, 135, 38, 118, .04, 0, 7); g.fill();
-  g.filter = `blur(${2 * k}px)`; g.fillStyle = 'rgba(255,255,255,.85)';
-  g.beginPath(); g.arc(-57, -52, 2.4, 0, 7); g.fill();
-  g.beginPath(); g.arc(59, -42, 2.4, 0, 7); g.fill();
+// ---- dark-glass reflection, redrawn every frame -------------------------------------------
+function sil(g, path, rim) {            // black silhouette with a cold rim light from the window side
+  g.filter = 'blur(3px)';
+  g.save(); g.translate(-3.5, -1.5); g.fillStyle = rim || '#2b3a52'; g.beginPath(); path(g); g.fill(); g.restore();
+  g.fillStyle = '#000'; g.beginPath(); path(g); g.fill();
+}
+function standing(g, cx, footY, h, tilt) {   // far too tall, neck folded over, arms past the knees
+  const sh = footY - 0.80 * h;
+  sil(g, g => { g.moveTo(cx - 0.105 * h, sh); g.quadraticCurveTo(cx, sh - 0.035 * h, cx + 0.105 * h, sh); g.lineTo(cx + 0.06 * h, footY); g.lineTo(cx - 0.06 * h, footY); g.closePath(); });
+  for (const sd of [-1, 1]) sil(g, g => {
+    const x0 = cx + sd * 0.10 * h, x1 = cx + sd * 0.135 * h, yb = sh + 0.60 * h;
+    g.moveTo(x0 - sd * 0.02 * h, sh); g.lineTo(x0 + sd * 0.012 * h, sh + 0.01 * h); g.lineTo(x1 + sd * 0.01 * h, yb); g.lineTo(x1 - sd * 0.012 * h, yb); g.closePath();
+    for (let k = 0; k < 4; k++) { const fx = x1 - sd * 0.012 * h + sd * k * 0.007 * h; g.moveTo(fx, yb - 2); g.lineTo(fx + sd * 0.002 * h, yb + 0.055 * h + (k % 2) * 0.012 * h); g.lineTo(fx + sd * 0.006 * h, yb - 2); }
+  });
+  g.save(); g.translate(cx, sh); g.rotate(tilt);
+  sil(g, g => { g.rect(-0.024 * h, -0.035 * h, 0.048 * h, 0.05 * h); g.ellipse(0, -0.082 * h, 0.046 * h, 0.064 * h, 0, 0, 7); });
   g.restore();
 }
-function drawGlass() {
-  let g = $('room').getContext('2d');
-  const bg = g.createLinearGradient(0, 0, 540, 960); bg.addColorStop(0, '#121823'); bg.addColorStop(1, '#0a0d12');
+function viewer(g) {
+  sil(g, g => { g.rect(-20, 815, 580, 200); g.ellipse(250, 715, 62, 76, 0, 0, 7); g.ellipse(250, 905, 175, 120, 0, 0, 7); }, '#1d2738');
+}
+function looming(g, p, t, f) {       // right behind you: it blocks out the whole room
+  const q = 1 - Math.pow(1 - clamp(p), 2), k = 1 + 0.07 * q;
+  g.save(); g.translate(270, 960); g.scale(k, k); g.translate(-270, -960);
+  sil(g, g => { g.moveTo(20, 960); g.lineTo(34, 400); g.quadraticCurveTo(60, 318, 200, 300); g.lineTo(350, 300); g.quadraticCurveTo(486, 318, 508, 400); g.lineTo(524, 960); g.closePath(); }, '#33435e');
+  const tilt = 1.18 + 0.3 * q + Math.sin(t * 1.1) * 0.01;
+  g.save(); g.translate(285, 318); g.rotate(tilt);
+  sil(g, g => { g.rect(-34, -70, 68, 90); g.ellipse(0, -150, 88, 118, 0, 0, 7); }, '#33435e');
+  g.filter = 'blur(1.2px)'; g.fillStyle = `rgba(220,228,238,${(0.3 + 0.55 * q) * (rnd(f) < 0.07 ? 0.15 : 1)})`;
+  g.beginPath(); g.arc(-30, -150, 2.1, 0, 7); g.fill(); g.beginPath(); g.arc(34, -158, 1.7, 0, 7); g.fill();
+  g.restore();
+  // hair falls straight down from the folded head
+  const hx = 285 + Math.sin(tilt) * 150, hy = 318 - Math.cos(tilt) * 150;
+  g.filter = 'blur(1px)'; g.strokeStyle = '#000'; g.lineCap = 'round';
+  for (let i = 0; i < 34; i++) {
+    const u = i / 33, x0 = hx - 110 + 220 * u, len = 170 + rnd(i) * 330, sw = Math.sin(t * 0.8 + i) * 4;
+    g.lineWidth = 1.2 + rnd(i + 40) * 2.6; g.beginPath(); g.moveTo(x0, hy + 40); g.quadraticCurveTo(x0 + sw * .4, hy + len * .5, x0 + sw, hy + 40 + len); g.stroke();
+  }
+  g.restore();
+}
+function finger(g, bx, by, ang, bend, L, w) {
+  const mx = bx + Math.cos(ang) * L * 0.42, my = by + Math.sin(ang) * L * 0.42;
+  const a2 = ang + bend, nx = mx + Math.cos(a2) * L * 0.33, ny = my + Math.sin(a2) * L * 0.33;
+  const a3 = a2 + bend * 0.8, ex = nx + Math.cos(a3) * L * 0.25, ey = ny + Math.sin(a3) * L * 0.25;
+  g.strokeStyle = '#3a475d'; g.lineWidth = w; g.beginPath(); g.moveTo(bx, by); g.lineTo(mx, my); g.lineTo(nx, ny); g.stroke();
+  g.lineWidth = w * 0.78; g.beginPath(); g.moveTo(nx, ny); g.lineTo(ex, ey); g.stroke();
+  g.fillStyle = '#48566e'; for (const [x, y] of [[mx, my], [nx, ny]]) { g.beginPath(); g.arc(x, y, w * 0.56, 0, 7); g.fill(); }
+  g.strokeStyle = '#141a24'; g.lineWidth = w * 0.5; g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex + Math.cos(a3) * 7, ey + Math.sin(a3) * 7); g.stroke();
+}
+function hands(g, p, t) {                // fingers closing over your face from behind - and there are too many hands
+  g.filter = 'blur(1.5px)'; g.lineCap = 'round'; g.lineJoin = 'round';
+  const grow = d0 => { const d = clamp((p - d0) / 0.5); return 1 - Math.pow(1 - d, 2); };
+  const tw = k => Math.sin(t * 2.1 + k * 1.9) * 0.025;
+  // hand 1: from the left, across the eyes
+  [[194, 668, 0.30, 0.20, 92, 9.5], [190, 694, 0.16, 0.26, 108, 10], [192, 722, 0.02, 0.30, 96, 9.5], [200, 748, -0.16, 0.34, 70, 8.5]].forEach((v, k) => {
+    const e = grow(0.04 + k * 0.07); if (e > 0) finger(g, v[0], v[1], v[2] + tw(k), v[3], 14 + (v[4] - 14) * e, v[5]); });
+  // hand 2: from under the jaw on the right, hooking upwards
+  [[300, 792, -2.05, -0.30, 104, 10], [318, 776, -2.30, -0.34, 112, 10], [326, 752, -2.62, -0.36, 96, 9.5], [322, 726, -2.95, -0.30, 72, 8.5]].forEach((v, k) => {
+    const e = grow(0.22 + k * 0.07); if (e > 0) finger(g, v[0], v[1], v[2] + tw(k + 5), v[3], 14 + (v[4] - 14) * e, v[5]); });
+  // hand 3: over the top of the skull
+  [[226, 640, 1.82, -0.22, 64, 9], [252, 636, 1.60, -0.10, 78, 9.5], [276, 641, 1.38, 0.16, 60, 9]].forEach((v, k) => {
+    const e = grow(0.55 + k * 0.06); if (e > 0) finger(g, v[0], v[1], v[2] + tw(k + 9), v[3], 10 + (v[4] - 10) * e, v[5]); });
+}
+function drawGlass(t, f) {
+  const g = $('room').getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.filter = 'none';
+  const st = TL.stages.filter(x => t >= x).length;
+  const bg = g.createLinearGradient(0, 0, 540, 960); bg.addColorStop(0, '#18202e'); bg.addColorStop(1, '#0d1118');
   g.fillStyle = bg; g.fillRect(0, 0, 540, 960);
-  g.filter = 'blur(10px)'; g.fillStyle = 'rgba(70,90,125,.5)'; g.fillRect(40, 150, 150, 250);   // window
-  g.fillStyle = '#0a0d12'; g.fillRect(110, 150, 8, 250); g.fillRect(40, 268, 150, 8);
-  g.fillStyle = 'rgba(18,22,30,1)'; g.fillRect(330, 110, 150, 520);                                // door, slightly open
-  g.fillStyle = '#000'; g.fillRect(455, 110, 25, 520);
-  g.filter = 'blur(6px)'; g.fillStyle = '#000';                                                   // sofa + viewer
-  g.fillRect(-20, 800, 580, 200);
-  g.beginPath(); g.ellipse(250, 700, 62, 76, 0, 0, 7); g.fill();
-  g.beginPath(); g.ellipse(250, 880, 170, 110, 0, 0, 7); g.fill();
-  g = $('fig').getContext('2d');
-  g.filter = 'blur(7px)'; g.fillStyle = '#000';
-  g.beginPath(); g.ellipse(405, 405, 44, 60, 0, 0, 7); g.fill();
-  g.beginPath(); g.moveTo(340, 480); g.quadraticCurveTo(405, 440, 470, 480); g.lineTo(482, 960); g.lineTo(328, 960); g.fill();
-  g.globalAlpha = 0.42; faceOn(g, 405, 405, 0.27); g.globalAlpha = 1;
-  g = $('face').getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, 540, 960); faceOn(g, 270, 450, 1);
+  g.filter = 'blur(10px)'; g.fillStyle = 'rgba(88,110,150,.6)'; g.fillRect(40, 150, 150, 250);
+  g.fillStyle = '#0e131b'; g.fillRect(110, 150, 8, 250); g.fillRect(40, 268, 150, 8);
+  g.filter = 'blur(5px)';
+  if (st === 0) { g.fillStyle = '#0d1219'; g.fillRect(330, 110, 150, 520); g.fillStyle = '#080b10'; g.fillRect(334, 114, 142, 512); }
+  else { g.fillStyle = '#2b384d'; g.fillRect(330, 110, 150, 520); g.fillStyle = '#06080b'; g.beginPath(); g.moveTo(480, 110); g.lineTo(516, 96); g.lineTo(516, 650); g.lineTo(480, 630); g.fill(); }
+  if (st === 1) standing(g, 402, 632, 610, 1.25);
+  if (st === 2) standing(g, 372, 1010, 1010, -1.35);
+  const p3 = st === 3 ? (t - TL.stages[2]) / (TL.snap - TL.stages[2]) : 0;
+  if (st === 3) looming(g, p3, t, f);
+  viewer(g);
+  if (st === 3) hands(g, p3, t);
+  g.filter = 'none';
 }
 
 window.init = async function (tl) {
@@ -144,11 +192,10 @@ window.init = async function (tl) {
   }
   const fh = $('flood');
   flood.forEach(f => { const d = document.createElement('div'); d.textContent = 'ふりむいて'; d.style.cssText = `left:${f.x}px;top:${f.y}px;font-size:${f.s}px;opacity:${f.o};transform:translate(-50%,-50%) rotate(${f.r}deg)`; fh.appendChild(d); f.el = d; });
-  drawGlass();
   await document.fonts.ready;
   const all = TL.cards.map(c => (c.num || '') + c.lines.map(l => l.text).join('')).join('') + TICK2 + '緊急放送北陽県広域警戒情報本日の放送は終了しましたテレビ';
   for (const w of ['400', '700', '900']) await document.fonts.load(`${w} 30px "Noto Sans JP"`, all);
-  await document.fonts.load('900 30px "Noto Serif JP"', 'ふりむいて');
+  await document.fonts.load('900 30px "Noto Serif JP"', 'ふりむいて気づきましたね');
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   render(0);
 };
@@ -212,19 +259,20 @@ window.render = function (t) {
   $('head').style.height = (10 + rnd(f + 2) * 10) + 'px';
   // dark glass
   const glass = $('glass');
-  glass.style.display = t >= TL.glass ? 'block' : 'none';
-  if (t >= TL.glass) {
+  glass.style.display = (t >= TL.glass && t < TL.snap) ? 'block' : 'none';
+  if (t >= TL.glass && t < TL.snap) {
     $('dot').style.opacity = clamp(1 - (t - TL.glass) / 0.7);
     $('dot').style.transform = `scale(${clamp(1 - (t - TL.glass) / 0.9)})`;
-    $('room').style.opacity = 0.85 * clamp((t - TL.glass - 0.3) / 1.6);
-    const fg = clamp((t - TL.glass - 1.2) / 1.6);
-    const grow = 1 + 0.22 * clamp((t - TL.glass - 1.6) / 1.5) ** 2;
-    $('fig').style.opacity = 0.9 * fg; $('fig').style.transformOrigin = '405px 960px'; $('fig').style.transform = `scale(${grow})`;
-    const jump = t >= TL.jump;
-    $('face').style.display = jump ? 'block' : 'none'; $('fig').style.visibility = $('room').style.visibility = jump ? 'hidden' : 'visible';
-    if (jump) { const p = t - TL.jump; $('face').style.opacity = 0.65 + 0.3 * rnd(f); $('face').style.transform = `scale(${1.5 + 1.3 * p}) translate(${(rnd(f) - .5) * 16}px,${(rnd(f + 3) - .5) * 12}px)`; }
+    drawGlass(t, f);
+    const blink = TL.stages.some(x => t >= x - 0.1 && t < x);          // the reflection "blinks" and it is closer
+    $('room').style.opacity = blink ? 0 : 0.95 * clamp((t - TL.glass - 0.25) / 1.3) * (0.93 + 0.07 * rnd(f));
   }
-  $('crt').style.opacity = t >= TL.glass ? 0.6 : 1;
+  // the set switches itself back on
+  const snap = $('snap'), on = t >= TL.snap && t < TL.cut;
+  snap.style.display = on ? 'flex' : 'none';
+  if (on) { const k = t - TL.snap; $('fr').setAttribute('dx', 3 + 9 * rnd(f)); $('fgb').setAttribute('dx', -(3 + 9 * rnd(f)));
+    snap.style.filter = `brightness(${k < 0.07 ? 3 : 1}) url(#rgb)`; snap.style.transform = `translate(${(rnd(f) - .5) * 12}px,${(rnd(f + 2) - .5) * 6}px) scale(${1 + 0.25 * k})`; }
+  $('crt').style.opacity = (t >= TL.glass && t < TL.snap) ? 0.55 : 1;
   $('black').style.display = t >= TL.cut ? 'block' : 'none';
 };
 </script>

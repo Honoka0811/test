@@ -94,22 +94,38 @@ while ft < OFF:
 add(thud(60, 0.7, 0.1, 1.0), OFF, 0.9)
 x = seg(0, 0.4); add(fade(np.sin(2 * np.pi * np.cumsum(np.linspace(9000, 1500, len(x))) / SR), 0.002, 0.2), OFF, 0.08)
 
-# dark glass: room tone, breathing that isn't yours, one floorboard
-t = seg(TL["glass"], TL["jump"]); k = t / t[-1]
-add(fade(bp(noise(len(t)), 60, 300), 0.3, 0.01), TL["glass"], 0.03)
+# dark glass: room tone, breathing that isn't yours, getting closer with every blink
+G, ST, SNAP = TL["glass"], TL["stages"], TL["snap"]
+t = seg(G, SNAP); k = t / t[-1]
+add(fade(bp(noise(len(t)), 60, 300), 0.3, 0.01), G, 0.035)
 br = np.clip(np.sin(2 * np.pi * 0.42 * t - 0.5), 0, 1) ** 1.5 + 0.6 * np.clip(np.sin(2 * np.pi * 0.42 * t - 0.5 + np.pi), 0, 1) ** 2
-add(fade(bp(noise(len(t)), 350, 1700) * br * (0.15 + 0.85 * k ** 1.5), 0.2, 0.01), TL["glass"], 0.55, pan=0.45)
-for j in range(5):
-    x = seg(0, 0.07); f0 = rng.uniform(240, 420)
-    add(bp(np.sign(np.sin(2 * np.pi * f0 * x * (1 + 2 * x))) * np.exp(-x / 0.03), 200, 2400), TL["glass"] + 1.9 + j * 0.09, 0.45, pan=0.45)
+add(fade(bp(noise(len(t)), 350, 1700) * br * (0.08 + 0.92 * k ** 2), 0.2, 0.01), G, 0.75, pan=0.3)
+for i, st in enumerate(ST):                     # each blink: a dull step, then floorboards
+    add(thud(46, 0.9, 0.16, 0.5), st, 0.45 + 0.3 * i)
+    for j in range(4):
+        x = seg(0, 0.08); f0 = rng.uniform(220, 400)
+        add(bp(np.sign(np.sin(2 * np.pi * f0 * x * (1 + 2 * x))) * np.exp(-x / 0.03), 200, 2400), st + 0.12 + j * 0.1, 0.25 + 0.15 * i, pan=0.4 - 0.2 * i)
+# while the fingers close: a dry clicking rattle in the throat right behind the ear, plus rising sub
+t0 = ST[2] + 0.25; tt = t0
+while tt < SNAP - 0.05:
+    kk = (tt - t0) / (SNAP - t0)
+    burst = int(rng.integers(5, 14)); iv = rng.uniform(0.028, 0.05)
+    for j in range(burst):
+        x = seg(0, 0.03); f0 = rng.uniform(500, 900)
+        c = (bp(noise(len(x)), 500, 3200) + np.sin(2 * np.pi * f0 * x)) * np.exp(-x / 0.006)
+        if tt + j * iv < SNAP: add(c, tt + j * iv, (0.25 + 0.5 * kk) * rng.uniform(0.6, 1), pan=-0.5)
+        iv *= 1.06
+    tt += burst * iv + rng.uniform(0.1, 0.3) * (1 - 0.6 * kk)
+t = seg(ST[2], SNAP); k = t / t[-1]
+add(fade(np.sin(2 * np.pi * 38 * t) * k ** 2 + sum(np.sin(2 * np.pi * f * t) for f in (1661, 1760, 2489)) * 0.03 * k ** 3, 0.1, 0.003), ST[2], 0.8)
 
-# jump sting
-t = seg(TL["jump"], TL["cut"])
+# the set snaps back on: sting
+t = seg(SNAP, TL["cut"])
 saw = lambda f: 2 * ((f * t) % 1) - 1
-st = bp(sum(saw(f) for f in (110, 116.5, 155.6, 311.1, 329.6, 466.2, 493.9)) * 0.1, 60, 5000)
+st_ = bp(sum(saw(f) for f in (110, 116.5, 155.6, 311.1, 329.6, 466.2, 493.9)) * 0.1, 60, 5000)
 sc = bp(noise(len(t)), 900, 5000) * np.exp(-t / 0.35) * 0.6
-add(fade(st + sc, 0.002, 0.004), TL["jump"], 1.3)
-add(thud(40, 0.7, 0.4, 0.8), TL["jump"], 1.5)
+add(fade(st_ + sc, 0.002, 0.004), SNAP, 1.3)
+add(thud(40, 0.7, 0.4, 0.8), SNAP, 1.5)
 
 # light room reverb, limiter, hard cut
 ir_n = int(1.0 * SR); ir = noise(ir_n) * np.exp(-np.arange(ir_n) / SR / 0.25); ir /= np.sqrt((ir ** 2).sum())
