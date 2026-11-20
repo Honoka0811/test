@@ -13,35 +13,36 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__fi
 WORK = os.path.join(OUT, "work")
 os.makedirs(WORK, exist_ok=True)
 
-SPEAKER = 2  # 四国めたん ノーマル
+SPEAKER = 6  # 四国めたん ツンツン
 W, H, FPS = 1080, 1920, 30
 FONT = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
 
 # (大見出し, サブ見出し, ナレーション)
-INTRO = ("高校卒業までに", "絶対やって|おくべきこと", "高校卒業までに、絶対やっておくべきこと、十選!")
+INTRO = ("高校卒業までに", "やっておかないと|後悔する十選", "高校卒業までに、後悔しない十選。ありきたりなのは、省いたよ!")
+# 10位 → 1位のカウントダウン順
 ITEMS = [
-    ("友達と|夜まで語り明かす", "くだらない話こそ一生の宝物",
-     "一つ目、友達と夜まで語り明かす。宝物になるよ!"),
-    ("先生に|感謝を伝える", "会えなくなる前に",
-     "二つ目、先生に感謝を伝える。会えなくなる前に!"),
-    ("制服で|思い出の写真を撮る", "今しか着られない特別な服",
-     "三つ目、制服で写真を撮る。今しか着られない!"),
-    ("好きな人に|気持ちを伝える", "やらない後悔より、やる後悔",
-     "四つ目、好きな人に気持ちを伝える。後悔しないように!"),
-    ("部活や行事を|全力で楽しむ", "最後まで全力でいこう",
-     "五つ目、部活や行事を全力で楽しむ。最後まで全力!"),
-    ("通学路の景色を|焼きつける", "いつかきっと恋しくなる",
-     "六つ目、通学路の景色を焼きつける。きっと恋しくなるよ。"),
-    ("将来やりたいことを|書き出す", "未来の自分への手紙になる",
-     "七つ目、将来やりたいことを書き出す。未来の自分へ!"),
-    ("お金の基本を学ぶ", "社会に出る前に",
-     "八つ目、お金の基本を学ぶ。社会に出る前に!"),
-    ("家族に|ありがとうを伝える", "照れくさくても言葉にしよう",
-     "九つ目、家族にありがとうを伝える。言葉にしよう!"),
-    ("連絡先を|つないでおく", "ずっと仲間でいよう",
-     "十個目、友達と連絡先をつなぐ。ずっと仲間でいよう!"),
+    ("SNSの|黒歴史を消す", "就活で見られるかも",
+     "十位、SNSの黒歴史を消す。就活で、見られるよ!"),
+    ("友達の|口癖を録音する", "10年後、爆笑できる",
+     "九位、友達の口癖を録音する。十年後、爆笑できる!"),
+    ("先生の|黒歴史を聞き出す", "意外と教えてくれる",
+     "八位、先生の黒歴史を聞き出す。意外と、教えてくれる!"),
+    ("放課後の教室に|意味もなく居座る", "二度と戻れない時間",
+     "七位、放課後の教室に居座る。二度と戻れない時間!"),
+    ("一人で|知らない駅まで行く", "世界が少し広がる",
+     "六位、一人で知らない駅まで行く。世界が少し広がるよ!"),
+    ("契約の|怖さを知る", "18歳で成人。サブスク・リボ注意",
+     "五位、契約の怖さを知る。十八歳で成人、リボ払い注意!"),
+    ("親に|高校時代の話を聞く", "意外な一面が見える",
+     "四位、親に高校時代の話を聞く。意外な一面が見えるよ!"),
+    ("苦手だったやつと|一回ちゃんと話す", "意外といいやつかも",
+     "三位、苦手だったやつと、一回話す。意外と、いいやつかも!"),
+    ("10年後の自分に|動画メッセージ", "未来で泣くやつ",
+     "二位、十年後の自分に、動画メッセージを撮る。未来で泣くやつ!"),
+    ("卒業後の|次の約束を今決める", "日付つきで絶対",
+     "一位、卒業後の次の約束を、今決める。日付つきで、絶対!"),
 ]
-OUTRO = ("全部できたら", "最高の卒業!", "全部できたら最高の卒業!保存して見返してね!")
+OUTRO = ("全部やれたら", "最高の卒業!", "全部やれたら、最高の卒業! 保存して、友達に送ってね!")
 
 # 背景グラデーション (上, 下) と アクセント色
 PALETTES = [
@@ -61,7 +62,11 @@ PALETTES = [
 # ---------------------------------------------------------------- narration
 def tts(text, path):
     if os.path.exists(path) and os.path.getsize(path) > 1000:
-        return
+        try:
+            wav_len(path)
+            return
+        except Exception:
+            os.remove(path)
     q = urllib.parse.urlencode({"text": text, "speaker": SPEAKER})
     for attempt in range(8):
         try:
@@ -86,7 +91,14 @@ def tts(text, path):
         if st.get("isAudioError"):
             raise RuntimeError(st)
         time.sleep(1)
-    urllib.request.urlretrieve(j["wavDownloadUrl"], path)
+    for attempt in range(6):
+        try:
+            urllib.request.urlretrieve(j["wavDownloadUrl"], path)
+            return
+        except Exception as e:
+            print("download retry", attempt, e)
+            time.sleep(3)
+    raise RuntimeError("download failed: " + text)
 
 
 def wav_len(path):
@@ -177,9 +189,9 @@ def build_scene(idx, kind, head, sub, accent, pal):
     if kind == "item":
         bar_x0, bar_x1, bar_y = 90, W - 90, 150
         d.rounded_rectangle((bar_x0, bar_y, bar_x1, bar_y + 18), 9, fill=(255, 255, 255, 140))
-        frac = idx / 10
+        frac = (11 - idx) / 10
         d.rounded_rectangle((bar_x0, bar_y, bar_x0 + (bar_x1 - bar_x0) * frac, bar_y + 18), 9, fill=accent + (255,))
-        d.text((W - 90, bar_y + 34), f"{idx} / 10", font=font(44), fill=accent + (255,), anchor="ra")
+        d.text((W - 90, bar_y + 34), f"NO.{idx}", font=font(44), fill=accent + (255,), anchor="ra")
     # 下部クレジット
     d.text((W / 2, H - 120), "ナレーション: VOICEVOX:四国めたん", font=font(34), fill=(60, 40, 60, 210), anchor="mm")
     d.text((W / 2, H - 70), "BGM: オリジナル(合成)", font=font(30), fill=(60, 40, 60, 170), anchor="mm")
@@ -312,7 +324,7 @@ def write_wav(path, sig, sr=SR):
 
 # ---------------------------------------------------------------- main
 def main():
-    scenes = [("intro", 0, *INTRO)] + [("item", i + 1, *it) for i, it in enumerate(ITEMS)] + [("outro", 11, *OUTRO)]
+    scenes = [("intro", 0, *INTRO)] + [("item", 10 - i, *it) for i, it in enumerate(ITEMS)] + [("outro", 11, *OUTRO)]
 
     # 1) ナレーション生成
     print("== narration ==")
@@ -324,7 +336,7 @@ def main():
         print(si, f"{voice[-1][1]:.2f}s", text)
 
     # 2) タイミング
-    LEAD, TAIL = 0.12, 0.22
+    LEAD, TAIL = 0.1, 0.15
     starts, t = [], 0.0
     durs = []
     for _, d in voice:
