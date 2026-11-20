@@ -33,23 +33,27 @@ def ramp(t0, t1, v0=0.0, v1=1.0):
     t = np.arange(N) / SR
     return (v0 + (v1 - v0) * np.clip((t - t0) / max(t1 - t0, 1e-6), 0, 1)).astype(np.float32)
 
-T_ROOM = L['l1']['start'] - 0.3                 # 夜の部屋(1日目)
-T_FACE = L['l1b']['start'] - 0.1                 # すき間の女の人に気づく
-T_TAPE = L['l2']['start'] - 0.25                 # ガムテープでとめる
-T_N2 = L['l3']['start'] - 0.3                    # 次の夜。テープがはがされ、戸が開いている
-T_POINT = L['l3']['start'] + 3.2                 # 上を指さす
-T_MORN = L['l4']['start'] - 0.3                  # 朝。はがされたテープ
-T_N3 = L['l5']['start'] - 0.3                    # 次の夜。口を動かす
-MOUTH = [L['l5']['end'] + 0.35 + 0.6 * k for k in range(3)]   # 「に」「げ」「て」
-T_CLOSET = L['l6']['start'] - 0.2                # クローゼットを開けて、天井を照らす
-T_OPEN = L['l6']['start'] + 0.9                  # 戸を開ける音
-T_LIGHT = L['l6']['start'] + 2.3                 # ライトをつける
-T_HATCH = L['l7']['start'] + 0.2                 # 点検口を照らす
-T_CREAK = L['l9']['start'] + 1.75                # ギシッ
-T_SLIDE = L['now']['start'] - 1.1                # ふたが、ゆっくりずれていく
+dl2 = L['l2']['end'] - L['l2']['start']; dl1 = L['l1']['end'] - L['l1']['start']; dl3 = L['l3']['end'] - L['l3']['start']
+T_ROOM = L['l1']['start'] - 0.3                 # 1日目の夜
+T_FACE = L['l1']['start'] + dl1 * 0.62          # 白い顔が見えた気がする
+T_MORN1 = L['l2']['start'] - 0.25               # 朝。戸が本当に開いている
+T_TAPEON = L['l2']['start'] + dl2 * 0.42        # 戸にテープを貼る
+T_N2 = L['l3']['start'] - 0.3                    # 2日目の夜。テープがはがされ、戸が開いている
+T_POINT = L['l3']['start'] + dl3 * 0.72         # 上を指さす
+T_N3 = L['l3b']['start'] - 0.2                   # 口のアップ
+MOUTH = [L['l3b']['end'] + 0.3 + 0.6 * k for k in range(3)]   # 「に」「げ」「て」
+T_MORN2 = L['l4']['start'] - 0.3                 # 翌朝(はがされたテープのアップ)
+T_DAY = L['l5']['start'] - 0.25                  # 昼の部屋。泊まりに行く準備
+T_CLOSET = L['l6']['start'] - 0.2                # クローゼットを開けて、照らす
+T_OPEN = L['l6']['start'] + 0.7
+T_LIGHT = L['l6']['start'] + 2.1
+T_HATCH = L['l7']['start'] + 0.2
+T_CREAK = L['l9']['start'] + 1.75
+T_SLIDE = L['now']['start'] - 1.1
 HIT = L['now']['end'] + 0.5
-EV = dict(room=T_ROOM, face=T_FACE, tape=T_TAPE, n2=T_N2, point=T_POINT, morn=T_MORN, n3=T_N3, mouth=MOUTH, closet=T_CLOSET, open=T_OPEN, light=T_LIGHT,
-          hatch=T_HATCH, creak=T_CREAK, slide=T_SLIDE, hit=HIT)
+EV = dict(room=T_ROOM, face=T_FACE, morn1=T_MORN1, tapeon=T_TAPEON, n2=T_N2, point=T_POINT, n3=T_N3, mouth=MOUTH, morn2=T_MORN2, day=T_DAY, closet=T_CLOSET,
+          open=T_OPEN, light=T_LIGHT, hatch=T_HATCH, creak=T_CREAK, slide=T_SLIDE, hit=HIT)
+T_TAPE, T_MORN = T_TAPEON, T_MORN2
 
 def roomtone():
     """夜の部屋: 冷蔵庫の低いうなり、空調のかすかな音、時計の秒針"""
@@ -84,7 +88,7 @@ def strings():
             f = midi(n) * (1 + 0.04 * prog ** 2) * (1 + 0.004 * np.sin(2 * np.pi * (4.5 + k * 0.37) * t + k)); ph = 2 * np.pi * np.cumsum(f) / SR
             y += ((np.sin(ph) + 0.5 * np.sin(2 * ph) + 0.33 * np.sin(3 * ph)) * (0.6 + 0.4 * np.sin(2 * np.pi * (0.23 + 0.05 * k) * t + k))).astype(np.float32)
         return y * (ramp(a, b) ** 2 * peak) * (1 - ramp(b - 0.05, b + 0.15))
-    return lowpass(cluster(T_FACE, T_TAPE, 0.4) + cluster(T_N3, MOUTH[2] + 0.6, 0.6) + cluster(T_HATCH, HIT, 1.0), 5200) * 0.034
+    return lowpass(cluster(T_FACE, T_MORN1, 0.35) + cluster(T_N2, MOUTH[2] + 0.6, 0.7) + cluster(T_HATCH, HIT, 1.0), 5200) * 0.034
 def heartbeat():
     x = np.zeros(N, np.float32)
     def thump(f0, g):
@@ -141,7 +145,7 @@ def main():
     room = [reverb_ir(0.5, 1, 3500), reverb_ir(0.5, 2, 3500)]; attic = [reverb_ir(1.1, 3, 1800), reverb_ir(1.1, 4, 1800)]; hall = [reverb_ir(3.6, 5), reverb_ir(3.6, 6)]
     big = np.zeros(N, np.float32); fx = np.zeros(N, np.float32); up = np.zeros(N, np.float32)
     add(big, 0.0, taiko(0.45)); add(fx, T_FACE, whoosh(1.4), 0.12); add(big, T_FACE + 0.3, taiko(0.5))
-    add(fx, L['l2']['start'] + 0.7, rip(0.6), 0.25); add(fx, L['l2']['start'] + 1.5, rip(0.4), 0.22)
+    add(fx, T_TAPEON + 0.3, rip(0.6), 0.25); add(fx, T_TAPEON + 1.1, rip(0.4), 0.22)
     add(big, T_POINT, taiko(0.55))
     for k, tm in enumerate(MOUTH): add(big, tm, taiko(0.35 + 0.15 * k))
     add(fx, T_OPEN, slide(0.8), 0.35); add(fx, T_LIGHT, click(), 0.4); add(big, T_HATCH + 0.5, taiko(0.7))

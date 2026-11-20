@@ -179,17 +179,29 @@ function render(t) {
   const br = { sx: Math.sin(t * 0.5) * 4, sy: Math.sin(t * 0.37 + 1) * 3 };
   const WIDE = { z: 1, cx: 540, cy: 960 }, GAP = { z: 3.2, cx: 528, cy: 640 }, camL = (a, b, k) => ({ z: lerp(a.z, b.z, k), cx: lerp(a.cx, b.cx, k), cy: lerp(a.cy, b.cy, k), ...br });
   if (t < EV.hit) {
-    if (t < EV.room) { room(t, f, camL(GAP, { z: 3.0, cx: 528, cy: 650 }, prog(t, 0, EV.room)), { L: 0.5, gap: 54, ghost: 1 }); fadeIn(0, 0.7); }
-    else if (t < EV.tape) { const k = ease(prog(t, EV.face - 0.2, EV.face + 2.0)); room(t, f, camL(WIDE, { z: 1.9, cx: 540, cy: 700 }, k), { L: 0.5, gap: 54, ghost: ease(prog(t, EV.room + 1.5, EV.face)) * 0.8 + 0.2 * (t >= EV.face ? 1 : 0) }); fadeIn(EV.room, 0.5); }
-    else if (t < EV.n2) { room(t, f, camL(WIDE, { z: 1.25, cx: 540, cy: 820 }, prog(t, EV.tape, EV.n2)), { L: 0.62, gap: 0, tape: 'on' }); fadeIn(EV.tape); }
-    else if (t < EV.morn) { const k = ease(prog(t, EV.point - 1.2, EV.point + 0.6)); const up = ease(prog(t, EV.point + 0.7, EV.point + 2.4)); room(t, f, camL(camL(WIDE, { z: 2.6, cx: 512, cy: 600 }, k), { z: 2.3, cx: 515, cy: 470 }, up), { L: 0.5, gap: 96, tape: 'torn', ghost: 1, face: { look: t >= EV.point ? 'up' : '', point: ease(prog(t, EV.point - 0.2, EV.point + 0.6)) } }); fadeIn(EV.n2); }
-    else if (t < EV.n3) { const k = ease(prog(t, EV.morn + 0.2, EV.morn + 4.0)); room(t, f, camL({ z: 1.15, cx: 540, cy: 840 }, { z: 2.5, cx: 520, cy: 760 }, k), { L: 1, day: true, gap: 0, tape: 'torn' }); fadeIn(EV.morn); grain = 0.07; }
-    else if (t < EV.closet) {   // 口の動き: に・げ・て
+    if (t < EV.room) { room(t, f, camL(GAP, { z: 3.0, cx: 528, cy: 650 }, prog(t, 0, EV.room)), { L: 0.5, gap: 54, ghost: 0.75 }); fadeIn(0, 0.7); }
+    else if (t < EV.morn1) {    // 1日目の夜: 白い顔が「見えた気がする」(はっきりは見えない)
+      const k = ease(prog(t, EV.face - 0.4, EV.face + 1.8)), flick = 0.75 + 0.25 * Math.sin(t * 3.1);
+      room(t, f, camL(WIDE, { z: 1.9, cx: 540, cy: 700 }, k), { L: 0.5, gap: 54, ghost: t >= LN.l1b.start + 0.5 ? 0 : ease(prog(t, EV.face - 0.5, EV.face + 0.4)) * 0.55 * flick }); fadeIn(EV.room, 0.5);
+      const blink = prog(t, LN.l1b.start + 0.2, LN.l1b.start + 0.5) * (1 - prog(t, LN.l1b.start + 0.6, LN.l1b.start + 0.9)); if (blink > 0) { ctx.fillStyle = `rgba(0,0,0,${blink})`; ctx.fillRect(0, 0, W, H); }   // まばたき。もう一度見ると、顔はない
+      if (t > LN.l1b.start + 0.5) { /* 見直したあとは顔なし */ }
+    }
+    else if (t < EV.tapeon) { room(t, f, camL({ z: 1.15, cx: 540, cy: 840 }, { z: 1.6, cx: 540, cy: 760 }, prog(t, EV.morn1, EV.tapeon)), { L: 1, day: true, gap: 30 }); fadeIn(EV.morn1); grain = 0.07; }
+    else if (t < EV.n2) { room(t, f, camL(WIDE, { z: 1.25, cx: 540, cy: 820 }, prog(t, EV.tapeon, EV.n2)), { L: 0.62, gap: 0, tape: 'on' }); fadeIn(EV.tapeon); }
+    else if (t < EV.n3) {       // 2日目の夜: テープがはがされ、女の人が上を指さす
+      const k = ease(prog(t, EV.n2 + 0.3, EV.n2 + 2.4)), up = ease(prog(t, EV.point + 0.7, EV.point + 2.0));
+      room(t, f, camL(camL(WIDE, { z: 2.6, cx: 512, cy: 600 }, k), { z: 2.3, cx: 515, cy: 470 }, up), { L: 0.5, gap: 96, tape: 'torn', ghost: ease(prog(t, EV.n2 + 1.6, EV.n2 + 2.6)), face: { look: t >= EV.point ? 'up' : '', point: ease(prog(t, EV.point - 0.2, EV.point + 0.6)) } }); fadeIn(EV.n2); }
+    else if (t < EV.morn2) {    // 口の動き: に・げ・て
       let m = ''; EV.mouth.forEach((tm, i) => { if (t >= tm - 0.05 && t < tm + 0.38) m = ['i', 'e', 'te'][i]; });
-      room(t, f, camL({ z: 4.6, cx: 528, cy: 640 }, { z: 5.2, cx: 530, cy: 645 }, prog(t, EV.n3, EV.closet)), { L: 0.5, gap: 58, ghost: 1, face: { mouth: m } }); fadeIn(EV.n3);
+      room(t, f, camL({ z: 4.6, cx: 528, cy: 640 }, { z: 5.2, cx: 530, cy: 645 }, prog(t, EV.n3, EV.morn2)), { L: 0.5, gap: 58, ghost: 1, face: { mouth: m } }); fadeIn(EV.n3, 0.25);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
       EV.mouth.forEach((tm, i) => { const a = prog(t, tm, tm + 0.12); if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; ctx.font = `800 150px ${MIN}`; ctx.strokeStyle = '#000'; ctx.lineWidth = 22; const x = 300 + i * 240; ctx.strokeText('にげて'[i], x, 320); ctx.fillStyle = RED; ctx.shadowColor = RED; ctx.shadowBlur = 24; ctx.fillText('にげて'[i], x, 320); ctx.restore(); });
     }
+    else if (t < EV.day) { const k = ease(prog(t, EV.morn2 + 0.2, EV.morn2 + 4.0)); room(t, f, camL({ z: 1.15, cx: 540, cy: 840 }, { z: 2.5, cx: 520, cy: 520 }, k), { L: 1, day: true, gap: 0, tape: 'torn' }); fadeIn(EV.morn2); grain = 0.07; }
+    else if (t < EV.closet) { room(t, f, camL({ z: 1.05, cx: 540, cy: 900 }, { z: 1.3, cx: 560, cy: 820 }, prog(t, EV.day, EV.closet)), { L: 1, day: true, gap: 0 }); fadeIn(EV.day); grain = 0.07;
+      // ベッドの上に、泊まりに行くためのバッグ
+      ctx.save(); const z = lerp(1.05, 1.3, prog(t, EV.day, EV.closet)); ctx.translate(540, 960); ctx.scale(z, z); ctx.translate(-lerp(540, 560, prog(t, EV.day, EV.closet)), -lerp(900, 820, prog(t, EV.day, EV.closet)));
+      ctx.fillStyle = '#3b4f6e'; ctx.beginPath(); ctx.roundRect(640, 1500, 300, 150, 30); ctx.fill(); ctx.strokeStyle = '#26354b'; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(790, 1500, 70, Math.PI, 0); ctx.stroke(); ctx.restore(); }
     else {                      // クローゼットの中
       const on = t >= EV.light, s = prog(t, EV.light, EV.hatch + 0.6), sk = ease(s);
       const z = lerp(1, 1.35, ease(prog(t, EV.hatch + 0.5, EV.hatch + 2.5))) + 0.25 * ease(prog(t, EV.slide, EV.hit));
