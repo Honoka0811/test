@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
+  body { font-family: "Noto Sans JP", "IPAPGothic", sans-serif; color: #e8eaed; }
+  #stage { position: relative; width: 540px; height: 960px; overflow: hidden; background: #000; }
+  #phone { position: absolute; inset: 0; background: #0a0c0f; transform-origin: 50% 72%; display: flex; flex-direction: column; }
+  .status { height: 78px; padding: 46px 26px 0; display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; color: #cfd3d8; }
+  .status .right { display: flex; gap: 8px; align-items: center; }
+  .batt { width: 26px; height: 12px; border: 1.5px solid #cfd3d8; border-radius: 3px; position: relative; }
+  .batt i { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 3px; background: #e5484d; border-radius: 1px; }
+  .header { height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid #1c2026; background: #0e1014; }
+  .chev { font-size: 26px; color: #7f8791; width: 20px; }
+  .av { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #b98aa0, #6c5a86); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff; flex: none; }
+  .who b { display: block; font-size: 18px; }
+  .who span { font-size: 12px; color: #7f8791; }
+  .chat { position: relative; height: 606px; overflow: hidden; }
+  .flow { position: absolute; left: 0; right: 0; top: 0; padding: 0 28px; }
+  .row { overflow: visible; height: 0; }
+  .inner { display: flex; align-items: flex-end; gap: 8px; padding: 7px 0; transform-origin: 0 100%; }
+  .row.m .inner { justify-content: flex-end; transform-origin: 100% 100%; }
+  .row.chip .inner { justify-content: center; padding: 14px 0 8px; }
+  .chipb { font-size: 12px; color: #8a919b; background: #15181d; padding: 4px 14px; border-radius: 12px; }
+  .bubble { max-width: 340px; padding: 11px 16px; font-size: 21px; line-height: 1.45; border-radius: 22px; word-break: break-all; }
+  .row.y .bubble { background: #22262d; border-bottom-left-radius: 6px; }
+  .row.m .bubble { background: #2c5bd6; color: #fff; border-bottom-right-radius: 6px; }
+  .row .sav { width: 32px; height: 32px; font-size: 14px; }
+  .meta { font-size: 11px; color: #6f7680; line-height: 1.35; padding-bottom: 3px; white-space: nowrap; }
+  .row.m .meta { text-align: right; }
+  .meta .read { display: block; }
+  .dots { display: flex; gap: 6px; padding: 17px 18px; background: #22262d; border-radius: 22px; border-bottom-left-radius: 6px; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: #8a919b; display: block; }
+  .inputbar { height: 70px; padding: 11px 16px; display: flex; gap: 10px; align-items: center; background: #0e1014; border-top: 1px solid #1c2026; }
+  .field { flex: 1; height: 46px; border-radius: 23px; background: #1a1d23; padding: 0 18px; display: flex; align-items: center; font-size: 19px; white-space: nowrap; overflow: hidden; }
+  .field .ph { color: #5d646e; }
+  .caret { display: inline-block; width: 2px; height: 24px; background: #6d9bff; margin-left: 2px; }
+  .send { width: 46px; height: 46px; border-radius: 50%; background: #2c5bd6; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; }
+  .below { flex: 1; background: #0a0c0f; position: relative; }
+  .below::after { content: ""; position: absolute; left: 50%; bottom: 14px; width: 150px; height: 5px; margin-left: -75px; border-radius: 3px; background: #3a3f47; }
+  #red { position: absolute; inset: 0; background: #7a0000; mix-blend-mode: multiply; opacity: 0; pointer-events: none; }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 60%, rgba(0,0,0,0) 30%, rgba(0,0,0,.95) 100%); opacity: .35; }
+  #bars { position: absolute; inset: 0; }
+  #bars div { position: absolute; left: 0; right: 0; background: #fff; mix-blend-mode: difference; }
+  #black { position: absolute; inset: 0; background: #000; display: none; }
+  #face { position: absolute; left: 0; top: 0; width: 540px; height: 960px; display: none; }
+  #hook { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; text-align: center; }
+  #hook .rec { font-size: 15px; letter-spacing: .2em; color: #c1272d; font-weight: 700; }
+  #hook .t { font-size: 31px; line-height: 1.6; font-weight: 700; color: #f1f1f1; }
+  #hook .s { font-size: 17px; color: #8a8a8a; letter-spacing: .08em; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <filter id="rgb" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+    <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="r"/>
+    <feOffset id="fr" in="r" dx="6" dy="0" result="ro"/>
+    <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" result="gb"/>
+    <feOffset id="fgb" in="gb" dx="-6" dy="0" result="gbo"/>
+    <feBlend in="ro" in2="gbo" mode="screen"/>
+  </filter>
+</svg>
+<div id="stage">
+  <div id="phone">
+    <div class="status"><span id="clock">2:13</span><span class="right"><span>4G</span><span class="batt"><i></i></span></span></div>
+    <div class="header"><span class="chev">‹</span><div class="av">ゆ</div><div class="who"><b>ゆい</b><span>妹</span></div></div>
+    <div class="chat" id="chat"><div class="flow" id="flow"></div></div>
+    <div class="inputbar"><div class="field" id="field"></div><div class="send">↑</div></div>
+    <div class="below"></div>
+    <div id="red"></div>
+  </div>
+  <div id="bars"></div>
+  <div id="vig"></div>
+  <div id="black"></div>
+  <canvas id="face" width="540" height="960"></canvas>
+  <div id="hook">
+    <div class="rec" id="h0">● 02:13 AM</div>
+    <div class="t" id="h1">これは、ある女子高生の<br>スマホに残っていた<br>やり取りです。</div>
+    <div class="s" id="h2">※ 最後まで読まないでください</div>
+  </div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => 1 - Math.pow(1 - clamp(x), 3);
+const rnd = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+let TL, rows = [];
+
+function addRow(cls, html, t0, t1, data) {
+  const el = document.createElement('div'); el.className = 'row ' + cls;
+  const inner = document.createElement('div'); inner.className = 'inner'; inner.innerHTML = html;
+  el.appendChild(inner); el.style.height = 'auto';
+  rows.push(Object.assign({ el, inner, t0, t1 }, data || {}));
+}
+
+window.init = async function (tl) {
+  TL = tl;
+  const typing = [];
+  TL.items.forEach((it, i) => {
+    if (it.side !== 'y') return;
+    const prev = i ? TL.items[i - 1].t : TL.hookEnd - 1;
+    const s = Math.max(it.t - 0.9, prev + 0.2);
+    if (i > 0 && it.t - s > 0.3) typing.push([s, it.t]);
+  });
+  TL.typingY.forEach(p => typing.push(p));
+  const all = TL.items.map(it => ({ kind: 'msg', t: it.t, it })).concat(typing.map(p => ({ kind: 'typ', t: p[0], p })));
+  all.sort((a, b) => a.t - b.t || (a.kind === 'typ' ? -1 : 1));
+  addRow('chip', '<span class="chipb">今日</span>', -9, Infinity);
+  for (const a of all) {
+    if (a.kind === 'typ') {
+      addRow('y', '<div class="av sav">ゆ</div><div class="dots"><i></i><i></i><i></i></div>', a.p[0], a.p[1], { typ: true });
+    } else if (a.it.side === 'y') {
+      addRow('y', `<div class="av sav">ゆ</div><div class="bubble">${a.it.text}</div><div class="meta">${a.it.clock}</div>`, a.it.t, Infinity, { it: a.it });
+    } else {
+      addRow('m', `<div class="meta"><span class="read">既読</span>${a.it.clock}</div><div class="bubble">${a.it.text}</div>`, a.it.t, Infinity, { it: a.it });
+    }
+  }
+  const flow = $('flow'); rows.forEach(r => flow.appendChild(r.el));
+  drawFace();
+  await document.fonts.ready;
+  await document.fonts.load('21px "Noto Sans JP"', TL.items.map(i => i.text).join('') + '既読今日メッセージを入力');
+  await document.fonts.load('700 31px "Noto Sans JP"', 'これは、ある女子高生のスマホに残っていたやり取りです。ゆい妹');
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  rows.forEach(r => { r.h = r.el.getBoundingClientRect().height; r.read = r.el.querySelector('.read'); r.dots = r.el.querySelectorAll('.dots i'); });
+  render(0);
+};
+
+function drawFace() {
+  const c = $('face'), g = c.getContext('2d');
+  g.fillStyle = '#000'; g.fillRect(0, 0, 540, 960);
+  g.filter = 'blur(14px)';
+  const gr = g.createRadialGradient(270, 430, 20, 270, 450, 230);
+  gr.addColorStop(0, 'rgba(215,210,200,.9)'); gr.addColorStop(.6, 'rgba(150,145,140,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.beginPath(); g.ellipse(270, 450, 150, 225, 0, 0, 7); g.fill();
+  g.filter = 'blur(7px)'; g.fillStyle = '#000';
+  g.beginPath(); g.ellipse(210, 392, 30, 40, .25, 0, 7); g.fill();
+  g.beginPath(); g.ellipse(332, 402, 34, 46, -.1, 0, 7); g.fill();
+  g.beginPath(); g.ellipse(274, 585, 38, 118, .04, 0, 7); g.fill();
+  g.filter = 'blur(2px)'; g.fillStyle = 'rgba(255,255,255,.85)';
+  g.beginPath(); g.arc(213, 398, 2.4, 0, 7); g.fill();
+  g.beginPath(); g.arc(329, 408, 2.4, 0, 7); g.fill();
+}
+
+window.render = function (t) {
+  const f = Math.round(t * TL.fps);
+  // hook
+  const hook = $('hook');
+  if (t < TL.hookEnd) {
+    hook.style.display = 'flex';
+    $('h0').style.opacity = (f % 20 < 12) ? 1 : .25;
+    $('h1').style.opacity = clamp((t - 0.15) / 0.35);
+    $('h2').style.opacity = clamp((t - 1.1) / 0.3);
+    hook.style.transform = `scale(${1 + 0.03 * t})`;
+  } else hook.style.display = 'none';
+
+  // rows
+  let total = 0;
+  for (const r of rows) {
+    const inst = r.it && r.it.instant;
+    const pin = inst ? (t >= r.t0 ? 1 : 0) : ease((t - r.t0) / 0.2);
+    const pout = clamp((t - r.t1) / 0.1);
+    const pres = pin * (1 - pout);
+    const hh = r.h * pres; total += hh;
+    r.el.style.height = hh + 'px';
+    r.el.style.visibility = pres > 0.001 ? 'visible' : 'hidden';
+    r.inner.style.opacity = pres;
+    r.inner.style.transform = `scale(${0.82 + 0.18 * pres})`;
+    if (r.read) r.read.style.visibility = (t >= r.t0 + 0.7) ? 'visible' : 'hidden';
+    if (r.typ) r.dots.forEach((d, i) => { const ph = Math.sin((t - r.t0) * 7 - i * 0.9); d.style.opacity = 0.45 + 0.55 * clamp(ph); d.style.transform = `translateY(${-3 * clamp(ph)}px)`; });
+  }
+  $('flow').style.transform = `translateY(${Math.min(0, 606 - total - 12)}px)`;
+
+  // self typing in input field
+  let typed = null;
+  for (const it of TL.items) {
+    if (it.side !== 'm' || it.instant) continue;
+    const d = it.slow || Math.min(1.3, 0.3 + it.text.length * 0.055);
+    const s = it.t - d - 0.12;
+    if (t >= s && t < it.t) { typed = it.text.slice(0, Math.ceil(clamp((t - s) / d) * it.text.length)); break; }
+  }
+  $('field').innerHTML = typed !== null ? `<span>${typed.replace(/ /g, '&nbsp;')}</span><span class="caret" style="opacity:${f % 16 < 10 ? 1 : 0}"></span>` : '<span class="ph">メッセージを入力</span>';
+
+  // clock
+  let ck = '2:13'; for (const it of TL.items) if (t >= it.t - 0.5) ck = it.clock; $('clock').textContent = ck;
+
+  // camera / mood
+  const dark = clamp((t - TL.silence[0]) / 3);
+  const pos = clamp((t - TL.bang - 0.3) / 2);
+  const fin = t >= TL.final;
+  let zoom = 1 + 0.05 * clamp((t - TL.hookEnd) / 37);
+  let x = 0, y = 0, split = 0, skew = 0;
+  if (t >= TL.rattle[0] && t < TL.rattle[1]) { x += 1.6 * Math.sin(t * 83); y += 1.2 * Math.cos(t * 71); }
+  if (t >= TL.bang) { const a = 16 * Math.exp(-(t - TL.bang) * 5); x += a * Math.sin(t * 97); y += a * Math.cos(t * 131); if (a > 2) split = a * 0.5; }
+  const micro = [TL.possessed, 34.6, 37.2].some(m => t >= m && t < m + 0.1);
+  const glitch = (t >= TL.glitch[0] && t < TL.glitch[1]) || micro;
+  const bars = $('bars'); bars.innerHTML = '';
+  if (glitch) {
+    const k = micro ? 0.4 : 1;
+    split = (4 + 12 * rnd(f)) * k; x += (rnd(f + 5) - 0.5) * 44 * k; skew = (rnd(f + 9) - 0.5) * 6 * k;
+    const n = micro ? 2 : 5;
+    for (let i = 0; i < n; i++) { const d = document.createElement('div'); d.style.top = (rnd(f * 7 + i) * 940) + 'px'; d.style.height = (4 + rnd(f * 3 + i) * 46) + 'px'; d.style.opacity = 0.25 + 0.6 * rnd(f + i * 11); bars.appendChild(d); }
+  }
+  if (fin) { zoom = 1.03 + 0.02 * (t - TL.final); split = 1.2 + 1.6 * rnd(f); x += (rnd(f) - .5) * 3; }
+  const ph = $('phone');
+  ph.style.transform = `translate(${x}px,${y}px) scale(${zoom}) skewX(${skew}deg)`;
+  let filt = fin ? 'brightness(1.15) saturate(.8)' : `brightness(${1 - 0.14 * pos}) saturate(${1 - 0.55 * pos})`;
+  if (split > 0.3) { $('fr').setAttribute('dx', split); $('fgb').setAttribute('dx', -split); filt += ' url(#rgb)'; }
+  ph.style.filter = filt;
+  $('red').style.opacity = fin ? 0.42 : 0.35 * pos;
+  $('vig').style.opacity = fin ? 0.7 : 0.35 + 0.4 * dark + 0.15 * pos;
+
+  // black + face flash
+  const inBlack = (t >= TL.black[0] && t < TL.black[1]) || t >= TL.cut;
+  $('black').style.display = inBlack ? 'block' : 'none';
+  const face = $('face');
+  const ff = t >= TL.black[0] + 0.17 && t < TL.black[0] + 0.4;
+  face.style.display = ff ? 'block' : 'none';
+  if (ff) { face.style.opacity = 0.3 + 0.3 * rnd(f); face.style.transform = `scale(${1.7 + 1.6 * (t - TL.black[0] - 0.17)}) translate(${(rnd(f) - .5) * 14}px,${(rnd(f + 3) - .5) * 10}px)`; }
+};
+</script>
+</body>
+</html>
