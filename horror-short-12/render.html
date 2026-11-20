@@ -63,8 +63,28 @@ function roomBase(L, day) {
   // 窓からの光が、床とクローゼットの下のほうに落ちる
   const lc = day ? '255,226,180' : '120,140,210', la = day ? 0.28 : 0.16; ctx.fillStyle = `rgba(${lc},${la})`; ctx.beginPath(); ctx.moveTo(40, 1240); ctx.lineTo(560, 1080); ctx.lineTo(720, 1240); ctx.lineTo(380, 1700); ctx.closePath(); ctx.fill();
 }
+function pointArm(c, k, kf, t) {
+  // 上を指さす腕(顔の中心が原点)。k: 腕が上がる / kf: 曲げていた人さし指が伸びる
+  const tr = Math.sin(t * 11) * 0.7 + Math.sin(t * 17 + 1) * 0.4;                  // かすかなふるえ
+  const sh = [44, 118], el = [lerp(52, 50, k) + tr * 0.3, lerp(230, 54, k)], wr = [lerp(50, 44, k) + tr * 0.6, lerp(330, -64, k)];
+  const limb = (p, q, w0, w1, fill) => { const a = Math.atan2(q[1] - p[1], q[0] - p[0]), nx = -Math.sin(a), ny = Math.cos(a); c.fillStyle = fill; c.beginPath(); c.moveTo(p[0] + nx * w0, p[1] + ny * w0); c.lineTo(q[0] + nx * w1, q[1] + ny * w1); c.lineTo(q[0] - nx * w1, q[1] - ny * w1); c.lineTo(p[0] - nx * w0, p[1] - ny * w0); c.closePath(); c.fill(); c.beginPath(); c.arc(q[0], q[1], w1, 0, 7); c.fill(); };
+  limb(sh, el, 13, 11, '#141214');                                                    // 二の腕(暗い袖)
+  const fg = c.createLinearGradient(wr[0] - 12, 0, wr[0] + 12, 0); fg.addColorStop(0, '#3e3b38'); fg.addColorStop(0.6, '#7d7872'); fg.addColorStop(1, '#5a5652');
+  limb(el, wr, 10, 7.5, fg);                                                          // 前腕(月明かりが片側に当たる)
+  c.save(); c.translate(wr[0], wr[1]); c.rotate(lerp(0.25, -0.05, k) + tr * 0.004);
+  const hg = c.createLinearGradient(-13, 0, 13, 0); hg.addColorStop(0, '#4a4743'); hg.addColorStop(0.6, '#8f8a83'); hg.addColorStop(1, '#67635e');
+  c.fillStyle = hg; c.beginPath(); c.roundRect(-11, -30, 22, 32, 8); c.fill();         // 手のひら(手の甲がこちら)
+  c.fillStyle = '#6e6a64'; for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(-6 + i * 5.5, -27 + i * 1.5, 3.4, 4.2, 0, 0, 7); c.fill(); }   // にぎった指の関節
+  c.fillStyle = '#7a756f'; c.beginPath(); c.ellipse(9, -10, 4, 9, 0.5, 0, 7); c.fill();                                                  // 親指
+  // 人さし指: 根元・第二関節・指先の3つに分かれて、手前に曲がった状態からまっすぐ伸びる(手前に曲がるほど短く見える)
+  let x = 7, y = -30; const segs = [[15, 3.6], [11, 3.3], [9, 3.0]], bends = [lerp(1.25, 0.02, kf), lerp(1.45, 0.03, kf), lerp(1.1, 0.02, kf)];
+  c.strokeStyle = '#8c8781'; c.lineCap = 'round';
+  segs.forEach(([l, w], i) => { const ly = l * Math.cos(Math.min(1.5, bends.slice(0, i + 1).reduce((p, q) => p + q, 0) * 0.55)); c.lineWidth = w * 2; c.beginPath(); c.moveTo(x, y); x += tr * 0.05; y -= ly; c.lineTo(x, y); c.stroke(); });
+  c.fillStyle = 'rgba(190,184,176,0.8)'; c.beginPath(); c.ellipse(x, y + 2, 2.2, 3, 0, 0, 7); c.fill();                                // 爪
+  c.restore();
+}
 function ghostFace(c, x, y, s, o = {}) {      // すき間の奥の女の人(顔の左半分は戸に隠れる)
-  c.save(); c.translate(x, y); c.scale(s, s);
+  c.save(); c.translate(x, y - (o.look === 'up' ? 5 : 0)); c.scale(s, s); if (o.look === 'up') c.rotate(-0.04);
   c.fillStyle = '#040306'; c.beginPath(); c.ellipse(4, -10, 58, 72, 0, 0, 7); c.fill(); c.fillRect(-54, -10, 112, 260);   // 髪
   const g = c.createRadialGradient(20, 8, 2, 10, 14, 56); g.addColorStop(0, '#8e8a83'); g.addColorStop(0.55, '#4e4b47'); g.addColorStop(1, '#141313'); c.fillStyle = g; c.beginPath(); c.ellipse(8, 10, 36, 50, 0, 0, 7); c.fill();
   c.fillStyle = 'rgba(20,16,18,0.55)'; c.beginPath(); c.ellipse(18, 0, 15, 10, 0, 0, 7); c.fill();                       // 目のくぼみ
@@ -78,13 +98,7 @@ function ghostFace(c, x, y, s, o = {}) {      // すき間の奥の女の人(顔
   c.strokeStyle = 'rgba(4,3,6,0.75)'; c.lineCap = 'round'; for (const [x0, w, bend] of [[2, 2.2, 6], [33, 1.6, -5]]) { c.lineWidth = w; c.beginPath(); c.moveTo(x0, -30); c.bezierCurveTo(x0 + bend, 0, x0 - bend, 40, x0 + 2, 86); c.stroke(); }   // 顔にかかる髪(数本だけ)
   c.fillStyle = '#040306'; c.beginPath(); c.moveTo(-40, -32); c.quadraticCurveTo(10, -60, 50, -28); c.lineTo(48, -4); c.quadraticCurveTo(30, -10, 10, -6); c.quadraticCurveTo(-4, 0, -6, 20); c.lineTo(-8, 110); c.lineTo(-40, 110); c.closePath(); c.fill();   // 前髪(顔の左半分と額をおおう)
   c.fillStyle = 'rgba(0,0,0,0.45)'; c.beginPath(); c.ellipse(-2, 30, 22, 46, 0, 0, 7); c.fill();   // 影
-  if (o.point > 0) {   // 上を指さす: 顔の横で腕を立て、人さし指を天井へ。腕は暗がりの中、手だけが浮かぶ
-    const k = o.point, hx = 46, hy = lerp(150, -112, k);
-    c.strokeStyle = '#3c3a37'; c.lineCap = 'round'; c.lineWidth = 15; c.beginPath(); c.moveTo(50, 240); c.quadraticCurveTo(54, (240 + hy) / 2, hx, hy + 40); c.stroke();
-    c.fillStyle = '#8c8880'; c.beginPath(); c.ellipse(hx, hy + 18, 12, 17, 0, 0, 7); c.fill();                       // にぎった手
-    c.strokeStyle = '#6e6a63'; c.lineWidth = 2; c.beginPath(); c.moveTo(hx - 9, hy + 22); c.lineTo(hx + 8, hy + 22); c.moveTo(hx - 9, hy + 29); c.lineTo(hx + 8, hy + 29); c.stroke();
-    c.strokeStyle = '#a19c94'; c.lineWidth = 8; c.beginPath(); c.moveTo(hx - 3, hy + 6); c.lineTo(hx - 3, hy + 6 - 44 * k); c.stroke();   // 立てた人さし指
-  }
+  if (o.point > 0) pointArm(c, o.point, o.pointF || 0, o.tt || 0);
   c.restore();
 }
 function closet(t, L, o) {
@@ -252,8 +266,8 @@ function render(t) {
     else if (t < EV.tapeon) { room(t, f, camL({ z: 1.15, cx: 540, cy: 840 }, { z: 1.6, cx: 540, cy: 760 }, prog(t, EV.morn1, EV.tapeon)), { L: 1, day: true, gap: 30 }); fadeIn(EV.morn1); grain = 0.07; }
     else if (t < EV.n2) { room(t, f, camL(WIDE, { z: 1.25, cx: 540, cy: 820 }, prog(t, EV.tapeon, EV.n2)), { L: 0.62, gap: 0, tape: 'on' }); fadeIn(EV.tapeon); }
     else if (t < EV.n3) {       // 2日目の夜: テープがはがされ、女の人が上を指さす
-      const k = ease(prog(t, EV.n2 + 0.3, EV.n2 + 2.4)), up = ease(prog(t, EV.point + 0.7, EV.point + 2.0));
-      room(t, f, camL(camL(WIDE, { z: 2.6, cx: 512, cy: 600 }, k), { z: 2.3, cx: 515, cy: 470 }, up), { L: 0.5, gap: 96, tape: 'torn', ghost: ease(prog(t, EV.n2 + 1.6, EV.n2 + 2.6)), face: { look: t >= EV.point ? 'up' : '', point: ease(prog(t, EV.point - 0.2, EV.point + 0.6)) } }); fadeIn(EV.n2); }
+      const k = ease(prog(t, EV.n2 + 0.3, EV.n2 + 2.4)), up = ease(prog(t, EV.point + 1.7, EV.point + 3.2));   // 指が伸びきってから、指の先(天井)へゆっくり目をやる
+      room(t, f, camL(camL(WIDE, { z: 2.7, cx: 512, cy: 590 }, k), { z: 2.3, cx: 515, cy: 480 }, up), { L: 0.5, gap: 96, tape: 'torn', ghost: ease(prog(t, EV.n2 + 1.6, EV.n2 + 2.6)), face: { look: t >= EV.point - 0.3 ? 'up' : '', point: ease(prog(t, EV.point - 1.0, EV.point + 1.0)), pointF: ease(prog(t, EV.point + 0.7, EV.point + 1.5)), tt: t } }); fadeIn(EV.n2); }
     else if (t < EV.morn2) {    // 口の動き: に・げ・て
       let m = ''; EV.mouth.forEach((tm, i) => { if (t >= tm - 0.05 && t < tm + 0.38) m = ['i', 'e', 'te'][i]; });
       room(t, f, camL({ z: 4.6, cx: 528, cy: 640 }, { z: 5.2, cx: 530, cy: 645 }, prog(t, EV.n3, EV.morn2)), { L: 0.5, gap: 58, ghost: 1, face: { mouth: m } }); fadeIn(EV.n3, 0.25);
