@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Seishun 18 Routes</title>
+<link rel="stylesheet" href="fonts/500.css">
+<link rel="stylesheet" href="fonts/800.css">
+<style>
+  html,body{margin:0;background:#222;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timing.js"></script>
+<script>
+// ------------------------------------------------------------
+// 青春18きっぷで巡るおすすめルート5選 (9:16 ショート動画)
+// render(t) は時刻 t[秒] のフレームを決定論的に描画する。
+// シーン尺と字幕は narrate.py が書き出す timing.js(ナレーション長に合わせて自動決定)
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = '"M PLUS Rounded 1c","IPAPGothic",sans-serif';
+const FPS = 30, DURATION = window.TIMING.total;
+const C = {
+  paper: '#FBF6EC', ink: '#2B2A33', ink2: '#5E5B66', ink3: '#8F8A93', line: '#E4DCCB',
+  ticket: '#F3E7C9', accent: '#E9543D', mint: '#2FA67A',
+};
+
+const ROUTES = {
+  tokaido: {
+    no: 1, name: '東海道本線', sub: '東京 → 大阪', color: '#EE7A1F',
+    stations: ['東京', '熱海', '静岡', '浜松', '名古屋', '米原', '大阪'],
+    chips: [['距離', '約556km'], ['所要', '約9時間'], ['普通運賃', '約9千円分']],
+    tag: '1日で元が取れる王道ルート',
+  },
+  gono: {
+    no: 2, name: '五能線', sub: '秋田 → 青森(快速リゾートしらかみ)', color: '#1F86C8',
+    stations: ['秋田', '東能代', '十二湖', '深浦', '千畳敷', '五所川原', '弘前', '青森'],
+    chips: [['五能線', '約147km'], ['快速の指定席', '指定席券でOK'], ['見どころ', '日本海の夕日']],
+    tag: '車窓いっぱいの日本海',
+  },
+  tadami: {
+    no: 3, name: '只見線', sub: '会津若松 → 小出', color: '#2E9457',
+    stations: ['会津若松', '会津坂下', '会津宮下', '会津川口', '只見', '大白川', '小出'],
+    chips: [['距離', '約135km'], ['全線再開', '2022年10月'], ['注意', '本数が少ない']],
+    tag: '川霧と鉄橋の絶景',
+  },
+  yodo: {
+    no: 4, name: '予土線', sub: '宇和島 → 窪川', color: '#14A096',
+    stations: ['宇和島', '北宇和島', '松丸', '江川崎', '十川', '土佐大正', '窪川'],
+    chips: [['予土線', '約76km'], ['名物', 'しまんトロッコ'], ['見どころ', '沈下橋']],
+    tag: '四万十川に寄り添う清流ローカル線',
+  },
+  sanin: {
+    no: 5, name: '山陰本線', sub: '京都 → 下関方面', color: '#7A57C2',
+    stations: ['京都', '城崎温泉', '餘部', '鳥取', '松江', '益田', '下関'],
+    chips: [['距離', '約674km'], ['日本一', '長い在来線'], ['目安', '2日がかり']],
+    tag: '日本海沿いを2日かけて走破',
+  },
+};
+const ORDER = ['tokaido', 'gono', 'tadami', 'yodo', 'sanin'];
+
+// ---------- ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const easeInOut = t => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+const backOut = t => { t = clamp(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const seg = (t, s, d) => clamp((t - s) / d);
+
+function font(size, weight = 800) { return `${weight} ${size}px ${FONT}`; }
+function text(str, x, y, { size = 48, weight = 800, color = C.ink, align = 'left', base = 'alphabetic', alpha = 1, max = 0, stroke = 0, strokeColor = '#fff' } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = font(size, weight);
+  if (max) { const w = ctx.measureText(str).width; if (w > max) { size *= max / w; ctx.font = font(size, weight); } }
+  ctx.textAlign = align; ctx.textBaseline = base;
+  if (stroke) { ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.lineJoin = 'round'; ctx.strokeText(str, x, y); }
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+  ctx.restore();
+}
+function rrPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function rrect(x, y, w, h, r, color, alpha = 1) {
+  if (w <= 0 || h <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; rrPath(x, y, w, h, r); ctx.fill(); ctx.restore();
+}
+function shadowed(fn, blur = 30, oy = 10, col = 'rgba(40,30,20,0.18)') {
+  ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = blur; ctx.shadowOffsetY = oy; fn(); ctx.restore();
+}
+function circle(x, y, r, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+}
+// 決定論的な疑似ノイズ(稜線用)
+function ridge(x, seed, oct = 4) {
+  let v = 0, a = 1, f = 0.004;
+  for (let i = 0; i < oct; i++) { v += a * Math.sin(x * f + seed * (i + 1) * 1.7 + i * 2.3); a *= 0.5; f *= 2.1; }
+  return v;
+}
+function fillPoly(pts, color, alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = color; ctx.beginPath();
+  pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function mountains(baseY, amp, seed, color, alpha = 1, sharp = false) {
+  const pts = [[-50, H]];
+  for (let x = -50; x <= W + 50; x += 12) {
+    let r = ridge(x, seed);
+    if (sharp) r = 1 - Math.abs(r);
+    pts.push([x, baseY - r * amp]);
+  }
+  pts.push([W + 50, H]);
+  fillPoly(pts, color, alpha);
+}
+function sky(top, bottom, y1 = 1050) {
+  const g = ctx.createLinearGradient(0, 0, 0, y1); g.addColorStop(0, top); g.addColorStop(1, bottom);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, y1);
+}
+function cloud(x, y, s, alpha = 0.9, col = '#fff') {
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = col; ctx.beginPath();
+  [[0, 0, 60], [55, -25, 50], [105, 0, 55], [50, 15, 55]].forEach(([dx, dy, r]) => { ctx.moveTo(x + dx * s + r * s, y + dy * s); ctx.arc(x + dx * s, y + dy * s, r * s, 0, Math.PI * 2); });
+  ctx.fill(); ctx.restore();
+}
+function sea(y, c1, c2, t, lines = '#ffffff', y1 = 1050) {
+  const g = ctx.createLinearGradient(0, y, 0, y1); g.addColorStop(0, c1); g.addColorStop(1, c2);
+  ctx.fillStyle = g; ctx.fillRect(0, y, W, y1 - y);
+  ctx.save(); ctx.strokeStyle = lines; ctx.lineCap = 'round';
+  for (let i = 0; i < 14; i++) {
+    const yy = y + 14 + i * i * 2.6; const len = 30 + i * 6;
+    ctx.globalAlpha = 0.18 + i * 0.015; ctx.lineWidth = 2 + i * 0.25;
+    for (let k = 0; k < 6; k++) {
+      const xx = ((k * 211 + i * 97 + t * (14 + i * 3)) % (W + 200)) - 100;
+      ctx.beginPath(); ctx.moveTo(xx, yy); ctx.lineTo(xx + len, yy); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+function trees(baseY, seed, color, n = 30, size = 40) {
+  for (let i = 0; i < n; i++) {
+    const x = ((i * 137.5 + seed * 53) % (W + 80)) - 40;
+    const s = size * (0.7 + 0.5 * Math.abs(Math.sin(i * 12.9 + seed)));
+    const y = baseY + Math.sin(i * 3.1 + seed) * 8;
+    fillPoly([[x, y - s * 1.6], [x - s * 0.55, y], [x + s * 0.55, y]], color);
+  }
+}
+
+// ---------- 列車 ----------
+function train(x, y, color, { cars = 2, carW = 230, h = 78, dir = 1, kind = 'emu', alpha = 1 } = {}) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  for (let c = 0; c < cars; c++) {
+    const cx = x - dir * c * (carW + 10) - (dir < 0 ? carW : 0);
+    const nose = (c === 0) ? dir : 0;
+    // 車体
+    ctx.fillStyle = kind === 'trolley' ? '#F4C430' : '#FFFFFF';
+    ctx.beginPath();
+    const r = 18, x0 = cx, x1 = cx + carW, y0 = y - h, y1 = y;
+    ctx.moveTo(x0 + r, y0);
+    ctx.lineTo(x1 - (nose > 0 ? 40 : r), y0);
+    if (nose > 0) ctx.quadraticCurveTo(x1, y0 + 4, x1, y0 + 40); else ctx.arcTo(x1, y0, x1, y0 + r, r);
+    ctx.lineTo(x1, y1 - 6); ctx.lineTo(x0, y1 - 6);
+    if (nose < 0) { ctx.lineTo(x0, y0 + 40); ctx.quadraticCurveTo(x0, y0 + 4, x0 + 40, y0); } else ctx.arcTo(x0, y0, x0 + r, y0, r);
+    ctx.closePath(); ctx.fill();
+    // 帯
+    ctx.fillStyle = kind === 'trolley' ? '#2E7D4F' : color;
+    ctx.fillRect(cx + 2, y - 28, carW - 4, 14);
+    ctx.fillRect(cx + 2, y - 12, carW - 4, 6);
+    // 窓
+    ctx.fillStyle = kind === 'trolley' ? 'rgba(60,40,10,0.35)' : '#3B4A5C';
+    const nw = kind === 'trolley' ? 4 : 5;
+    for (let i = 0; i < nw; i++) {
+      const ww = kind === 'trolley' ? 40 : 30;
+      const wx = cx + 22 + i * ((carW - 44 - ww) / (nw - 1));
+      rrPath(wx, y0 + 14, ww, kind === 'trolley' ? 30 : 26, 6); ctx.fill();
+    }
+    if (nose !== 0) { // 前面窓
+      ctx.fillStyle = '#3B4A5C';
+      const fx = nose > 0 ? x1 - 34 : x0 + 8;
+      rrPath(fx, y0 + 12, 26, 28, 6); ctx.fill();
+    }
+    // 台車
+    ctx.fillStyle = '#3A3A40';
+    [cx + 40, cx + carW - 40].forEach(wx => { circle(wx - 14, y, 10, '#3A3A40'); circle(wx + 14, y, 10, '#3A3A40'); });
+  }
+  ctx.restore();
+}
+function rails(y, color = '#6B5E50', alpha = 1) {
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.fillStyle = color; ctx.fillRect(0, y + 8, W, 6);
+  ctx.globalAlpha *= 0.5;
+  for (let x = 0; x < W; x += 34) ctx.fillRect(x, y + 14, 18, 6);
+  ctx.restore();
+}
+// 列車の x 位置(シーン内時刻 lt で左→右へ)
+function trainX(lt, dur, span = 1700) { return lerp(-520, -520 + span, easeInOut(seg(lt, 0.2, dur - 0.4)) * 0.55 + seg(lt, 0.2, dur - 0.4) * 0.45); }
+
+// ---------- 風景(シーンごと) ----------
+const SCENERY = {
+  title(lt) {
+    sky('#7CC6F2', '#DDF1FB');
+    circle(860, 230, 80, '#FFF4C2', 0.9);
+    cloud(120 + lt * 6, 260, 1.1); cloud(640 - lt * 4, 420, 0.8, 0.8);
+    mountains(820, 70, 3, '#9FC9A8'); mountains(900, 50, 7, '#6FAE7E');
+    ctx.fillStyle = '#C9B48F'; ctx.fillRect(0, 940, W, 110);
+    rails(930);
+    train(trainX(lt, 8, 2000), 930, '#EE7A1F', { cars: 3 });
+  },
+  tokaido(lt, dur) {
+    sky('#69B7EC', '#E3F3FC');
+    cloud(80 + lt * 5, 210, 0.9); cloud(720 - lt * 3, 330, 0.7, 0.8);
+    // 富士山
+    fillPoly([[180, 900], [540, 330], [900, 900]], '#5F86B5');
+    fillPoly([[460, 457], [540, 330], [620, 457], [590, 440], [560, 470], [530, 445], [500, 475]], '#FFFFFF');
+    mountains(840, 40, 11, '#8DBA8E');
+    sea(880, '#4FA3D9', '#2E7DB5', lt);
+    ctx.fillStyle = '#D9C9A3'; ctx.fillRect(0, 945, W, 110);
+    rails(940);
+    train(trainX(lt, dur), 940, this.color, { cars: 3 });
+  },
+  gono(lt, dur) {
+    const g = ctx.createLinearGradient(0, 0, 0, 760);
+    g.addColorStop(0, '#3E4E8C'); g.addColorStop(0.55, '#F08C5A'); g.addColorStop(1, '#FFD27A');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 760);
+    const sy = 650 + lt * 6;
+    circle(620, sy, 85, '#FFE9A8', 0.95);
+    sea(720, '#E9845C', '#2E4C7A', lt, '#FFE3B0');
+    // 夕日の反射
+    ctx.save(); ctx.globalAlpha = 0.5; ctx.fillStyle = '#FFE2A0';
+    for (let i = 0; i < 9; i++) { const w = 160 - i * 12 + Math.sin(lt * 2 + i) * 14; ctx.fillRect(620 - w / 2, 735 + i * 18, w, 6); }
+    ctx.restore();
+    // 千畳敷の岩棚
+    fillPoly([[-20, 880], [140, 846], [320, 858], [430, 872], [470, 900], [-20, 905]], '#5B4B45');
+    fillPoly([[680, 890], [800, 852], [990, 846], [1100, 870], [1100, 905], [680, 905]], '#4D3F3A');
+    ctx.fillStyle = '#3F3433'; ctx.fillRect(0, 900, W, 150);
+    rails(938, '#2A2224');
+    train(trainX(lt, dur), 938, this.color, { cars: 3 });
+  },
+  tadami(lt, dur) {
+    sky('#A8C8D8', '#E8F0EE', 700);
+    mountains(560, 130, 5, '#7F9E8C', 1, true);
+    mountains(660, 110, 9, '#4E7D5E', 1, true);
+    // 川
+    ctx.fillStyle = '#5E8FA0'; ctx.fillRect(0, 700, W, 350);
+    ctx.save(); ctx.globalAlpha = 0.25; ctx.fillStyle = '#9FD0DD';
+    for (let i = 0; i < 10; i++) ctx.fillRect(((i * 173 + lt * 20) % (W + 200)) - 100, 760 + i * 28, 140, 4);
+    ctx.restore();
+    // 川霧
+    for (let i = 0; i < 5; i++) {
+      const g = ctx.createRadialGradient(0, 0, 10, 0, 0, 300);
+      g.addColorStop(0, 'rgba(255,255,255,0.75)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.save(); ctx.translate(((i * 260 + lt * 18) % (W + 400)) - 200, 690 + (i % 2) * 40); ctx.scale(1.8, 0.35);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 300, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    }
+    // アーチ橋
+    const by = 640;
+    ctx.save(); ctx.strokeStyle = '#3D4A52'; ctx.lineWidth = 10;
+    ctx.beginPath(); ctx.moveTo(60, 900); ctx.quadraticCurveTo(540, 520, 1020, 900); ctx.stroke();
+    ctx.lineWidth = 4;
+    for (let x = 100; x <= 980; x += 40) {
+      const tt = (x - 60) / 960; const ay = (1 - tt) * (1 - tt) * 900 + 2 * (1 - tt) * tt * 520 + tt * tt * 900;
+      ctx.beginPath(); ctx.moveTo(x, by + 12); ctx.lineTo(x, ay); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = '#3D4A52'; ctx.fillRect(-10, by + 8, W + 20, 16);
+    rails(by - 6, '#2D363C');
+    train(trainX(lt, dur), by - 6, this.color, { cars: 2, carW: 250 });
+    // 手前の木
+    mountains(1000, 40, 2, '#2F5A3D');
+    trees(1010, 4, '#24472F', 18, 44);
+  },
+  yodo(lt, dur) {
+    sky('#7FD0F0', '#E6F7FB', 700);
+    cloud(200 - lt * 4, 200, 0.9); cloud(760 + lt * 3, 300, 0.7, 0.8);
+    mountains(600, 80, 13, '#7DBF7A');
+    mountains(680, 60, 17, '#4F9F5C');
+    // 四万十川
+    ctx.fillStyle = '#3FA7B5'; ctx.fillRect(0, 740, W, 320);
+    ctx.save(); ctx.globalAlpha = 0.3; ctx.fillStyle = '#BDEFF2';
+    for (let i = 0; i < 12; i++) ctx.fillRect(((i * 151 + lt * 26) % (W + 200)) - 100, 770 + i * 22, 120, 4);
+    ctx.restore();
+    // 河原
+    fillPoly([[0, 700], [W, 690], [W, 745], [0, 760]], '#DCD3B8');
+    // 沈下橋(欄干のない低い橋)
+    ctx.fillStyle = '#C9C3B5'; ctx.fillRect(-10, 868, W + 20, 18);
+    ctx.fillStyle = '#A9A294';
+    for (let x = 60; x < W; x += 160) ctx.fillRect(x, 886, 22, 40);
+    // 線路(山すそ)
+    rails(690, '#5F5444');
+    train(trainX(lt, dur), 690, this.color, { cars: 2, carW: 220, kind: 'trolley' });
+    trees(1035, 9, '#2F7A44', 14, 36);
+  },
+  sanin(lt, dur) {
+    const g = ctx.createLinearGradient(0, 0, 0, 760);
+    g.addColorStop(0, '#5F7FC4'); g.addColorStop(0.6, '#F4A77A'); g.addColorStop(1, '#FCD9A4');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 760);
+    circle(260, 640, 70, '#FFF0C0', 0.9);
+    sea(700, '#F0A57E', '#3B5D93', lt, '#FFE2B8');
+    // 断崖
+    fillPoly([[700, 1050], [700, 560], [760, 470], [880, 430], [1100, 440], [1100, 1050]], '#6E5C6B');
+    fillPoly([[-20, 1050], [-20, 520], [80, 470], [170, 520], [200, 1050]], '#5E4D5C');
+    // 高架橋(コンクリート橋)
+    const by = 560;
+    ctx.fillStyle = '#D9D3CC'; ctx.fillRect(140, by + 10, 600, 22);
+    for (let x = 200; x < 720; x += 130) { ctx.fillStyle = '#C8C0B8'; ctx.fillRect(x, by + 30, 26, 520); }
+    rails(by, '#5A5050');
+    train(trainX(lt, dur), by, this.color, { cars: 2, carW: 230 });
+  },
+  rules(lt) {
+    sky('#FFE7A8', '#FFF6DE');
+    for (let i = 0; i < 14; i++) circle((i * 173) % W, 80 + (i * 97) % 900, 6 + (i % 3) * 4, '#F7C85A', 0.5);
+  },
+  outro(lt) {
+    sky('#7CC6F2', '#E0F3FB');
+    cloud(140 + lt * 5, 220, 1); cloud(700 - lt * 3, 360, 0.8, 0.8);
+    mountains(880, 60, 21, '#8CC59A'); mountains(940, 40, 23, '#5FA673');
+    ctx.fillStyle = '#C9B48F'; ctx.fillRect(0, 990, W, 80);
+    rails(985);
+    train(lerp(-500, 1500, seg(lt, 0, 6)), 985, '#7A57C2', { cars: 3 });
+  },
+};
+
+// ---------- 共通パーツ ----------
+function paperPanel(y) {
+  ctx.fillStyle = C.paper;
+  ctx.beginPath(); ctx.moveTo(0, y + 40); ctx.quadraticCurveTo(W / 2, y - 40, W, y + 40); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+}
+function topBadge(r, a) {
+  shadowed(() => rrect(50, 70, 520, 78, 39, 'rgba(255,255,255,0.94)', a), 20, 6);
+  text('青春18きっぷ おすすめルート', 310, 122, { size: 34, align: 'center', color: C.ink2, alpha: a });
+  if (r) {
+    shadowed(() => circle(W - 120, 109, 62, r.color, a), 20, 6);
+    text(String(r.no), W - 120, 132, { size: 66, align: 'center', color: '#fff', alpha: a });
+    text('/5', W - 64, 168, { size: 28, align: 'center', color: '#fff', alpha: a, stroke: 6, strokeColor: r.color });
+  }
+}
+function stationLine(r, lt, dur, y, a) {
+  const x0 = 110, x1 = 890, n = r.stations.length;
+  const p = seg(lt, 0.6, dur - 1.4);
+  ctx.save(); ctx.globalAlpha *= a;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = C.line; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+  ctx.strokeStyle = r.color; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(lerp(x0, x1, p), y); ctx.stroke();
+  r.stations.forEach((s, i) => {
+    const x = lerp(x0, x1, i / (n - 1));
+    const reached = p >= i / (n - 1) - 1e-6;
+    const end = i === 0 || i === n - 1;
+    circle(x, y, end ? 20 : 14, '#fff');
+    circle(x, y, end ? 13 : 8, reached ? r.color : '#CFC6B4');
+    const up = i % 2 === 0;
+    text(s, x, up ? y - 38 : y + 62, { size: end ? 32 : 27, weight: end ? 800 : 500, align: 'center', color: end ? C.ink : C.ink2, max: 150 });
+  });
+  // 現在位置マーカー
+  const mx = lerp(x0, x1, p);
+  shadowed(() => circle(mx, y, 24, r.color), 12, 4);
+  circle(mx, y, 10, '#fff');
+  ctx.restore();
+}
+function chips(r, lt, y) {
+  const w = 270, gap = 15, x0 = 60;
+  r.chips.forEach(([k, v], i) => {
+    const a = easeOut(seg(lt, 0.9 + i * 0.25, 0.4));
+    const dy = (1 - a) * 30;
+    const x = x0 + i * (w + gap);
+    shadowed(() => rrect(x, y + dy, w, 132, 26, '#fff', a), 18, 6, 'rgba(60,40,20,0.12)');
+    rrect(x, y + dy, 10, 132, 5, r.color, a);
+    text(k, x + w / 2 + 4, y + dy + 46, { size: 28, weight: 500, align: 'center', color: C.ink3, alpha: a, max: w - 40 });
+    text(v, x + w / 2 + 4, y + dy + 104, { size: 42, align: 'center', color: C.ink, alpha: a, max: w - 36 });
+  });
+}
+function subtitle(t) {
+  const cues = window.TIMING.subs;
+  let cur = null;
+  for (let i = 0; i < cues.length; i++) {
+    const [a, b, s] = cues[i];
+    const next = cues[i + 1] ? cues[i + 1][0] : b + 0.4;
+    if (t >= a && t < Math.min(next, b + 0.4)) { cur = cues[i]; break; }
+  }
+  if (!cur) return;
+  const [a, b, s] = cur;
+  const al = Math.min(easeOut(seg(t, a, 0.12)), 1);
+  ctx.save(); ctx.font = font(50);
+  // 折り返し(最大2行・幅 860)
+  let lines = [s];
+  if (ctx.measureText(s).width > 880) { // 2行に均等割り
+    const chars = [...s]; const half = Math.ceil(chars.length / 2);
+    lines = [chars.slice(0, half).join(''), chars.slice(half).join('')];
+  }
+  // 行頭禁則(句読点を前の行へ)
+  for (let i = 1; i < lines.length; i++) while (/^[、。?!」]/.test(lines[i])) { lines[i - 1] += lines[i][0]; lines[i] = lines[i].slice(1); }
+  ctx.restore();
+  const lh = 70, bh = lines.length * lh + 40, by = 1600 - bh / 2;
+  shadowed(() => rrect(50, by, W - 100, bh, 30, 'rgba(43,42,51,0.88)', al), 20, 6);
+  lines.forEach((l, i) => text(l, W / 2, by + 20 + lh * i + 52, { size: 50, align: 'center', color: '#fff', alpha: al }));
+}
+
+// ---------- シーン描画 ----------
+function drawRoute(id, lt, dur) {
+  const r = ROUTES[id];
+  ctx.save();
+  // ゆっくり寄るカメラ
+  const z = 1 + 0.04 * seg(lt, 0, dur);
+  ctx.translate(W / 2, 520); ctx.scale(z, z); ctx.translate(-W / 2, -520);
+  SCENERY[id].call(r, lt, dur);
+  ctx.restore();
+  paperPanel(1010);
+  topBadge(r, 1);
+  // タグ
+  const ta = easeOut(seg(lt, 0.3, 0.5));
+  ctx.save(); ctx.font = font(36); const tw = ctx.measureText(r.tag).width + 60; ctx.restore();
+  shadowed(() => rrect(60, 182 - (1 - ta) * 20, tw, 64, 32, r.color, ta), 14, 4);
+  text(r.tag, 90, 227 - (1 - ta) * 20, { size: 36, color: '#fff', alpha: ta });
+  // 路線名
+  const na = backOut(seg(lt, 0.15, 0.55));
+  ctx.save(); ctx.translate(80, 1130); ctx.scale(lerp(0.85, 1, na), lerp(0.85, 1, na));
+  text(r.name, 0, 0, { size: 104, color: C.ink, alpha: clamp(na) });
+  ctx.restore();
+  rrect(80, 1152, 160 * easeOut(seg(lt, 0.4, 0.5)), 10, 5, r.color);
+  text(r.sub, 80, 1210, { size: 38, weight: 500, color: C.ink2, alpha: easeOut(seg(lt, 0.45, 0.5)), max: 820 });
+  stationLine(r, lt, dur, 1300, easeOut(seg(lt, 0.5, 0.5)));
+  chips(r, lt, 1400 - 30);
+}
+
+function drawTitle(lt, dur) {
+  SCENERY.title(lt);
+  paperPanel(1010);
+  // きっぷ風カード
+  const a = backOut(seg(lt, 0.1, 0.7));
+  ctx.save();
+  ctx.translate(W / 2, 560); ctx.rotate(lerp(-0.12, -0.03, clamp(a))); ctx.scale(lerp(0.7, 1, a), lerp(0.7, 1, a));
+  ctx.globalAlpha = clamp(a * 1.5);
+  shadowed(() => rrect(-430, -250, 860, 500, 28, C.ticket), 40, 16, 'rgba(40,30,10,0.3)');
+  // 地紋
+  ctx.save(); rrPath(-430, -250, 860, 500, 28); ctx.clip();
+  ctx.strokeStyle = 'rgba(200,170,110,0.35)'; ctx.lineWidth = 3;
+  for (let i = -30; i < 30; i++) { ctx.beginPath(); ctx.moveTo(i * 40 - 300, -260); ctx.lineTo(i * 40 + 300, 260); ctx.stroke(); }
+  ctx.restore();
+  // 切り欠き
+  circle(-430, 0, 34, '#BFE3F4'); circle(430, 0, 34, '#C9DFE9');
+  ctx.setLineDash([12, 12]); ctx.strokeStyle = 'rgba(120,90,40,0.4)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(250, -230); ctx.lineTo(250, 230); ctx.stroke(); ctx.setLineDash([]);
+  text('普通列車 乗り放題の旅', -380, -160, { size: 36, weight: 500, color: '#8A6A3A' });
+  text('青春18きっぷで巡る', -380, -60, { size: 66, color: C.ink });
+  text('おすすめ', -380, 70, { size: 96, color: C.accent });
+  text('ルート', -380, 190, { size: 96, color: C.accent });
+  text('5', 100, 190, { size: 230, color: C.ink, align: 'left' });
+  text('選', 340, 70, { size: 84, color: C.ink, align: 'center' });
+  text('保存版', 340, 170, { size: 40, weight: 500, color: '#8A6A3A', align: 'center' });
+  ctx.restore();
+  // 下段
+  const b = easeOut(seg(lt, 1.0, 0.6));
+  text('全国の普通・快速列車で行く', W / 2, 1150, { size: 52, color: C.ink, align: 'center', alpha: b });
+  text('絶景ローカル線の旅', W / 2, 1230, { size: 52, color: C.ink, align: 'center', alpha: b });
+  const c = easeOut(seg(lt, 1.5, 0.6));
+  shadowed(() => rrect(W / 2 - 300, 1290, 600, 80, 40, '#B5477A', c), 14, 4);
+  text('案内:四国めたん', W / 2, 1345, { size: 38, color: '#fff', align: 'center', alpha: c });
+}
+
+function mark(m, x, y, a) {
+  ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (m === '○') { ctx.moveTo(x - 14, y + 1); ctx.lineTo(x - 4, y + 12); ctx.lineTo(x + 15, y - 11); }
+  else { ctx.moveTo(x - 11, y - 11); ctx.lineTo(x + 11, y + 11); ctx.moveTo(x + 11, y - 11); ctx.lineTo(x - 11, y + 11); }
+  ctx.stroke(); ctx.restore();
+}
+function drawRules(lt, dur) {
+  SCENERY.rules(lt);
+  paperPanel(1010);
+  topBadge(null, 1);
+  text('きっぷの基本ルール', W / 2, 300, { size: 80, align: 'center', alpha: easeOut(seg(lt, 0.1, 0.5)) });
+  const cards = [['3日間用', '10,000', '1日あたり 約3,333円'], ['5日間用', '12,050', '1日あたり 2,410円']];
+  cards.forEach(([k, v, n], i) => {
+    const a = backOut(seg(lt, 0.4 + i * 0.35, 0.6));
+    const x = 70 + i * 480, y = 380;
+    ctx.save(); ctx.translate(x + 225, y + 220); ctx.scale(lerp(0.8, 1, a), lerp(0.8, 1, a)); ctx.translate(-x - 225, -y - 220);
+    ctx.globalAlpha = clamp(a);
+    shadowed(() => rrect(x, y, 450, 440, 30, C.ticket), 30, 12, 'rgba(60,40,10,0.22)');
+    rrect(x, y, 450, 100, 30, i ? C.accent : '#E89B2A');
+    ctx.fillStyle = i ? C.accent : '#E89B2A'; ctx.fillRect(x, y + 60, 450, 40);
+    text(k, x + 225, y + 70, { size: 50, color: '#fff', align: 'center' });
+    text(v, x + 225, y + 270, { size: 112, color: C.ink, align: 'center' });
+    text('円', x + 225, y + 340, { size: 44, color: C.ink2, align: 'center' });
+    text(n, x + 225, y + 405, { size: 30, weight: 500, color: '#8A6A3A', align: 'center' });
+    ctx.restore();
+  });
+  const rows = [
+    ['○', 'JRの普通・快速列車が乗り放題', C.mint],
+    ['○', '連続した日数で使う(1人用)', C.mint],
+    ['×', '特急・新幹線は乗れない', C.accent],
+  ];
+  rows.forEach(([m, s, col], i) => {
+    const a = easeOut(seg(lt, 2.2 + i * 1.6, 0.5));
+    const y = 1110 + i * 115;
+    shadowed(() => rrect(60 + (1 - a) * 40, y - 62, 880, 96, 26, '#fff', a), 14, 4, 'rgba(60,40,20,0.1)');
+    circle(120 + (1 - a) * 40, y - 14, 32, col, a);
+    mark(m, 120 + (1 - a) * 40, y - 14, a);
+    text(s, 175 + (1 - a) * 40, y + 2, { size: 42, color: C.ink, alpha: a, max: 740 });
+  });
+  text('※2024年冬季以降のルール。発売期間・詳細はJR各社公式サイトで確認を', W / 2, 1450, { size: 26, weight: 500, color: C.ink3, align: 'center', alpha: easeOut(seg(lt, 3, 0.5)), max: 900 });
+}
+
+function drawOutro(lt, dur) {
+  SCENERY.outro(lt);
+  paperPanel(1060);
+  const a = easeOut(seg(lt, 0.1, 0.5));
+  shadowed(() => rrect(70, 150, 940, 700, 36, 'rgba(255,255,255,0.95)', a), 30, 10);
+  text('どのルートに乗りたい?', W / 2, 260, { size: 66, align: 'center', alpha: a });
+  ORDER.forEach((id, i) => {
+    const r = ROUTES[id];
+    const b = easeOut(seg(lt, 0.3 + i * 0.15, 0.4));
+    const y = 370 + i * 100;
+    circle(170, y - 16, 34, r.color, b);
+    text(String(r.no), 170, y + 2, { size: 44, color: '#fff', align: 'center', alpha: b });
+    text(r.name, 230, y + 4, { size: 52, alpha: b });
+    text(r.sub.replace(/(.*)/, ''), 920, y + 2, { size: 30, weight: 500, color: C.ink3, align: 'right', alpha: b });
+  });
+  const c = easeOut(seg(lt, 1.2, 0.5));
+  shadowed(() => rrect(W / 2 - 380, 1130, 760, 110, 55, C.accent, c), 16, 6);
+  text('コメントで教えてね!', W / 2, 1205, { size: 56, color: '#fff', align: 'center', alpha: c });
+  text('ナレーション VOICEVOX:四国めたん / BGM 自作', W / 2, 1320, { size: 30, weight: 500, color: C.ink2, align: 'center', alpha: c });
+}
+
+function drawScene(sc, t) {
+  const lt = t - sc.start, dur = sc.dur;
+  if (sc.id === 'title') drawTitle(lt, dur);
+  else if (sc.id === 'rules') drawRules(lt, dur);
+  else if (sc.id === 'outro') drawOutro(lt, dur);
+  else drawRoute(sc.id, lt, dur);
+}
+
+const TRANS = 0.45; // 切り替え(右から左へスライド)
+function render(t) {
+  const scenes = window.TIMING.scenes;
+  let i = scenes.findIndex(s => t >= s.start && t < s.start + s.dur);
+  if (i < 0) i = scenes.length - 1;
+  const sc = scenes[i];
+  const lt = t - sc.start;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
+  if (i > 0 && lt < TRANS) {
+    const p = easeInOut(lt / TRANS);
+    ctx.save(); ctx.translate(-W * 0.35 * p, 0); drawScene(scenes[i - 1], sc.start - 0.001); ctx.restore();
+    ctx.save(); ctx.translate(W * (1 - p), 0);
+    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 40; ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H); ctx.shadowColor = 'transparent';
+    drawScene(sc, t); ctx.restore();
+  } else {
+    drawScene(sc, t);
+  }
+  // 最後 0.5 秒フェードアウト
+  const fo = seg(t, DURATION - 0.5, 0.5);
+  if (fo > 0) { ctx.fillStyle = `rgba(255,255,255,${fo})`; ctx.fillRect(0, 0, W, H); }
+  if (!window.NOSUB) subtitle(t);
+  // 進行バー
+  rrect(0, 0, W * clamp(t / DURATION), 8, 0, C.accent);
+}
+
+// 使用文字のフォントを事前ロード(unicode-range 分割フォントのため)
+window.fontsReady = (async () => {
+  const all = JSON.stringify(ROUTES) + JSON.stringify(window.TIMING.subs) + document.querySelector('script:not([src])').textContent;
+  await Promise.all([500, 800].map(w => document.fonts.load(`${w} 40px "M PLUS Rounded 1c"`, all)));
+  await document.fonts.ready;
+})();
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+if (!/capture/.test(location.search)) {
+  const t0 = performance.now();
+  window.fontsReady.then(() => {
+    const loop = () => { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+    loop();
+  });
+}
+</script>
+</body>
+</html>
