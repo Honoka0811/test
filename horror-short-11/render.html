@@ -46,7 +46,7 @@ const P = (X, Y, Z) => [540 + F * (X - CAMX) / Z + WDX, HOR + F * (CAMH - Y) / Z
 function quad(a, b, c, d, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.lineTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.closePath(); ctx.fill(); }
 const PORTAL = 160, SPEED = 13;
 function dist(t) {
-  const K = [[0, 70], [EV.l2s + 2.4, 118], [EV.l2e - 0.8, 140], [EV.t_in, PORTAL]];
+  const K = [[0, 70], [EV.l2s + 2.4, 124], [EV.l2e - 0.8, 145], [EV.t_in, PORTAL]];
   if (t >= EV.t_in) return PORTAL + SPEED * (t - EV.t_in);
   for (let i = 1; i < K.length; i++) if (t <= K[i][0]) return lerp(K[i - 1][1], K[i][1], (t - K[i - 1][0]) / (K[i][0] - K[i - 1][0]));
   return K[0][1];
@@ -122,8 +122,8 @@ function portal(t, d) {
     ctx.fillStyle = mix([10, 10, 12], [128, 128, 122], Lm); ctx.beginPath(); ctx.roundRect(s0[0], s1[1], s1[0] - s0[0], s0[1] - s1[1], (s1[0] - s0[0]) * 0.18); ctx.fill();
     const fs = (s1[0] - s0[0]) * 0.36; ctx.fillStyle = mix([4, 4, 4], [24, 24, 26], Lm); ctx.font = `800 ${fs}px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     '慰霊碑'.split('').forEach((ch, i) => ctx.fillText(ch, (s0[0] + s1[0]) / 2, s1[1] + (s0[1] - s1[1]) * (0.24 + i * 0.25)));
-    ctx.font = `800 ${fs * 0.32}px ${MIN}`; ['崩落事故', '犠牲者'].forEach((col, j) => col.split('').forEach((ch, i) => ctx.fillText(ch, s0[0] + (s1[0] - s0[0]) * (0.14 + 0.72 * j), s1[1] + (s0[1] - s1[1]) * (0.2 + i * 0.13))));
-    for (const fx of [-5.45, -4.55]) { const fb = P(fx, 0.3, zm - 0.3), r = 0.07 * F / zm; for (let i = 0; i < 7; i++) { ctx.fillStyle = mix([10, 10, 10], i % 3 ? [230, 226, 214] : [226, 190, 80], Lm * 0.95); ctx.beginPath(); ctx.arc(fb[0] + (hash(i * 7 + fx) - 0.5) * r * 3, fb[1] - r * (1.5 + hash(i + fx) * 2.5), r, 0, 7); ctx.fill(); } ctx.fillStyle = mix([6, 10, 6], [40, 80, 46], Lm); ctx.fillRect(fb[0] - r * 0.3, fb[1] - r * 1.6, r * 0.6, r * 1.6); } }
+    ctx.font = `800 ${fs * 0.3}px ${MIN}`; ['崩落事故犠牲者', '昭和五十三年十一月二十日'].forEach((col, j) => col.split('').forEach((ch, i) => ctx.fillText(ch, s0[0] + (s1[0] - s0[0]) * (0.12 + 0.76 * j), s1[1] + (s0[1] - s1[1]) * (0.09 + i * (j ? 0.073 : 0.12)))));
+    for (const fx of [-5.45, -4.55]) { const fb = P(fx, 0.3, zm - 0.3), r = 0.07 * F / zm; for (let i = 0; i < 7; i++) { ctx.fillStyle = mix([10, 10, 10], i % 3 ? [250, 248, 240] : [250, 214, 70], Lm); ctx.beginPath(); ctx.arc(fb[0] + (hash(i * 7 + fx) - 0.5) * r * 3, fb[1] - r * (1.5 + hash(i + fx) * 2.5), r, 0, 7); ctx.fill(); } ctx.fillStyle = mix([6, 10, 6], [40, 80, 46], Lm); ctx.fillRect(fb[0] - r * 0.3, fb[1] - r * 1.6, r * 0.6, r * 1.6); } }
 }
 
 // ---- ガラス: 外側の雨粒とワイパー、内側の曇りと手形 ----
@@ -187,6 +187,7 @@ function glass(t, f) {
   EV.prints.forEach((tp, i) => { const k = prog(t, tp, tp + 0.25); if (k <= 0 || i >= PRINTS.length) return; const [x, y, s, r] = PRINTS[i]; fc.globalAlpha = Math.min(1, k * 1.4); hand(fc, x, y + 12 * ease(prog(t, tp + 0.2, tp + 1.6)), s, r, ease(prog(t, tp, tp + 2.2))); });
   if (t >= EV.wipe) { const k = prog(t, EV.wipe, EV.wipe + 1.2); for (let i = 0; i <= 60 * k; i++) { const p = wipePath(i / 60); const g = fc.createRadialGradient(p[0], p[1], 40, p[0], p[1], 125); g.addColorStop(0, 'rgba(0,0,0,0.95)'); g.addColorStop(1, 'rgba(0,0,0,0)'); fc.globalAlpha = 1; fc.fillStyle = g; fc.fillRect(p[0] - 130, p[1] - 130, 260, 260); } }
   fc.restore(); ctx.drawImage(fogCv, 0, 0);
+  if (t >= EV.cars && t < EV.wipe) { ctx.save(); clipShield(ctx); ctx.clip(); [2, 1, 0].forEach(i => { const z = oldCarZ(t, i), X = CAMX + OLDCARS[i][2]; for (const sx of [-0.57, 0.57]) { const p = P(X + sx, 0.62, z), r = 40 + 2600 / z; const g = ctx.createRadialGradient(p[0], p[1], 2, p[0], p[1], r); g.addColorStop(0, `rgba(255,60,40,${0.5 * fa})`); g.addColorStop(1, 'rgba(255,60,40,0)'); ctx.fillStyle = g; ctx.fillRect(p[0] - r, p[1] - r, r * 2, r * 2); } }); ctx.restore(); }
 }
 
 // ---- 車内 ----
@@ -237,6 +238,20 @@ function cabin(t, f, inT, pulse, speed) {
   const dg = ctx.createRadialGradient(540, 1460, 40, 540, 1460, 700); dg.addColorStop(0, 'rgba(70,120,255,0.07)'); dg.addColorStop(1, 'rgba(70,120,255,0)'); ctx.fillStyle = dg; ctx.fillRect(-300, 900, 1700, 1400);
 }
 
+const OLDCARS = [[19, 0.0, -0.4], [33, 1.7, 0.5], [50, 3.1, -0.55]];      // 距離、ゆれの位相、車線の中での左右
+function oldCarZ(t, i) { return OLDCARS[i][0] + Math.sin(t * 0.37 + OLDCARS[i][1]) * 2.5; }
+function oldCar(t, i) {      // 角ばった昔のセダンを後ろから見たところ。丸いテールランプ
+  const z = oldCarZ(t, i), L = clamp(1 - z / 48) ** 1.2, a = ease(prog(t, EV.cars, EV.cars + 1.2)), X = CAMX + OLDCARS[i][2];
+  const q = (x, y) => P(X + x, y, z); const b0 = q(-0.84, 0.2), b1 = q(0.84, 0.82), c0 = q(-0.66, 0.82), c1 = q(0.62, 1.32);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(b0[0] - 4, b0[1] - 2, b1[0] - b0[0] + 8, (b0[1] - b1[1]) * 0.22);
+  ctx.fillStyle = mix([10, 10, 12], [112, 104, 88], L * 0.8); ctx.fillRect(b0[0], b1[1], b1[0] - b0[0], b0[1] - b1[1]);
+  ctx.beginPath(); ctx.moveTo(c0[0], b1[1]); ctx.lineTo(c0[0] + (c1[0] - c0[0]) * 0.08, c1[1]); ctx.lineTo(c1[0] - (c1[0] - c0[0]) * 0.08, c1[1]); ctx.lineTo(c1[0], b1[1]); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = mix([2, 2, 4], [26, 26, 30], L); const w = (c1[0] - c0[0]); ctx.fillRect(c0[0] + w * 0.12, c1[1] + (b1[1] - c1[1]) * 0.18, w * 0.76, (b1[1] - c1[1]) * 0.66);   // リアガラス(中は暗い)
+  ctx.fillStyle = mix([20, 20, 22], [170, 170, 160], L); const bp = q(-0.86, 0.32), bp1 = q(0.86, 0.26); ctx.fillRect(bp[0], bp[1], bp1[0] - bp[0], bp1[1] - bp[1] + 2);   // めっきのバンパー
+  const lr = Math.max(3, 0.1 * F / z); for (const sx of [-0.66, -0.48, 0.48, 0.66]) { const p = q(sx, 0.62); ctx.fillStyle = '#ff3a26'; ctx.beginPath(); ctx.arc(p[0], p[1], lr, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
 function sleeve(t) {     // 袖でガラスをふく腕(車内)
   const k = prog(t, EV.wipe - 0.25, EV.wipe + 1.5); if (k <= 0 || k >= 1) return;
   const p = wipePath(clamp((t - EV.wipe) / 1.2)), out = Math.max(ease(prog(t, EV.wipe - 0.25, EV.wipe)) === 1 ? 0 : 1 - ease(prog(t, EV.wipe - 0.25, EV.wipe)), ease(prog(t, EV.wipe + 1.2, EV.wipe + 1.5)));
@@ -256,7 +271,7 @@ function scene(t, f) {
   WDY = -16 * ease(prog(t, EV.bump, EV.bump + 0.18)); const sh = t >= EV.bump ? Math.exp(-(t - EV.bump) * 6) : 0; WDY += (hash(f) - 0.5) * 30 * sh + Math.sin(t * 7) * 1.2; WDX = (hash(f + 1) - 0.5) * 12 * sh;
   ctx.save(); clipShield(ctx); ctx.clip();
   if (t >= EV.wipe) rubble(t, f);
-  else if (!inT) { sky(); if (d < PORTAL) portal(t, d); road(d, d < PORTAL ? PORTAL - d : 120); guard(d); cedars(d); }
+  else if (!inT) { sky(); if (d < PORTAL) portal(t, d); road(d, d < PORTAL ? PORTAL - d : 120); guard(d); cedars(d); if (t >= EV.cars) [2, 1, 0].forEach(i => oldCar(t, i)); }
   else { ctx.fillStyle = '#020203'; ctx.fillRect(-300, -300, 1700, 2600); tunnelInner(d, 0, !blackout); if (blackout) { ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(-300, -300, 1700, 2600); } }
   // ヘッドライトの光
   if (t < EV.wipe) { const hg = ctx.createRadialGradient(540, 1150, 30, 540, 1050, 640); hg.addColorStop(0, 'rgba(255,250,225,0.10)'); hg.addColorStop(1, 'rgba(255,250,225,0)'); ctx.fillStyle = hg; ctx.fillRect(-300, 400, 1700, 1000); }
@@ -294,7 +309,7 @@ function render(t) {
   const zm = ease(prog(t, EV.l2s + 2.6, EV.l2s + 3.8)) * (1 - ease(prog(t, EV.l2e - 1.0, EV.l2e - 0.1))), zr = ease(prog(t, EV.mirror, EV.mirror + 1.2)) * (1 - ease(prog(t, EV.unmirror, EV.unmirror + 0.9)));
   const zh = ease(prog(t, EV.cut + 0.4, LN.l12.end)) * 0.35 + ease(prog(t, EV.knock - 0.6, EV.hit)) * 0.5;
   const d = dist(t), mon = P(-5.0, 1.2, Math.max(2, PORTAL - 6 - d));
-  let z = 1 + 1.25 * zm, cx = lerp(540, mon[0], zm), cy = lerp(960, mon[1], zm);
+  let z = 1 + 2.3 * zm, cx = lerp(540, mon[0], zm), cy = lerp(960, mon[1], zm);
   if (zr > 0) { z = lerp(1, 2.6, zr); cx = lerp(540, 330, zr); cy = lerp(960, 240, zr); }
   if (zh > 0) { z = 1 + zh; cx = lerp(540, 560, zh / 0.85); cy = lerp(960, 720, zh / 0.85); }
   if (t < EV.hit + 0.5) {

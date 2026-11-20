@@ -40,14 +40,13 @@ T_BO1 = L['l4']['start'] + 0.5                   # 明かりが戻る(ここか�
 T_OUT = L['l4']['start'] + 2.7                   # トンネルを抜けた、と思う
 T_FOG = L['l5']['start'] + 0.3                   # 窓が曇りはじめる
 T_AC = L['l6']['start'] + 0.5                    # エアコンをつける
-T_MIRROR = L['l8']['start'] - 0.2                # バックミラーを見る
-T_UNMIRROR = L['l9']['start'] - 0.3
+T_MIRROR = T_UNMIRROR = 1e9                    # (バックミラーの場面はなし)
 T_WIPE = L['l9']['end'] + 0.0                    # 袖でガラスをふく
 T_CUT = T_WIPE + 0.7                             # 向こうが見えた瞬間、車の音がすべて消える
-T_KNOCK = L['l12']['end'] + 0.45                 # 岩のすき間から、ガラスをたたかれる
+T_KNOCK = L['lx']['end'] + 0.45                 # 岩のすき間から、ガラスをたたかれる
 HIT = L['now']['end'] + 0.5
 EV = dict(l2s=L['l1']['start'], l2e=L['l1']['end'], t_in=T_IN, bo0=T_BO0, bo1=T_BO1, bump=T_BUMP, t_out=T_OUT, fog=T_FOG, fogfull=L['l6']['end'], wipe=T_WIPE, cut=T_CUT,
-          prints=[], mirror=T_MIRROR, unmirror=T_UNMIRROR, full=1e9, lean=1e9, knock=T_KNOCK, hit=HIT)
+          prints=[], cars=L['lr']['start'] - 1.6, mirror=T_MIRROR, unmirror=T_UNMIRROR, full=1e9, lean=1e9, knock=T_KNOCK, hit=HIT)
 PRINTS = []
 T_FULL, T_LEAN = 1e9, 1e9
 
@@ -85,6 +84,10 @@ def breathing():
         add(x, t0, breath(per * 0.85), 0.55 + 0.7 * p); t0 += per
     return x
 def lerp_(a, b, k): return a + (b - a) * k
+def oldcars():
+    t = np.arange(N) / SR; f = 29 * (1 + 0.04 * np.sin(2 * np.pi * 0.13 * t)); ph = 2 * np.pi * np.cumsum(f) / SR
+    x = lowpass((np.sign(np.sin(ph)) * 0.5 + np.sin(2 * ph) + 0.4 * np.sin(3.02 * ph)).astype(np.float32), 300)
+    return x * ramp(T_OUT, T_OUT + 2.0)
 def fan():
     """エアコンの送風"""
     return lowpass(highpass(rng.standard_normal(N).astype(np.float32), 300), 2400) * ramp(T_AC, T_AC + 0.8) * 0.5
@@ -151,7 +154,7 @@ def heartbeat():
     x = np.zeros(N, np.float32)
     def thump(f0, g):
         t = tt(0.28); f = f0 * (1 + 1.2 * np.exp(-t * 40)); return (np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 16) * g).astype(np.float32)
-    a = L['l8']['start']; t0 = a
+    a = L['l9']['start'] - 4; t0 = a
     while t0 < HIT - 0.3:
         p = np.clip((t0 - a) / (HIT - a), 0, 1); g = 0.4 + 0.6 * p
         add(x, t0, thump(52, 1.0), g); add(x, t0 + 0.2, thump(44, 0.7), g); t0 += 0.95 - 0.35 * p
@@ -190,11 +193,11 @@ def main():
     inT = ramp(T_IN - 0.3, T_IN + 0.3) * (1 - ramp(T_OUT - 0.3, T_OUT + 0.3))
     alive = 1 - ramp(T_CUT, T_CUT + 0.06)                          # ここまでの車の音は、すべてまぼろし
     eng = engine() * (0.06 + 0.04 * inT) * alive * (1 - 0.85 * ramp(T_BO0, T_BO0 + 0.1) * (1 - ramp(T_BO1 - 0.2, T_BO1)))
-    ky = keys(); bedm = drone() * ramp(0, 0.6, 0.35, 1) + strings(); br = breathing(); dz = drizzle() * 0.05 * alive; fn = fan() * 0.035 * alive; db = debris() * 0.12
+    ky = keys(); bedm = drone() * ramp(0, 0.6, 0.35, 1) + strings(); br = breathing(); dz = drizzle() * 0.05 * alive; fn = fan() * 0.035 * alive; db = debris() * 0.12; oc = oldcars() * 0.035 * alive
     hb = heartbeat(); out = []
     for ch in range(2):
         music = (bedm * (1 - 0.5 * ramp(T_CUT, T_CUT + 0.1) * (1 - ramp(T_CUT + 2.0, T_CUT + 5.0))) + ky * 0.55 + conv(ky, hall[ch]) * 0.5) * (1 - ramp(HIT, HIT + 0.1) * 0.75)
-        car = eng + conv(eng, tun[ch]) * 0.6 * inT + dz + fn + (fx + conv(fx, cabin[ch]) * 0.5) + db * (1.0 if ch == 0 else 0.7)
+        car = eng + conv(eng, tun[ch]) * 0.6 * inT + dz + fn + oc + conv(oc, hall[ch]) * 0.3 + (fx + conv(fx, cabin[ch]) * 0.5) + db * (1.0 if ch == 0 else 0.7)
         breaths = br * 0.06 + conv(br, cabin[ch]) * 0.02
         voice = nar + conv(nar, cabin[ch]) * 0.03 + last * 0.9 + conv(last, cabin[ch]) * 0.3 + dead + conv(dead, cabin[ch]) * 0.4
         out.append(music * duck + big + conv(big, hall[ch]) * 0.25 + hb + car + breaths + voice)
