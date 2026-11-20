@@ -1,3 +1,5 @@
 node_modules/
 frames/
 audio.wav
+preview/
+build2.log

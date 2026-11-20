@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-const TL = JSON.parse(fs.readFileSync(path.join(__dirname, 'timeline.json'), 'utf8'));
+const TL = JSON.parse(fs.readFileSync(path.resolve(process.env.TIMELINE || path.join(__dirname, 'timeline.json')), 'utf8'));
 const url = 'file://' + path.join(__dirname, 'scene.html');
 const WORKERS = 4;
 

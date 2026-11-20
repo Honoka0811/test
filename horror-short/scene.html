@@ -16,7 +16,7 @@
   .batt i { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 3px; background: #e5484d; border-radius: 1px; }
   .header { height: 64px; display: flex; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid #1c2026; background: #0e1014; }
   .chev { font-size: 26px; color: #7f8791; width: 20px; }
-  .av { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #b98aa0, #6c5a86); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff; flex: none; }
+  .av { width: 40px; height: 40px; border-radius: 50%; background: var(--av, linear-gradient(135deg, #b98aa0, #6c5a86)); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 17px; color: #fff; flex: none; }
   .who b { display: block; font-size: 18px; }
   .who span { font-size: 12px; color: #7f8791; }
   .chat { position: relative; height: 606px; overflow: hidden; }
@@ -28,7 +28,7 @@
   .chipb { font-size: 12px; color: #8a919b; background: #15181d; padding: 4px 14px; border-radius: 12px; }
   .bubble { max-width: 340px; padding: 11px 16px; font-size: 21px; line-height: 1.45; border-radius: 22px; word-break: break-all; }
   .row.y .bubble { background: #22262d; border-bottom-left-radius: 6px; }
-  .row.m .bubble { background: #2c5bd6; color: #fff; border-bottom-right-radius: 6px; }
+  .row.m .bubble { background: var(--self, #2c5bd6); color: #fff; border-bottom-right-radius: 6px; }
   .row .sav { width: 32px; height: 32px; font-size: 14px; }
   .meta { font-size: 11px; color: #6f7680; line-height: 1.35; padding-bottom: 3px; white-space: nowrap; }
   .row.m .meta { text-align: right; }
@@ -39,7 +39,7 @@
   .field { flex: 1; height: 46px; border-radius: 23px; background: #1a1d23; padding: 0 18px; display: flex; align-items: center; font-size: 19px; white-space: nowrap; overflow: hidden; }
   .field .ph { color: #5d646e; }
   .caret { display: inline-block; width: 2px; height: 24px; background: #6d9bff; margin-left: 2px; }
-  .send { width: 46px; height: 46px; border-radius: 50%; background: #2c5bd6; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; }
+  .send { width: 46px; height: 46px; border-radius: 50%; background: var(--self, #2c5bd6); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; }
   .below { flex: 1; background: #0a0c0f; position: relative; }
   .below::after { content: ""; position: absolute; left: 50%; bottom: 14px; width: 150px; height: 5px; margin-left: -75px; border-radius: 3px; background: #3a3f47; }
   #red { position: absolute; inset: 0; background: #7a0000; mix-blend-mode: multiply; opacity: 0; pointer-events: none; }
@@ -67,7 +67,7 @@
 <div id="stage">
   <div id="phone">
     <div class="status"><span id="clock">2:13</span><span class="right"><span>4G</span><span class="batt"><i></i></span></span></div>
-    <div class="header"><span class="chev">‹</span><div class="av">ゆ</div><div class="who"><b>ゆい</b><span>妹</span></div></div>
+    <div class="header"><span class="chev">‹</span><div class="av" id="hav"></div><div class="who"><b id="hname"></b><span id="hsub"></span></div></div>
     <div class="chat" id="chat"><div class="flow" id="flow"></div></div>
     <div class="inputbar"><div class="field" id="field"></div><div class="send">↑</div></div>
     <div class="below"></div>
@@ -78,9 +78,9 @@
   <div id="black"></div>
   <canvas id="face" width="540" height="960"></canvas>
   <div id="hook">
-    <div class="rec" id="h0">● 02:13 AM</div>
-    <div class="t" id="h1">これは、ある女子高生の<br>スマホに残っていた<br>やり取りです。</div>
-    <div class="s" id="h2">※ 最後まで読まないでください</div>
+    <div class="rec" id="h0"></div>
+    <div class="t" id="h1"></div>
+    <div class="s" id="h2"></div>
   </div>
 </div>
 <script>
@@ -99,12 +99,15 @@ function addRow(cls, html, t0, t1, data) {
 
 window.init = async function (tl) {
   TL = tl;
+  $('hav').textContent = TL.contact.letter; $('hname').textContent = TL.contact.name; $('hsub').textContent = TL.contact.sub;
+  $('h0').textContent = TL.hook.rec; $('h1').innerHTML = TL.hook.text; $('h2').textContent = TL.hook.sub;
+  if (TL.theme) for (const k in TL.theme) document.documentElement.style.setProperty(k, TL.theme[k]);
   const typing = [];
   TL.items.forEach((it, i) => {
     if (it.side !== 'y') return;
     const prev = i ? TL.items[i - 1].t : TL.hookEnd - 1;
     const s = Math.max(it.t - 0.9, prev + 0.2);
-    if (i > 0 && it.t - s > 0.3) typing.push([s, it.t]);
+    if (i > 0 && it.t - s > 0.3 && !TL.typingY.some(p => p[1] > s && p[0] < it.t)) typing.push([s, it.t]);
   });
   TL.typingY.forEach(p => typing.push(p));
   const all = TL.items.map(it => ({ kind: 'msg', t: it.t, it })).concat(typing.map(p => ({ kind: 'typ', t: p[0], p })));
@@ -112,9 +115,9 @@ window.init = async function (tl) {
   addRow('chip', '<span class="chipb">今日</span>', -9, Infinity);
   for (const a of all) {
     if (a.kind === 'typ') {
-      addRow('y', '<div class="av sav">ゆ</div><div class="dots"><i></i><i></i><i></i></div>', a.p[0], a.p[1], { typ: true });
+      addRow('y', `<div class="av sav">${TL.contact.letter}</div><div class="dots"><i></i><i></i><i></i></div>`, a.p[0], a.p[1], { typ: true });
     } else if (a.it.side === 'y') {
-      addRow('y', `<div class="av sav">ゆ</div><div class="bubble">${a.it.text}</div><div class="meta">${a.it.clock}</div>`, a.it.t, Infinity, { it: a.it });
+      addRow('y', `<div class="av sav">${TL.contact.letter}</div><div class="bubble">${a.it.text}</div><div class="meta">${a.it.clock}</div>`, a.it.t, Infinity, { it: a.it });
     } else {
       addRow('m', `<div class="meta"><span class="read">既読</span>${a.it.clock}</div><div class="bubble">${a.it.text}</div>`, a.it.t, Infinity, { it: a.it });
     }
@@ -123,7 +126,7 @@ window.init = async function (tl) {
   drawFace();
   await document.fonts.ready;
   await document.fonts.load('21px "Noto Sans JP"', TL.items.map(i => i.text).join('') + '既読今日メッセージを入力');
-  await document.fonts.load('700 31px "Noto Sans JP"', 'これは、ある女子高生のスマホに残っていたやり取りです。ゆい妹');
+  await document.fonts.load('700 31px "Noto Sans JP"', TL.hook.text + TL.hook.sub + TL.contact.name + TL.contact.letter + TL.contact.sub);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   rows.forEach(r => { r.h = r.el.getBoundingClientRect().height; r.read = r.el.querySelector('.read'); r.dots = r.el.querySelectorAll('.dots i'); });
   render(0);
@@ -195,7 +198,7 @@ window.render = function (t) {
   let x = 0, y = 0, split = 0, skew = 0;
   if (t >= TL.rattle[0] && t < TL.rattle[1]) { x += 1.6 * Math.sin(t * 83); y += 1.2 * Math.cos(t * 71); }
   if (t >= TL.bang) { const a = 16 * Math.exp(-(t - TL.bang) * 5); x += a * Math.sin(t * 97); y += a * Math.cos(t * 131); if (a > 2) split = a * 0.5; }
-  const micro = [TL.possessed, 34.6, 37.2].some(m => t >= m && t < m + 0.1);
+  const micro = TL.micro.some(m => t >= m && t < m + 0.1);
   const glitch = (t >= TL.glitch[0] && t < TL.glitch[1]) || micro;
   const bars = $('bars'); bars.innerHTML = '';
   if (glitch) {

@@ -3,7 +3,7 @@ import json, wave, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TL = json.load(open(os.path.join(HERE, "timeline.json")))
+TL = json.load(open(os.environ.get("TIMELINE") or os.path.join(HERE, "timeline.json")))
 SR = 44100
 N = int(TL["end"] * SR)
 rng = np.random.default_rng(13)
@@ -61,6 +61,11 @@ dr *= 0.75 + 0.25 * np.sin(2 * np.pi * 0.13 * t)
 dr += bp(rng.standard_normal(len(t)), 120, 600) * 0.05
 add(fade(dr * np.minimum(1, t / 1.5), 0.01, 0.008), t0, 0.33)
 
+if TL.get("breathA"):  # someone asleep next to her; stops dead at the reveal
+    t = seg(TL["hookEnd"], TL["silence"][0])
+    e = np.clip(np.sin(2 * np.pi * 0.27 * t), 0, 1) ** 1.5 + 0.5 * np.clip(np.sin(2 * np.pi * 0.27 * t + np.pi), 0, 1) ** 2
+    add(fade(bp(rng.standard_normal(len(t)), 350, 1800) * e, 1.0, 0.01), TL["hookEnd"], 0.11, pan=-0.4)
+
 # --- silence: only a thin ear-ringing tone
 t = seg(*TL["silence"]); add(fade(np.sin(2 * np.pi * 6200 * t) * (t / t[-1]), 0.01, 0.3), TL["silence"][0], 0.012)
 
@@ -81,7 +86,15 @@ while hb < t1 - 0.4:
 t = TL["rattle"][0]
 while t < TL["rattle"][1]:
     ph = (t - TL["rattle"][0]) % 0.75
-    if ph < 0.5:
+    if TL.get("rattleSfx") == "creak":
+        # floorboard creak: stick-slip chirps + cloth rustle
+        if ph < 0.55:
+            tt = seg(0, 0.07); f0 = rng.uniform(260, 520)
+            c = bp(np.sign(np.sin(2 * np.pi * f0 * tt * (1 + 2 * tt))) * env(len(tt), 0.004, 0.025), 200, 2600)
+            add(c, t, rng.uniform(0.25, 0.6), pan=-0.35)
+        else:
+            add(tick(300, 1500, 0.1, 0.03), t, 0.25, pan=-0.35)
+    elif ph < 0.5:
         ring = blip(1900 + rng.uniform(-200, 300), 1700, 0.09, 0.02) * 0.4
         c = tick(1200, 6000, 0.09, 0.012); c[:len(ring)] += ring[:len(c)]
         add(c, t, rng.uniform(0.35, 0.8), pan=0.35)
@@ -104,7 +117,7 @@ t = seg(*TL["glitch"]); n = len(t)
 sh = np.repeat(rng.uniform(-1, 1, n // 40 + 1), 40)[:n]
 gate = np.repeat(rng.uniform(0, 1, n // 1500 + 1) > 0.3, 1500)[:n]
 add(fade((sh * 0.6 + np.sign(np.sin(2 * np.pi * 110 * t * (1 + 6 * t))) * 0.4) * gate, 0.002, 0.002), TL["glitch"][0], 0.55)
-for m in (TL["possessed"], 34.6, 37.2):
+for m in TL["micro"]:
     add(fade(np.repeat(rng.uniform(-1, 1, 200), 22)[:int(0.1 * SR)], 0.002, 0.002), m, 0.3)
 
 # --- face flash: breathy shriek inside the black
@@ -131,6 +144,7 @@ for it in TL["items"]:
         for i in range(n):
             if it["text"][i] == " ": continue
             tt = s + d * i / n + (0 if slow else rng.uniform(-0.01, 0.01))
+            if tt < TL["hookEnd"]: continue
             if slow: add(tick(500, 2500, 0.12, 0.03), tt, 0.9)   # heavy, deliberate taps
             else: add(tick(), tt, 0.35)
 
