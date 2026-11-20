@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Claude Code 解説ショート</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=block" rel="stylesheet">
+<style>
+  :root{
+    --bg:#141210; --bg2:#1f1b17; --fg:#f5efe6; --muted:#a89f93;
+    --accent:#e07a52; --accent2:#f2b38f; --green:#7fd18b; --blue:#8ab4f8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:1080px;height:1920px;overflow:hidden;background:var(--bg);color:var(--fg);
+    font-family:"Noto Sans JP","IPAGothic",sans-serif}
+  #stage{position:relative;width:1080px;height:1920px;overflow:hidden;
+    background:radial-gradient(1200px 900px at 80% 10%,#3a2318 0%,transparent 60%),
+               radial-gradient(1000px 900px at 10% 95%,#2a1f17 0%,transparent 60%),var(--bg)}
+  .grid{position:absolute;inset:0;opacity:.07;
+    background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
+    background-size:90px 90px}
+  .scene{position:absolute;inset:0;padding:180px 90px 260px;display:flex;flex-direction:column;justify-content:center;opacity:0}
+  .a{opacity:0}
+  .tag{display:inline-block;align-self:flex-start;font-size:38px;font-weight:700;color:var(--accent);
+    border:3px solid var(--accent);border-radius:999px;padding:10px 34px;margin-bottom:44px;letter-spacing:.05em}
+  h1{font-size:132px;font-weight:900;line-height:1.15;letter-spacing:-.01em}
+  h2{font-size:92px;font-weight:900;line-height:1.25;margin-bottom:56px}
+  .em{color:var(--accent)}
+  .sub{font-size:52px;color:var(--muted);line-height:1.6;font-weight:700}
+  .big{font-size:64px;line-height:1.6;font-weight:700}
+  .mono{font-family:"JetBrains Mono",monospace}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:36px}
+  .card{background:var(--bg2);border:2px solid #3a332c;border-radius:36px;padding:52px 44px;min-height:330px}
+  .card .ic{font-size:96px;line-height:1;margin-bottom:26px}
+  .card .t{font-size:54px;font-weight:900;margin-bottom:12px}
+  .card .d{font-size:36px;color:var(--muted);line-height:1.5;font-weight:700}
+  .term{background:#0b0a09;border:2px solid #3a332c;border-radius:32px;overflow:hidden;
+    box-shadow:0 40px 120px rgba(0,0,0,.6)}
+  .term .bar{height:76px;background:#221e1a;display:flex;align-items:center;gap:18px;padding:0 32px}
+  .term .bar i{width:24px;height:24px;border-radius:50%;display:block}
+  .term .body{padding:44px 44px 56px;font-family:"JetBrains Mono","IPAGothic",monospace;font-size:38px;line-height:1.75;min-height:900px}
+  .term .line{white-space:pre-wrap}
+  .p{color:var(--accent)} .ok{color:var(--green)} .dim{color:#7d756b} .b{color:var(--blue)}
+  .list{display:flex;flex-direction:column;gap:30px}
+  .row{display:flex;align-items:center;gap:36px;background:var(--bg2);border:2px solid #3a332c;border-radius:30px;padding:38px 44px}
+  .row .ic{font-size:72px;width:96px;text-align:center}
+  .row .t{font-size:52px;font-weight:900}
+  .row .d{font-size:34px;color:var(--muted);font-weight:700;margin-top:6px}
+  .chip{font-family:"JetBrains Mono",monospace;font-size:40px;color:var(--accent2);background:#2b211b;border-radius:16px;padding:4px 18px}
+  .flow{display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .step{background:var(--bg2);border:2px solid #3a332c;border-radius:30px;padding:40px 48px;font-size:52px;font-weight:900}
+  .step small{display:block;font-size:34px;color:var(--muted);font-weight:700;margin-top:8px}
+  .arrow{text-align:center;font-size:60px;color:var(--accent);line-height:1.4}
+  .step.hl{border-color:var(--accent);background:#2b1d16}
+  #brand{position:absolute;top:80px;left:90px;font-size:34px;font-weight:900;color:var(--muted);letter-spacing:.08em}
+  #brand b{color:var(--accent)}
+  #cap{position:absolute;left:90px;right:90px;bottom:150px;text-align:center;font-size:44px;font-weight:700;
+    color:var(--fg);background:rgba(0,0,0,.55);border-radius:24px;padding:22px 30px;line-height:1.5}
+  #prog{position:absolute;left:0;bottom:0;height:14px;background:var(--accent);width:0}
+  .cursor{display:inline-block;width:.6em;background:var(--accent);color:transparent}
+  .spark{position:absolute;font-size:120px;color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="grid"></div>
+  <div id="brand">1分でわかる <b>CLAUDE CODE</b></div>
+
+  <!-- S1: Hook -->
+  <section class="scene" data-start="0" data-end="4.6">
+    <div class="tag a" data-in="0.1">AI × プログラミング</div>
+    <h1 class="a" data-in="0.3"><span class="mono em">Claude Code</span><br>って何？</h1>
+    <p class="sub a" data-in="1.4" style="margin-top:56px">いま話題の「AIエンジニア」を<br>ざっくり解説します</p>
+  </section>
+
+  <!-- S2: What -->
+  <section class="scene" data-start="4.6" data-end="10.4">
+    <div class="tag a" data-in="0.1">ひとことで言うと</div>
+    <h2 class="a" data-in="0.3">コードを<span class="em">自分で書いて</span><br><span class="em">動かせる</span>AI</h2>
+    <p class="big a" data-in="1.3">Anthropic が作った<br><b class="em">AIコーディングエージェント</b></p>
+    <p class="sub a" data-in="2.6" style="margin-top:40px">チャットで答えるだけじゃなく、<br>実際にファイルを編集して作業を進めます</p>
+  </section>
+
+  <!-- S3: Capabilities -->
+  <section class="scene" data-start="10.4" data-end="17.4">
+    <div class="tag a" data-in="0.1">できること</div>
+    <h2 class="a" data-in="0.2" style="margin-bottom:48px">プロジェクト<br><span class="em">まるごと</span>扱える</h2>
+    <div class="cards">
+      <div class="card a" data-in="0.7"><div class="ic">📖</div><div class="t">読む</div><div class="d">コードベース全体を<br>理解して質問に回答</div></div>
+      <div class="card a" data-in="1.3"><div class="ic">✏️</div><div class="t">書く</div><div class="d">新機能の実装や<br>バグ修正</div></div>
+      <div class="card a" data-in="1.9"><div class="ic">▶️</div><div class="t">動かす</div><div class="d">コマンド実行や<br>テストで動作確認</div></div>
+      <div class="card a" data-in="2.5"><div class="ic">🌿</div><div class="t">Git</div><div class="d">コミット作成や<br>プルリクまで対応</div></div>
+    </div>
+  </section>
+
+  <!-- S4: Demo -->
+  <section class="scene" data-start="17.4" data-end="27.4" style="padding-top:220px">
+    <div class="tag a" data-in="0.1">使い方は日本語で頼むだけ</div>
+    <div class="term a" data-in="0.3">
+      <div class="bar"><i style="background:#ff6058"></i><i style="background:#ffbd2e"></i><i style="background:#28ca42"></i></div>
+      <div class="body">
+        <div class="line"><span class="p">$ </span><span data-type="0.8" data-cps="22">claude</span></div>
+        <div class="line a" data-in="1.4"><span class="p">&gt; </span><span data-type="1.6" data-cps="14">ログインのバグを直してテストも通して</span></div>
+        <div class="line dim a" data-in="4.6">● ファイルを調査中…</div>
+        <div class="line a" data-in="5.2"><span class="b">Read</span> src/auth/login.ts</div>
+        <div class="line a" data-in="5.8"><span class="b">Edit</span> src/auth/login.ts <span class="ok">+12</span> <span style="color:#ff7b72">-3</span></div>
+        <div class="line a" data-in="6.5"><span class="b">Bash</span> npm test</div>
+        <div class="line ok a" data-in="7.3">✓ 48 tests passed</div>
+        <div class="line a" data-in="8.0" style="margin-top:20px">修正しました！原因はパスワード<br>検証の条件ミスでした。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- S5: Where -->
+  <section class="scene" data-start="27.4" data-end="33.6">
+    <div class="tag a" data-in="0.1">どこで使える？</div>
+    <h2 class="a" data-in="0.2">好きな場所で<span class="em">使える</span></h2>
+    <div class="list">
+      <div class="row a" data-in="0.6"><div class="ic">⌨️</div><div><div class="t">ターミナル</div><div class="d">いちばん基本の使い方（CLI）</div></div></div>
+      <div class="row a" data-in="1.1"><div class="ic">🧩</div><div><div class="t">VS Code / JetBrains</div><div class="d">いつものエディタに統合</div></div></div>
+      <div class="row a" data-in="1.6"><div class="ic">🖥️</div><div><div class="t">デスクトップアプリ</div><div class="d">Mac / Windows</div></div></div>
+      <div class="row a" data-in="2.1"><div class="ic">🌐</div><div><div class="t">Web・スマホ</div><div class="d">クラウド上で作業を任せられる</div></div></div>
+    </div>
+  </section>
+
+  <!-- S6: Features -->
+  <section class="scene" data-start="33.6" data-end="40.4">
+    <div class="tag a" data-in="0.1">便利な機能</div>
+    <h2 class="a" data-in="0.2">カスタマイズも<span class="em">自在</span></h2>
+    <div class="list">
+      <div class="row a" data-in="0.6"><div class="ic">📝</div><div><div class="t"><span class="chip">CLAUDE.md</span></div><div class="d">プロジェクトのルールを覚えさせる</div></div></div>
+      <div class="row a" data-in="1.2"><div class="ic">🔌</div><div><div class="t"><span class="chip">MCP</span></div><div class="d">GitHub や Slack など外部ツールと連携</div></div></div>
+      <div class="row a" data-in="1.8"><div class="ic">⚡</div><div><div class="t"><span class="chip">/コマンド・スキル</span></div><div class="d">よく使う手順をワンコマンド化</div></div></div>
+      <div class="row a" data-in="2.4"><div class="ic">🪝</div><div><div class="t"><span class="chip">フック</span></div><div class="d">決まったタイミングで処理を自動実行</div></div></div>
+    </div>
+  </section>
+
+  <!-- S7: Safety -->
+  <section class="scene" data-start="40.4" data-end="46.0">
+    <div class="tag a" data-in="0.1">安心ポイント</div>
+    <h2 class="a" data-in="0.2">大事な操作は<br><span class="em">確認してから</span></h2>
+    <div class="flow">
+      <div class="step a" data-in="0.8">AIが変更内容を提案<small>どのファイルをどう変えるか</small></div>
+      <div class="arrow a" data-in="1.3">↓</div>
+      <div class="step hl a" data-in="1.6">あなたが許可 ✅<small>権限モードで細かく設定できる</small></div>
+      <div class="arrow a" data-in="2.1">↓</div>
+      <div class="step a" data-in="2.4">実行・結果を報告<small>主導権はいつも人間に</small></div>
+    </div>
+  </section>
+
+  <!-- S8: CTA -->
+  <section class="scene" data-start="46.0" data-end="52" style="text-align:center;align-items:center">
+    <div class="tag a" data-in="0.1" style="align-self:center">まとめ</div>
+    <h1 class="a" data-in="0.3" style="font-size:112px">頼れる<span class="em">AI相棒</span>と<br>開発しよう</h1>
+    <div class="term a" data-in="1.4" style="margin-top:70px;width:100%;text-align:left">
+      <div class="body" style="min-height:0;padding:40px 40px;font-size:28px">
+        <div class="line dim"># インストール（macOS / Linux）</div>
+        <div class="line"><span class="p">$ </span>curl -fsSL https://claude.ai/install.sh | bash</div>
+        <div class="line"><span class="p">$ </span>claude</div>
+      </div>
+    </div>
+    <p class="sub a" data-in="2.4" style="margin-top:60px">まずは小さなタスクから<br>試してみてね！</p>
+  </section>
+
+  <div id="cap"></div>
+  <div id="prog"></div>
+</div>
+
+<script>
+const DURATION = 52;
+const captions = [
+  [0.3, 4.5, "Claude Code、聞いたことありますか？"],
+  [4.7, 10.3, "ひとことで言うと<br>自分で手を動かすAIエンジニア"],
+  [10.5, 17.3, "コードを読む・書く・実行する<br>Git操作までお任せ"],
+  [17.5, 27.3, "日本語で伝えるだけで<br>調査→修正→テストまで自動で"],
+  [27.5, 33.5, "ターミナル・エディタ・アプリ・Web<br>使う場所を選べます"],
+  [33.7, 40.3, "ルールの記憶や外部ツール連携で<br>自分好みに拡張できます"],
+  [40.5, 45.9, "勝手に進めすぎないよう<br>操作前に許可を求めてくれます"],
+  [46.1, 52, "フォローして<br>AI開発の最新情報をチェック！"],
+];
+const ease = x => 1 - Math.pow(1 - Math.min(Math.max(x,0),1), 3);
+const scenes = [...document.querySelectorAll('.scene')];
+const typers = [...document.querySelectorAll('[data-type]')].map(el => {
+  const txt = el.textContent; el.textContent = ''; return {el, txt};
+});
+function render(t){
+  for (const s of scenes){
+    const st = +s.dataset.start, en = +s.dataset.end, lt = t - st;
+    const fin = ease(lt/0.35), fout = 1 - ease((t - (en - 0.35))/0.35);
+    const vis = t >= st && t < en ? Math.min(fin, fout) : 0;
+    s.style.opacity = vis;
+    s.style.transform = `scale(${1 + 0.02*(1-vis)})`;
+    for (const el of s.querySelectorAll('.a')){
+      const p = ease((lt - (+el.dataset.in||0))/0.5);
+      el.style.opacity = p;
+      el.style.transform = `translateY(${(1-p)*50}px)`;
+    }
+    for (const ty of typers){
+      if (!s.contains(ty.el)) continue;
+      const d = +ty.el.dataset.type, cps = +ty.el.dataset.cps;
+      const n = Math.max(0, Math.min(ty.txt.length, Math.floor((lt - d)*cps)));
+      const typing = lt >= d - 0.2 && n < ty.txt.length;
+      const blink = Math.floor(t*2.5)%2===0;
+      ty.el.innerHTML = ty.txt.slice(0,n) + ((typing || (n===ty.txt.length && lt < d + ty.txt.length/cps + 0.6)) && blink ? '<span class="cursor">_</span>' : '');
+    }
+  }
+  const c = captions.find(c => t >= c[0] && t < c[1]);
+  const cap = document.getElementById('cap');
+  cap.innerHTML = c ? c[2] : '';
+  cap.style.opacity = c ? Math.min(ease((t-c[0])/0.25), 1-ease((t-(c[1]-0.25))/0.25)) : 0;
+  document.getElementById('prog').style.width = (t/DURATION*100) + '%';
+}
+window.render = render; window.DURATION = DURATION;
+render(0);
+</script>
+</body>
+</html>
