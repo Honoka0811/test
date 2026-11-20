@@ -45,15 +45,16 @@ MOUTH = [L['l3b']['end'] + 0.3 + 0.6 * k for k in range(3)]   # 「に」「げ�
 T_MORN2 = L['l4']['start'] - 0.3                 # 翌朝(はがされたテープのアップ)
 T_DAY = L['l5']['start'] - 0.25                  # 昼の部屋。泊まりに行く準備
 T_CLOSET = L['l6']['start'] - 0.2                # クローゼットを開けて、照らす
-T_OPEN = L['l6']['start'] + 0.7
-T_LIGHT = L['l6']['start'] + 2.1
+T_OPEN = L['l6']['start'] + 0.2                  # クローゼットの戸を開ける
+T_HAIRF = L['l6']['start'] + (L['l6']['end'] - L['l6']['start']) * 0.5   # 手に髪の毛が落ちてくる
+T_LIGHT = L['l6b']['start'] + (L['l6b']['end'] - L['l6b']['start']) * 0.62   # ライトをつけて、上を照らす
 T_HATCH = L['l7']['start'] + 0.2
 T_MEM = L['l8c']['start'] - 0.1                 # すき間の奥に、前の住人の顔
 T_CREAK = L['l9']['start'] + 1.75
 T_SLIDE = L['now']['start'] - 1.1
 HIT = L['now']['end'] + 0.5
 EV = dict(room=T_ROOM, face=T_FACE, morn1=T_MORN1, tapeon=T_TAPEON, n2=T_N2, point=T_POINT, n3=T_N3, mouth=MOUTH, morn2=T_MORN2, day=T_DAY, closet=T_CLOSET,
-          open=T_OPEN, light=T_LIGHT, hatch=T_HATCH, mem=T_MEM, creak=T_CREAK, slide=T_SLIDE, hit=HIT)
+          open=T_OPEN, light=T_LIGHT, hairf=T_HAIRF, hatch=T_HATCH, mem=T_MEM, creak=T_CREAK, slide=T_SLIDE, hit=HIT)
 T_TAPE, T_MORN = T_TAPEON, T_MORN2
 
 def roomtone():
@@ -149,9 +150,10 @@ def main():
     add(fx, T_TAPEON + 0.3, rip(0.6), 0.25); add(fx, T_TAPEON + 1.1, rip(0.4), 0.22)
     add(big, T_POINT, taiko(0.55))
     for k, tm in enumerate(MOUTH): add(big, tm, taiko(0.35 + 0.15 * k))
-    add(fx, T_MEM, whoosh(1.6), 0.1); add(fx, T_OPEN, slide(0.8), 0.35); add(fx, T_LIGHT, click(), 0.4); add(big, T_HATCH + 0.5, taiko(0.7))
+    add(fx, T_MEM, whoosh(1.6), 0.1); add(fx, T_OPEN, slide(0.8), 0.35); add(big, T_HAIRF + 0.4, taiko(0.45)); add(fx, T_LIGHT, click(), 0.4); add(big, T_HATCH + 0.5, taiko(0.7))
     add(up, T_CREAK, creak(0.9, 130), 0.3); add(up, T_CREAK + 0.15, dust(), 0.25); add(up, T_CREAK + 1.2, creak(0.6, 150), 0.25)
-    add(up, T_SLIDE, scrape(1.4), 0.3); add(big, HIT, stinger(), 0.75)
+    add(up, T_SLIDE, scrape(1.4), 0.3); add(fx, HIT - 0.3, whoosh(0.4), 0.4); add(big, HIT, stinger(), 0.75)
+    for k, dt in enumerate([0.45, 0.62, 0.74]): add(fx, HIT + dt, click(), 0.5 - 0.12 * k)          # ライトが床に落ちて、はねる
     nar = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']:
         if l['id'] == 'now': add(last, l['start'], resample(segs['now'], 0.86))       # 低くして、男の声に
