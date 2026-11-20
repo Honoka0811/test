@@ -52,6 +52,17 @@
   .step small{display:block;font-size:34px;color:var(--muted);font-weight:700;margin-top:8px}
   .arrow{text-align:center;font-size:60px;color:var(--accent);line-height:1.4}
   .step.hl{border-color:var(--accent);background:#2b1d16}
+  .vs-box{background:var(--bg2);border:2px solid #3a332c;border-radius:36px;padding:48px 52px;opacity:.9}
+  .vs-box .vs-h{font-size:56px;font-weight:900;margin-bottom:22px;color:var(--muted)}
+  .vs-box .vs-l{font-size:48px;font-weight:700;line-height:1.7;color:var(--muted)}
+  .vs-box .vs-l::before{content:"✕ ";color:#ff7b72}
+  .vs-box.win{border:4px solid var(--accent);background:#2b1d16;box-shadow:0 0 80px rgba(224,122,82,.25)}
+  .vs-box.win .vs-h{color:var(--accent)}
+  .vs-box.win .vs-l{color:var(--fg)}
+  .vs-box.win .vs-l::before{content:"✓ ";color:var(--green)}
+  .vs-box b{color:inherit}
+  .vs-box.win b{color:var(--accent2)}
+  .vs-mid{text-align:center;font-size:84px;font-weight:900;color:var(--accent);margin:26px 0;font-style:italic}
   #brand{position:absolute;top:80px;left:90px;font-size:34px;font-weight:900;color:var(--muted);letter-spacing:.08em}
   #brand b{color:var(--accent)}
   #cap{position:absolute;left:90px;right:90px;bottom:150px;text-align:center;font-size:44px;font-weight:700;
@@ -82,8 +93,24 @@
     <p class="sub a" data-in="2.6" style="margin-top:40px">チャットで答えるだけじゃなく<br>ファイル編集まで実行します</p>
   </section>
 
+  <!-- S2b: vs Chat -->
+  <section class="scene" data-start="4.47" data-end="8.1">
+    <div class="tag a" data-in="0.1">普通のAIチャットとの違い</div>
+    <div class="vs-box a" data-in="0.3">
+      <div class="vs-h">💬 普通のAIチャット</div>
+      <div class="vs-l">コードを<b>提案</b>するだけ</div>
+      <div class="vs-l">コピペ・実行・確認は<b>自分</b></div>
+    </div>
+    <div class="vs-mid a" data-in="1.0">VS</div>
+    <div class="vs-box win a" data-in="1.3">
+      <div class="vs-h"><span class="mono">⚡ Claude Code</span></div>
+      <div class="vs-l">ファイルを<b>直接編集</b></div>
+      <div class="vs-l">実行・テストまで<b>自分でやる</b></div>
+    </div>
+  </section>
+
   <!-- S3: Capabilities -->
-  <section class="scene" data-start="4.47" data-end="6.49">
+  <section class="scene" data-start="8.1" data-end="10.13">
     <div class="tag a" data-in="0.1">できること</div>
     <h2 class="a" data-in="0.2" style="margin-bottom:48px">プロジェクト<br><span class="em">まるごと</span>扱える</h2>
     <div class="cards">
@@ -95,7 +122,7 @@
   </section>
 
   <!-- S4: Demo -->
-  <section class="scene" data-start="6.49" data-end="9.79" style="padding-top:220px">
+  <section class="scene" data-start="10.13" data-end="13.43" style="padding-top:220px">
     <div class="tag a" data-in="0.1">使い方は日本語で頼むだけ</div>
     <div class="term a" data-in="0.3">
       <div class="bar"><i style="background:#ff6058"></i><i style="background:#ffbd2e"></i><i style="background:#28ca42"></i></div>
@@ -113,7 +140,7 @@
   </section>
 
   <!-- S5: Where -->
-  <section class="scene" data-start="9.79" data-end="11.6">
+  <section class="scene" data-start="13.43" data-end="15.23">
     <div class="tag a" data-in="0.1">どこで使える？</div>
     <h2 class="a" data-in="0.2">好きな場所で<span class="em">使える</span></h2>
     <div class="list">
@@ -125,7 +152,7 @@
   </section>
 
   <!-- S6: Features -->
-  <section class="scene" data-start="11.6" data-end="13.78">
+  <section class="scene" data-start="15.23" data-end="17.42">
     <div class="tag a" data-in="0.1">便利な機能</div>
     <h2 class="a" data-in="0.2">カスタマイズも<span class="em">自在</span></h2>
     <div class="list">
@@ -137,7 +164,7 @@
   </section>
 
   <!-- S7: Safety -->
-  <section class="scene" data-start="13.78" data-end="15.56">
+  <section class="scene" data-start="17.42" data-end="19.2">
     <div class="tag a" data-in="0.1">安心ポイント</div>
     <h2 class="a" data-in="0.2">大事な操作は<br><span class="em">確認してから</span></h2>
     <div class="flow">
@@ -150,7 +177,7 @@
   </section>
 
   <!-- S8: CTA -->
-  <section class="scene" data-start="15.56" data-end="17.96" style="text-align:center;align-items:center">
+  <section class="scene" data-start="19.2" data-end="21.6" style="text-align:center;align-items:center">
     <div class="tag a" data-in="0.1" style="align-self:center">まとめ</div>
     <h1 class="a" data-in="0.3" style="font-size:112px">頼れる<span class="em">AI相棒</span>と<br>開発しよう</h1>
     <div class="term a" data-in="1.4" style="margin-top:70px;width:100%;text-align:left">
@@ -169,16 +196,17 @@
 </div>
 
 <script>
-const DURATION = 17.96;
+const DURATION = 21.6;
 const captions = [
   [0.20, 1.79, "Claude Code<br>サクッと解説！"],
   [2.09, 4.37, "自分でコードを書いて動かす<br>AIエージェント"],
-  [4.67, 6.39, "読む・書く・実行・Gitまで<br>お任せ！"],
-  [6.69, 9.69, "日本語で頼めば<br>修正もテストも全自動！"],
-  [9.99, 11.50, "ターミナルでも<br>エディタでも、Webでも！"],
-  [11.80, 13.68, "外部ツール連携や<br>自動化も自在"],
-  [13.98, 15.46, "大事な操作は<br>許可制だから安心！"],
-  [15.76, 17.86, "さっそく<br>試してみてね！"],
+  [4.67, 8.00, "チャットAIは提案だけ<br>Claude Codeは直して確かめるまで！"],
+  [8.30, 10.03, "読む・書く・実行・Gitまで<br>お任せ！"],
+  [10.33, 13.33, "日本語で頼めば<br>修正もテストも全自動！"],
+  [13.63, 15.13, "ターミナルでも<br>エディタでも、Webでも！"],
+  [15.43, 17.32, "外部ツール連携や<br>自動化も自在"],
+  [17.62, 19.10, "大事な操作は<br>許可制だから安心！"],
+  [19.40, 21.50, "さっそく<br>試してみてね！"],
 ];
 const K = 0.35; // アニメーションの時間圧縮率（小さいほど速い）
 const ease = x => 1 - Math.pow(1 - Math.min(Math.max(x,0),1), 3);
