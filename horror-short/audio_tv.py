@@ -33,7 +33,7 @@ def sq(phase):  # soft square: first odd harmonics
 OFF, SH0, SH1, COR = TL["dead"], TL["shift"][0], TL["shift"][1], TL["corrupt"]
 
 # tape hiss + mains hum while the set is on
-t = seg(0, TL["cut"])
+t = seg(0, OFF)
 add(fade(bp(noise(len(t)), 1800, 9000), 0.05, 0.005), 0, 0.02)
 add(fade(np.sin(2 * np.pi * 50 * t) + 0.5 * np.sin(2 * np.pi * 100 * t), 0.05, 0.005), 0, 0.03)
 
@@ -90,61 +90,34 @@ while ft < OFF:
     x = seg(0, 0.05); add(bp(noise(len(x)), 300, 2400) * np.exp(-x / 0.012), ft, 0.5, pan=rng.uniform(-.5, .5))
     ft += iv; iv = max(0.016, iv * 0.88)
 
-# dead screen: it answers
-CR, SHT, LUN, CUT = TL["crack"], TL["shatter"], TL["lunge"], TL["cut"]
-for tt, g in [(TL["msg1"], 0.5), (TL["msg2"], 0.8)]:
-    x = seg(0, 1.6); add((np.sin(2 * np.pi * 82 * x) + 0.5 * np.sin(2 * np.pi * 123.5 * x)) * np.exp(-x / 0.5), tt, g)
-t = seg(OFF, CR); k = t / t[-1]
-add(fade(np.sin(2 * np.pi * 41 * t) * k ** 2, 0.2, 0.01), OFF, 0.5)
+# power off: thunk + collapsing whine, then nothing at all
+BANG, CUT, LE = TL["bang"], TL["cut"], TL["linesEnd"]
+add(thud(60, 0.7, 0.1, 1.0), OFF, 0.9)
+x = seg(0, 0.4); add(fade(np.sin(2 * np.pi * np.cumsum(np.linspace(9000, 1500, len(x))) / SR), 0.002, 0.2), OFF, 0.08)
 
-# palms hitting the inside of the glass
-for i, st in enumerate(TL["slaps"]):
-    g = 0.7 + 0.12 * i
-    add(thud(70, 0.5, 0.07, 0.6), st, g * 1.1, pan=(-0.4, 0.4, -0.4, 0.4, 0)[i])
-    x = seg(0, 0.09); add(bp(noise(len(x)), 700, 4200) * np.exp(-x / 0.012), st, g * 0.9)
-    x = seg(0, 0.5); add((np.sin(2 * np.pi * 1210 * x) + 0.6 * np.sin(2 * np.pi * 1733 * x) + 0.4 * np.sin(2 * np.pi * 2890 * x)) * np.exp(-x / 0.08), st, g * 0.12)
+# the dark stare: almost silent. room tone, then breathing close to one ear that is not yours
+t = seg(OFF + 1.0, BANG - 0.35); add(fade(bp(noise(len(t)), 50, 260), 1.0, 0.02), OFF + 1.0, 0.12)
+t = seg(LE, BANG - 0.35); k = t / t[-1]
+br = np.clip(np.sin(2 * np.pi * 0.36 * t - 1.2), 0, 1) ** 1.4 + 0.55 * np.clip(np.sin(2 * np.pi * 0.36 * t - 1.2 + np.pi), 0, 1) ** 2
+add(fade(bp(noise(len(t)), 300, 1500) * br * (0.04 + 0.96 * k ** 2.2), 0.3, 0.004), LE, 2.6, pan=0.75)
+for j in range(4):                      # one floorboard, behind and to the right
+    x = seg(0, 0.09); f0 = rng.uniform(210, 360)
+    add(bp(np.sign(np.sin(2 * np.pi * f0 * x * (1 + 2 * x))) * np.exp(-x / 0.035), 180, 2200), LE + 1.7 + j * 0.13, 0.7, pan=0.6)
 
-def crackle(t0, n, spread, gain):
-    for j in range(n):
-        x = seg(0, 0.05); add(bp(noise(len(x)), 2200, 11000) * np.exp(-x / rng.uniform(0.003, 0.012)), t0 + abs(rng.normal(0, spread)), gain * rng.uniform(0.4, 1), pan=rng.uniform(-.6, .6))
-# crack -> the picture dies into snow
-crackle(CR, 9, 0.05, 0.9)
-t = seg(CR, CUT); add(fade(bp(noise(len(t)), 500, 9000), 0.003, 0.002), CR, 0.22)
-# shatter: crack + a shower of glass
-crackle(SHT, 16, 0.04, 1.0); add(thud(55, 0.6, 0.1, 1.0), SHT, 1.0)
-for j in range(70):
-    x = seg(0, 0.35); f0 = rng.uniform(2500, 9000)
-    add(np.sin(2 * np.pi * f0 * x) * np.exp(-x / rng.uniform(0.01, 0.06)), SHT + abs(rng.normal(0, 0.22)), 0.06 * rng.uniform(0.3, 1), pan=rng.uniform(-.8, .8))
-# fingers on the rim: skin squealing on glass, a dry rattle in the throat, rising sub
-for d0 in (0.15, 0.42, 0.66, 0.95):
-    x = seg(0, 0.32); f = np.linspace(rng.uniform(800, 1100), rng.uniform(1300, 1900), len(x)) * (1 + 0.02 * np.sin(2 * np.pi * 31 * x))
-    add(fade(np.sin(2 * np.pi * np.cumsum(f) / SR) * np.sin(np.pi * x / x[-1]) ** 2, 0.01, 0.01), SHT + d0, 0.16, pan=rng.uniform(-.4, .4))
-tt = SHT + 0.3
-while tt < LUN - 0.05:
-    kk = (tt - SHT) / (LUN - SHT)
-    burst = int(rng.integers(5, 13)); iv = rng.uniform(0.028, 0.048)
-    for j in range(burst):
-        x = seg(0, 0.03); f0 = rng.uniform(500, 900)
-        if tt + j * iv < LUN: add((bp(noise(len(x)), 500, 3200) + np.sin(2 * np.pi * f0 * x)) * np.exp(-x / 0.006), tt + j * iv, (0.4 + 0.5 * kk) * rng.uniform(0.6, 1))
-        iv *= 1.06
-    tt += burst * iv + rng.uniform(0.08, 0.22)
-t = seg(SHT, LUN); k = t / t[-1]
-add(fade(np.sin(2 * np.pi * 38 * t) * k ** 1.5 + sum(np.sin(2 * np.pi * f * t) for f in (1661, 1760, 2489)) * 0.035 * k ** 3, 0.1, 0.003), SHT, 0.9)
-# lunge: sting until the hand closes over the lens
-t = seg(LUN, CUT)
+# found: everything at once after 0.35 s of dead air
+t = seg(BANG, CUT)
 saw = lambda f: 2 * ((f * t) % 1) - 1
-st_ = bp(sum(saw(f) for f in (110, 116.5, 155.6, 311.1, 329.6, 466.2, 493.9)) * 0.1, 60, 5000)
-sw = bp(noise(len(t)), 300, 6000) * (t / t[-1]) ** 2
-add(fade(st_ + sw * 0.8, 0.002, 0.003), LUN, 1.5)
-add(thud(40, 0.7, 0.4, 0.8), LUN, 1.5)
-add(thud(50, 0.5, 0.12, 1.0), CUT - 0.03, 1.6)      # impact, cut off by the black
+st_ = bp(sum(saw(f) for f in (110, 116.5, 155.6, 311.1, 329.6, 466.2, 493.9, 932.3, 987.8)) * 0.1, 60, 6000)
+shr = bp(noise(len(t)), 1500, 9000) * (0.6 + 0.4 * np.sin(2 * np.pi * 37 * t))
+add(fade(st_ * 1.3 + shr * 0.9 + bp(noise(len(t)), 300, 9000) * 0.5, 0.001, 0.002), BANG, 1.6)
+add(thud(42, 0.6, 0.3, 1.0), BANG, 2.0)
 
 # light room reverb, limiter, hard cut
 ir_n = int(1.0 * SR); ir = noise(ir_n) * np.exp(-np.arange(ir_n) / SR / 0.25); ir /= np.sqrt((ir ** 2).sum())
 L = N + ir_n
 for c in range(2):
     mix[:, c] += np.fft.irfft(np.fft.rfft(mix[:, c], L) * np.fft.rfft(np.roll(ir, c * 37), L), L)[:N] * 0.18
-mix[int((TL["cut"] + 0.12) * SR):] = 0
+mix[int(TL["cut"] * SR):] = 0
 mix /= np.abs(mix).max() / 1.6
 mix = np.tanh(mix) * 0.97
 w = wave.open(os.path.join(HERE, "audio.wav"), "wb"); w.setnchannels(2); w.setsampwidth(2); w.setframerate(SR)
