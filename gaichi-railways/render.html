@@ -33,7 +33,7 @@ const C = {
   naichiRail: '#8a93a3',
   accent: '#F5C451', red: '#E8524F',
 };
-const FPS = 30, DURATION = 60.5;
+const FPS = 30, DURATION = 60.6;
 
 // ---------- ユーティリティ ----------
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -355,62 +355,55 @@ function stationLabels(list, lt, t0, a) {
 // ---------- シーン ----------
 // cam: そのシーンで落ち着くカメラ位置 / hl: 外地の強調度 / f: 地図の上に重ねる描画
 const WIDE = { lon: 132, lat: 31, span: 56, cy: 1000 };
+const HOOKCAM = { lon: 131.5, lat: 36.5, span: 40, cy: 1010 };
 const SUMCAM = { lon: 130.6, lat: 37.6, span: 37, cy: 900 };
+const ALL_HL = { korea: .6, taiwan: .6, sakhalin: .6, kwantung: .6, nanyo: .6 };
 const SCENES = [
-  { s: 0, d: 5.5, cam: WIDE, hl: {}, f: sceneHook },
-  { s: 5.5, d: 7.5, cam: WIDE, hl: {}, f: sceneOverview },
-  { s: 13, d: 7.5, cam: { lon: 121.05, lat: 23.85, span: 5.4, cy: 860 }, hl: { taiwan: 1 }, f: sceneTaiwan },
-  { s: 20.5, d: 8.5, cam: { lon: 127.9, lat: 38.1, span: 12.2, cy: 800 }, hl: { korea: 1 }, f: sceneKorea },
-  { s: 29, d: 7.5, cam: { lon: 123.9, lat: 41.25, span: 9.6, cy: 840 }, hl: { kwantung: 1 }, f: sceneManchuria },
-  { s: 36.5, d: 8, cam: { lon: 142.35, lat: 47.75, span: 7.6, cy: 865 }, hl: { sakhalin: 1 }, f: sceneKarafuto },
-  { s: 44.5, d: 4.5, cam: { lon: 140, lat: 11.3, span: 16, cy: 860 }, hl: { nanyo: 1 }, f: sceneNanyo },
-  { s: 49, d: 8.5, cam: SUMCAM, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneSummary },
-  { s: 57.5, d: 3, cam: SUMCAM, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneCredits },
+  { s: 0, d: 6.5, cam: HOOKCAM, hl: ALL_HL, f: sceneHook },
+  { s: 6.5, d: 6.3, cam: WIDE, hl: {}, f: sceneOverview },
+  { s: 12.8, d: 7.5, cam: { lon: 121.05, lat: 23.85, span: 5.4, cy: 860 }, hl: { taiwan: 1 }, f: sceneTaiwan },
+  { s: 20.3, d: 8.5, cam: { lon: 127.9, lat: 38.1, span: 12.2, cy: 800 }, hl: { korea: 1 }, f: sceneKorea },
+  { s: 28.8, d: 7.5, cam: { lon: 123.9, lat: 41.25, span: 9.6, cy: 840 }, hl: { kwantung: 1 }, f: sceneManchuria },
+  { s: 36.3, d: 8, cam: { lon: 142.35, lat: 47.75, span: 7.6, cy: 865 }, hl: { sakhalin: 1 }, f: sceneKarafuto },
+  { s: 44.3, d: 4.5, cam: { lon: 140, lat: 11.3, span: 16, cy: 860 }, hl: { nanyo: 1 }, f: sceneNanyo },
+  { s: 48.8, d: 8.8, cam: SUMCAM, hl: { korea: .4, taiwan: .4, sakhalin: .4, kwantung: .4 }, f: sceneSummary },
+  { s: 57.6, d: 3, cam: SUMCAM, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneCredits },
 ];
 const MOVE = 1.0;      // カメラ移動にかける秒数(シーン冒頭)
 const XF = 0.3;        // 文字要素のフェード秒数
 function sceneAlpha(lt, d) { return Math.min(easeOut((lt + 0.05) / XF), easeOut((d - lt) / XF)); }
 
-// 0: フック(最初の1フレームから情報がある状態にする)
+// 0: フック — 外地の全路線を一気に見せて「どこまで走っていた?」と問う
+// 路線は各シーンで改めて描くので、ここでは下書きとして描いて最後に消す
+const HOOK_RAILS = RAILS.filter(r => r.sc >= 2 && r.sc <= 5);
 function sceneHook(lt, a) {
-  ctx.fillStyle = 'rgba(8,12,18,0.55)'; ctx.fillRect(0, 0, W, H);
-  // 切符(イメージ)
-  const pt = easeOut((lt + 0.4) / 0.5);
-  ctx.save();
-  ctx.translate(W / 2, 640); ctx.rotate(-0.045); ctx.scale(0.9 + 0.1 * pt, 0.9 + 0.1 * pt);
-  ctx.globalAlpha = a * pt;
-  ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
-  ctx.fillStyle = '#efe6cf'; ctx.beginPath(); ctx.roundRect(-430, -190, 860, 380, 22); ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.fillStyle = '#b3322f'; ctx.fillRect(-430, -130, 860, 14);
-  ctx.setLineDash([10, 10]); ctx.strokeStyle = 'rgba(80,60,30,0.45)'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(290, -190); ctx.lineTo(290, 190); ctx.stroke(); ctx.setLineDash([]);
-  ctx.restore();
-  const tx = (s, x, y, o) => {
-    ctx.save(); ctx.translate(W / 2, 640); ctx.rotate(-0.045);
-    text(s, x, y, { alpha: a * pt, ...o }); ctx.restore();
-  };
-  tx('国際連絡 乗車券', -390, -150, { size: 34, weight: 'bold', color: '#5a4320' });
-  tx('東京', -395, 10, { size: 104, weight: 'bold', color: '#1d1a14' });
-  tx('→', -172, 4, { size: 72, weight: 'bold', color: '#b3322f' });
-  tx('ヨーロッパ', -92, 8, { size: 66, weight: 'bold', color: '#1d1a14' });
-  tx('鉄道と船を乗り継ぐ 通しの切符', -390, 100, { size: 34, color: '#5a4320' });
-  tx('※イメージ', 360, 160, { size: 24, color: '#7a6640', align: 'center' });
-  tx('戦前', 360, 20, { size: 54, weight: 'bold', color: '#b3322f', align: 'center' });
-  // 問いかけ → タイトル
-  const q = easeOut((lt + 0.3) / 0.35) * a;
-  text('戦前、こんな切符があった', W / 2, 330, { size: 58, weight: 'bold', align: 'center', alpha: q * (1 - seg(lt, 3.0, 0.3)), halo: 8 });
-  const ti = easeOut((lt - 3.1) / 0.4) * a;
-  text('その道は「外地」の鉄道', W / 2, 330, { size: 72, weight: 'bold', color: C.accent, align: 'center', alpha: ti, halo: 8 });
-  text('朝鮮・台湾・関東州・樺太・南洋群島', W / 2, 1000, { size: 40, align: 'center', alpha: ti, halo: 7 });
+  const ws = clamp(Math.sqrt(10 / cam.span), 0.55, 1.15);
+  const fade = 1 - seg(lt, 5.7, 0.6);
+  HOOK_RAILS.forEach((r, i) => strokeRail(r, easeInOut((lt + 0.9 - (i % 6) * 0.08) / 2.0), fade, ws));
+  header(null, '', '', a);   // 上部のグラデーションだけ使う
+  const q = a * (1 - seg(lt, 4.4, 0.25));
+  text('戦前の「日本の鉄道」', W / 2, 200, { size: 52, color: C.ink2, align: 'center', alpha: q, halo: 8 });
+  text('どこまで走っていた?', W / 2, 310, { size: 88, weight: 'bold', align: 'center', alpha: q, halo: 10 });
+  const ti = easeOut((lt - 4.5) / 0.35) * a;
+  text('内地じゃない', W / 2, 200, { size: 56, weight: 'bold', align: 'center', alpha: ti, halo: 8 });
+  text('「外地」の鉄道', W / 2, 320, { size: 104, weight: 'bold', color: C.accent, align: 'center', alpha: ti, halo: 10 });
+  // 北は樺太、南は台湾(ナレーションに合わせて出す)
+  const pn = easeOut((lt - 2.5) / 0.3) * a * fade, ps = easeOut((lt - 3.3) / 0.3) * a * fade;
+  if (pn > 0) pulse(142.75, 48.0, lt, C.accent, pn);
+  if (ps > 0) pulse(121.0, 23.7, lt, C.accent, ps);
+  const [nx, ny] = P(142.75, 48.0), [sx, sy] = P(121.0, 23.7);
+  text('北は 樺太', nx - 50, ny + 14, { size: 50, weight: 'bold', color: C.accent, align: 'right', alpha: pn, halo: 9 });
+  text('南は 台湾', sx + 60, sy + 16, { size: 50, weight: 'bold', color: C.accent, alpha: ps, halo: 9 });
+  const pc = easeOut((lt - 4.6) / 0.35) * a * fade;
+  text('海の外にも、日本の鉄道があった', W / 2, 1640, { size: 44, weight: 'bold', align: 'center', alpha: pc, halo: 8 });
 }
 
 const OVERVIEW = [
-  { k: '台湾', note: '1895〜', at: [121, 23.7], dx: -30, dy: 10, align: 'right', hl: 'taiwan', t: 2.9 },
-  { k: '朝鮮', note: '1910〜', at: [127.6, 37.6], dx: 0, dy: 10, align: 'center', hl: 'korea', t: 3.5 },
-  { k: '関東州', note: '1905〜 租借地', at: [121.6, 39.1], dx: -30, dy: 10, align: 'right', hl: 'kwantung', t: 4.0 },
-  { k: '樺太', note: '1905〜', at: [142.8, 48.5], dx: 34, dy: 10, align: 'left', hl: 'sakhalin', t: 4.7 },
-  { k: '南洋群島', note: '1922〜 委任統治', at: [140.5, 11.2], dx: 0, dy: 10, align: 'center', hl: 'nanyo', t: 5.3 },
+  { k: '台湾', note: '1895〜', at: [121, 23.7], dx: -30, dy: 10, align: 'right', hl: 'taiwan', t: 1.25 },
+  { k: '朝鮮', note: '1910〜', at: [127.6, 37.6], dx: 0, dy: 10, align: 'center', hl: 'korea', t: 2.05 },
+  { k: '関東州', note: '1905〜 租借地', at: [121.6, 39.1], dx: -30, dy: 10, align: 'right', hl: 'kwantung', t: 2.75 },
+  { k: '樺太', note: '1905〜', at: [142.8, 48.5], dx: 34, dy: 10, align: 'left', hl: 'sakhalin', t: 3.75 },
+  { k: '南洋群島', note: '1922〜 委任統治', at: [140.5, 11.2], dx: 0, dy: 10, align: 'center', hl: 'nanyo', t: 4.75 },
 ];
 function overviewHL(lt) {
   for (const r of OVERVIEW) {
@@ -420,7 +413,7 @@ function overviewHL(lt) {
 }
 function sceneOverview(lt, a) {
   header(null, '外地とは', '内地(本土)の外にあった、日本の統治地域', a);
-  const pn = easeOut((lt - 0.6) / 0.4) * a;
+  const pn = easeOut((lt - 0.4) / 0.4) * a;
   const [nx, ny] = P(138.5, 37.2);
   text('内地', nx + 40, ny, { size: 40, weight: 'bold', color: C.ink2, alpha: pn, halo: 8 });
   for (const r of OVERVIEW) {
@@ -432,7 +425,7 @@ function sceneOverview(lt, a) {
     ctx.restore();
     text(r.note, x + r.dx, y + r.dy + 40, { size: 28, color: C.ink, align: r.align, alpha: p * a, halo: 6 });
   }
-  const pc = easeOut((lt - 1.0) / 0.4) * a;
+  const pc = easeOut((lt - 0.6) / 0.4) * a;
   rrect(48, 1560, W - 96, 116, 24, C.panel, pc);
   rrect(84, 1600, 34, 34, 6, C.gaichiHi, pc); text('外地', 132, 1630, { size: 34, weight: 'bold', alpha: pc });
   rrect(250, 1600, 34, 34, 6, C.naichi, pc); text('内地', 298, 1630, { size: 34, weight: 'bold', color: C.ink2, alpha: pc });
@@ -526,7 +519,7 @@ function sceneNanyo(lt, a) {
 const ROUTE = st('東京', '名古屋', '大阪', '広島', '下関', [130.5, 34.15], [129.7, 34.65], '釜山', '密陽', '大邱', '金泉', '大田', '天安', '水原', '京城',
   '開城', '沙里院', '平壌', '新安州', '定州', '新義州', '安東', '鳳凰城', '草河口', '本渓湖', '蘇家屯', '奉天', '鉄嶺', '開原', '四平街', '公主嶺', '新京', [125.8, 44.5], [126.2, 45.1], 'ハルビン');
 // ナレーションの地名に合わせて、ルート上の到達点を時刻で指定する(ROUTE の添字, シーン内秒)
-const ROUTE_KEYS = [[0, 0.0], [4, 0.6], [7, 1.3], [14, 2.0], [26, 2.7], [34, 3.6]];
+const ROUTE_KEYS = [[0, 3.9], [4, 4.5], [7, 5.0], [14, 5.5], [26, 6.1], [34, 6.7]];
 function routeProgress(lt) {
   const n = ROUTE.length - 1;
   if (lt <= ROUTE_KEYS[0][1]) return 0;
@@ -541,8 +534,22 @@ function routePoint(pts, f) {
   const x = f * (pts.length - 1), i = Math.min(Math.floor(x), pts.length - 2), r = x - i;
   return [lerp(pts[i][0], pts[i + 1][0], r), lerp(pts[i][1], pts[i + 1][1], r)];
 }
+// まとめ: 外地の鉄道の2つの顔(内地の延長 / 大陸への道)
+function summaryHL(lt) {
+  const A = easeOut((lt - 0.2) / 0.4) * (1 - 0.6 * seg(lt, 3.7, 0.4)), B = easeOut((lt - 3.8) / 0.4);
+  HL.taiwan = HL.sakhalin = lerp(0.4, 1, A);
+  HL.korea = HL.kwantung = lerp(0.4, 1, B);
+}
 function sceneSummary(lt, a) {
-  header(null, 'まとめ', '外地の鉄道は「大陸への道」', a);
+  header(null, 'まとめ', '外地の鉄道の、2つの顔', a);
+  // 前半: 台湾・樺太
+  const pA = easeOut((lt - 0.3) / 0.3) * (1 - seg(lt, 3.7, 0.3)) * a;
+  if (pA > 0) for (const [n, lon, lat, dx, al] of [['台湾', 121.0, 23.7, 50, 'left'], ['樺太', 142.7, 48.2, -40, 'right']]) {
+    pulse(lon, lat, lt, C.nar, pA);
+    const [x, y] = P(lon, lat);
+    text(n, x + dx, y + (n === '台湾' ? -24 : 14), { size: 46, weight: 'bold', color: C.nar, align: al, alpha: pA, halo: 9 });
+  }
+  // 後半: 朝鮮・満洲 → 大陸ルート
   const f = routeProgress(lt);
   const pts = ROUTE.map(([lon, lat]) => P(lon, lat));
   if (f > 0) {
@@ -555,25 +562,24 @@ function sceneSummary(lt, a) {
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(hx, hy, 11, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
-  const names = [['東京', 0.0, { dy: 34 }], ['下関', 0.6, { dy: 34 }], ['釜山', 1.3, { dy: 34 }], ['京城', 2.0, { dx: -12, align: 'right' }], ['奉天', 2.7, { dx: -12, align: 'right' }], ['ハルビン', 3.6, { dx: 16, dy: 10 }]];
+  const names = [['東京', 3.9, { dy: 34 }], ['下関', 4.5, { dy: 34 }], ['京城', 5.5, { dx: -12, align: 'right' }], ['奉天', 6.1, { dx: -12, align: 'right' }], ['ハルビン', 6.7, { dx: 16, dy: 10 }]];
   for (const [n, t0, o] of names) label(n, S[n][0], S[n][1], easeOut((lt - t0) / 0.25) * a, { size: 32, ...o });
   // ハルビンから西へ(シベリア鉄道 → ヨーロッパ)
-  const pe = seg(lt, 3.8, 0.9);
+  const pe = seg(lt, 6.8, 0.7);
   if (pe > 0) {
     const [hx, hy] = P(126.63, 45.75);
     const ex = lerp(hx, 70, easeOut(pe));
     ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = C.accent; ctx.lineWidth = 6; ctx.setLineDash([16, 10]);
     ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ex, hy - 90 * easeOut(pe)); ctx.stroke(); ctx.restore();
-    const pt = easeOut((lt - 4.3) / 0.3) * a;
+    const pt = easeOut((lt - 7.0) / 0.3) * a;
     text('シベリア鉄道で', 70, hy - 160, { size: 32, color: C.ink, alpha: pt, halo: 7 });
     text('ヨーロッパへ', 70, hy - 112, { size: 52, weight: 'bold', color: C.accent, alpha: pt, halo: 8 });
   }
   banner([
-    { t: 0.4, main: '台湾・樺太は 1067mm', sub: '内地と同じ狭軌', color: C.nar },
-    { t: 1.9, main: '朝鮮・満洲は 1435mm', sub: '大陸と直通できる標準軌', color: C.std },
-    { t: 4.6, main: '東京 → ヨーロッパ', sub: '下関・釜山・奉天・ハルビン経由', color: C.accent },
+    { t: 0.3, main: '台湾・樺太 = 内地の延長', sub: '内地と同じ 1067mm', color: C.nar },
+    { t: 3.9, main: '朝鮮・満洲 = 大陸への道', sub: '大陸と同じ 1435mm 標準軌', color: C.std },
   ], lt, a, 1400);
-  legend(easeOut((lt - 0.4) / 0.4) * a, 1672);
+  legend(easeOut((lt - 0.3) / 0.4) * a, 1672);
 }
 
 function sceneCredits(lt, a) {
@@ -617,6 +623,7 @@ function render(t) {
   HL = hlAt(t);
   const cur = sceneIndex(t);
   if (cur === 1) overviewHL(t - SCENES[1].s);
+  if (cur === 7) summaryHL(t - SCENES[7].s);
   // 1943年: 樺太が外地 → 内地(島の色を内地色へ)
   SAKH_NAICHI = cur === 5 ? seg(t - SCENES[5].s, 4.6, 0.8) : 0;
   drawMap();
