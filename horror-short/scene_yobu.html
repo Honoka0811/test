@@ -141,7 +141,7 @@ window.render = function (t) {
   else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560); const st = smooth((t - TL.stretch[0]) / (TL.stretch[1] - TL.stretch[0]));
     shoji(g, t, { alpha: 0.88, stretch: st, arm: smooth((t - TL.stretch[0] - 0.3) / 1.6), reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.5) }); }
   else if (sc.k === 'shoji3' && t < TL.cut) {
-    const blinkT = t - 55.9, open = t < TL.eye ? 0 : Math.min(smooth((t - TL.eye) / 0.25), (blinkT > 0 && blinkT < 0.24) ? Math.abs(blinkT - 0.12) / 0.12 : 1);
+    const blinkT = t - (TL.eye + 2.7), open = t < TL.eye ? 0 : Math.min(smooth((t - TL.eye) / 0.25), (blinkT > 0 && blinkT < 0.24) ? Math.abs(blinkT - 0.12) / 0.12 : 1);
     const dx = t < TL.eye + 0.8 ? -3.4 * smooth((t - TL.eye - 0.3) / 0.2) : t < TL.eye + 1.6 ? -3.4 + 6.8 * smooth((t - TL.eye - 0.8) / 0.2) : 3.4 - 3.4 * smooth((t - TL.eye - 1.6) / 0.15);
     const z = 1.25 + 0.75 * ease((t - TL.hole) / 3.2);
     zoom(z, 222, 410); shoji(g, t, { alpha: 0.92, h: 430, lean: 0, hole: clamp((t - TL.poke) / (TL.hole - TL.poke)), eye: t >= TL.eye ? { dx, open } : null });
