@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>葬式に来る女</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(13000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+
+// ---- 人(上半身)。写真の中でも、斎場でも使う ----
+// o: hair(黒/白髪), bald, female, bun(まとめ髪), kimono(白い半襟), glasses, turn(-1=左を向く 〜 1=右を向く), bow(0〜1 頭を下げる), skin
+function bust(c, x, y, s, o = {}) {
+  c.save(); c.translate(x, y); c.scale(s, s);
+  const suit = o.suit || '#121214', skin = o.skin || '#cdbfae', hair = o.hair || '#1a1614', tn = o.turn || 0, bw = o.bow || 0;
+  c.fillStyle = suit; c.beginPath(); c.moveTo(-46, 90); c.quadraticCurveTo(-48, 18, -26, 8); c.lineTo(26, 8); c.quadraticCurveTo(48, 18, 46, 90); c.closePath(); c.fill();   // 肩と胴
+  if (o.kimono) { c.fillStyle = '#e8e4dc'; c.beginPath(); c.moveTo(-10, 8); c.lineTo(0, 30); c.lineTo(10, 8); c.lineTo(5, 8); c.lineTo(0, 20); c.lineTo(-5, 8); c.closePath(); c.fill(); }      // 白い半襟
+  else if (!o.female) { c.fillStyle = '#e6e3de'; c.beginPath(); c.moveTo(-8, 8); c.lineTo(0, 26); c.lineTo(8, 8); c.closePath(); c.fill(); c.fillStyle = '#0a0a0b'; c.fillRect(-2.5, 12, 5, 16); }   // 白いシャツと黒ネクタイ
+  c.save(); c.translate(0, 4); c.rotate(bw * 0.5); c.translate(0, -4);
+  c.fillStyle = skin; c.fillRect(-6, -4, 12, 12);                                                                       // 首
+  c.translate(tn * 3, 0);
+  if (!o.bald) { c.fillStyle = hair; c.beginPath(); c.ellipse(0, -22, 17, 19, 0, Math.PI, 0); c.fill(); if (o.female) { c.fillRect(-17, -24, 34, 14); } }
+  c.fillStyle = skin; c.beginPath(); c.ellipse(tn * 2.5, -16, 13.5, 17, 0, 0, 7); c.fill();                            // 顔(向いている方へずれる)
+  if (!o.bald) { c.fillStyle = hair; c.beginPath(); c.ellipse(-tn * 3, -28, 15, 8, 0, 0, 7); c.fill(); }
+  if (o.bun) { c.fillStyle = hair; c.beginPath(); c.ellipse(-tn * 10, -36, 9, 8, 0, 0, 7); c.fill(); }                     // まとめ髪
+  c.fillStyle = 'rgba(30,22,18,0.75)'; const ex = tn * 6; for (const d of [-5.5, 5.5]) { if (Math.abs(tn) > 0.6 && Math.sign(d) !== Math.sign(tn)) continue; c.beginPath(); c.ellipse(ex + d * (1 - Math.abs(tn) * 0.35), -17, 1.8, 1.3, 0, 0, 7); c.fill(); }   // 目(横を向くと片目だけ)
+  if (Math.abs(tn) > 0.3) { c.fillStyle = skin; c.beginPath(); c.moveTo(tn * 14, -16); c.lineTo(tn * 17.5, -11); c.lineTo(tn * 13, -10); c.closePath(); c.fill(); }   // 鼻(横を向くと出る)
+  if (o.glasses) { c.strokeStyle = 'rgba(20,20,20,0.7)'; c.lineWidth = 1.2; c.strokeRect(ex - 9, -20, 7, 5); c.strokeRect(ex + 2, -20, 7, 5); }
+  c.strokeStyle = 'rgba(60,30,30,0.5)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(ex - 3.5, -7); c.lineTo(ex + 3.5, -7); c.stroke();
+  c.restore(); c.restore();
+}
+function portrait(c, x, y, w, h, who) {      // 遺影(白黒の写真、黒い額、上の角に黒いリボン)
+  c.fillStyle = '#0c0c0c'; c.fillRect(x - w / 2 - 6, y - h / 2 - 6, w + 12, h + 12);
+  c.fillStyle = '#9a9890'; c.fillRect(x - w / 2, y - h / 2, w, h);
+  c.save(); c.beginPath(); c.rect(x - w / 2, y - h / 2, w, h); c.clip(); bust(c, x, y + h * 0.18, w / 92, { ...who, suit: '#2a2a2a', skin: '#c9c6bf', hair: who.hair || '#2b2b2b' }); c.restore();
+  c.fillStyle = '#050505'; for (const sx of [-1, 1]) { c.beginPath(); c.moveTo(x + sx * (w / 2 + 6), y - h / 2 - 6); c.lineTo(x + sx * (w / 2 - w * 0.25), y - h / 2 - 6); c.lineTo(x + sx * (w / 2 + 6), y - h / 2 + h * 0.2); c.closePath(); c.fill(); }
+}
+function altar(c, cx, cy, s, who) {          // 祭壇: 段になった白い菊と、まん中の遺影
+  c.save(); c.translate(cx, cy); c.scale(s, s);
+  c.fillStyle = '#d9d4c8'; c.fillRect(-330, 60, 660, 120); c.fillStyle = '#bfb8aa'; c.fillRect(-380, 170, 760, 30);
+  const r = rngOf(17); for (let row = 0; row < 4; row++) for (let i = 0; i < 46; i++) { const x = -360 + i * 16 + (row % 2) * 8 + (r() - 0.5) * 6, y = -60 + row * 38 + (r() - 0.5) * 8 + Math.abs(x) * 0.12; c.fillStyle = r() < 0.12 ? '#e9e2b8' : `rgb(${235 + r() * 15 | 0},${232 + r() * 15 | 0},${222 + r() * 15 | 0})`; c.beginPath(); c.arc(x, y, 9 + r() * 3, 0, 7); c.fill(); }
+  c.fillStyle = 'rgba(80,90,70,0.35)'; for (let i = 0; i < 30; i++) c.fillRect(-360 + i * 24, 88 + (i % 3) * 6, 10, 4);
+  portrait(c, 0, -10, 96, 122, who);
+  for (const sx of [-150, 150]) { c.fillStyle = '#eee'; c.fillRect(sx - 5, 110, 10, 40); c.fillStyle = '#ffd27a'; c.beginPath(); c.ellipse(sx, 104, 4, 8, 0, 0, 7); c.fill(); }   // ろうそく
+  c.restore();
+}
+const P = {};    // 人の見た目
+P.hiiji = { bald: true, glasses: true, skin: '#c8b8a4' };
+P.sofuOld = { hair: '#cfcac2', glasses: true }; P.sofuMid = { hair: '#2a2420' };
+P.soboOld = { female: true, hair: '#d6d1c9' }; P.soboMid = { female: true, hair: '#1f1a17' };
+P.haha = { female: true, hair: '#1a1513' }; P.hahaYoung = { female: true, hair: '#14100e' }; P.chichi = { hair: '#151210' };
+P.me = { female: true, hair: '#141110' }; P.oji = { hair: '#1d1916' }; P.oba = { female: true, hair: '#231c18' };
+P.woman = { female: true, bun: true, kimono: true, hair: '#0b0909', skin: '#d4cdc4' };
+
+// ---- 集合写真(古いものほど色あせる) ----
+const PH = {
+  p30: { who: P.hiiji, back: [[150, P.oji], [260, P.oba], [370, P.hahaYoung], [480, P.oji], [590, P.oba], [770, P.woman]], front: [[230, P.oba], [345, P.soboMid], [455, P.sofuMid], [565, P.oji], [675, P.oba]], woman: 770, wturn: -1, target: [345, 470], tname: '祖母', style: 'sepia' },
+  p10: { who: P.soboOld, back: [[130, P.woman], [300, P.oji], [410, P.haha], [520, P.chichi], [630, P.oba], [740, P.oji]], front: [[250, P.oba], [345, P.haha], [455, P.sofuOld], [560, { ...P.me, small: true }], [670, P.oji]], woman: 130, wturn: 1, target: [455, 470], tname: '祖父', style: 'faded' },
+};
+function photoCanvas(key) {
+  const d = PH[key], c0 = document.createElement('canvas'); c0.width = 900; c0.height = 640; const c = c0.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, 640); g.addColorStop(0, '#6d675c'); g.addColorStop(1, '#3a362f'); c.fillStyle = g; c.fillRect(0, 0, 900, 640);   // 斎場の壁
+  altar(c, 450, 150, 0.95, d.who);
+  for (const [x, who] of d.back) bust(c, x, 340, 1.25, { ...who, turn: who === P.woman ? d.wturn : (hash(x) - 0.5) * 0.3 });
+  c.fillStyle = 'rgba(20,18,16,0.6)'; c.fillRect(0, 455, 900, 30);
+  for (const [x, who] of d.front) bust(c, x, 478, who.small ? 1.05 : 1.3, { ...who, turn: (hash(x + 1) - 0.5) * 0.3 });
+  // 古い写真にする: 色、ぼけ、粒子、傷、白いふち
+  const o = document.createElement('canvas'); o.width = 960; o.height = 720; const oc = o.getContext('2d');
+  oc.fillStyle = key === 'p30' ? '#e6dcc4' : '#efeae0'; oc.fillRect(0, 0, 960, 720);
+  oc.filter = d.style === 'sepia' ? 'sepia(1) contrast(0.85) brightness(0.92) blur(1.2px)' : 'saturate(0.55) sepia(0.3) contrast(0.9) blur(0.8px)'; oc.drawImage(c0, 30, 30); oc.filter = 'none';
+  const r = rngOf(key.length * 77); for (let i = 0; i < 9000; i++) { oc.fillStyle = r() < 0.5 ? 'rgba(255,250,235,0.08)' : 'rgba(0,0,0,0.1)'; oc.fillRect(30 + r() * 900, 30 + r() * 640, 1.5, 1.5); }
+  oc.strokeStyle = 'rgba(255,250,240,0.25)'; oc.lineWidth = 1; for (let i = 0; i < (key === 'p30' ? 14 : 5); i++) { const x = 30 + r() * 900; oc.beginPath(); oc.moveTo(x, 30 + r() * 300); oc.lineTo(x + (r() - 0.5) * 40, 330 + r() * 340); oc.stroke(); }
+  const v = oc.createRadialGradient(480, 360, 200, 480, 360, 560); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, key === 'p30' ? 'rgba(60,40,10,0.45)' : 'rgba(40,30,20,0.3)'); oc.fillStyle = v; oc.fillRect(30, 30, 900, 640);
+  return o;
+}
+let PCV = null;
+const PLOC = k => ({ wx: 30 + PH[k].woman, wy: 30 + 340 - 1.25 * 22, tx: 30 + PH[k].target[0], ty: 30 + PH[k].target[1] - 1.3 * 22, px: 30 + 450, py: 30 + 150 - 0.95 * 10 });   // 写真の中の位置(写真の左上が原点)
+
+// ---- 斎場 ----
+function hallScene(t, f, o) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  const g = ctx.createLinearGradient(0, 0, 0, 1400); g.addColorStop(0, '#2c2924'); g.addColorStop(1, '#4d473e'); ctx.fillStyle = g; ctx.fillRect(-400, -400, 1900, 2600);
+  ctx.fillStyle = '#1d1b18'; ctx.fillRect(-400, 1150, 1900, 1200);                                                                                         // 床
+  altar(ctx, 540, 640, 1.25, P.sofuOld);
+  const ag = ctx.createRadialGradient(540, 640, 100, 540, 640, 700); ag.addColorStop(0, 'rgba(255,240,210,0.18)'); ag.addColorStop(1, 'rgba(255,240,210,0)'); ctx.fillStyle = ag; ctx.fillRect(-400, -200, 1900, 1800);
+  if (o.lineW) bust(ctx, 860, 1020, 2.3, { ...P.woman, turn: o.wTurn || 0 });                                                                                // 焼香の列の女の人(横顔)
+  for (let row = 0; row < 3; row++) for (let i = 0; i < 6; i++) { const x = -40 + i * 230 + (row % 2) * 115, y = 1340 + row * 210; bust(ctx, x, y, 3.0 + row * 0.5, { ...[P.oji, P.oba, P.haha, P.chichi][(i + row) % 4], suit: '#0b0b0c', skin: '#000', hair: '#050505' }); }   // 手前の参列者のうしろ姿
+  ctx.restore();
+}
+function exitScene(t, f, o) {      // 帰りぎわ: 出口の近くで、こちらを見つめて頭を下げる
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  const g = ctx.createLinearGradient(0, 0, 0, 1900); g.addColorStop(0, '#24211d'); g.addColorStop(1, '#3a352e'); ctx.fillStyle = g; ctx.fillRect(-400, -400, 1900, 2800);
+  ctx.fillStyle = '#5c564b'; ctx.fillRect(700, 200, 300, 1100); ctx.fillStyle = '#8c8475'; ctx.fillRect(720, 220, 260, 1060);                            // 出口の扉(外の明かり)
+  ctx.fillStyle = 'rgba(255,240,215,0.12)'; ctx.beginPath(); ctx.moveTo(720, 1280); ctx.lineTo(980, 1280); ctx.lineTo(1300, 1900); ctx.lineTo(400, 1900); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1a1816'; ctx.fillRect(-400, 1300, 1900, 900);
+  if (o.meBack) { bust(ctx, 760, 900, 4.2, { ...P.woman, turn: -0.75 }); bust(ctx, 250, 1420, 9, { ...P.me, skin: '#141110', suit: '#0c0c0d' }); }   // 私のうしろ姿と、私を見つめる女の人
+  else bust(ctx, 520, 860, 9.5, { ...P.woman, turn: o.wTurn || 0, bow: o.bow || 0 });
+  ctx.restore();
+}
+
+// ---- アルバムを見る机 ----
+const woodCv = document.createElement('canvas'); woodCv.width = 1080; woodCv.height = 1920;
+{ const c = woodCv.getContext('2d'), r = rngOf(9); c.fillStyle = '#3a2618'; c.fillRect(0, 0, 1080, 1920); for (let i = 0; i < 260; i++) { c.strokeStyle = `rgba(${r() < 0.5 ? '0,0,0' : '120,80,50'},${0.08 + r() * 0.12})`; c.lineWidth = 1 + r() * 3; const y = r() * 1920; c.beginPath(); c.moveTo(0, y); c.bezierCurveTo(360, y + (r() - 0.5) * 30, 720, y + (r() - 0.5) * 30, 1080, y + (r() - 0.5) * 20); c.stroke(); } }
+function albumScene(t, f, o) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  ctx.drawImage(woodCv, 0, 0);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(70, 330, 950, 1300);                                                                // アルバムの影
+  ctx.fillStyle = '#141313'; ctx.fillRect(60, 310, 960, 1290); ctx.fillStyle = '#2a2826'; ctx.fillRect(536, 310, 8, 1290);              // 黒い台紙(見開き)
+  const pl = (cvs, x, y, w, rot) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-w / 2 + 6, -w * 0.375 + 8, w, w * 0.75); ctx.drawImage(cvs, -w / 2, -w * 0.375, w, w * 0.75);
+    ctx.fillStyle = '#0a0a0a'; for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { ctx.beginPath(); ctx.moveTo(sx * w / 2, sy * w * 0.375); ctx.lineTo(sx * (w / 2 - 40), sy * w * 0.375); ctx.lineTo(sx * w / 2, sy * (w * 0.375 - 40)); ctx.closePath(); ctx.fill(); } ctx.restore(); };
+  if (o.page === 'p10') { pl(PCV.p10, 790, 760, 420, 0.02); pl(PCV.blank1, 300, 900, 400, -0.015); }
+  else { pl(PCV.p30, 790, 800, 420, -0.02); pl(PCV.blank2, 300, 740, 400, 0.02); }
+  ctx.restore();
+  const lg = ctx.createRadialGradient(560, 760, 120, 560, 860, 1100); lg.addColorStop(0, 'rgba(255,214,150,0.16)'); lg.addColorStop(1, 'rgba(0,0,0,0.75)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);   // 電気スタンドの明かり
+}
+function plainPhoto(key) {    // ほかの思い出の写真(結婚式、旅行など。人物は小さく)
+  const o = document.createElement('canvas'); o.width = 960; o.height = 720; const c = o.getContext('2d'); c.fillStyle = '#efe9dc'; c.fillRect(0, 0, 960, 720);
+  const g = c.createLinearGradient(0, 30, 0, 690); if (key === 1) { g.addColorStop(0, '#8fb0c8'); g.addColorStop(0.6, '#d8d2c0'); g.addColorStop(1, '#6f7d5c'); } else { g.addColorStop(0, '#c9b9a0'); g.addColorStop(1, '#7c6a58'); }
+  c.fillStyle = g; c.fillRect(30, 30, 900, 640); for (let i = 0; i < 4; i++) bust(c, 280 + i * 130, 520, 1.6, { ...[P.haha, P.chichi, P.me, P.soboOld][i], suit: ['#5a4a6e', '#2c3a52', '#a04a4a', '#6a6050'][i] });
+  c.filter = 'saturate(0.6) sepia(0.25)'; c.drawImage(o, 0, 0); c.filter = 'none'; return o;
+}
+// 写真を大きく見る(1枚 / 2枚を並べて)
+function bigPhoto(t, key, x, y, w, rot = 0) { ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-w / 2 + 10, -w * 0.375 + 14, w, w * 0.75); ctx.drawImage(PCV[key], -w / 2, -w * 0.375, w, w * 0.75); ctx.restore(); }
+function photoPt(key, px, py, x, y, w) { const s = w / 960; return [x - w / 2 + px * s, y - w * 0.375 + py * s]; }
+function ring(x, y, r, k, col = RED) { if (k <= 0) return; ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 6; ctx.shadowColor = col; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(x, y, r, -1.6, -1.6 + 6.4 * k); ctx.stroke(); ctx.restore(); }
+function gaze(a, b, k, label) {      // 見つめている先: 女の人の顔から、相手の顔へ、赤い点線の矢印
+  if (k <= 0) return; const x = lerp(a[0], b[0], k), y = lerp(a[1], b[1], k);
+  ctx.save(); ctx.strokeStyle = RED; ctx.lineWidth = 6; ctx.setLineDash([16, 12]); ctx.shadowColor = RED; ctx.shadowBlur = 12; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(x, y); ctx.stroke(); ctx.setLineDash([]);
+  if (k >= 1) { const an = Math.atan2(b[1] - a[1], b[0] - a[0]); ctx.fillStyle = RED; ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] - Math.cos(an - 0.5) * 30, b[1] - Math.sin(an - 0.5) * 30); ctx.lineTo(b[0] - Math.cos(an + 0.5) * 30, b[1] - Math.sin(an + 0.5) * 30); ctx.closePath(); ctx.fill();
+    if (label) { ctx.font = `800 52px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#000'; ctx.lineWidth = 12; ctx.strokeText(label, b[0], b[1] + 92); ctx.fillStyle = '#fff'; ctx.fillText(label, b[0], b[1] + 92); } }
+  ctx.restore();
+}
+function womanFace(s, a) {    // 最後に近づく、女の人の顔
+  ctx.save(); ctx.globalAlpha = a; ctx.filter = 'blur(2px)'; bust(ctx, 540, 1240, s, { ...P.woman, turn: 0 }); ctx.filter = 'none'; ctx.restore();
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => l.kind !== 'kid' && t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+const lowCv = document.createElement('canvas'); lowCv.width = W / 3; lowCv.height = H / 3; const lc = lowCv.getContext('2d');
+const prevCv = document.createElement('canvas'); prevCv.width = W; prevCv.height = H; const pc = prevCv.getContext('2d'); let prevF = -9;
+const grainCv = document.createElement('canvas'); grainCv.width = 540; grainCv.height = 960; const gc = grainCv.getContext('2d'); const gImg = gc.createImageData(540, 960);
+function lowLight(t, f, dark) {
+  // dark: 0=昼(ほぼそのまま) 〜 1=真っ暗な夜
+  const src = document.createElement('canvas'); src.width = W; src.height = H; src.getContext('2d').drawImage(cv, 0, 0);
+  // 解像感を落として、やわらかくぼかす(暗いほど強く)
+  lc.filter = `blur(${(0.5 + 1.0 * dark).toFixed(2)}px)`; lc.clearRect(0, 0, lowCv.width, lowCv.height); lc.drawImage(src, 0, 0, lowCv.width, lowCv.height); lc.filter = 'none';
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = `saturate(${(1 - 0.45 * dark).toFixed(2)}) contrast(${(1 + 0.08 * dark).toFixed(2)})`;
+  // 手ぶれ(ゆっくりした揺れと、細かいふるえ)
+  const sx = Math.sin(t * 0.9) * 5 + Math.sin(t * 2.3 + 1) * 2 + (hash(f) - 0.5) * 1.4 * dark, sy = Math.sin(t * 0.7 + 2) * 4 + Math.sin(t * 1.9) * 2, rot = Math.sin(t * 0.5) * 0.004;
+  ctx.translate(540 + sx, 960 + sy); ctx.rotate(rot); ctx.scale(1.02, 1.02); ctx.translate(-540, -960);
+  ctx.imageSmoothingQuality = 'high'; ctx.drawImage(lowCv, 0, 0, W, H); ctx.filter = 'none';
+  ctx.globalAlpha = 0.12 + 0.5 * (1 - dark); ctx.drawImage(src, 0, 0); ctx.restore();   // 少しだけ元の細部を残す
+  // 残像(暗いところで動くものは尾を引く)
+  if (prevF === f - 1 && dark > 0.2) { ctx.save(); ctx.globalAlpha = 0.28 * dark; ctx.drawImage(prevCv, 0, 0); ctx.restore(); }
+  // ざらつき(暗い部分ほど目立つ、明るさのノイズ)
+  const r = rngOf(f * 7 + 3), d = gImg.data; for (let i = 0; i < d.length; i += 4) { const v = (r() + r() + r() - 1.5) * 150; d[i] = d[i + 1] = d[i + 2] = 128 + v; d[i + 3] = 255; }
+  gc.putImageData(gImg, 0, 0); ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.1 + 0.22 * dark; ctx.drawImage(grainCv, 0, 0, W, H); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.35; ctx.fillStyle = dark > 0.5 ? '#2a3550' : '#5a4a36'; ctx.fillRect(0, 0, W, H); ctx.restore();   // 夜は青く、昼は暖かく
+  pc.clearRect(0, 0, W, H); pc.drawImage(cv, 0, 0); prevF = f;
+}
+function render(t) {
+  const f = Math.round(t * FPS);
+  if (!PCV) PCV = { p30: photoCanvas('p30'), p10: photoCanvas('p10'), blank1: plainPhoto(1), blank2: plainPhoto(2) };
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.1;
+  const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
+  const br = Math.sin(t * 0.5) * 4, T_EXIT = LN.l2.start - 0.3;
+  let dark = 0.55;
+  if (t < EV.hit) {
+    if (t < T_EXIT) {           // 斎場: 焼香の列に、黒い着物の女の人
+      const k = ease(prog(t, LN.l1.start + 1.2, LN.l1.start + 4.5)); hallScene(t, f, { z: lerp(1, 1.9, k), cx: lerp(540, 820, k), cy: lerp(900, 900, k), lineW: true, wTurn: -0.9 + 0.5 * ease(prog(t, LN.l1.end - 1.0, LN.l1.end)) }); fadeIn(0, 0.8); }
+    else if (t < EV.album) {    // 帰りぎわ: 私をじっと見て、頭を下げる
+      const bw = Math.sin(Math.PI * clamp((t - EV.bow) / 1.3)); exitScene(t, f, { z: lerp(1.0, 1.25, prog(t, T_EXIT, EV.album)), cx: 540, cy: 760, wTurn: 0, bow: bw * 0.9 }); fadeIn(T_EXIT); }
+    else if (t < EV.p10) { albumScene(t, f, { z: lerp(1.0, 1.15, prog(t, EV.album, EV.p10)), cx: 540, cy: 900, page: 'p10' }); fadeIn(EV.album, 0.5); dark = 0.3; }
+    else if (t < EV.p30) {      // 10年前の写真に寄る
+      const k = ease(prog(t, EV.p10, EV.p10 + 1.2)); albumScene(t, f, { z: lerp(1.15, 2.4, k), cx: lerp(540, 790, k), cy: lerp(900, 760, k), page: 'p10' });
+      const L0 = PLOC('p10'), s = 2.4, sp = (px, py) => [540 + (790 - 210 + px * 420 / 960 - 790) * s, 960 + (760 - 157.5 + py * 420 / 960 - 760) * s]; const w = sp(L0.wx, L0.wy); ring(w[0], w[1] - 8, 70, ease(prog(t, EV.p10 + 1.5, EV.p10 + 2.1))); dark = 0.3; }
+    else if (t < EV.cmp) {      // ページを戻して、30年前の写真
+      const k = ease(prog(t, EV.p30, EV.p30 + 1.2)); albumScene(t, f, { z: lerp(1.15, 2.4, k), cx: lerp(540, 790, k), cy: lerp(900, 800, k), page: 'p30' });
+      const L0 = PLOC('p30'), s = 2.4, sp = (px, py) => [540 + (790 - 210 + px * 420 / 960 - 790) * s, 960 + (800 - 157.5 + py * 420 / 960 - 800) * s]; const w = sp(L0.wx, L0.wy); ring(w[0], w[1] - 8, 70, ease(prog(t, EV.p30 + 2.4, EV.p30 + 3.0)));
+      const fl = prog(t, EV.p30 - 0.2, EV.p30 + 0.15); if (fl > 0 && fl < 1) { ctx.fillStyle = `rgba(0,0,0,${Math.sin(fl * Math.PI)})`; ctx.fillRect(0, 0, W, H); } dark = 0.3; }
+    else if (t < EV.today) {    // 2枚を並べて見比べる: 見つめる先 → 次に亡くなる人
+      ctx.drawImage(woodCv, 0, 0); const lg = ctx.createRadialGradient(540, 900, 200, 540, 900, 1100); lg.addColorStop(0, 'rgba(255,214,150,0.12)'); lg.addColorStop(1, 'rgba(0,0,0,0.75)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+      const PW = 900, A = [540, 420], B = [540, 1080]; bigPhoto(t, 'p30', A[0], A[1], PW * 0.98, -0.01); bigPhoto(t, 'p10', B[0], B[1], PW * 0.98, 0.01);
+      ctx.font = `800 44px ${MIN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; for (const [lb, yy] of [['30年前', A[1] - 352], ['10年前', B[1] - 352]]) { ctx.strokeStyle = '#000'; ctx.lineWidth = 10; ctx.strokeText(lb, 60, yy); ctx.fillStyle = '#e8dcc0'; ctx.fillText(lb, 60, yy); }
+      const pa = k => PLOC(k), q = (k, px, py, C) => photoPt(k, px, py, C[0], C[1], PW * 0.98);
+      const wa = q('p30', pa('p30').wx, pa('p30').wy, A), ta = q('p30', pa('p30').tx, pa('p30').ty, A), wb = q('p10', pa('p10').wx, pa('p10').wy, B), tb = q('p10', pa('p10').tx, pa('p10').ty, B), pb = q('p10', pa('p10').px, pa('p10').py, B);
+      const hl = ease(prog(t, LN.l6.start + 2.0, LN.l6.start + 2.6)); ring(wa[0], wa[1] - 6, 60, hl); ring(wb[0], wb[1] - 6, 60, hl);
+      gaze(wa, ta, ease(prog(t, EV.g1, EV.g1 + 0.6)), '祖母'); gaze(wb, tb, ease(prog(t, EV.g2, EV.g2 + 0.6)), '祖父');
+      // 30年前に見つめられた祖母が、10年前の写真では遺影になっている
+      const c1 = ease(prog(t, EV.conc, EV.conc + 0.8)); if (c1 > 0) { ring(pb[0], pb[1], 78, c1, '#ffd24a'); ctx.save(); ctx.globalAlpha = c1; ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 5; ctx.setLineDash([14, 10]); ctx.beginPath(); ctx.moveTo(ta[0] + 40, ta[1] + 40); ctx.quadraticCurveTo(960, (ta[1] + pb[1]) / 2, pb[0] + 80, pb[1]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font = `800 46px ${MIN}`; ctx.textAlign = 'right'; ctx.strokeStyle = '#000'; ctx.lineWidth = 10; ctx.strokeText('次のお葬式', 1030, (ta[1] + pb[1]) / 2); ctx.fillStyle = '#ffd24a'; ctx.fillText('次のお葬式', 1030, (ta[1] + pb[1]) / 2); ctx.restore(); }
+      fadeIn(EV.cmp); dark = 0.25;
+    }
+    else if (t < EV.turn) {     // 今日の記憶: あの人が見つめていたのは、私
+      exitScene(t, f, { z: 1, cx: 540, cy: 960, meBack: true });
+      ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore();       // 思い出の場面は色を抜く
+      fadeIn(EV.today, 0.4);
+      gaze([735, 830], [300, 1130], ease(prog(t, EV.me - 0.2, EV.me + 0.5)), '私');
+    }
+    else {                      // 夜の机。すぐそばで、ささやく声
+      albumScene(t, f, { z: 1.2, cx: 540, cy: 900, page: 'p30' });
+      const fl = hash(Math.floor(t * 12)) < 0.25 ? 0.5 : 0; ctx.fillStyle = `rgba(0,0,0,${0.35 + fl})`; ctx.fillRect(0, 0, W, H);   // 電気スタンドがちらつく
+      womanFace(lerp(6, 9, prog(t, EV.turn, EV.hit)), 0.55 * ease(prog(t, EV.turn + 0.3, EV.hit - 0.3)));
+      ctx.drawImage(cv, (hash(f) - 0.5) * 6, (hash(f + 2) - 0.5) * 6);
+    }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); bust(ctx, 540, 1500 + 200 * k, 15 + 8 * k, { ...P.woman, turn: 0 });
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('お葬式で、知らない人と', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('目を合わせてはいけない。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  if (t < EV.hit + 0.5) lowLight(t, f, dark);
+  subtitle(t);
+  noise(grain * 0.4, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 540, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '30年前10年前祖母祖父次のお葬式▼私お葬式で、知らない人と目を合わせてはいけない。ナレーション四国めたん').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
