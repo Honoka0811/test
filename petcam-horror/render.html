@@ -184,23 +184,45 @@ function drawReflection(t, x, y, w, h, o) {
   X.fillStyle = '#6a6a6a'; X.fillRect(120, 40, 120, 20);
   if (man > 0) {
     X.save(); X.globalAlpha = a * man;
-    // しゃがんだ男(こちら=テレビ側を向いている)
+    const stand = !!o.stand;
+    const hx = 230, hy = stand ? 46 : 118;          // 顔の中心
     X.fillStyle = '#1e1e1e';
-    X.beginPath(); X.moveTo(160, 285); X.quadraticCurveTo(150, 170, 200, 140); X.lineTo(260, 140); X.quadraticCurveTo(312, 170, 300, 285); X.fill();
-    // 犬へ伸ばした腕
-    X.beginPath(); X.moveTo(210, 160); X.quadraticCurveTo(200 + Math.sin(t * 2.2) * 6, 210, 230 + Math.sin(t * 2.2) * 8, 228); X.lineTo(250 + Math.sin(t * 2.2) * 8, 222); X.quadraticCurveTo(225, 200, 232, 160); X.fill();
-    // 顔(青白く、目元は影で落ちくぼんでいる)
-    X.filter = 'blur(1.2px)';
-    X.fillStyle = '#1a1a1a'; ell(230, 100, 33, 36); X.fill();                       // 髪(ぼさぼさ)
-    for (let i = 0; i < 9; i++) { ell(200 + i * 7.5, 120 + (i % 3) * 4, 5, 18); X.fill(); }
-    const fg = X.createRadialGradient(232, 116, 3, 230, 118, 30); fg.addColorStop(0, '#bdbdb8'); fg.addColorStop(0.7, '#7c7c78'); fg.addColorStop(1, '#3a3a38');
-    X.fillStyle = fg; ell(230, 118, 23, 29); X.fill();
-    X.fillStyle = 'rgba(15,15,15,0.85)'; ell(220, 114, 6, 5); X.fill(); ell(241, 114, 6, 5); X.fill();   // 目の影
-    X.fillStyle = 'rgba(20,20,20,0.5)'; X.fillRect(224, 134, 13, 2.5);              // 口
-    X.fillStyle = '#1a1a1a'; for (let i = 0; i < 6; i++) { ell(208 + i * 9, 103, 6, 14); X.fill(); }   // 前髪が目にかかる
+    if (!stand) {
+      // しゃがんだ男(こちら=テレビ側を向いている)。片手で犬を撫で、もう片手におやつの袋
+      X.beginPath(); X.moveTo(160, 285); X.quadraticCurveTo(150, 170, 200, 140); X.lineTo(260, 140); X.quadraticCurveTo(312, 170, 300, 285); X.fill();
+      X.beginPath(); X.moveTo(210, 160); X.quadraticCurveTo(200 + Math.sin(t * 2.2) * 6, 210, 230 + Math.sin(t * 2.2) * 8, 228); X.lineTo(250 + Math.sin(t * 2.2) * 8, 222); X.quadraticCurveTo(225, 200, 232, 160); X.fill();
+      X.beginPath(); X.moveTo(255, 150); X.quadraticCurveTo(285, 165, 292, 192); X.lineTo(280, 198); X.quadraticCurveTo(270, 175, 248, 168); X.fill();
+      // おやつの袋
+      X.fillStyle = '#e2c24c'; X.save(); X.translate(290, 196); X.rotate(0.25); X.fillRect(-14, -20, 28, 38);
+      X.fillStyle = '#c0392b'; X.fillRect(-14, -8, 28, 10); X.fillStyle = '#f5f0e0'; X.beginPath(); X.arc(0, 10, 5, 0, 7); X.fill(); X.restore();
+    } else {
+      // 立っている男。だらりと下げた右手に刃物
+      X.beginPath(); X.moveTo(196, 290); X.lineTo(200, 190); X.lineTo(262, 190); X.lineTo(266, 290); X.fill();          // 脚
+      X.beginPath(); X.moveTo(188, 200); X.quadraticCurveTo(178, 110, 205, 78); X.lineTo(255, 78); X.quadraticCurveTo(282, 110, 272, 200); X.fill();   // 胴
+      X.beginPath(); X.moveTo(262, 84); X.quadraticCurveTo(290, 130, 290, 196); X.lineTo(278, 198); X.quadraticCurveTo(276, 135, 252, 96); X.fill();    // 右腕
+      X.beginPath(); X.moveTo(198, 84); X.quadraticCurveTo(172, 130, 174, 192); X.lineTo(186, 192); X.quadraticCurveTo(186, 135, 208, 96); X.fill();    // 左腕
+      // 刃物(柄と刃)。刃だけが光る
+      X.fillStyle = '#111'; X.fillRect(279, 192, 10, 18);
+      const gl = o.glint || 0;
+      X.save(); X.shadowColor = '#fff'; X.shadowBlur = 6 + gl * 14;
+      X.fillStyle = `rgb(${200 + gl * 55},${200 + gl * 55},${200 + gl * 55})`;
+      X.beginPath(); X.moveTo(278, 210); X.lineTo(292, 210); X.lineTo(289, 278); X.lineTo(279, 262); X.closePath(); X.fill();
+      X.restore();
+      X.fillStyle = '#1e1e1e'; X.fillRect(224, 66, 12, 14);   // 首
+    }
+    // 顔(普通の人の肌。短髪)
+    X.filter = 'blur(2px)';
+    const fg = X.createRadialGradient(hx + 2, hy - 2, 3, hx, hy, 28); fg.addColorStop(0, '#a88a76'); fg.addColorStop(0.7, '#6e5446'); fg.addColorStop(1, '#2e241e');
+    X.fillStyle = fg; ell(hx, hy, 22, 27); X.fill();
+    X.fillStyle = '#16130f'; X.beginPath(); X.ellipse(hx, hy - 12, 24, 18, 0, Math.PI, 0); X.fill();        // 短髪
+    X.fillRect(hx - 24, hy - 13, 6, 12); X.fillRect(hx + 18, hy - 13, 6, 12);
+    X.fillStyle = 'rgba(30,22,18,0.9)'; X.fillRect(hx - 15, hy - 5, 10, 2.5); X.fillRect(hx + 5, hy - 5, 10, 2.5);   // 眉
+    X.fillStyle = 'rgba(20,14,12,0.55)'; ell(hx - 9, hy + 1, 7, 5); X.fill(); ell(hx + 10, hy + 1, 7, 5); X.fill();   // 目元の影
+    X.fillStyle = '#0c0907'; ell(hx - 9, hy + 1, 3, 2.2); X.fill(); ell(hx + 10, hy + 1, 3, 2.2); X.fill();      // 目
+    X.fillStyle = 'rgba(60,35,30,0.7)'; X.fillRect(hx - 6, hy + 15, 12, 2.2);                                          // 口
     X.filter = 'none';
-    if (o.look) {  // ラスト: 男が顔を上げてカメラ(=こちら)を見る
-      X.fillStyle = `rgba(255,255,255,${o.look})`; ell(220, 110, 2, 2); X.fill(); ell(240, 110, 2, 2); X.fill();
+    if (o.look) {  // ラスト: 目がカメラの光を反射する
+      X.fillStyle = `rgba(255,255,255,${o.look})`; ell(hx - 9, hy + 1, 1.8, 1.8); X.fill(); ell(hx + 10, hy + 1, 1.8, 1.8); X.fill();
     }
     X.restore();
   }
@@ -337,7 +359,7 @@ function sceneReveal(t, u, d) {
   const zoom = lerp(3.6, 6.2, p);
   const cx = lerp(TV.x + TV.w / 2, TV.x + 230 * TV.w / 480, p), cy = lerp(TV.y + TV.h / 2 + 10, TV.y + 140 * TV.h / 290, p);
   main.drawImage(renderFeed(SC.day3.start + 2.0 + u, { dog: { wag: 0.8, paw: true, happy: true }, refl: 0.95, man: 1, clockA: 0.6,
-    filter: 'saturate(0.5) contrast(1.5) brightness(1.4)' }, { zoom, cx, cy, pix: 2.5 }), 0, 0);
+    filter: 'saturate(0.4) contrast(1.25) brightness(1.12)' }, { zoom, cx, cy, pix: 2.5 }), 0, 0);
   // 赤枠で男を示す
   X = main; X.save(); const a = seg(u, 0.2, 0.3);
   X.globalAlpha = a; X.strokeStyle = '#ff3b30'; X.lineWidth = 8; X.beginPath(); X.ellipse(540, 860, 300 + 40 * p, 360 + 40 * p, 0, 0, 7); X.stroke();
@@ -347,7 +369,7 @@ function sceneReveal(t, u, d) {
 function sceneTonight(t, u, d) {
   // 寝室: 暗い。スマホに通知 → タップでライブ映像(暗視)
   X = main; main.fillStyle = '#000'; main.fillRect(0, 0, W, H);
-  const cue = TL.cues.find(c => c.a >= SC.tonight.start);
+  const cue = TL.cues.filter(c => c.a >= SC.tonight.start && c.a < SC.tonight.end).pop();
   const tNotify = cue.b - SC.tonight.start + 0.2;     // セリフの後に通知
   const tLive = tNotify + 1.3;
   if (u < tLive) {
@@ -373,8 +395,14 @@ function sceneTonight(t, u, d) {
     return;
   }
   const lu = u - tLive;
-  const look = seg(lu, 1.6, 0.4);
-  main.drawImage(renderFeed(t, { night: true, dog: { wag: 1, happy: false, glow: true, wagHz: 3.5 }, refl: 0.22, look, clockA: 0.3 }), 0, 0);
+  // 尻尾を振る犬 → 指でテレビの方を拡大 → 反射の中で刃物が光る
+  const zp = ease(seg(lu, 0.9, 1.6));
+  const zoom = lerp(1, 3.0, zp), cx = lerp(540, TV.x + 290 * TV.w / 480, zp), cy = lerp(960, TV.y + 150 * TV.h / 290, zp);
+  const look = seg(lu, 2.7, 0.3), glint = Math.max(0, 1 - Math.abs(lu - 2.8) / 0.35);
+  main.drawImage(renderFeed(t, { night: true, dog: { wag: 1, happy: false, glow: true, wagHz: 3.5 }, refl: lerp(0.3, 0.7, zp), man: 1, stand: true, look, glint, clockA: 0.3 },
+    { zoom, cx, cy, pix: lerp(1, 2.2, zp) }), 0, 0);
+  if (zp > 0) { X = main; X.save(); X.globalAlpha = Math.min(1, zp * 3); X.fillStyle = 'rgba(0,0,0,0.55)'; rr(50, 170, 300, 80, 16); X.fill();
+    X.fillStyle = '#fff'; X.font = `bold 40px ${GOTH}`; X.fillText(`拡大 ×${zoom.toFixed(1)}`, 80, 225); X.restore(); }
   camOSD(t, 'リビング', stampAt(14, 2, 13, 2 + lu), { live: true, ir: true });
 }
 function sceneEnd(t, u, d) {
