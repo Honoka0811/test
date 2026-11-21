@@ -74,53 +74,119 @@ function yagura(g, t, still) {
       lantern(g, x + (still ? 0 : Math.sin(t * 1.4 + k) * 1.5), y + 12, 9, 0.8 + 0.2 * Math.sin(t * 5 + k * 2 + ex)); }
   }
 }
-function dancer(g, x, y, s, ph, facing, shadow, cx) {
-  if (shadow) { g.fillStyle = 'rgba(0,0,0,.5)'; const dx = (x - cx) * 0.22; g.beginPath(); g.ellipse(x + dx, y + 4 * s, 26 * s, 7 * s, 0, 0, 7); g.fill(); }
-  const bob = facing ? 0 : Math.abs(Math.sin(ph)) * 4 * s; y -= bob;
+// ---------- the dance: one shared 8-beat routine, everyone in unison ----------
+function ephase(t) {                     // position in eighth-notes, frozen whenever the band is not playing
+  for (const [E, base] of [[TL.eighths2, 1000], [TL.eighths1, 0]]) {
+    if (t < E[0]) continue;
+    let i = 0; while (i + 1 < E.length && E[i + 1] <= t) i++;
+    const nxt = i + 1 < E.length ? E[i + 1] : E[i] + (E[i] - E[i - 1]);
+    return base + i + Math.min(1, (t - E[i]) / (nxt - E[i])) * (i + 1 < E.length ? 1 : 0.999);
+  }
+  return 0;
+}
+const smooth = x => x * x * (3 - 2 * x);
+// hand targets (right, left) per beat, in the dancer's own frame: +x = the way they are travelling
+const KEY = [[[46, -96], [30, -86]], [[47, -92], [31, -82]], [[-28, -88], [-44, -98]], [[-27, -84], [-43, -94]],
+             [[42, -38], [30, -30]], [[-18, -46], [-30, -42]], [[26, -64], [24, -64]], [[26, -64], [24, -64]]];
+const OPEN = [[44, -58], [6, -66]];      // hands part before each clap
+function hands(b) {
+  b = ((b % 8) + 8) % 8; const k = Math.floor(b), fr = b - k;
+  let A = KEY[k], B = KEY[(k + 1) % 8], u = smooth(clamp((fr - 0.42) / 0.58));
+  if (k === 5 || k === 6) { if (fr < 0.5) { B = OPEN; u = smooth(clamp((fr - 0.1) / 0.4)); } else { A = OPEN; u = smooth((fr - 0.5) / 0.5); u = u * u; } }
+  return [0, 1].map(h => [A[h][0] + (B[h][0] - A[h][0]) * u, A[h][1] + (B[h][1] - A[h][1]) * u]);
+}
+function dancer(g, x, y, s, o) {
+  o = o || {};
+  if (o.shadow) { g.fillStyle = 'rgba(0,0,0,.5)'; const dx = (x - 270) * 0.22; g.beginPath(); g.ellipse(x + dx, y + 4 * s, 26 * s, 7 * s, 0, 0, 7); g.fill(); }
   g.fillStyle = INK; g.strokeStyle = INK; g.lineCap = 'round'; g.lineJoin = 'round';
-  g.beginPath(); g.moveTo(x - 12 * s, y - 64 * s); g.lineTo(x + 12 * s, y - 64 * s); g.lineTo(x + 17 * s, y - 4 * s); g.lineTo(x - 17 * s, y - 4 * s); g.fill();   // yukata
-  g.fillRect(x - 10 * s, y - 5 * s, 7 * s, 7 * s + bob); g.fillRect(x + 3 * s, y - 5 * s, 7 * s, 7 * s + bob);
-  g.lineWidth = 9 * s; g.beginPath();
-  if (facing) { g.moveTo(x - 13 * s, y - 60 * s); g.lineTo(x - 18 * s, y - 22 * s); g.moveTo(x + 13 * s, y - 60 * s); g.lineTo(x + 18 * s, y - 22 * s); }
-  else { const a = Math.sin(ph), b = Math.cos(ph);
-    g.moveTo(x - 11 * s, y - 60 * s); g.lineTo(x - (24 + 4 * a) * s, y - (64 + 20 * a) * s); g.lineTo(x - (20 - 8 * a) * s, y - (84 + 16 * a) * s);
-    g.moveTo(x + 11 * s, y - 60 * s); g.lineTo(x + (26 + 4 * b) * s, y - (54 - 12 * b) * s); g.lineTo(x + (36 + 2 * b) * s, y - (40 - 20 * b) * s); }
-  g.stroke();
-  const tilt = facing ? 9 * s : 0;                                                    // the hat that hides the face
-  g.beginPath(); g.moveTo(x - 27 * s, y - 68 * s + tilt); g.quadraticCurveTo(x, y - 112 * s + tilt * 0.4, x + 27 * s, y - 68 * s + tilt); g.quadraticCurveTo(x, y - 60 * s + tilt, x - 27 * s, y - 68 * s + tilt); g.fill();
+  const dir = o.dir || 1, wf = o.wf || 1, b = (o.e || 0) / 2;
+  const P = (px, py) => [x + px * s * dir * wf, y + py * s];
+  if (o.facing) {
+    g.beginPath(); g.moveTo(x - 13 * s, y - 64 * s); g.lineTo(x + 13 * s, y - 64 * s); g.lineTo(x + 17 * s, y - 4 * s); g.lineTo(x - 17 * s, y - 4 * s); g.fill();
+    g.fillRect(x - 10 * s, y - 5 * s, 7 * s, 7 * s); g.fillRect(x + 3 * s, y - 5 * s, 7 * s, 7 * s);
+    for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(x + sd * 12 * s, y - 62 * s); g.lineTo(x + sd * 22 * s, y - 58 * s); g.lineTo(x + sd * 24 * s, y - 20 * s); g.lineTo(x + sd * 13 * s, y - 24 * s); g.fill(); }
+    g.beginPath(); g.moveTo(x - 28 * s, y - 59 * s); g.quadraticCurveTo(x, y - 106 * s, x + 28 * s, y - 59 * s); g.quadraticCurveTo(x, y - 49 * s, x - 28 * s, y - 59 * s); g.fill();
+    return;
+  }
+  const bob = 3.6 * Math.pow(Math.cos(Math.PI * b), 2);                  // knees give on every beat
+  const H = hands(b), Hl = hands(b - 0.2);                                // sleeves trail the hands a little
+  const lean = clamp((H[0][0] + H[1][0]) / 2 / 150, -0.12, 0.12);
+  const hipY = -6 + bob, shY = -60 + bob, shX = lean * 54;
+  // legs and feet: alternate small steps in the direction of travel
+  const st = Math.sin(Math.PI * b / 2);
+  for (const [sd, ph] of [[-1, st], [1, -st]]) { const fx = sd * 5 + ph * 7, lift = Math.max(0, ph) * 3.5; const a = P(fx - 3.5, -6 - lift), w = 8 * s * wf; g.fillRect(Math.min(a[0], a[0] + w * dir), a[1], w, 8 * s); }
+  // yukata body, leaning with the arms; the hem swings
+  const hem = Math.sin(Math.PI * b / 2 - 0.5) * 2.5;
+  g.beginPath(); let q = P(shX - 12, shY); g.moveTo(q[0], q[1]); q = P(shX + 12, shY); g.lineTo(q[0], q[1]); q = P(16 + hem, hipY + 2); g.lineTo(q[0], q[1]); q = P(-16 + hem, hipY + 2); g.lineTo(q[0], q[1]); g.fill();
+  // arms with hanging sleeves (2-bone IK)
+  for (const h of [1, 0]) {
+    const S0 = [shX + (h ? -5 : 5), shY + 3], T = [H[h][0], H[h][1] + bob * 0.5], Tl = [Hl[h][0], Hl[h][1] + bob * 0.5];
+    const dx = T[0] - S0[0], dy = T[1] - S0[1], d = Math.min(47.5, Math.hypot(dx, dy)), L = 24;
+    const mid = [S0[0] + dx * 0.5, S0[1] + dy * 0.5], off = Math.sqrt(Math.max(0, L * L - d * d / 4)), nx = -dy / (d || 1), ny = dx / (d || 1), sg = ny > 0 ? 1 : -1;
+    const E = [mid[0] + nx * off * sg, mid[1] + ny * off * sg];             // elbow hangs downward
+    const a = P(S0[0], S0[1]), e = P(E[0], E[1]), hd = P(T[0], T[1]);
+    g.lineWidth = 8.5 * s; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(e[0], e[1]); g.lineTo(hd[0], hd[1]); g.stroke();
+    const lag = clamp((Tl[0] - T[0]) * 1.2, -6, 6), M = [T[0] + (E[0] - T[0]) * 0.8, T[1] + (E[1] - T[1]) * 0.8];   // sleeve: a soft bag hanging straight down from the forearm
+    let xa = Math.min(T[0], M[0]), xb = Math.max(T[0], M[0]); if (xb - xa < 11) { const c = (xa + xb) / 2; xa = c - 5.5; xb = c + 5.5; }
+    const lo = Math.max(T[1], M[1]) + 20, ya = T[0] < M[0] ? T[1] : M[1], yb = T[0] < M[0] ? M[1] : T[1];
+    const q0 = P(xa, ya), q1 = P(xb, yb), q2 = P(xb + lag, lo), q3 = P(xa + lag, lo);
+    g.beginPath(); g.moveTo(q0[0], q0[1]); g.lineTo(q1[0], q1[1]); g.lineTo(q2[0], q2[1]); g.lineTo(q3[0], q3[1]); g.closePath(); g.fill();
+  }
+  // the hat that hides the face
+  const hc = P(shX + lean * 20, shY - 4), tl = lean * 40 * dir;
+  g.beginPath(); g.arc(hc[0], hc[1] - 5 * s, 9 * s, 0, 7); g.fill(); g.fillRect(hc[0] - 4 * s, hc[1], 8 * s, 8 * s);
+  g.beginPath(); g.moveTo(hc[0] - 27 * s, hc[1] - 4 * s - tl * s * 0.2); g.quadraticCurveTo(hc[0] + tl * s * 0.3, hc[1] - 48 * s, hc[0] + 27 * s, hc[1] - 4 * s + tl * s * 0.2); g.quadraticCurveTo(hc[0], hc[1] + 4 * s, hc[0] - 27 * s, hc[1] - 4 * s - tl * s * 0.2); g.fill();
 }
-function festival(g, t, n, still) {
+function drummer(g, t) {                 // on the tower, striking on the beat
+  const e = ephase(t), i = Math.floor(e) % 8, fr = e - Math.floor(e), hit = [0, 2, 4, 7], nextHit = hit.includes((i + 1) % 8), isHit = hit.includes(i);
+  const up = nextHit ? smooth(fr) : isHit ? 1 - smooth(clamp(fr * 4)) * 1 : 0, ang = -0.5 - 1.3 * (nextHit ? up : isHit ? 0 : 0);
+  g.fillStyle = INK; g.strokeStyle = INK; g.lineCap = 'round';
+  g.beginPath(); g.arc(236, 456, 6, 0, 7); g.fill(); g.beginPath(); g.moveTo(230, 462); g.lineTo(242, 462); g.lineTo(244, 500); g.lineTo(228, 500); g.fill();
+  g.lineWidth = 3.4; g.beginPath(); g.moveTo(240, 466); g.lineTo(240 + Math.cos(ang) * 14, 466 + Math.sin(ang) * 14); g.stroke();
+  g.lineWidth = 1.8; g.beginPath(); g.moveTo(240 + Math.cos(ang) * 14, 466 + Math.sin(ang) * 14); g.lineTo(240 + Math.cos(ang + 0.5) * 28, 466 + Math.sin(ang + 0.5) * 28); g.stroke();
+}
+let PICK = {};
+function festival(g, t, n, key) {
   backdrop(g, t);
-  const cx = 270, cy = 748, rx = 212, ry = 66, rot = (still ? TL.musicStop : t) * 0.33, list = [];
-  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2 + rot; list.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), s: 0.72 + 0.34 * (Math.sin(a) + 1) / 2, ph: (still ? TL.musicStop : t) * 5.4 + i * 1.3, back: Math.sin(a) < 0, extra: n === 10 && i === 6 }); }
+  const e = ephase(t), cx = 270, cy = 748, rx = 212, ry = 66, rot = (e % 1000) * 0.022 + (n === 11 ? 1.1 : 0), list = [];
+  for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2 + rot, special = i === PICK[key];
+    list.push({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a), s: (0.72 + 0.34 * (Math.sin(a) + 1) / 2) * (special && key === 'ring2' ? 0.6 : 1), back: Math.sin(a) < 0,
+      o: { e: e - rnd(i + n) * 0.16, dir: Math.sin(a) > 0 ? -1 : 1, wf: 0.62 + 0.38 * Math.abs(Math.sin(a)), shadow: !special } }); }
   list.sort((a, b) => a.y - b.y);
-  for (const d of list) if (d.back) dancer(g, d.x, d.y, d.s, d.ph, false, !d.extra, cx);
-  yagura(g, t, still);
-  for (const d of list) if (!d.back) dancer(g, d.x, d.y, d.s, d.ph, false, !d.extra, cx);
+  for (const d of list) if (d.back) dancer(g, d.x, d.y, d.s, d.o);
+  yagura(g, t, false); drummer(g, t);
+  for (const d of list) if (!d.back) dancer(g, d.x, d.y, d.s, d.o);
 }
-function row(g, t, sc, y, gap) {
+function pick(key, n, tAt) {             // choose who is "the extra one" so they are at the front when the story points at them
+  const rot = (ephase(tAt) % 1000) * 0.022 + (n === 11 ? 1.1 : 0); let best = 0, bv = -9;
+  for (let i = 0; i < n; i++) { const v = Math.sin(i / n * Math.PI * 2 + rot) - Math.abs(Math.cos(i / n * Math.PI * 2 + rot)) * 0.8; if (v > bv) { bv = v; best = i; } }
+  PICK[key] = best;
+}
+function row(g, t, sc, y, gap, n) {
   backdrop(g, t, true); yagura(g, t, true);
-  for (let i = 0; i < 10; i++) { const k = i - 4.5; dancer(g, 270 + k * gap, y + (i % 2) * 9 * sc - Math.abs(k) * 2, sc, 0, true, i !== 6, 270); }
+  for (let i = 0; i < n; i++) { const k = i - (n - 1) / 2, child = n === 11 && i === 5; dancer(g, 270 + k * gap, y + (i % 2) * 9 * sc - Math.abs(k) * 2, sc * (child ? 0.6 : 1), { facing: true, shadow: !(child || (n === 10 ? i === 6 : i === 8)) }); }
 }
 
 window.render = function (t) {
+  if (PICK.ring === undefined) { pick('ring', 10, 20.6); pick('ring2', 11, 36.8); }
   const g = $('cv').getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); g.globalAlpha = 1;
   let si = 0; TL.scenes.forEach((s, i) => { if (t >= s.t) si = i; });
   const sc = TL.scenes[si], t1 = si + 1 < TL.scenes.length ? TL.scenes[si + 1].t : TL.end, p = (t - sc.t) / (t1 - sc.t);
   g.fillStyle = '#000'; g.fillRect(0, 0, 540, 960);
   const zoom = (z, ox, oy) => { g.translate(ox, oy); g.scale(z, z); g.translate(-ox, -oy); };
-  if (sc.k === 'wide') { g.translate(0, 46); zoom(1 + 0.06 * p, 270, 700); festival(g, t, 9, false); }
-  else if (sc.k === 'ring') { zoom(1.5 + 0.12 * p, 270, 770); festival(g, t, 10, false); }
-  else if (sc.k === 'frozen') { zoom(1.62, 270, 770); festival(g, t, 10, true); }
-  else if (sc.k === 'facing') { zoom(1 + 0.03 * p, 270, 700); row(g, t, 1.3, 850, 53); }
-  else if (sc.k === 'closer') { zoom(1 + 0.04 * p, 270, 800); row(g, t, 2.3, 950, 104); }
-  else if (sc.k === 'flash' && t < TL.cut) { const j = Math.round(t * 30); g.translate((rnd(j) - .5) * 14, (rnd(j + 5) - .5) * 10); zoom(1 + 0.25 * p, 270, 700); row(g, t, 4.6, 1090, 215); }
-  const soft = ['wide', 'ring'].includes(sc.k) ? Math.max(1 - (t - sc.t) / 0.4, 0) : 0;
+  if (sc.k === 'wide') { g.translate(0, 46); zoom(1 + 0.06 * p, 270, 700); festival(g, t, 9, 'wide'); }
+  else if (sc.k === 'ring') { zoom(1.5 + 0.12 * p, 270, 770); festival(g, t, 10, 'ring'); }
+  else if (sc.k === 'frozen') { zoom(1.62, 270, 770); festival(g, t, 10, 'ring'); }
+  else if (sc.k === 'facing') { zoom(1 + 0.03 * p, 270, 700); row(g, t, 1.3, 850, 53, 10); }
+  else if (sc.k === 'closer') { zoom(1 + 0.04 * p, 270, 800); row(g, t, 2.3, 950, 104, 10); }
+  else if (sc.k === 'ring2') { zoom(1.45 + 0.3 * ease(clamp((t - 35.0) / 3)), 270, 790); festival(g, t, 11, 'ring2'); }
+  else if (sc.k === 'finalrow' && t < TL.cut) { zoom(1 + 0.05 * p, 270, 760); row(g, t, 1.25, 862, 48.5, 11); }
+  const soft = ['wide', 'ring', 'ring2'].includes(sc.k) ? Math.max(1 - (t - sc.t) / 0.4, 0) : 0;
   $('fade').style.opacity = clamp(soft);
-  $('shade').style.display = ['wide', 'ring', 'frozen', 'facing'].includes(sc.k) ? 'block' : 'none';
+  $('shade').style.display = ['wide', 'ring', 'frozen', 'facing', 'ring2', 'finalrow'].includes(sc.k) ? 'block' : 'none';
   let pg = null; for (const x of TL.pages) if (t >= x.t) pg = x;
   $('text').innerHTML = pg ? pg.lines.map(l => `<p class="${l[2]}" style="opacity:${clamp((t - pg.t - l[0]) / 0.35)}">${l[1]}</p>`).join('') : '';
-  $('final').style.display = (t >= TL.finalText && t < TL.flash) ? 'flex' : 'none';
+  $('final').style.display = (t >= TL.finalText && t < 47.0) ? 'flex' : 'none';
   $('black').style.display = t >= TL.cut ? 'block' : 'none';
 };
 </script>
