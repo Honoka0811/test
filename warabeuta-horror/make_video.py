@@ -5,11 +5,11 @@
 映像・音楽・効果音もすべてプログラムで生成する。
 
 使い方:  python3 make_video.py [出力パス]
-必要:    ffmpeg, numpy, Pillow, IPAフォント, voicevox_core 0.16（+ onnxruntime・open_jtalk辞書・0.vvm）
+必要:    ffmpeg, numpy, Pillow, IPAフォント, voicevox_core 0.17（+ onnxruntime・open_jtalk辞書・0.vvm・s0.vvm）
 
 構成
   0. つかみ   祖母が毎晩歌ってくれた数え歌。大人になって、やっと意味がわかった。
-  1. 数え歌   夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
+  1. 数え歌   四国めたんが歌う。夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
   2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。村では七つまでは神さまの子。
   3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
   4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。
@@ -59,9 +59,63 @@ LYRICS = [
 ]
 HIDDEN = "".join(l.split("　")[1][0] for l in LYRICS)
 assert HIDDEN == "わたしがうめた", HIDDEN
-LINE = 2.4
 CIRCLE = 0.6          # 赤丸の間隔
-NOTE = LINE / 8
+
+# ---- 歌（四国めたんが歌う）。都節音階 D Eb G A Bb D'
+D4, Eb4, G4, A4, Bb4, D5 = 62, 63, 67, 69, 70, 74
+MELODY = [   # 各行：数え言葉 / 二語目 / 三語目 の音高（1モーラ1音）
+    [[A4, A4, G4], [A4, Bb4, A4, G4], [A4, G4, Eb4, D4, D4]],
+    [[A4, A4, G4], [A4, Bb4, D5, Bb4], [A4, G4, A4, G4, G4]],
+    [[Bb4, Bb4, A4], [G4, A4, G4, Eb4], [G4, Eb4, D4, Eb4, D4]],
+    [[G4, G4, A4], [Bb4, A4, G4, A4], [A4, G4, Eb4, Eb4, D4]],
+    [[A4, A4, G4], [A4, Bb4, A4, G4], [A4, G4, Eb4, D4, D4]],
+    [[A4, Bb4, D5], [D5, Bb4, A4, G4], [A4, G4, Eb4, Eb4, D4]],
+    [[D4, D4, Eb4], [G4, G4, G4, A4, G4, Eb4, Eb4], [D4, Eb4, D4, Eb4, D4]],
+]
+FPS_SING = 93.75
+EIGHTH_F = 22                       # 8分音符 = 22フレーム（約0.23秒）
+EIGHTH = EIGHTH_F / FPS_SING
+
+
+def kata(text):
+    k = "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
+    return k.replace("ヲ", "オ")      # 歌唱APIは「ヲ」を受け付けないので同じ音の「オ」に
+
+
+def build_score():
+    lines = []
+    for li, (lyric, mel) in enumerate(zip(LYRICS, MELODY)):
+        words = lyric.split("　")
+        last = li == len(LYRICS) - 1
+        notes = []
+        for wi, (w, keys) in enumerate(zip(words, mel)):
+            assert len(w) == len(keys), (w, keys)
+            for mi, (ch, k) in enumerate(zip(w, keys)):
+                e = 1
+                if wi == 0 and mi == len(w) - 1:
+                    e = 2
+                if wi == 2 and mi == len(w) - 1:
+                    e = 5 if last else 3
+                notes.append((kata(ch), k, e))
+        rest = 3 if last else 1
+        lines.append((notes, sum(n[2] for n in notes) + rest))
+    return lines
+
+
+SCORE = build_score()
+LINE_DUR = [tot * EIGHTH for _, tot in SCORE]
+LINE_START = list(np.cumsum([0.0] + LINE_DUR[:-1]))
+SONG_LEN = sum(LINE_DUR)
+
+
+def song_pos(st):
+    """歌の開始からの経過秒 → (行番号, 行内の進み 0..1)."""
+    if st < 0:
+        return -1, 0.0
+    for i in range(len(LINE_DUR) - 1, -1, -1):
+        if st >= LINE_START[i]:
+            return i, min(1.0, (st - LINE_START[i]) / LINE_DUR[i])
+    return 0, 0.0
 
 
 # ================================================================ 音声ユーティリティ
@@ -142,6 +196,47 @@ def narrator(text):
     return y / np.max(np.abs(y)) * 0.8
 
 
+SING_TEACHER = 6000   # 歌唱用の音高モデル
+SING_STYLE = 3002     # 四国めたん（歌唱・ノーマル）
+SING_WHISPER = 3037   # 四国めたん（歌唱・ヒソヒソ）
+_SING = None
+
+
+def _singer():
+    global _SING
+    if _SING is None:
+        from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile
+        so = sorted(VV_DIR.glob("voicevox_onnxruntime-*/lib/libvoicevox_onnxruntime.so*"))[0]
+        _SING = Synthesizer(Onnxruntime.load_once(filename=str(so)), OpenJtalk(str(VV_DIR / "open_jtalk_dic_utf_8-1.11")))
+        with VoiceModelFile.open(str(VV_DIR / "vv/models/s0.vvm")) as m:
+            _SING.load_voice_model(m)
+    return _SING
+
+
+LEAD_F = 10   # 歌い出し前の休符（フレーム）
+
+
+def sing(notes, style=SING_STYLE):
+    """notes: [(カタカナ1モーラ, MIDI, 8分音符の数)] → 歌声（先頭の休符ぶんを除いて返す）."""
+    from voicevox_core import Note, Score
+    key = hashlib.md5(f"sing{style}|{EIGHTH_F}|{notes}".encode()).hexdigest()[:12]
+    path = BUILD / f"sing_{key}.wav"
+    if not path.exists():
+        syn = _singer()
+        sc = [Note(LEAD_F, "")] + [Note(e * EIGHTH_F, ch, k) for ch, k, e in notes] + [Note(30, "")]
+        q = syn.create_sing_frame_audio_query(Score(sc), SING_TEACHER)
+        path.write_bytes(syn.frame_synthesis(q, style))
+    with wave.open(str(path)) as w:
+        sr = w.getframerate()
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
+    x = resample(x, SR / sr)[int(LEAD_F / FPS_SING * SR):]
+    return x / (np.max(np.abs(x)) + 1e-9)
+
+
+def midi_hz(k):
+    return 440.0 * 2 ** ((k - 69) / 12)
+
+
 def pluck(freq, dur, amp=0.5, bright=1.0):
     n = int(dur * SR)
     t = np.arange(n) / SR
@@ -152,31 +247,6 @@ def pluck(freq, dur, amp=0.5, bright=1.0):
             break
         sig += (1.0 / k ** 1.25) * np.exp(-(2.2 + k * 1.3 / bright) * t) * np.sin(2 * np.pi * f * t + rng.uniform(0, 6.28))
     return amp * sig * np.minimum(1, t / 0.004)
-
-
-def hum(notes, note_len, detune=1.0):
-    """老婆のハミング（ビブラート付きの柔らかい声）。notes: 周波数のリスト."""
-    n = int(len(notes) * note_len * SR + 0.6 * SR)
-    t = np.arange(n) / SR
-    f = np.zeros(n)
-    for i, fr in enumerate(notes):
-        f[int(i * note_len * SR):] = fr * detune
-    f = smooth(f, 1500)
-    f[: 1500] = f[1500]
-    f *= 1 + 0.012 * np.sin(2 * np.pi * 5.2 * t) * np.clip(t / 0.5, 0, 1)
-    ph = 2 * np.pi * np.cumsum(f) / SR
-    sig = np.sin(ph) + 0.35 * np.sin(2 * ph) + 0.12 * np.sin(3 * ph) + 0.05 * np.sin(5 * ph)
-    env = np.zeros(n)
-    for i in range(len(notes)):
-        a = int(i * note_len * SR)
-        b = int((i + 0.92) * note_len * SR)
-        seg = np.ones(b - a)
-        k = min(len(seg), int(0.06 * SR))
-        seg[:k] = np.linspace(0.55, 1, k)
-        env[a:b] = seg
-    env = smooth(env, 800)
-    breath = smooth(rng.standard_normal(n), 3) * 0.03
-    return (sig * env + breath * env) * 0.5
 
 
 # ================================================================ タイムライン
@@ -206,7 +276,7 @@ def build_timeline():
     tl.say("祖母が毎晩、歌ってくれた、数え歌がある。", "祖母が毎晩\n歌ってくれた数え歌がある。")
     tl.say("大人になって、やっと、その意味がわかった。", "大人になって\nやっと、その意味がわかった。", gap=1.0)
     tl.mark["song"] = tl.t
-    tl.t += LINE * len(LYRICS) + 1.0
+    tl.t += SONG_LEN + 1.0
     tl.mark["photo"] = tl.t
     tl.say("祖母には、妹がいたらしい。", gap=0.7)
     tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.9)
@@ -250,8 +320,6 @@ def add(buf, start, sig, gain=1.0):
 
 BASE = 293.66
 RAT = {0: 1.0, 1: 16 / 15, 2: 4 / 3, 3: 3 / 2, 4: 8 / 5, 5: 2.0}
-PHRASE = [[3, 3, 2, 3, 4, 3, 2, 0], [3, 3, 2, 3, 5, 4, 3, 3], [4, 4, 3, 2, 3, 3, 2, 0], [2, 2, 3, 4, 3, 2, 1, 0],
-          [3, 3, 2, 3, 4, 3, 2, 0], [3, 4, 5, 4, 3, 2, 1, 1], [0, 1, 2, 1, 0, 1, 0, 0]]
 
 
 def make_audio():
@@ -267,14 +335,16 @@ def make_audio():
     mus += smooth(rng.standard_normal(n), 120) * 0.25 * np.clip(t / 1.0, 0, 1)
     mus += smooth(rng.standard_normal(n), 2) * 0.006
 
-    # 数え歌：琴＋ハミング
-    for li, notes in enumerate(PHRASE):
-        st0 = M["song"] + li * LINE
-        for ni, deg in enumerate(notes):
-            add(mus, st0 + ni * NOTE, pluck(BASE * RAT[deg], NOTE * (2.4 if ni == 7 else 1.6), 0.22))
-        h = hum([BASE / 2 * RAT[d] for d in notes], NOTE)
-        h = h + 0.25 * fftconv(h, IR_HALL)[: len(h)]
-        add(mus, st0, h, 0.5)
+    # 数え歌：四国めたんの歌＋琴（1オクターブ下でなぞる）
+    for li, (notes, _) in enumerate(SCORE):
+        st0 = M["song"] + LINE_START[li]
+        v = sing(notes)
+        v = v + 0.18 * fftconv(v, IR_HALL)[: len(v)]
+        add(mus, st0, v, 0.55)
+        tt0 = st0
+        for ch, k, e in notes:
+            add(mus, tt0, pluck(midi_hz(k - 12), e * EIGHTH * 1.8 + 0.3, 0.16))
+            tt0 += e * EIGHTH
 
     # 写真〜紙：低いドローン
     dr_env = np.clip((t - M["photo"]) / 3, 0, 1) * np.clip((M["end"] - t) / 0.3, 0, 1)
@@ -291,11 +361,12 @@ def make_audio():
     clu = sum(pluck(BASE * r, 3.0, 0.12) for r in (1.0, 16 / 15, 3 / 2 * 16 / 15))
     add(mus, M["reveal"], hit * 0.7 + clu)
 
-    # オチ：祖母が妹に歌を教えるハミング → 「七つになる」の直前で途切れる
-    h = hum([BASE / 2 * RAT[d] for d in PHRASE[0] + PHRASE[1]], NOTE * 1.15, detune=0.99)
-    h = 0.5 * h + 0.5 * fftconv(h, IR_HALL)[: len(h)]
-    h[int((M["last"] - M["end_hum"] + 0.1) * SR):] = 0
-    add(mus, M["end_hum"], h, 0.35)
+    # オチ：祖母が妹に歌を教える声（ヒソヒソ声で遠くに）→ 「七つになる」の直前で途切れる
+    h = np.concatenate([sing(SCORE[0][0], SING_WHISPER), sing(SCORE[1][0], SING_WHISPER)])
+    h = 0.45 * h + 0.55 * fftconv(h, IR_HALL)[: len(h)]
+    h = h[: int((M["last"] - M["end_hum"] + 0.1) * SR)]
+    h[-int(0.15 * SR):] *= np.linspace(1, 0, int(0.15 * SR))
+    add(mus, M["end_hum"], h, 0.3)
     # 振り向く：畳のきしみ → 灯りが消える
     m = int(0.5 * SR)
     tt = np.arange(m) / SR
@@ -405,8 +476,7 @@ def paddy_frame(t):
     img = PADDY.copy()
     d = ImageDraw.Draw(img)
     st = t - M["song"]
-    li = min(len(LYRICS) - 1, int(st // LINE)) if st >= 0 else -1
-    lt = (st - li * LINE) / LINE if li >= 0 else 0
+    li, lt = song_pos(st)
     if li <= 3:
         u = (li + lt) / 4 * 0.86
         kids = [(u, -1), (u, 1)]

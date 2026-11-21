@@ -1,17 +1,17 @@
 # 【意味がわかると怖い】祖母の数え歌
 
-- `kazoeuta_horror.mp4` … 縦型 1080x1920 / 30fps / 約84秒（YouTube Shorts・TikTok・リール向け）
+- `kazoeuta_horror.mp4` … 縦型 1080x1920 / 30fps / 約95秒（YouTube Shorts・TikTok・リール向け）
 - `make_video.py` … 映像も音声もすべてプログラムで生成するスクリプト（`python3 make_video.py`）
-  - 必要: ffmpeg / numpy / Pillow / IPAフォント / voicevox_core 0.16
-- ナレーション: **VOICEVOX:四国めたん**（ノーマル）。動画内と投稿の説明欄にクレジット表記が必要です。
+  - 必要: ffmpeg / numpy / Pillow / IPAフォント / voicevox_core 0.17（歌唱APIが必要）
+- ナレーション・歌: **VOICEVOX:四国めたん**（読み上げ：ノーマル／歌唱：ノーマル・ヒソヒソ）。動画内と投稿の説明欄にクレジット表記が必要です。
 
 ## VOICEVOX の準備（`/root/voicevox`、`VOICEVOX_DIR` で変更可）
 ```
-pip install voicevox_core-0.16.0-cp310-abi3-manylinux_2_34_x86_64.whl   # voicevox_core のリリースから
+pip install voicevox_core-0.17.0-cp310-abi3-manylinux_2_34_x86_64.whl   # voicevox_core のリリースから
 # 以下を VOICEVOX_DIR に展開
 #   voicevox_onnxruntime-linux-x64-1.17.3/   (VOICEVOX/onnxruntime-builder)
 #   open_jtalk_dic_utf_8-1.11/               (r9y9/open_jtalk)
-#   vv/models/0.vvm                          (VOICEVOX/voicevox_vvm 0.16.0)
+#   vv/models/0.vvm, vv/models/s0.vvm         (VOICEVOX/voicevox_vvm 0.16.0。s0 は歌唱用)
 ```
 
 ## 仕掛け
@@ -31,10 +31,10 @@ pip install voicevox_core-0.16.0-cp310-abi3-manylinux_2_34_x86_64.whl   # voicev
 | 時間 | 場面 | ナレーション |
 |---|---|---|
 | 0:00 | 祖母の部屋 | 祖母が毎晩歌ってくれた数え歌がある。大人になって、やっとその意味がわかった。 |
-| 0:09 | 夕暮れのあぜ道 | （数え歌。二人の子どもが井戸へ歩き、一人だけ帰ってくる） |
-| 0:27 | 古い写真（妹の顔だけ消されている） | 祖母には妹がいたらしい。七つのとき、裏山の井戸の近くでいなくなったそうだ。村では、七つまでは神さまの子だと言われていた。 |
-| 0:41 | 祖母の書いた歌詞の紙 | 数字の下の一文字だけが、赤い丸で囲んであった。→「わたしがうめた」 |
-| 1:01 | 祖母と妹 | 昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。祖母は、いつも最後に、こう言った。（祖母がこちらを向いて）「お姉ちゃんなんだから、ちゃんと覚えるんだよ」 |
+| 0:09 | 夕暮れのあぜ道 | （数え歌を四国めたんが歌う。二人の子どもが井戸へ歩き、一人だけ帰ってくる） |
+| 0:38 | 古い写真（妹の顔だけ消されている） | 祖母には妹がいたらしい。七つのとき、裏山の井戸の近くでいなくなったそうだ。村では、七つまでは神さまの子だと言われていた。 |
+| 0:52 | 祖母の書いた歌詞の紙 | 数字の下の一文字だけが、赤い丸で囲んであった。→「わたしがうめた」 |
+| 1:12 | 祖母と妹 | 昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。祖母は、いつも最後に、こう言った。（祖母がこちらを向いて）「お姉ちゃんなんだから、ちゃんと覚えるんだよ」 |
 
 ## 裏設定（動機）
 村には「七つまでは神のうち」として、七つになった子を井戸に“返す”しきたりがあった。
