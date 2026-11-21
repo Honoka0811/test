@@ -33,7 +33,9 @@
   #alert.dark .card .num, #alert.dark .card .sub { color: #b9b9b9; }
   .ticker { position: absolute; left: 0; right: 0; bottom: 150px; height: 46px; background: #000; border-top: 2px solid #ffe94a; border-bottom: 2px solid #ffe94a; overflow: hidden; }
   .ticker span { position: absolute; left: 0; top: 0; line-height: 42px; font-size: 22px; font-weight: 700; white-space: nowrap; color: #ffe94a; letter-spacing: .08em; }
-  #flood { background: #000; overflow: hidden; }
+  #flood { overflow: hidden; z-index: 1; }
+  .band, .ticker, .clockbox, .bug { z-index: 2; }
+  .card .ent { font-family: "Noto Serif JP", serif; color: #e00f18; font-size: 50px; }
   #flood div { position: absolute; font-family: "Noto Serif JP", serif; font-weight: 900; color: #d1121a; white-space: nowrap; }
   #static { width: 540px; height: 960px; image-rendering: pixelated; }
   #scan { background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.33) 3px, rgba(0,0,0,.33) 4px); }
@@ -49,7 +51,7 @@
   #found { display: none; align-items: center; justify-content: center; }
   #found div { font-family: "Noto Serif JP", serif; font-weight: 900; font-size: 124px; color: #e00f18; white-space: nowrap; text-shadow: 0 0 14px #000, 0 0 30px #000, 5px 5px 0 #000, -4px -4px 0 #000; }
   #after { background: #000; display: none; align-items: center; justify-content: center; text-align: center; }
-  #amsg { font-size: 29px; font-weight: 400; line-height: 1.9; letter-spacing: .12em; color: #8f8f8f; }
+  #amsg { font-family: "Noto Serif JP", serif; font-size: 36px; font-weight: 900; line-height: 1.8; letter-spacing: .1em; color: #b30d14; }
   #dot { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px; border-radius: 50%; background: #fff; box-shadow: 0 0 30px 12px rgba(255,255,255,.8); }
   #black { background: #000; display: none; }
 </style>
@@ -89,6 +91,7 @@ const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
 const rnd = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
 let TL, cards = [], flood = [];
 const TICK1 = '屋内に留まり、この放送の指示に従ってください　　　　';
+const TICK3 = 'ふりむいて　　ふりむいて　　ふりむいて　　';
 const TICK2 = '屋内に留まり、この放送の指示に従ってください　　　　うしろにいます　　　　';
 
 window.init = async function (tl) {
@@ -103,8 +106,8 @@ window.init = async function (tl) {
     cards.push({ c, el, lines, end: i + 1 < TL.cards.length ? TL.cards[i + 1].t : TL.corrupt });
   });
   // flood of the hijacked message
-  let ft = TL.corrupt + 0.7, iv = 0.27;
-  flood.push({ t: TL.corrupt + 0.2, x: 270, y: 470, s: 78, r: 0, o: 1 });
+  let ft = TL.flood + 0.5, iv = 0.27;
+  flood.push({ t: TL.flood, x: 270, y: 470, s: 78, r: 0, o: 1 });
   for (let i = 0; i < 140 && ft < TL.dead; i++) {
     flood.push({ t: ft, x: 30 + rnd(i) * 480, y: 40 + rnd(i + 50) * 880, s: 24 + rnd(i + 99) ** 2 * 110, r: (rnd(i + 7) - .5) * 26, o: .55 + .45 * rnd(i + 3) });
     ft += iv; iv = Math.max(0.016, iv * 0.88);
@@ -114,7 +117,7 @@ window.init = async function (tl) {
   await document.fonts.ready;
   const all = TL.cards.map(c => (c.num || '') + c.lines.map(l => l.text).join('')).join('') + TICK2 + '緊急放送北陽県広域警戒情報本日の放送は終了しましたテレビ' + TL.lines.map(l => l.text).join('');
   for (const w of ['400', '700', '900']) await document.fonts.load(`${w} 30px "Noto Sans JP"`, all);
-  await document.fonts.load('900 30px "Noto Serif JP"', 'ふりむいてみつけた');
+  await document.fonts.load('900 30px "Noto Serif JP"', 'ふりむいてみつけた従ってください' + TL.lines.map(l => l.text).join(''));
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   render(0);
 };
@@ -130,41 +133,50 @@ window.render = function (t) {
   const f = Math.round(t * TL.fps);
   const inShift = t >= TL.shift[0] && t < TL.shift[1];
   const dark = t >= TL.shift[0] + 0.3;
-  const corrupt = t >= TL.corrupt;
+  const corrupt = t >= TL.corrupt, taken = t >= TL.corrupt + 0.2;
   const dead = t >= TL.dead, bang = t >= TL.bang && t < TL.cut;
   $('signoff').style.display = t < TL.signoffEnd + 0.2 ? 'flex' : 'none';
   const alert = $('alert');
-  alert.style.display = (t >= TL.signoffEnd + 0.2 && t < TL.corrupt + 0.2) ? 'block' : 'none';
+  alert.style.display = (t >= TL.signoffEnd + 0.2 && !dead) ? 'block' : 'none';
   alert.className = 'layer' + (dark ? ' dark' : '');
   // header band
   const band = $('band');
   band.style.opacity = dark ? (rnd(f) < 0.12 ? 0.15 : 0.5) : ((f % 30) < 22 ? 1 : 0.55);
-  $('bandt').textContent = dark && rnd(Math.floor(f / 4)) < 0.25 ? '■■■■' : '緊急放送';
+  $('bandt').textContent = taken ? (rnd(Math.floor(f / 5)) < 0.3 ? '緊急放送' : 'ふりむいて') : dark && rnd(Math.floor(f / 4)) < 0.25 ? '■■■■' : '緊急放送';
+  $('bands').style.visibility = taken ? 'hidden' : 'visible';
   $('clock').textContent = dark ? '2:13' : (t < 12 ? '2:13' : '2:14');
-  $('tick').textContent = (dark ? TICK2 : TICK1).repeat(8);
+  $('tick').textContent = (taken ? TICK3 : dark ? TICK2 : TICK1).repeat(taken ? 30 : 8);
+  $('tick').style.color = taken ? '#e00f18' : '';
   $('tick').style.transform = `translateX(${540 - (t - TL.alertStart) * 105}px)`;
   // cards
   for (const k of cards) {
-    const on = t >= k.c.t && t < k.end + (k.end === TL.corrupt ? 0.2 : 0) && !(inShift);
+    const last = k.end === TL.corrupt;
+    const on = t >= k.c.t && t < (last ? TL.flood : k.end) && !(inShift);
     k.el.style.display = on ? 'flex' : 'none';
     if (on) for (const l of k.lines) l.el.style.visibility = t >= k.c.t + l.dt ? 'visible' : 'hidden';
+    if (last && on) {                     // the station's last warning gets rewritten in front of you
+      const L = k.lines, rw = taken;
+      L[0].el.textContent = rw ? '■■に■■が■■しています' : k.c.lines[0].text;
+      L[2].el.textContent = rw ? '従ってください' : k.c.lines[2].text;
+      L[2].el.className = rw ? 'ent' : '';
+    }
   }
   // flood
-  $('flood').style.display = (t >= TL.corrupt + 0.2 && !dead) ? 'block' : 'none';
+  $('flood').style.display = (t >= TL.flood && !dead) ? 'block' : 'none';
   for (const fl of flood) {
     const on = t >= fl.t; fl.el.style.visibility = on ? 'visible' : 'hidden';
     if (on && fl !== flood[0]) fl.el.style.marginLeft = ((rnd(f + fl.x) - .5) * 5) + 'px';
   }
-  if (t >= TL.corrupt + 0.2) flood[0].el.style.transform = `translate(-50%,-50%) scale(${1 + 0.12 * (t - TL.corrupt)})`;
+  if (t >= TL.flood) flood[0].el.style.transform = `translate(-50%,-50%) scale(${1 + 0.12 * (t - TL.flood)})`;
   // static / glitch windows
   const g1 = t >= TL.signoffEnd && t < TL.alertStart, g3 = t >= TL.corrupt && t < TL.corrupt + 0.2;
-  const sa = g1 ? 1 : inShift ? (t < TL.shift[0] + 0.3 ? 0.9 : 0.55) : g3 ? 0.85 : bang ? 1 : (corrupt ? 0.10 + 0.25 * clamp((t - TL.corrupt) / 3.5) ** 2 : 0.05);
+  const sa = g1 ? 1 : inShift ? (t < TL.shift[0] + 0.3 ? 0.9 : 0.55) : g3 ? 0.85 : bang ? 1 : (corrupt ? 0.10 + 0.25 * clamp((t - TL.corrupt) / (TL.dead - TL.corrupt)) ** 2 : 0.05);
   drawStatic(f, sa); $('static').style.mixBlendMode = (g1 || inShift || g3 || bang) ? 'normal' : 'screen';
   // tape wobble
   let x = Math.sin(t * 2.1) * 0.7, y = 0, split = 1.6 + 0.6 * Math.sin(t * 3.3), sk = 0;
   if (rnd(f * 3) < 0.035) { x += (rnd(f) - .5) * 14; split += 3; }
   if (rnd(Math.floor(f / 3) + 500) < 0.02) y += 10;
-  if (corrupt && !dead) { const k = clamp((t - TL.corrupt) / 3.5); x += (rnd(f + 1) - .5) * 26 * k; y += (rnd(f + 2) - .5) * 14 * k; split += 9 * k * rnd(f + 4); sk = (rnd(f + 6) - .5) * 5 * k; }
+  if (corrupt && !dead) { const k = clamp((t - TL.corrupt) / (TL.dead - TL.corrupt)); x += (rnd(f + 1) - .5) * 26 * k; y += (rnd(f + 2) - .5) * 14 * k; split += 9 * k * rnd(f + 4); sk = (rnd(f + 6) - .5) * 5 * k; }
   if (inShift || g1 || g3) { x += (rnd(f + 8) - .5) * 30; split += 6; }
   const tv = $('tv');
   let sx = 1, sy = 1, br = 0.92 + 0.08 * rnd(f + 11);

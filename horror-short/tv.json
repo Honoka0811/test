@@ -1,17 +1,17 @@
 {
  "fps": 30,
- "end": 48.2,
+ "end": 50.4,
  "scene": "scene_tv.html",
  "audio": "audio_tv.py",
- "vf": "gblur=sigma=1.3,noise=c0s=16:c0f=t:c1s=8:c1f=t:c2s=8:c2f=t:enable='not(between(t,37.4,47.19))',format=yuv420p",
+ "vf": "gblur=sigma=1.3,noise=c0s=16:c0f=t:c1s=8:c1f=t:c2s=8:c2f=t:enable='not(between(t,40.6,49.39))',format=yuv420p",
  "signoffEnd": 1.5,
  "alertStart": 1.9,
  "shift": [
   21.0,
   21.6
  ],
- "corrupt": 33.5,
- "cut": 47.75,
+ "corrupt": 35.6,
+ "cut": 49.95,
  "cards": [
   {
    "t": 1.9,
@@ -162,19 +162,39 @@
      "text": "ください"
     }
    ]
-  }
- ],
- "dead": 37.0,
- "lines": [
-  {
-   "t": 38.6,
-   "text": "暗い画面に、<br>あなたが映っていますね。"
   },
   {
-   "t": 41.2,
-   "text": "そのうしろも、<br>よく見てください。"
+   "t": 32.6,
+   "dark": true,
+   "lines": [
+    {
+     "dt": 0,
+     "cls": "sub",
+     "text": "放送に異常が発生しています"
+    },
+    {
+     "dt": 0.9,
+     "text": "これ以降の指示には"
+    },
+    {
+     "dt": 1.5,
+     "text": "従わないでください"
+    }
+   ]
   }
  ],
- "linesEnd": 43.4,
- "bang": 47.2
+ "dead": 40.2,
+ "lines": [
+  {
+   "t": 41.7,
+   "text": "くらい がめんに<br>あなたが うつってるね"
+  },
+  {
+   "t": 44.0,
+   "text": "うしろも みて"
+  }
+ ],
+ "linesEnd": 45.8,
+ "bang": 49.4,
+ "flood": 37.2
 }

@@ -85,7 +85,7 @@ for fa, fb in [(466.2, 370.0), (493.9, 392.0), (233, 185)]:
     s2 += sq(np.cumsum(np.where(hi, fa, fb) * rate) / SR)
 s2 = np.tanh(s2 * (1 + 5 * k)) * (0.12 + 0.6 * k ** 1.5) + bp(noise(n), 300, 8000) * 0.5 * k ** 3
 add(fade(s2, 0.01, 0.002), COR + 0.2, 0.5)
-ft, iv = COR + 0.7, 0.27          # one tick per spawned line (mirrors scene_tv.html)
+ft, iv = TL["flood"] + 0.5, 0.27          # one tick per spawned line (mirrors scene_tv.html)
 while ft < OFF:
     x = seg(0, 0.05); add(bp(noise(len(x)), 300, 2400) * np.exp(-x / 0.012), ft, 0.5, pan=rng.uniform(-.5, .5))
     ft += iv; iv = max(0.016, iv * 0.88)
@@ -93,6 +93,7 @@ while ft < OFF:
 # power off: thunk + collapsing whine, then nothing at all
 BANG, CUT, LE = TL["bang"], TL["cut"], TL["linesEnd"]
 add(thud(60, 0.7, 0.1, 1.0), OFF, 0.9)
+x = seg(0, 1.2); add((np.sin(2 * np.pi * 73 * x) + 0.6 * np.sin(2 * np.pi * 110 * x)) * np.exp(-x / 0.3), TL["flood"], 0.9)   # the first one lands
 x = seg(0, 0.4); add(fade(np.sin(2 * np.pi * np.cumsum(np.linspace(9000, 1500, len(x))) / SR), 0.002, 0.2), OFF, 0.08)
 
 # the dark stare: almost silent. room tone, then breathing close to one ear that is not yours
