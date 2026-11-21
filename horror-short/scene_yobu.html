@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/900.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
+  body { font-family: "Noto Serif JP", serif; color: #f4efe6; }
+  #stage { position: relative; width: 540px; height: 960px; overflow: hidden; background: #000; }
+  canvas { position: absolute; left: 0; top: 0; width: 540px; height: 960px; }
+  #shade { position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.15) 50%, rgba(0,0,0,0) 70%); }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 45%, rgba(0,0,0,.8) 100%); }
+  #text { position: absolute; top: 120px; right: 0; left: 0; height: 560px; display: flex; flex-direction: row-reverse; justify-content: center; gap: 22px; }
+  #text.side { justify-content: flex-start; padding-right: 30px; top: 150px; }
+  #text p { writing-mode: vertical-rl; font-size: 37px; font-weight: 900; letter-spacing: .1em; line-height: 1.2; text-shadow: 0 0 10px #000, 0 0 22px #000, 2px 2px 0 #000; white-space: nowrap; }
+  #text p.red { color: #e3231c; }
+  #text p.big { font-size: 58px; }
+  #fade, #black { position: absolute; inset: 0; background: #000; }
+  #black { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="1080" height="1920"></canvas>
+  <div id="shade"></div><div id="vig"></div>
+  <div id="fade"></div>
+  <div id="text"></div>
+  <div id="black"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => 1 - Math.pow(1 - clamp(x), 3);
+const smooth = x => { x = clamp(x); return x * x * (3 - 2 * x); };
+const rnd = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+let TL;
+window.init = async function (tl) {
+  TL = tl;
+  await document.fonts.ready;
+  await document.fonts.load('900 30px "Noto Serif JP"', TL.pages.map(p => p.lines.map(l => l[1]).join('')).join(''));
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  render(0);
+};
+function ridge(g, seed, base, amp, col) {
+  g.fillStyle = col; g.beginPath(); g.moveTo(-80, 1100);
+  for (let x = -80; x <= 620; x += 8) { const u = x * 0.006; g.lineTo(x, base - amp * (0.55 * Math.sin(u * 1.3 + seed) + 0.3 * Math.sin(u * 2.9 + seed * 2.1) + 0.15 * Math.sin(u * 6.3 + seed * 3.7))); }
+  g.lineTo(620, 1100); g.fill();
+}
+function snowfall(g, t, n, col, spd) {
+  g.fillStyle = col;
+  for (let i = 0; i < n; i++) { const z = 0.4 + rnd(i) * 0.9, x = ((rnd(i + 50) * 700 + Math.sin(t * 0.7 + i) * 18 + t * 9 * z) % 640) - 50, y = ((rnd(i + 90) * 1000 + t * spd * z) % 1010) - 30;
+    g.globalAlpha = 0.35 + 0.55 * z / 1.3; g.beginPath(); g.arc(x, y, 1.1 + 1.6 * z, 0, 7); g.fill(); } g.globalAlpha = 1;
+}
+function house(g, t) {                   // a farmhouse under snow, no moon
+  const gr = g.createLinearGradient(0, 0, 0, 960); gr.addColorStop(0, '#03040a'); gr.addColorStop(0.6, '#0e1426'); gr.addColorStop(1, '#0e1426'); g.fillStyle = gr; g.fillRect(-60, -60, 660, 1080);
+  ridge(g, 3.1, 560, 130, '#1b2338'); ridge(g, 6.4, 640, 80, '#121829');
+  const sg = g.createLinearGradient(0, 700, 0, 960); sg.addColorStop(0, '#5d6a86'); sg.addColorStop(1, '#232b40'); g.fillStyle = sg;
+  g.beginPath(); g.moveTo(-60, 720); g.quadraticCurveTo(150, 690, 300, 716); g.quadraticCurveTo(450, 740, 600, 706); g.lineTo(600, 1000); g.lineTo(-60, 1000); g.fill();
+  g.fillStyle = '#07070b'; g.fillRect(150, 640, 260, 96);                                          // walls
+  g.fillStyle = '#ffb65a'; g.fillRect(300, 664, 54, 50); g.fillStyle = '#07070b'; g.fillRect(325, 664, 3, 50); g.fillRect(300, 687, 54, 3);
+  const wl = g.createRadialGradient(327, 700, 5, 327, 700, 150); wl.addColorStop(0, 'rgba(255,170,80,.35)'); wl.addColorStop(1, 'rgba(255,170,80,0)'); g.fillStyle = wl; g.fillRect(150, 560, 360, 320);
+  g.fillStyle = '#0a0a10'; g.beginPath(); g.moveTo(112, 652); g.quadraticCurveTo(190, 560, 248, 524); g.lineTo(312, 524); g.quadraticCurveTo(370, 560, 448, 652); g.fill();   // thatch
+  g.fillStyle = '#8b97b1'; g.beginPath(); g.moveTo(132, 630); g.quadraticCurveTo(196, 556, 250, 520); g.lineTo(310, 520); g.quadraticCurveTo(364, 556, 428, 630); g.quadraticCurveTo(360, 578, 306, 548); g.lineTo(254, 548); g.quadraticCurveTo(200, 578, 132, 630); g.fill();   // snow on the roof
+  g.strokeStyle = '#06060a'; g.lineWidth = 5; g.lineCap = 'round';                                   // bare tree
+  for (const [x1, y1, x2, y2, w] of [[70, 760, 74, 560, 7], [74, 640, 40, 580, 4], [74, 610, 104, 556, 4], [40, 580, 28, 548, 2.5], [104, 556, 118, 520, 2.5], [74, 580, 66, 520, 3]]) { g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+  snowfall(g, t, 90, '#dfe6f5', 46);
+}
+const SH = { x0: 50, x1: 370, y0: 300, y1: 740, cx: 210, foot: 736 };
+function shadowMan(g, h, o) {            // a man in a sedge hat and straw cape, as a shadow on paper
+  const u = h / 100, st = o.stretch || 0, cx = SH.cx + (o.lean || 0) * 20, foot = SH.foot, H = h * (1 + 0.5 * st), top = foot - H;
+  g.beginPath();                                                           // legs
+  g.rect(cx - 12 * u, foot - 40 * u, 8 * u, 40 * u); g.rect(cx + 4 * u, foot - 40 * u, 8 * u, 40 * u); g.fill();
+  const sy = top + 24 * u + 20 * u * st, by = foot - 36 * u;               // straw cape with a ragged hem
+  g.beginPath(); g.moveTo(cx - 19 * u, sy); g.lineTo(cx + 19 * u, sy);
+  const teeth = 9; g.lineTo(cx + 28 * u, by); for (let i = teeth; i >= 0; i--) { const x = cx - 28 * u + i * 56 * u / teeth; g.lineTo(x + 3 * u, by + (i % 2 ? 9 : 2) * u); } g.closePath(); g.fill();
+  g.fillRect(cx - 3.5 * u, top + 12 * u, 7 * u, 16 * u + 20 * u * st);     // the neck: longer than it should be, later
+  g.beginPath(); g.arc(cx, top + 16 * u, 8 * u, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(cx - 30 * u, top + 17 * u); g.quadraticCurveTo(cx, top - 12 * u, cx + 30 * u, top + 17 * u); g.quadraticCurveTo(cx, top + 24 * u, cx - 30 * u, top + 17 * u); g.fill();   // hat
+  const a = o.arm || 0;
+  if (a > 0) for (const sd of [-1, 1]) {                                   // elbows out, hands flat on the paper, fingers too long
+    const sx = cx + sd * 17 * u, ex = cx + sd * (30 + 16 * a) * u, ey = sy + (34 - 6 * a) * u, hx = cx + sd * (36 + 12 * a) * u, hy = Math.max(SH.y0 + 46, sy + 30 * u - (46 + 26 * st) * u * a);
+    g.lineWidth = 5.5 * u; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(sx, sy + 6 * u); g.lineTo(ex, ey); g.lineTo(hx, hy); g.stroke();
+    g.beginPath(); g.ellipse(hx, hy - 4 * u, 6 * u, 7.5 * u, 0, 0, 7); g.fill();
+    g.lineWidth = 2.3 * u; for (let k = 0; k < 5; k++) { const an = -Math.PI / 2 + sd * (k - 2) * 0.3 + sd * 0.12, L = (12 + 20 * st + (k === 2 ? 3 : 0)) * u * a; g.beginPath(); g.moveTo(hx, hy - 7 * u); g.lineTo(hx + Math.cos(an) * L, hy - 7 * u + Math.sin(an) * L); g.stroke(); }
+  }
+  return { cx: cx + 5 * u, eyeY: top + 21 * u };
+}
+function shoji(g, t, o) {
+  g.fillStyle = '#070606'; g.fillRect(-60, -60, 660, 1080);
+  const eg = g.createRadialGradient(470, 930, 10, 470, 930, 330); eg.addColorStop(0, `rgba(255,120,40,${0.4 + 0.06 * Math.sin(t * 9) + 0.04 * Math.sin(t * 23)})`); eg.addColorStop(1, 'rgba(255,120,40,0)'); g.fillStyle = eg; g.fillRect(100, 600, 500, 400);
+  g.fillStyle = '#12100f'; g.fillRect(-60, 868, 660, 4);
+  const pg = g.createLinearGradient(0, SH.y0, 0, SH.y1); pg.addColorStop(0, '#4c5670'); pg.addColorStop(1, '#3a4258'); g.fillStyle = pg; g.fillRect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0);
+  let info = null;
+  if (o.alpha > 0) { g.save(); g.beginPath(); g.rect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0); g.clip(); g.filter = 'blur(2.6px)'; g.globalAlpha = o.alpha; g.fillStyle = '#08080e'; g.strokeStyle = '#08080e'; info = shadowMan(g, o.h || 300, o); g.restore(); g.filter = 'none'; g.globalAlpha = 1; }
+  g.fillStyle = '#0c0a09';                                                  // lattice + frame + lower board
+  for (let i = 1; i < 6; i++) g.fillRect(SH.x0 + i * (SH.x1 - SH.x0) / 6 - 1.5, SH.y0, 3, SH.y1 - SH.y0);
+  for (let j = 1; j < 6; j++) g.fillRect(SH.x0, SH.y0 + j * (SH.y1 - SH.y0) / 6 - 1.5, SH.x1 - SH.x0, 3);
+  g.fillStyle = '#1a1512'; g.fillRect(SH.x0, SH.y1, SH.x1 - SH.x0, 126);
+  g.fillStyle = '#0a0807'; g.fillRect(SH.x0 - 14, SH.y0 - 14, SH.x1 - SH.x0 + 28, 14); g.fillRect(SH.x0 - 14, SH.y0 - 14, 14, 584); g.fillRect(SH.x1, SH.y0 - 14, 14, 584); g.fillRect(SH.x0, SH.y1 - 2, SH.x1 - SH.x0, 7);
+  g.fillRect(SH.x0 + (SH.x1 - SH.x0) / 2 - 3, SH.y0, 6, 566);              // the two sliding panels meet here
+  if (o.hole > 0 && info) {                                                // a wet fingertip, then a hole, then an eye
+    const hx = info.cx, hy = info.eyeY;
+    if (o.hole < 1) { g.fillStyle = `rgba(10,10,16,${0.6 * o.hole})`; g.beginPath(); g.arc(hx, hy, 3 + 5 * o.hole, 0, 7); g.fill(); }
+    else { g.fillStyle = '#020203'; g.beginPath(); for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, r = 9.5 + rnd(i + 3) * 4.5; g[i ? 'lineTo' : 'moveTo'](hx + Math.cos(a) * r * 1.2, hy + Math.sin(a) * r); } g.closePath(); g.fill();
+      g.fillStyle = '#5a6480'; g.beginPath(); g.moveTo(hx + 10, hy + 6); g.lineTo(hx + 19, hy + 13); g.lineTo(hx + 9, hy + 12); g.fill();           // torn flap
+      if (o.eye) { const e = o.eye; g.save(); g.beginPath(); g.ellipse(hx, hy, 9, 6.2 * e.open, 0, 0, 7); g.clip(); g.fillStyle = '#d6d0c2'; g.fillRect(hx - 12, hy - 9, 24, 18);
+        g.fillStyle = '#0d0a0a'; g.beginPath(); g.arc(hx + e.dx, hy, 4.4, 0, 7); g.fill(); g.fillStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.arc(hx + e.dx - 1.4, hy - 1.6, 1, 0, 7); g.fill(); g.restore(); } }
+    o.spot = [hx, hy];
+  }
+  if (o.reach > 0) {                                                       // mother's sleeve and hand going for the door
+    const r = ease(o.reach), hx = 560 - 222 * r, hy = 612 - 26 * r;      // wrist position; the fingers reach the edge of the door
+    g.fillStyle = '#020202'; g.strokeStyle = '#020202'; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(hx + 4, hy - 9); g.lineTo(hx + 70, hy - 44); g.lineTo(620, hy - 70); g.lineTo(620, hy + 190); g.lineTo(hx + 96, hy + 104); g.lineTo(hx + 58, hy + 20); g.lineTo(hx + 4, hy + 9); g.fill();   // kimono sleeve
+    g.beginPath(); g.ellipse(hx - 9, hy, 13, 9.5, -0.1, 0, 7); g.fill();
+    g.lineWidth = 5.2; for (let k = 0; k < 4; k++) { g.beginPath(); g.moveTo(hx - 17, hy - 6 + k * 4); g.lineTo(hx - 36 + k * 2, hy - 10 + k * 5.5); g.stroke(); }
+    g.beginPath(); g.moveTo(hx - 8, hy - 8); g.lineTo(hx - 20, hy - 19); g.stroke();
+  }
+  return o;
+}
+function snow(g, t) {                    // morning, looking out through the open door
+  const gr = g.createLinearGradient(0, 0, 0, 960); gr.addColorStop(0, '#7f8ba3'); gr.addColorStop(0.45, '#b9c2d2'); gr.addColorStop(1, '#b9c2d2'); g.fillStyle = gr; g.fillRect(-60, -60, 660, 1080);
+  ridge(g, 3.1, 470, 110, '#7b879f'); ridge(g, 6.4, 520, 60, '#66728b');
+  g.fillStyle = '#3d465a'; for (let i = 0; i < 12; i++) { const x = 20 + i * 46 + rnd(i) * 20, h = 60 + rnd(i + 7) * 60; g.beginPath(); g.moveTo(x - 14, 560); g.lineTo(x, 560 - h); g.lineTo(x + 14, 560); g.fill(); }
+  const sg = g.createLinearGradient(0, 540, 0, 960); sg.addColorStop(0, '#c9d2e0'); sg.addColorStop(1, '#f1f4f8'); g.fillStyle = sg; g.fillRect(-60, 548, 660, 500);
+  g.fillStyle = 'rgba(120,135,165,.22)'; for (const [x, y, w] of [[150, 640, 200], [380, 720, 240], [120, 820, 260], [420, 880, 200]]) { g.beginPath(); g.ellipse(x, y, w, 16, 0, 0, 7); g.fill(); }
+  g.fillStyle = '#0a0807'; g.fillRect(-60, -60, 118, 1080); g.fillRect(482, -60, 118, 1080); g.fillRect(-60, -60, 660, 190); g.fillRect(-60, 900, 660, 100);   // door frame
+  g.fillStyle = '#17120f'; g.fillRect(58, 884, 424, 18);
+  snowfall(g, t, 40, '#ffffff', 30);
+}
+
+window.render = function (t) {
+  const g = $('cv').getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); g.globalAlpha = 1; g.filter = 'none';
+  let si = 0; TL.scenes.forEach((s, i) => { if (t >= s.t) si = i; });
+  const sc = TL.scenes[si], t1 = si + 1 < TL.scenes.length ? TL.scenes[si + 1].t : TL.end, p = (t - sc.t) / (t1 - sc.t);
+  g.fillStyle = '#000'; g.fillRect(0, 0, 540, 960);
+  const zoom = (z, ox, oy) => { g.translate(ox, oy); g.scale(z, z); g.translate(-ox, -oy); };
+  if (sc.k === 'house') { zoom(1 + 0.08 * p, 300, 680); house(g, t); }
+  else if (sc.k === 'snow') { zoom(1 + 0.06 * p, 270, 700); snow(g, t); }
+  else if (sc.k === 'shoji1') { zoom(1 + 0.07 * p, 210, 560); shoji(g, t, { alpha: 0.85 * smooth((t - TL.shadowIn) / 1.6) }); }
+  else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560); const st = smooth((t - TL.stretch[0]) / (TL.stretch[1] - TL.stretch[0]));
+    shoji(g, t, { alpha: 0.88, stretch: st, arm: smooth((t - TL.stretch[0] - 0.3) / 1.6), reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.5) }); }
+  else if (sc.k === 'shoji3' && t < TL.cut) {
+    const blinkT = t - 55.9, open = t < TL.eye ? 0 : Math.min(smooth((t - TL.eye) / 0.25), (blinkT > 0 && blinkT < 0.24) ? Math.abs(blinkT - 0.12) / 0.12 : 1);
+    const dx = t < TL.eye + 0.8 ? -3.4 * smooth((t - TL.eye - 0.3) / 0.2) : t < TL.eye + 1.6 ? -3.4 + 6.8 * smooth((t - TL.eye - 0.8) / 0.2) : 3.4 - 3.4 * smooth((t - TL.eye - 1.6) / 0.15);
+    const z = 1.25 + 0.75 * ease((t - TL.hole) / 3.2);
+    zoom(z, 222, 410); shoji(g, t, { alpha: 0.92, h: 430, lean: 0, hole: clamp((t - TL.poke) / (TL.hole - TL.poke)), eye: t >= TL.eye ? { dx, open } : null });
+  }
+  const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3'].includes(sc.k);
+  $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;
+  $('shade').style.display = ['house', 'snow'].includes(sc.k) ? 'block' : 'none';
+  let pg = null; for (const x of TL.pages) if (t >= x.t) pg = x;
+  $('text').className = sc.k.startsWith('shoji') ? 'side' : '';
+  $('text').innerHTML = pg ? pg.lines.map(l => `<p class="${l[2]}" style="opacity:${clamp((t - pg.t - l[0]) / 0.35)}">${l[1]}</p>`).join('') : '';
+  $('black').style.display = t >= TL.cut ? 'block' : 'none';
+};
+</script>
+</body>
+</html>
