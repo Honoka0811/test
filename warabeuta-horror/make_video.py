@@ -10,7 +10,7 @@
 構成
   0. つかみ   祖母が毎晩歌ってくれた数え歌。大人になって、やっと意味がわかった。
   1. 数え歌   夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
-  2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。
+  2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。村では七つまでは神さまの子。
   3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
   4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。
 """
@@ -57,7 +57,7 @@ LYRICS = [
 ]
 HIDDEN = "".join(l.split("　")[1][0] for l in LYRICS)
 assert HIDDEN == "わたしがうめた", HIDDEN
-LINE = 2.15
+LINE = 2.0
 NOTE = LINE / 8
 
 
@@ -124,7 +124,7 @@ def tts(text, speed=1.0, pitch=0.0, intonation=1.0):
 
 def narrator(text):
     """静かに語る四国めたん（ほんの少し部屋の残響）."""
-    x = tts(text, speed=0.95, pitch=-0.03, intonation=0.85)
+    x = tts(text, speed=1.0, pitch=-0.03, intonation=0.85)
     wet = fftconv(x, IR_ROOM)[: len(x) + int(0.5 * SR)]
     y = np.pad(x, (0, len(wet) - len(x))) + 0.10 * wet
     return y / np.max(np.abs(y)) * 0.8
@@ -197,24 +197,25 @@ def build_timeline():
     tl.t += LINE * len(LYRICS) + 0.4
     tl.mark["photo"] = tl.t
     tl.say("祖母には、妹がいたらしい。", gap=0.3)
-    tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.5)
+    tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.35)
+    tl.say("村では、七つまでは、神さまの子だと、言われていた。", "村では\n七つまでは神さまの子だと\n言われていた。", gap=0.5)
     tl.mark["paper"] = tl.t
     tl.say("先日、祖母の部屋で、この歌詞を書いた、古い紙を見つけた。", "先日、祖母の部屋で\nこの歌詞を書いた古い紙を見つけた。", gap=0.3)
     tl.say("数字の下の一文字だけが、赤い丸で、囲んであった。", "数字の下の一文字だけが\n赤い丸で囲んであった。", gap=0.4)
     tl.mark["circles"] = tl.t
     tl.t += 0.42 * len(LYRICS) + 0.4
     tl.mark["reveal"] = tl.t
-    tl.t += 2.9
+    tl.t += 2.6
     tl.mark["end"] = tl.t
     tl.wait(0.4)
     tl.mark["end_hum"] = tl.t
-    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=0.8)
+    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=0.6)
     tl.mark["last"] = tl.t
     tl.say("妹は、来週、七つになる。", gap=0.6)
     tl.mark["turn"] = tl.t
-    tl.t += 2.0
+    tl.t += 1.8
     tl.mark["dark"] = tl.t
-    tl.t += 1.2
+    tl.t += 1.0
     tl.mark["dur"] = tl.t
     return tl
 
