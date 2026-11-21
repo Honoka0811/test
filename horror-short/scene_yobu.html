@@ -149,6 +149,7 @@ window.render = function (t) {
   const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3'].includes(sc.k);
   $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;
   $('shade').style.display = ['house', 'snow'].includes(sc.k) ? 'block' : 'none';
+  $('shade').style.background = sc.k === 'snow' ? 'linear-gradient(rgba(0,0,0,.82), rgba(0,0,0,.62) 58%, rgba(0,0,0,.12) 82%)' : '';
   let pg = null; for (const x of TL.pages) if (t >= x.t) pg = x;
   $('text').className = sc.k.startsWith('shoji') ? 'side' : '';
   $('text').innerHTML = pg ? pg.lines.map(l => `<p class="${l[2]}" style="opacity:${clamp((t - pg.t - l[0]) / 0.35)}">${l[1]}</p>`).join('') : '';
