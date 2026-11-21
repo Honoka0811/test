@@ -155,6 +155,63 @@ function handScene(t, o) {
   const lg = ctx.createRadialGradient(560, 820, 200, 560, 900, 1100); lg.addColorStop(0, 'rgba(255,240,215,0.06)'); lg.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
 }
 
+// ---- 寝室の押し入れと、天袋の中 ----
+function sleeper(c, x, y, s, br) {     // 布団で寝ている私(上から。顔は向こうを向いて髪だけ見える)
+  c.save(); c.translate(x, y); c.scale(s, s);
+  c.fillStyle = '#d9d4c8'; c.fillRect(-120, -260, 240, 520); c.fillStyle = '#eeeae2'; rr(-70, -240, 140, 70, 18); c.fill();   // 敷き布団と枕
+  c.fillStyle = '#16120f'; c.beginPath(); c.ellipse(-8, -205, 44, 36, 0.2, 0, 7); c.fill(); for (let i = 0; i < 9; i++) { c.strokeStyle = '#16120f'; c.lineWidth = 3; c.beginPath(); c.moveTo(-30 + i * 7, -195); c.quadraticCurveTo(-60 + i * 9, -150, -40 + i * 12, -128); c.stroke(); }   // 枕に広がる髪
+  c.fillStyle = '#8a95ad'; c.beginPath(); c.moveTo(-126, -150 - br * 4); c.quadraticCurveTo(0, -175 - br * 8, 126, -150 - br * 4); c.lineTo(126, 262); c.lineTo(-126, 262); c.closePath(); c.fill();   // 掛け布団(息をするたびに少し上下する)
+  c.strokeStyle = 'rgba(40,50,70,0.4)'; c.lineWidth = 3; for (const yy of [-40, 70, 170]) { c.beginPath(); c.moveTo(-120, yy); c.quadraticCurveTo(0, yy + 20, 120, yy); c.stroke(); }
+  c.restore();
+}
+function sleepPhoto(i) {   // 寝ている私の写真(1枚ずつ、日付と時刻が入っている)
+  const o = document.createElement('canvas'); o.width = 300; o.height = 380; const c = o.getContext('2d');
+  c.fillStyle = '#f2efe8'; c.fillRect(0, 0, 300, 380); c.fillStyle = '#1b1d26'; c.fillRect(14, 14, 272, 300);
+  c.save(); c.beginPath(); c.rect(14, 14, 272, 300); c.clip(); c.fillStyle = '#8c8a6c'; c.fillRect(14, 14, 272, 300); c.strokeStyle = 'rgba(40,40,30,0.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(14, 120); c.lineTo(286, 120); c.moveTo(150, 14); c.lineTo(150, 120); c.stroke(); sleeper(c, 150 + (i % 3 - 1) * 14, 180, 0.42 + (i % 2) * 0.04, 0); const fg = c.createRadialGradient(150, 160, 40, 150, 160, 220); fg.addColorStop(0, 'rgba(255,255,255,0.12)'); fg.addColorStop(1, 'rgba(0,0,0,0.45)'); c.fillStyle = fg; c.fillRect(14, 14, 272, 300); c.restore();   // フラッシュで撮った、畳の上の寝姿   // 上から(天袋から)撮った寝姿
+  const d = 1 + i, h = [2, 3, 1, 4, 2, 3][i % 6], m = (i * 17) % 60;
+  c.font = '700 26px "DejaVu Sans Mono", monospace'; c.fillStyle = '#ff9a3c'; c.textAlign = 'right'; c.fillText(`'26 12 ${String(d).padStart(2, '0')}  ${h}:${String(m).padStart(2, '0')}`, 278, 300);   // 日付と時刻
+  return o;
+}
+let PHOTOS = null;
+function tenScene(t, o) {    // 昼の寝室。おまわりさんが懐中電灯で、押し入れの上の天袋を照らして開ける
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  ctx.fillStyle = '#4c473e'; ctx.fillRect(-400, -400, W + 800, H + 800);
+  ctx.fillStyle = '#c8bfa6'; ctx.fillRect(140, 120, 800, 1500);                                    // 押し入れのわく
+  ctx.fillStyle = '#b9ae92'; ctx.fillRect(160, 140, 380, 300); ctx.fillRect(540, 140, 380, 300);     // 天袋の小さな戸(上)
+  ctx.save(); ctx.beginPath(); ctx.rect(160, 140, 760, 300); ctx.clip();
+  const op = o.open; ctx.fillStyle = '#0d0c0b'; ctx.fillRect(160, 140, 380 * op, 300);              // 開いたすき間の奥
+  if (op > 0) { ctx.save(); ctx.beginPath(); ctx.rect(160, 140, 380 * op, 300); ctx.clip();
+    ctx.fillStyle = '#4a4a52'; ctx.beginPath(); ctx.ellipse(300, 400, 170, 60, 0.1, 0, 7); ctx.fill(); ctx.fillStyle = '#5b5a62'; ctx.beginPath(); ctx.ellipse(420, 380, 120, 50, -0.2, 0, 7); ctx.fill();   // 丸めた毛布
+    const r = rngOf(44); for (let i = 0; i < 9; i++) { ctx.save(); ctx.translate(190 + r() * 320, 300 + r() * 120); ctx.rotate((r() - 0.5) * 1.2); ctx.fillStyle = '#eeeae2'; ctx.fillRect(-26, -32, 52, 64); ctx.fillStyle = '#2a2d38'; ctx.fillRect(-22, -28, 44, 48); ctx.restore(); }   // 写真
+    for (let i = 0; i < 5; i++) { ctx.fillStyle = ['#c43', '#ea3', '#36a', '#ddd', '#6a4'][i]; ctx.fillRect(180 + i * 70 + r() * 30, 410 + r() * 15, 30, 14); }   // 食べかす(お菓子の袋)
+    ctx.restore(); }
+  ctx.fillStyle = '#b9ae92'; ctx.fillRect(160 + 380 * op, 140, 380, 300); ctx.strokeStyle = '#7a6d55'; ctx.lineWidth = 6; ctx.strokeRect(160 + 380 * op, 140, 380, 300); ctx.strokeRect(540, 140, 380, 300);
+  ctx.restore();
+  ctx.fillStyle = '#d6cdb4'; ctx.fillRect(160, 470, 380, 1130); ctx.fillRect(540, 470, 380, 1130); ctx.strokeStyle = '#7a6d55'; ctx.lineWidth = 6; ctx.strokeRect(160, 470, 380, 1130); ctx.strokeRect(540, 470, 380, 1130);   // 下の押し入れのふすま
+  ctx.restore();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);                                   // カーテンを閉めた、昼でも暗い部屋
+  const bx = 330 + 60 * o.open, by = 520; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx, by, 10, bx, by, 330); g.addColorStop(0, 'rgba(255,240,200,0.55)'); g.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(1000, 1700); ctx.lineTo(bx - 320, by - 260); ctx.lineTo(bx + 320, by + 220); ctx.closePath(); ctx.fill(); ctx.restore();   // 懐中電灯の光
+  ctx.fillStyle = '#121824'; ctx.beginPath(); ctx.moveTo(W + 20, 1500); ctx.lineTo(900, 1640); ctx.lineTo(880, 1720); ctx.lineTo(W + 20, 1700); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#2a2a2e'; ctx.save(); ctx.translate(890, 1660); ctx.rotate(-0.95); ctx.fillRect(-20, -90, 40, 120); ctx.restore();   // おまわりさんの腕と懐中電灯
+}
+function photosScene(t) {    // 天袋の毛布の上に、寝ている私の写真が何十枚も
+  if (!PHOTOS) PHOTOS = Array.from({ length: 14 }, (_, i) => sleepPhoto(i));
+  ctx.fillStyle = '#2a2a30'; ctx.fillRect(0, 0, W, H); const r0 = rngOf(3); for (let i = 0; i < 40; i++) { ctx.fillStyle = `rgba(${r0() < 0.5 ? '70,70,80' : '20,20,26'},0.5)`; ctx.beginPath(); ctx.ellipse(r0() * W, r0() * H, 80 + r0() * 160, 40 + r0() * 80, r0() * 3, 0, 7); ctx.fill(); }   // 毛布のしわ
+  const n = 30, r = rngOf(77);
+  for (let i = 0; i < n; i++) { const x = 120 + r() * 840, y = 180 + r() * 1150, a = (r() - 0.5) * 0.9, at = EV.photos - 0.6 + i * 0.06; if (t < at) continue; const k = ease(prog(t, at, at + 0.25));
+    ctx.save(); ctx.translate(x, y - (1 - k) * 40); ctx.rotate(a); ctx.globalAlpha = k; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(-142, -176, 300, 380); ctx.drawImage(PHOTOS[i % PHOTOS.length], -150, -190, 300, 380); ctx.restore(); }
+  for (const [j, x, y, a] of [[3, 300, 560, -0.12], [7, 760, 700, 0.1], [11, 500, 1050, 0.04]]) { const at = EV.photos + 1.4 + j * 0.05; if (t < at) continue; const k = ease(prog(t, at, at + 0.3));   // 手前に、日付の読める写真
+    ctx.save(); ctx.translate(x, y - (1 - k) * 60); ctx.rotate(a); ctx.globalAlpha = k; ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-200, -235, 420, 532); ctx.drawImage(PHOTOS[j], -210, -266, 420, 532); ctx.restore(); }
+  const lg = ctx.createRadialGradient(560, 760, 150, 560, 860, 1000); lg.addColorStop(0, 'rgba(255,240,200,0.12)'); lg.addColorStop(1, 'rgba(0,0,0,0.6)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);   // 懐中電灯の光の輪
+}
+function povScene(t) {       // 天袋のすき間から見下ろす、夜の寝室(寝ている私)
+  ctx.fillStyle = '#20232e'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#5a5a4a'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(15,18,30,0.75)'; ctx.fillRect(0, 0, W, H);   // 畳(夜)
+  sleeper(ctx, 560, 1100, 2.1, Math.sin(t * 1.6));
+  ctx.fillStyle = 'rgba(10,12,22,0.45)'; ctx.fillRect(0, 0, W, H);
+  const gap = lerp(170, 400, ease(prog(t, EV.pov + 0.5, EV.back - 1.0))), gx = 560;           // すき間が、少しずつ広がる
+  ctx.fillStyle = '#020203'; ctx.fillRect(0, 0, gx - gap / 2, H); ctx.fillRect(gx + gap / 2, 0, W, H);
+  ctx.fillStyle = 'rgba(120,110,90,0.35)'; ctx.fillRect(gx - gap / 2 - 8, 0, 8, H); ctx.fillRect(gx + gap / 2, 0, 8, H);   // 戸のふち
+}
+
 // ---- 人のシルエット(うしろ姿 / 正面の暗い影) ----
 function figure(c, x, y, s, ph = 0, o = {}) {     // y = 足もと。ph: 歩く動き
   c.save(); c.translate(x, y); c.scale(s, s); c.fillStyle = o.col || '#08090c';
@@ -320,8 +377,11 @@ function render(t) {
       nightHouse(t, { z: lerp(1.0, 1.12, prog(t, EV.night, EV.key)), cx: 540, cy: 980, sil: ease(prog(t, EV.sil, EV.sil + 1.0)) * (1 - ease(prog(t, EV.out - 0.6, EV.out - 0.1))), lab: ease(prog(t, LN.l9.start + 1.4, LN.l9.start + 1.9)), door, walker: t > EV.out + 0.6 && t < EV.out + 1.6 ? 0.02 : 0 });
       flakes(t, 160, 0.8 * snowA, 9, 1); fadeIn(EV.night, 0.5); dark = 0.5; }
     else if (t < EV.stepsOut[0] - 0.2) { keyClose(t, 0); fadeIn(EV.key, 0.25); dark = 0.5; }
-    else if (t < EV.back) {         // 鍵をかけて、雪の上を歩いていく
-      const k = prog(t, EV.stepsOut[0] - 0.2, EV.back); nightHouse(t, { z: 1.12, cx: 540, cy: 980, sil: 0, lab: 0, door: 0, walker: 0.15 + k * 0.85, wph: k * 9, prints: 0.15 + k * 0.85 }); dark = 0.5; }
+    else if (t < EV.ten) {          // 鍵をかけて、雪の上を歩いていく
+      const k = prog(t, EV.stepsOut[0] - 0.2, EV.ten); nightHouse(t, { z: 1.12, cx: 540, cy: 980, sil: 0, lab: 0, door: 0, walker: 0.15 + k * 0.85, wph: k * 9, prints: 0.15 + k * 0.85 }); dark = 0.5; }
+    else if (t < EV.photos - 0.7) { tenScene(t, { z: lerp(1.0, 1.6, ease(prog(t, EV.openTen + 0.4, EV.photos - 0.7))), cx: lerp(540, 380, ease(prog(t, EV.openTen + 0.4, EV.photos - 0.7))), cy: lerp(900, 330, ease(prog(t, EV.openTen + 0.4, EV.photos - 0.7))), open: ease(prog(t, EV.openTen, EV.openTen + 0.6)) }); fadeIn(EV.ten, 0.4); dark = 0.35; }
+    else if (t < EV.pov) { photosScene(t); fadeIn(EV.photos - 0.7, 0.2); dark = 0.3; }
+    else if (t < EV.back) { povScene(t); fadeIn(EV.pov, 0.6); dark = 0.55; }
     else if (t < EV.see) {          // 次の朝: 家へ戻る
       const k = prog(t, EV.back, EV.see), st = EV.stepsMe.filter(s => s <= t).length; const bob = t > EV.stepsMe[0] ? Math.sin((t - EV.stepsMe[0]) / 0.55 * Math.PI) * 10 : 0;
       ctx.save(); ctx.filter = 'none'; groundView(t, { z: lerp(0.55, 0.9, ease(k)), cx: 540, cy: 760, toHouse: true, old: true, seed: 11, bob }); ctx.restore(); fadeIn(EV.back, 0.6);

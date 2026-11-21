@@ -46,6 +46,10 @@ T_NIGHT = L['l9']['start'] - 0.2                     # ゆうべの家(雪が降
 T_SIL = at('l10', 0.22)                              # 暗い1階の窓に、人影
 T_OUT = at('l10', 0.6)                               # 玄関から出ていく
 T_KEY = L['l11']['start'] - 0.3                      # 外から合いかぎで鍵をかける
+T_TEN = L['l11b']['start'] - 0.2                     # 寝室の押し入れ、天袋を開ける
+T_OPEN_TEN = at('l11b', 0.75)
+T_PHOTOS = L['l11c']['start'] + 1.0                  # 寝ている私の写真
+T_POV = L['l11d']['start'] - 0.2                     # 天袋のすき間から見た、寝ている私
 T_BACK = L['l12']['start'] - 0.2                     # 次の朝、家へ戻る
 T_SEE = L['l13']['start'] - 0.2                      # また足あと
 T_TOE2 = L['l14']['start'] + 0.3                     # つま先は家を向いている
@@ -56,7 +60,7 @@ T_HAND = L['l1b']['start'] - 0.2                     # 不動産屋の担当者�
 T_MEMO = L['l16']['start'] - 0.1                     # あの声は…
 STEPS_OUT = [T_KEY + 1.45 + k * 0.5 for k in range(3)]          # 鍵をかけて、雪の上を歩いていく
 STEPS_ME = [at('l12', 0.62) + k * 0.55 for k in range(9)]       # 次の朝、私が家まで歩く
-EV = dict(hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, open=T_OPEN, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
+EV = dict(ten=T_TEN, openTen=T_OPEN_TEN, photos=T_PHOTOS, pov=T_POV, hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, open=T_OPEN, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
 
 def noise(n, seed=None): return (np.random.default_rng(seed).standard_normal(n) if seed is not None else rng.standard_normal(n)).astype(np.float32)
 def wind():
@@ -153,6 +157,8 @@ def main():
     add(fx, T_OPEN, slidedoor(2.2), 0.55); add(big, T_OPEN + 0.2, taiko(0.6))
     add(fx, T_HAND + 1.6, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
     add(big, T_MEMO + 0.1, taiko(0.8))
+    add(fx, T_TEN + 0.3, click(1800), 0.3)                                            # 懐中電灯
+    add(fx, T_OPEN_TEN, slidedoor(0.7)[:int(0.7 * SR)], 0.3); add(big, T_PHOTOS, taiko(0.8)); add(big, T_POV + 0.4, taiko(0.6))
     add(big, HIT, stinger(), 0.75)
     nar = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']:
