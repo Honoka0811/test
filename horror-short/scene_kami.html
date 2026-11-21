@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/600.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
+  body { font-family: "Noto Serif JP", serif; color: #f4efe6; }
+  #stage { position: relative; width: 540px; height: 960px; overflow: hidden; background: #000; }
+  canvas { position: absolute; left: 0; top: 0; width: 540px; height: 960px; }
+  #shade { position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.15) 55%, rgba(0,0,0,0) 75%); }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(0,0,0,.75) 100%); }
+  #text { position: absolute; top: 128px; right: 0; left: 0; height: 560px; display: flex; flex-direction: row-reverse; justify-content: center; gap: 22px; }
+  #text p { writing-mode: vertical-rl; font-size: 37px; font-weight: 900; letter-spacing: .1em; line-height: 1.2; text-shadow: 0 0 10px #000, 0 0 22px #000, 2px 2px 0 #000; white-space: nowrap; }
+  #text p.red { color: #e3231c; }
+  #final { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; }
+  #final p { writing-mode: vertical-rl; font-size: 92px; font-weight: 900; letter-spacing: .14em; color: #d3140f; }
+  #fade, #black { position: absolute; inset: 0; background: #000; }
+  #black { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="cv" width="1080" height="1920"></canvas>
+  <div id="shade"></div><div id="vig"></div>
+  <div id="fade"></div>
+  <div id="text"></div>
+  <div id="final"><p>もういいかい</p></div>
+  <div id="black"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => 1 - Math.pow(1 - clamp(x), 3);
+const rnd = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+let TL;
+window.init = async function (tl) {
+  TL = tl;
+  await document.fonts.ready;
+  const all = TL.pages.map(p => p.lines.map(l => l[1]).join('')).join('') + 'もういいかい';
+  for (const w of ['600', '900']) await document.fonts.load(`${w} 30px "Noto Serif JP"`, all);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  render(0);
+};
+
+// ---------- cut-paper drawing helpers ----------
+function sky(g, stops) { const gr = g.createLinearGradient(0, 0, 0, 960); stops.forEach(([p, c]) => gr.addColorStop(p, c)); g.fillStyle = gr; g.fillRect(-60, -60, 660, 1080); }
+function ridge(g, seed, base, amp, col, dx = 0) {
+  g.fillStyle = col; g.beginPath(); g.moveTo(-80, 1100);
+  for (let x = -80; x <= 620; x += 8) { const u = (x + dx) * 0.006; g.lineTo(x, base - amp * (0.55 * Math.sin(u * 1.3 + seed) + 0.3 * Math.sin(u * 2.9 + seed * 2.1) + 0.15 * Math.sin(u * 6.3 + seed * 3.7))); }
+  g.lineTo(620, 1100); g.fill();
+}
+function mist(g, y, h, a) { const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, 'rgba(255,225,200,0)'); gr.addColorStop(.5, `rgba(255,225,200,${a})`); gr.addColorStop(1, 'rgba(255,225,200,0)'); g.fillStyle = gr; g.fillRect(-60, y, 660, h); }
+function cedar(g, x, base, h, col) {
+  g.fillStyle = col; g.fillRect(x - h * 0.022, base - h * 0.5, h * 0.044, h * 0.5);
+  for (let i = 0; i < 7; i++) { const y = base - h * (0.28 + i * 0.1), w = h * (0.17 - i * 0.02); g.beginPath(); g.moveTo(x - w, y); g.lineTo(x, y - h * 0.2); g.lineTo(x + w, y); g.fill(); }
+}
+function house(g, x, y, w, lit) {
+  g.fillStyle = '#060507'; g.fillRect(x - w * 0.42, y - w * 0.3, w * 0.84, w * 0.3);
+  g.beginPath(); g.moveTo(x - w * 0.6, y - w * 0.28); g.quadraticCurveTo(x - w * 0.3, y - w * 0.72, x - w * 0.12, y - w * 0.78); g.lineTo(x + w * 0.12, y - w * 0.78); g.quadraticCurveTo(x + w * 0.3, y - w * 0.72, x + w * 0.6, y - w * 0.28); g.fill();
+  if (lit) { g.fillStyle = '#ffb347'; g.fillRect(x - w * 0.1, y - w * 0.2, w * 0.13, w * 0.11); }
+}
+function torii(g, x, y, s, col) {
+  g.fillStyle = col;
+  for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(x + sd * 88 * s, y); g.lineTo(x + sd * 110 * s, y); g.lineTo(x + sd * 96 * s, y - 270 * s); g.lineTo(x + sd * 80 * s, y - 270 * s); g.fill(); }
+  g.fillRect(x - 122 * s, y - 208 * s, 244 * s, 17 * s);
+  g.beginPath(); g.moveTo(x - 150 * s, y - 286 * s); g.quadraticCurveTo(x, y - 268 * s, x + 150 * s, y - 286 * s); g.lineTo(x + 158 * s, y - 262 * s); g.quadraticCurveTo(x, y - 246 * s, x - 158 * s, y - 262 * s); g.fill();
+  g.fillRect(x - 7 * s, y - 252 * s, 14 * s, 46 * s);
+}
+function kid(g, x, y, s, pose) {             // small kimono silhouette
+  g.fillStyle = '#050406'; g.beginPath(); g.arc(x, y - 44 * s, 9.5 * s, 0, 7); g.fill();
+  g.beginPath(); g.moveTo(x - 7 * s, y - 35 * s); g.lineTo(x + 7 * s, y - 35 * s); g.lineTo(x + 12 * s, y - 4 * s); g.lineTo(x - 12 * s, y - 4 * s); g.fill();
+  g.fillRect(x - 7 * s, y - 5 * s, 4.5 * s, 6 * s); g.fillRect(x + 2.5 * s, y - 5 * s, 4.5 * s, 6 * s);
+  g.lineWidth = 4.2 * s; g.strokeStyle = '#050406'; g.lineCap = 'round'; g.beginPath();
+  if (pose === 'oni') { g.moveTo(x - 5 * s, y - 31 * s); g.lineTo(x - 13 * s, y - 42 * s); g.moveTo(x + 5 * s, y - 31 * s); g.lineTo(x - 9 * s, y - 46 * s); }
+  else { const a = pose || 0; g.moveTo(x - 6 * s, y - 31 * s); g.lineTo(x - 17 * s, y - (22 + 9 * a) * s); g.moveTo(x + 6 * s, y - 31 * s); g.lineTo(x + 17 * s, y - (26 - 9 * a) * s); }
+  g.stroke();
+}
+
+function village(g, t, p) {
+  sky(g, [[0, '#1c1730'], [0.4, '#7c2f33'], [0.62, '#e0763a'], [0.75, '#f6b25a'], [1, '#f6b25a']]);
+  g.fillStyle = '#d3301f'; g.beginPath(); g.arc(330, 560 + 26 * p, 70, 0, 7); g.fill();
+  ridge(g, 1.3, 590, 70, '#8a3a36', p * 10); mist(g, 560, 90, 0.22);
+  ridge(g, 4.1, 660, 95, '#4a2230', p * 22); mist(g, 640, 100, 0.16);
+  ridge(g, 7.7, 760, 70, '#1c1220', p * 40);
+  ridge(g, 2.2, 850, 46, '#060507', p * 60);
+  for (const [x, y, w, l] of [[110, 820, 86, 1], [226, 842, 70, 0], [400, 826, 96, 1], [492, 850, 64, 0], [30, 858, 60, 0]]) house(g, x - p * 14, y, w, l);
+  g.strokeStyle = 'rgba(255,230,210,.18)'; g.lineWidth = 6; g.lineCap = 'round';
+  for (const x of [118, 408]) { g.beginPath(); g.moveTo(x - p * 14, 754); g.bezierCurveTo(x + 14, 700, x - 16, 650, x + 12 + 16 * Math.sin(t * 0.6), 596); g.stroke(); }
+  g.strokeStyle = '#0a070b'; g.lineWidth = 2.2;                                   // crows going home
+  for (let i = 0; i < 5; i++) { const x = 600 - ((t * 26 + i * 70) % 720), y = 430 + i * 19 + Math.sin(t * 2 + i) * 5, w = 7 + 3 * Math.sin(t * 9 + i * 2); g.beginPath(); g.moveTo(x - 9, y - w); g.lineTo(x, y); g.lineTo(x + 9, y - w); g.stroke(); }
+}
+function shrine(g, t, p) {
+  sky(g, [[0, '#15122a'], [0.35, '#5a2437'], [0.6, '#c9573a'], [0.78, '#e89a52'], [1, '#e89a52']]);
+  ridge(g, 3.3, 640, 120, '#3a1c2c', p * 14); mist(g, 600, 110, 0.14);
+  for (let i = 0; i < 9; i++) cedar(g, 20 + i * 66 + (i % 2) * 14 - p * 8, 742, 300 + rnd(i) * 130, '#1a0f1c');
+  g.fillStyle = '#0c090e'; g.fillRect(196, 640, 148, 62);                          // shrine hall on a raised floor
+  g.beginPath(); g.moveTo(160, 644); g.quadraticCurveTo(210, 606, 270, 586); g.quadraticCurveTo(330, 606, 380, 644); g.lineTo(396, 630); g.lineTo(380, 652); g.lineTo(160, 652); g.lineTo(144, 630); g.fill();
+  g.fillRect(190, 700, 160, 9); for (const x of [198, 236, 268, 300, 338]) g.fillRect(x, 708, 7, 34);
+  { const gg = g.createLinearGradient(0, 742, 0, 960); gg.addColorStop(0, '#5b2a30'); gg.addColorStop(1, '#22121c'); g.fillStyle = gg; g.fillRect(-60, 742, 660, 260); }
+  g.fillStyle = '#7a3a38'; for (let i = 0; i < 7; i++) g.fillRect(190 - i * 12, 752 + i * 26, 160 + i * 24, 4);   // stone steps
+  torii(g, 270, 930, 1.5, '#6e1710');
+  g.fillStyle = '#050406'; g.fillRect(-30, -60, 62, 1080); g.fillRect(500, -60, 70, 1080);
+  kid(g, 440, 846, 1.7, 'oni');
+  const run = Math.sin(t * 7);
+  kid(g, 170 - ease((t - 10.4) / 3) * 150, 900, 1.7, run); kid(g, 330 - ease((t - 10.8) / 3.4) * 250, 850, 1.45, -run);
+  kid(g, 250 - ease((t - 11.4) / 3) * 34, 800 - ease((t - 11.4) / 3) * 52, 1.2 - 0.25 * ease((t - 11.4) / 3), run); kid(g, 296 - ease((t - 11.9) / 3) * 44, 806 - ease((t - 11.9) / 3) * 56, 1.15 - 0.25 * ease((t - 11.9) / 3), -run);
+}
+function under(g, t, p) {
+  g.fillStyle = '#020203'; g.fillRect(-60, -60, 660, 1080);
+  const d = clamp((t - TL.dim) / 2.5), mixc = (a, b) => `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * d)).join(',')})`;
+  const y0 = 716, y1 = 830;
+  const gr = g.createLinearGradient(0, y0, 0, y1); gr.addColorStop(0, mixc([214, 96, 52], [66, 40, 104])); gr.addColorStop(0.7, mixc([240, 160, 84], [112, 60, 110])); gr.addColorStop(1, mixc([60, 30, 30], [14, 10, 22]));
+  g.fillStyle = gr; g.fillRect(-60, y0, 660, y1 - y0);
+  g.fillStyle = mixc([34, 18, 22], [8, 6, 12]); g.fillRect(-60, y1 - 26, 660, 26);                                  // ground outside
+  g.fillStyle = '#020203';
+  for (let i = 0; i < 40; i++) { const x = -40 + i * 16 + rnd(i) * 9; g.beginPath(); g.moveTo(x, y1 - 24); g.lineTo(x + 3, y1 - 34 - rnd(i + 9) * 18); g.lineTo(x + 6, y1 - 24); g.fill(); }
+  if (t >= TL.legs[0]) {            // something far too tall walks past, one slow step at a time
+    const S = TL.steps, n = S.filter(s => t >= s).length; let pos = n;
+    if (n > 0) pos = n - 1 + ease((t - S[n - 1]) / 0.45);
+    const lift = n > 0 ? Math.sin(Math.PI * clamp((t - S[n - 1]) / 0.45)) : 0;
+    for (const [off, lead] of [[0, n % 2 === 1], [96, n % 2 === 0]]) {         // two bare legs, thin, a little bent, feet pointing where it is going
+      const x = 610 - pos * 112 + off - (lead ? 0 : 40) + (lead ? 0 : 40 * (1 - lift)), up = lead ? lift * 9 : 0;
+      g.beginPath(); g.moveTo(x - 2, y0 - 6); g.lineTo(x + 15, y0 - 6); g.lineTo(x + 10, y1 - 36 - up); g.lineTo(x + 13, y1 - 12 - up); g.lineTo(x - 34, y1 - 5 - up); g.lineTo(x - 38, y1 - 12 - up); g.lineTo(x - 3, y1 - 20 - up); g.lineTo(x + 1, y1 - 40 - up); g.closePath(); g.fill();
+    }
+  }
+  for (const x of [-12 - p * 10, 168 - p * 6, 372 + p * 6, 548 + p * 10]) g.fillRect(x, y0 - 10, 26, y1 - y0 + 20);   // floor posts
+}
+function geta(g, t, p) {
+  sky(g, [[0, '#05060f'], [0.5, '#101a35'], [0.8, '#1d2a48'], [1, '#1d2a48']]);
+  g.fillStyle = 'rgba(230,236,255,.85)'; g.beginPath(); g.arc(118, 250, 30, 0, 7); g.fill();
+  ridge(g, 5.2, 560, 150, '#070a14', p * 10); mist(g, 520, 120, 0.05);
+  for (let i = 0; i < 10; i++) cedar(g, -10 + i * 62 + (i % 2) * 18, 700, 330 + rnd(i + 20) * 150, '#030409');
+  g.fillStyle = '#0a0e1a'; g.beginPath(); g.moveTo(-60, 690); g.lineTo(600, 690); g.lineTo(600, 1000); g.lineTo(-60, 1000); g.fill();
+  g.fillStyle = '#141b2e'; g.beginPath(); g.moveTo(150, 960); g.quadraticCurveTo(250, 800, 262, 690); g.lineTo(286, 690); g.quadraticCurveTo(310, 800, 420, 960); g.fill();   // path up into the mountain
+  for (const dx of [-27, 27]) { const x = 274 + dx, y = 838;
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.ellipse(x + 3, y + 7, 22, 42, 0, 0, 7); g.fill();
+    g.fillStyle = '#b08a5a'; g.beginPath(); g.roundRect(x - 19, y - 40, 38, 80, 13); g.fill();
+    g.strokeStyle = '#b3201a'; g.lineWidth = 5; g.lineCap = 'round'; g.beginPath(); g.moveTo(x - 15, y + 4); g.lineTo(x, y - 24); g.lineTo(x + 15, y + 4); g.stroke(); }
+}
+
+window.render = function (t) {
+  const g = $('cv').getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); g.filter = 'none'; g.globalAlpha = 1;
+  let si = 0; TL.scenes.forEach((s, i) => { if (t >= s.t) si = i; });
+  const sc = TL.scenes[si], t1 = si + 1 < TL.scenes.length ? TL.scenes[si + 1].t : TL.end, p = (t - sc.t) / (t1 - sc.t);
+  g.fillStyle = '#000'; g.fillRect(0, 0, 540, 960);
+  const z = 1 + 0.07 * p, zo = sc.k === 'geta' ? [274, 838] : [270, 620];
+  g.translate(zo[0], zo[1]); g.scale(sc.k === 'geta' ? 1 + 0.22 * p : z, sc.k === 'geta' ? 1 + 0.22 * p : z); g.translate(-zo[0], -zo[1]);
+  if (sc.k === 'village') village(g, t, p); else if (sc.k === 'shrine') shrine(g, t, p); else if (sc.k === 'under') under(g, t, p); else if (sc.k === 'geta') geta(g, t, p);
+  const dip = sc.k === 'hook' || sc.k === 'black' ? 0 : Math.max(1 - (t - sc.t) / 0.45, 1 - (t1 - t) / 0.35, 0);
+  $('fade').style.opacity = clamp(dip);
+  $('shade').style.display = (sc.k === 'village' || sc.k === 'shrine' || sc.k === 'geta') ? 'block' : 'none';
+  let pg = null; for (const x of TL.pages) if (t >= x.t) pg = x;
+  $('text').innerHTML = pg ? pg.lines.map(l => `<p class="${l[2]}" style="opacity:${clamp((t - pg.t - l[0]) / 0.35)}">${l[1]}</p>`).join('') : '';
+  const fin = t >= TL.finalText && t < TL.cut;
+  $('final').style.display = fin ? 'flex' : 'none';
+  if (fin) $('final').firstElementChild.style.transform = `scale(${1 + 0.05 * (t - TL.finalText)})`;
+  $('black').style.display = t >= TL.cut ? 'block' : 'none';
+};
+</script>
+</body>
+</html>
