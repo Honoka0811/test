@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
+  body { font-family: "Noto Sans JP", "IPAPGothic", sans-serif; color: #eef3f3; }
+  #stage { position: relative; width: 540px; height: 960px; overflow: hidden; background: #0a1113; }
+  .head { position: absolute; left: 28px; right: 28px; top: 92px; display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid #1d2b2e; padding-bottom: 12px; }
+  .head b { font-size: 25px; font-weight: 900; color: #44d6c4; letter-spacing: .12em; }
+  .head small { display: block; font-size: 11px; color: #5f7477; letter-spacing: .22em; margin-top: 2px; }
+  #step { font-size: 15px; font-weight: 700; color: #9db3b5; border: 1px solid #2a3c3f; border-radius: 14px; padding: 3px 14px; }
+  .ear { position: absolute; top: 190px; width: 210px; text-align: center; }
+  .ear.l { left: 40px; } .ear.r { right: 40px; }
+  .circ { width: 150px; height: 150px; border-radius: 50%; margin: 0 auto; border: 3px solid #25373a; display: flex; align-items: center; justify-content: center; font-size: 62px; font-weight: 900; color: #3c5558; }
+  .ear canvas { margin-top: 20px; width: 200px; height: 56px; background: #0d171a; border: 1px solid #1d2b2e; border-radius: 8px; }
+  .out { margin-top: 8px; font-size: 14px; font-weight: 700; letter-spacing: .08em; color: #5f7477; }
+  #text { position: absolute; left: 0; right: 0; top: 540px; height: 270px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; }
+  #text div { font-size: 35px; font-weight: 900; line-height: 1.35; white-space: nowrap; }
+  #text .big { font-size: 110px; color: #44d6c4; }
+  #text .small { font-size: 24px; color: #9db3b5; font-weight: 700; }
+  #text .teal { color: #44d6c4; }
+  #text .red, .red { color: #ff4b3a !important; }
+  #text .res { font-size: 25px; font-weight: 700; letter-spacing: .02em; }
+  .bar { position: absolute; left: 28px; right: 28px; top: 850px; height: 4px; background: #172326; border-radius: 2px; }
+  .bar i { display: block; height: 100%; background: #44d6c4; border-radius: 2px; }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,.6) 100%); }
+  #hook { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; text-align: center; }
+  #hook .t { font-size: 40px; line-height: 1.55; font-weight: 900; }
+  #hook .s { font-size: 16px; color: #8a8a8a; letter-spacing: .1em; }
+  #black { position: absolute; inset: 0; background: #000; display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="head"><div><b>聴力検査</b><small>HEARING TEST</small></div><div id="step"></div></div>
+  <div class="ear l"><div class="circ" id="cl">L</div><canvas id="sl" width="400" height="112"></canvas><div class="out" id="ol"></div></div>
+  <div class="ear r"><div class="circ" id="cr">R</div><canvas id="sr" width="400" height="112"></canvas><div class="out" id="or"></div></div>
+  <div id="text"></div>
+  <div class="bar"><i id="prog"></i></div>
+  <div id="vig"></div>
+  <div id="hook"><div class="t" id="h1">この動画は、<br>イヤホンで見てください。</div><div class="s" id="h2">聴力検査 ／ 所要時間 約50秒</div></div>
+  <div id="black"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const rnd = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+let TL;
+window.init = async function (tl) {
+  TL = tl;
+  await document.fonts.ready;
+  const all = document.body.innerText + TL.texts.map(x => x.step + x.lines.map(l => l[1]).join('')).join('') + '出力なしHz0123456789';
+  for (const w of ['400', '700', '900']) await document.fonts.load(`${w} 20px "Noto Sans JP"`, all);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  render(0);
+};
+function scope(id, t, f, tone, alarm) {
+  const g = $(id).getContext('2d'); g.clearRect(0, 0, 400, 112);
+  g.strokeStyle = '#16272a'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, 56); g.lineTo(400, 56); g.stroke();
+  const a = tone ? 36 * Math.sqrt(tone.g / 0.22) * Math.min(1, (t - tone.t0) / 0.08, tone.hardEnd ? 1 : (tone.t1 - t) / 0.08) : 0;
+  g.strokeStyle = alarm ? '#ff4b3a' : '#44d6c4'; g.lineWidth = 3; g.beginPath();
+  for (let x = 0; x <= 400; x += 2) { const y = 56 + (tone ? Math.sin((x * tone.f / 1000) * 0.11 - t * 22) * Math.max(a, 5) : (rnd(x + f * 3) - .5) * 1.5); g[x ? 'lineTo' : 'moveTo'](x, y); }
+  g.stroke();
+}
+window.render = function (t) {
+  const f = Math.round(t * TL.fps);
+  $('hook').style.display = t < TL.hookEnd ? 'flex' : 'none';
+  if (t < TL.hookEnd) { $('h1').style.opacity = clamp((t - 0.1) / 0.3); $('h2').style.opacity = clamp((t - 0.9) / 0.3); }
+  let cur = null; for (const x of TL.texts) if (t >= x.t) cur = x;
+  $('step').textContent = cur ? cur.step : '';
+  $('text').innerHTML = cur ? cur.lines.map(l => `<div class="${l[2]}" style="visibility:${t >= cur.t + l[0] ? 'visible' : 'hidden'}">${l[1]}</div>`).join('') : '';
+  const alarm = t >= TL.alarmR[0] && t < TL.alarmR[1];
+  for (const [ch, c, s, o] of [['L', 'cl', 'sl', 'ol'], ['R', 'cr', 'sr', 'or']]) {
+    const tone = TL.tones.find(x => t >= x.t0 && t < x.t1 && (x.ch === ch || x.ch === 'B'));
+    const el = $(c), al = alarm && ch === 'R', blink = al && (f % 16 < 9);
+    const pulse = tone ? 0.5 + 0.5 * Math.sin(t * 9) : 0;
+    el.style.borderColor = tone ? '#44d6c4' : blink ? '#ff4b3a' : '#25373a';
+    el.style.color = tone ? '#0a1113' : blink ? '#ff4b3a' : '#3c5558';
+    el.style.background = tone ? '#44d6c4' : 'transparent';
+    el.style.boxShadow = tone ? `0 0 ${24 + 26 * pulse}px rgba(68,214,196,.55)` : 'none';
+    scope(s, t, f + (ch === 'R' ? 500 : 0), tone, false);
+    $(o).textContent = tone ? `出力: ${tone.f}Hz` : '出力: なし';
+    $(o).className = 'out' + (al && !tone ? ' red' : '');
+    $(o).style.visibility = (al && !tone && !blink) ? 'hidden' : 'visible';
+  }
+  $('prog').style.width = (100 * clamp((t - TL.hookEnd) / (38.6 - TL.hookEnd))) + '%';
+  $('black').style.display = t >= TL.cut ? 'block' : 'none';
+};
+</script>
+</body>
+</html>
