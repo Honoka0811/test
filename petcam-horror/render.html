@@ -214,6 +214,8 @@ function drawReflection(t, x, y, w, h, o) {
 const LO = mk(432, 768), lctx = LO.getContext('2d');
 const PIX = mk(432, 768), pctx = PIX.getContext('2d');
 const FEED = mk(W, H), fctx = FEED.getContext('2d');
+const GRADE = mk(432, 768), gctx = GRADE.getContext('2d');
+const ZOOMED = mk(432, 768), zctx = ZOOMED.getContext('2d');
 function renderFeed(t, o, cam = { zoom: 1, cx: 540, cy: 960, pix: 1 }) {
   // 1) 低解像度に描く(カメラの安っぽい画質)
   X = lctx; lctx.save(); lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.fillStyle = '#000'; lctx.fillRect(0, 0, 432, 768);
@@ -226,11 +228,14 @@ function renderFeed(t, o, cam = { zoom: 1, cx: 540, cy: 960, pix: 1 }) {
   if (cam.pix > 1) {
     const pw = Math.max(8, Math.round(432 / cam.pix)), ph = Math.max(8, Math.round(768 / cam.pix));
     pctx.clearRect(0, 0, 432, 768); pctx.imageSmoothingEnabled = true; pctx.drawImage(LO, 0, 0, pw, ph);
-    src = mk(432, 768); const sx = src.getContext('2d'); sx.imageSmoothingEnabled = false; sx.drawImage(PIX, 0, 0, pw, ph, 0, 0, 432, 768);
+    zctx.imageSmoothingEnabled = false; zctx.clearRect(0, 0, 432, 768); zctx.drawImage(PIX, 0, 0, pw, ph, 0, 0, 432, 768); src = ZOOMED;
   }
   // 3) 魚眼っぽい歪み(行ごとに横幅を変える)+ 色
+  // 色調補正は小さい画像に1回だけかける
+  gctx.save(); gctx.clearRect(0, 0, 432, 768);
+  gctx.filter = o.night ? 'grayscale(1) brightness(1.25) contrast(1.25)' : (o.filter || 'saturate(0.85) contrast(0.95) brightness(1.02)');
+  gctx.drawImage(src, 0, 0); gctx.restore(); src = GRADE;
   X = fctx; fctx.save(); fctx.setTransform(1, 0, 0, 1, 0, 0); fctx.clearRect(0, 0, W, H);
-  fctx.filter = o.night ? 'grayscale(1) brightness(1.25) contrast(1.25)' : (o.filter || 'saturate(0.85) contrast(0.95) brightness(1.02)');
   fctx.imageSmoothingEnabled = true;
   const K = cam.zoom > 1.5 ? 0.0 : 0.07, rows = 96;
   for (let i = 0; i < rows; i++) {
