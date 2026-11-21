@@ -228,18 +228,31 @@ function figure(c, x, y, s, ph = 0, o = {}) {     // y = 足もと。ph: 歩く�
   if (o.suit) { c.fillStyle = '#8d8f94'; c.beginPath(); c.moveTo(-12, -232); c.lineTo(0, -196); c.lineTo(12, -232); c.closePath(); c.fill(); c.fillStyle = o.col || '#08090c'; c.beginPath(); c.moveTo(-3, -228); c.lineTo(3, -228); c.lineTo(4, -192); c.lineTo(0, -186); c.lineTo(-4, -192); c.closePath(); c.fill(); }   // スーツの白いシャツの襟と、ネクタイ
   c.restore();
 }
-function copBack(c, x, y, s, point, tgt) {      // しゃがんで足あとを指さす、おまわりさん(うしろ姿)。tgt: 指さす先(画面座標)
-  c.save(); const sh = c.createRadialGradient(x - 20 * s, y + 24 * s, 10, x - 20 * s, y + 24 * s, 110 * s); sh.addColorStop(0, 'rgba(60,70,95,0.55)'); sh.addColorStop(1, 'rgba(60,70,95,0)'); c.fillStyle = sh; c.beginPath(); c.ellipse(x - 20 * s, y + 24 * s, 110 * s, 30 * s, 0, 0, 7); c.fill();   // 雪の上の影
-  c.fillStyle = '#121824';
-  c.beginPath(); c.ellipse(x, y + 10 * s, 70 * s, 22 * s, 0, 0, 7); c.fill();                                                                                              // しゃがんだ脚とかかと
-  c.beginPath(); c.moveTo(x - 62 * s, y); c.quadraticCurveTo(x - 72 * s, y - 70 * s, x - 48 * s, y - 128 * s); c.lineTo(x + 48 * s, y - 128 * s); c.quadraticCurveTo(x + 72 * s, y - 70 * s, x + 62 * s, y); c.closePath(); c.fill();   // 丸まった背中(紺の上着)
-  c.fillStyle = 'rgba(200,215,240,0.16)'; c.fillRect(x - 60 * s, y - 80 * s, 120 * s, 7 * s);                                                                                // 反射材のライン
-  c.strokeStyle = 'rgba(220,230,250,0.18)'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - 62 * s, y); c.quadraticCurveTo(x - 72 * s, y - 70 * s, x - 48 * s, y - 128 * s); c.lineTo(x + 48 * s, y - 128 * s); c.quadraticCurveTo(x + 72 * s, y - 70 * s, x + 62 * s, y); c.stroke();   // 雪あかりのふち
-  const sx = x - 44 * s, sy = y - 110 * s, ex = lerp(sx - 20 * s, tgt[0], point), ey = lerp(sy + 60 * s, tgt[1] - 14 * s, point);
-  c.strokeStyle = '#1e2738'; c.lineCap = 'round'; c.lineWidth = 20 * s; c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo((sx + ex) / 2, sy - 10 * s, ex, ey); c.stroke();                // のばした腕
-  c.lineWidth = 6 * s; c.strokeStyle = '#2a2420'; c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex + (tgt[0] - ex) * 0.0 - 14 * s * Math.sign(sx - tgt[0]), ey + 10 * s); c.stroke();              // 指先(手袋)
-  c.fillStyle = '#0d0e10'; c.fillRect(x - 12 * s, y - 150 * s, 24 * s, 26 * s); c.beginPath(); c.ellipse(x - 4 * s, y - 170 * s, 25 * s, 29 * s, -0.25, 0, 7); c.fill();               // 首と、うつむいた頭
-  c.fillStyle = '#18202e'; c.beginPath(); c.ellipse(x - 6 * s, y - 190 * s, 30 * s, 13 * s, -0.25, Math.PI, 0); c.fill(); c.save(); c.translate(x - 6 * s, y - 190 * s); c.rotate(-0.25); c.fillRect(-31 * s, -2 * s, 62 * s, 10 * s); c.fillStyle = '#0a0d14'; c.fillRect(-35 * s, 7 * s, 70 * s, 6 * s); c.restore();   // 制帽
+function copBack(c, x, y, s, point, tgt) {      // しゃがんで足あとを指さす、おまわりさん(左うしろから)。tgt: 指さす先(画面座標)
+  c.save();
+  const sh = c.createRadialGradient(x - 20 * s, y + 24 * s, 10, x - 20 * s, y + 24 * s, 110 * s); sh.addColorStop(0, 'rgba(60,70,95,0.55)'); sh.addColorStop(1, 'rgba(60,70,95,0)'); c.fillStyle = sh; c.beginPath(); c.ellipse(x - 20 * s, y + 24 * s, 110 * s, 30 * s, 0, 0, 7); c.fill();   // 雪の上の影
+  const P = (px, py) => [x + px * s, y + py * s], rim = 'rgba(215,225,245,0.22)';
+  // しゃがんだ体: 左のひざが前に出て、背中は丸まる
+  c.fillStyle = '#0e131d'; c.beginPath(); c.moveTo(...P(-78, 8)); c.quadraticCurveTo(...P(-96, -14), ...P(-80, -42)); c.quadraticCurveTo(...P(-60, -58), ...P(-36, -46)); c.lineTo(...P(-30, 10)); c.closePath(); c.fill();   // 左ひざと、すね
+  c.fillStyle = '#05070b'; c.beginPath(); c.ellipse(...P(-70, 12), 22 * s, 9 * s, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(...P(48, 14), 26 * s, 10 * s, 0, 0, 7); c.fill();   // 靴
+  c.fillStyle = '#141b29'; c.beginPath(); c.moveTo(...P(-44, 6)); c.quadraticCurveTo(...P(-58, -60), ...P(-46, -112)); c.quadraticCurveTo(...P(-26, -142), ...P(8, -140)); c.quadraticCurveTo(...P(52, -136), ...P(60, -92)); c.quadraticCurveTo(...P(68, -40), ...P(60, 8)); c.closePath(); c.fill();   // 丸まった背中(紺の上着)
+  c.strokeStyle = rim; c.lineWidth = 2.5; c.stroke();
+  c.fillStyle = 'rgba(200,215,240,0.16)'; c.beginPath(); c.moveTo(...P(-52, -62)); c.lineTo(...P(64, -58)); c.lineTo(...P(64, -51)); c.lineTo(...P(-52, -55)); c.closePath(); c.fill();   // 反射材のライン
+  // 頭(指さす先へ少しうつむく)と制帽
+  const hb = point * 6; c.fillStyle = '#0d0e10'; c.beginPath(); c.ellipse(...P(-10 - hb, -160 + hb * 0.6), 23 * s, 26 * s, -0.2, 0, 7); c.fill();
+  c.save(); c.translate(...P(-12 - hb, -176 + hb * 0.6)); c.rotate(-0.22 - point * 0.08); c.fillStyle = '#18202e'; c.beginPath(); c.ellipse(0, 0, 28 * s, 13 * s, 0, Math.PI, 0); c.fill(); c.fillRect(-28 * s, -1 * s, 56 * s, 9 * s); c.fillStyle = '#05070b'; c.beginPath(); c.ellipse(-22 * s, 8 * s, 18 * s, 5 * s, -0.1, 0, 7); c.fill(); c.restore();   // 制帽とつば
+  // 腕: 肩とひじで曲がる(2本の骨の IK)。ひざの上の手 → 足あとを指さす
+  const S = P(-40, -112), L1 = 52 * s, L2 = 50 * s;
+  const rest = P(-74, -50), Tg = [lerp(rest[0], tgt[0] + 30 * s, point), lerp(rest[1], tgt[1] - 14 * s, point)];
+  let dx = Tg[0] - S[0], dy = Tg[1] - S[1], d = Math.hypot(dx, dy); const dd = Math.min(d, L1 + L2 - 1); const base = Math.atan2(dy, dx), cosA = (L1 * L1 + dd * dd - L2 * L2) / (2 * L1 * dd), A = Math.acos(clamp(cosA, -1, 1));
+  const E = [S[0] + Math.cos(base - A) * L1, S[1] + Math.sin(base - A) * L1], H = [S[0] + Math.cos(base) * dd, S[1] + Math.sin(base) * dd];   // ひじは上側に曲がる
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  c.strokeStyle = rim; c.lineWidth = 22 * s; c.beginPath(); c.moveTo(...S); c.lineTo(...E); c.lineTo(...H); c.stroke();
+  c.strokeStyle = '#1b2333'; c.lineWidth = 19 * s; c.beginPath(); c.moveTo(...S); c.lineTo(...E); c.stroke(); c.lineWidth = 16 * s; c.beginPath(); c.moveTo(...E); c.lineTo(...H); c.stroke();   // 上腕と前腕
+  const fa = Math.atan2(H[1] - E[1], H[0] - E[0]);
+  c.save(); c.translate(...H); c.rotate(fa); c.fillStyle = '#08090c'; c.beginPath(); c.ellipse(4 * s, 0, 11 * s, 9 * s, 0, 0, 7); c.fill();   // 手袋の手(にぎりこぶし)
+  const fl = lerp(4, 17, point); c.strokeStyle = '#08090c'; c.lineWidth = 5.5 * s; c.beginPath(); c.moveTo(10 * s, -2 * s); c.lineTo((10 + fl) * s, -2 * s); c.stroke();   // 人さし指がのびる
+  c.lineWidth = 6 * s; c.beginPath(); c.moveTo(4 * s, -7 * s); c.lineTo(9 * s, -10 * s); c.stroke(); c.restore();                                                          // 親指
   c.restore();
 }
 // ---- 地面の高さから見た庭(足あとが奥へ続く) ----
