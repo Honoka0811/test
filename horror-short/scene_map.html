@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
+  body { font-family: "Noto Sans JP", "IPAPGothic", sans-serif; color: #e8eaed; }
+  #stage { position: relative; width: 540px; height: 960px; overflow: hidden; background: #000; }
+  canvas#map { position: absolute; left: 0; top: 0; width: 540px; height: 960px; }
+  .status { position: absolute; left: 0; right: 0; top: 0; height: 84px; padding: 46px 24px 0; display: flex; justify-content: space-between; font-size: 15px; font-weight: 700; background: linear-gradient(#07090c, rgba(7,9,12,.85) 70%, rgba(7,9,12,0)); }
+  .rec { background: #d1121a; color: #fff; border-radius: 12px; padding: 1px 10px; font-size: 13px; margin-left: 10px; }
+  .title { position: absolute; left: 20px; top: 92px; background: rgba(16,19,24,.92); border: 1px solid #262b33; border-radius: 22px; padding: 8px 18px; font-size: 16px; font-weight: 700; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 292px; background: #101318; border-top: 1px solid #262b33; border-radius: 22px 22px 0 0; padding: 14px 22px 0; }
+  .sheet .grab { width: 44px; height: 5px; border-radius: 3px; background: #343a44; margin: 0 auto 12px; }
+  .sheet h3 { font-size: 15px; color: #8a919b; font-weight: 700; margin-bottom: 6px; letter-spacing: .06em; }
+  .mrow { display: flex; align-items: center; gap: 14px; height: 62px; border-bottom: 1px solid #1b1f26; }
+  .mav { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: #fff; flex: none; border: 2px solid #e8eaed; }
+  .mname { font-size: 19px; font-weight: 700; }
+  .mstat { font-size: 13.5px; color: #8a919b; margin-top: 1px; white-space: nowrap; }
+  .mdist { margin-left: auto; font-size: 30px; font-weight: 900; letter-spacing: .01em; white-space: nowrap; }
+  .mdist small { font-size: 16px; margin-left: 2px; }
+  .red { color: #ff4b3a !important; }
+  #banners { position: absolute; left: 14px; right: 14px; top: 88px; }
+  .ban { position: absolute; left: 0; right: 0; background: rgba(34,38,46,.97); border: 1px solid #3a404b; border-radius: 18px; padding: 11px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.6); display: flex; gap: 12px; align-items: center; }
+  .ban .ic { width: 34px; height: 34px; border-radius: 9px; background: #2f6fe0; flex: none; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 900; }
+  .ban b { display: block; font-size: 16.5px; white-space: nowrap; }
+  .ban span { font-size: 13px; color: #9aa1ab; }
+  #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(0,0,0,.7) 100%); pointer-events: none; }
+  #hook { position: absolute; inset: 0; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; text-align: center; }
+  #hook .t { font-size: 37px; line-height: 1.6; font-weight: 900; }
+  #hook .s { font-size: 16px; color: #8a8a8a; letter-spacing: .1em; }
+  #black { position: absolute; inset: 0; background: #000; display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="map" width="1080" height="1920"></canvas>
+  <div id="vig"></div>
+  <div class="status"><span><span id="clock">2:13</span><span class="rec" id="rec">● 0:00</span></span><span>4G ▮▯</span></div>
+  <div class="title" id="title">みまもりマップ</div>
+  <div class="sheet"><div class="grab"></div><h3 id="count"></h3><div id="rows"></div></div>
+  <div id="banners"></div>
+  <div id="hook"><div class="t" id="h1">母のスマホは、<br>棺に入れたはずだった。</div><div class="s" id="h2">午前2時13分 ／ 位置情報共有アプリ</div></div>
+  <div id="black"></div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const ease = x => 1 - Math.pow(1 - clamp(x), 3);
+const rnd = n => { const s = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return s - Math.floor(s); };
+let TL, nodes = [], adj = [], edges = [], HOME, CEM, cemNodes = [], mom, pins = [], banners = [], KM;
+const NX = 18, NY = 22, SP = 160, ix = (c, r) => r * NX + c;
+
+function buildMap() {
+  for (let r = 0; r < NY; r++) for (let c = 0; c < NX; c++) { const i = ix(c, r); nodes.push([-700 + c * SP + (rnd(i) - .5) * 70, -2600 + r * SP + (rnd(i + 999) - .5) * 70]); adj.push([]); }
+  const link = (a, b, main) => { const d = Math.hypot(nodes[a][0] - nodes[b][0], nodes[a][1] - nodes[b][1]); adj[a].push([b, d]); adj[b].push([a, d]); edges.push([a, b, main]); };
+  for (let r = 0; r < NY; r++) for (let c = 0; c < NX; c++) {
+    const mr = r % 4 === 0, mc = c % 4 === 2;
+    if (c + 1 < NX && (mr || rnd(ix(c, r) * 3 + 1) > 0.16)) link(ix(c, r), ix(c + 1, r), mr);
+    if (r + 1 < NY && (mc || rnd(ix(c, r) * 3 + 2) > 0.16)) link(ix(c, r), ix(c, r + 1), mc);
+  }
+  HOME = ix(4, 17); CEM = ix(14, 3);
+  for (const [c, r] of [[14, 3], [13, 3], [14, 2], [13, 2], [15, 3]]) cemNodes.push(ix(c, r));
+}
+function route(from, to, seed) {            // dijkstra with per-traveller noise so they fan out over different streets
+  const n = nodes.length, dist = Array(n).fill(1e18), prev = Array(n).fill(-1), done = Array(n).fill(false); dist[from] = 0;
+  for (;;) { let u = -1; for (let i = 0; i < n; i++) if (!done[i] && (u < 0 || dist[i] < dist[u])) u = i; if (u < 0 || dist[u] > 1e17 || u === to) break; done[u] = true;
+    for (const [v, d] of adj[u]) { const w = d * (1 + (seed ? 1.4 * rnd(seed * 131 + u * 7 + v) : 0)); if (dist[u] + w < dist[v]) { dist[v] = dist[u] + w; prev[v] = u; } } }
+  const p = []; for (let u = to; u >= 0; u = prev[u]) p.unshift(nodes[u]);
+  const cum = [0]; for (let i = 1; i < p.length; i++) cum.push(cum[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+  return { p, cum, len: cum[cum.length - 1] };
+}
+function along(rt, fr) { const d = clamp(fr) * rt.len; let i = 1; while (i < rt.cum.length - 1 && rt.cum[i] < d) i++; const k = (d - rt.cum[i - 1]) / Math.max(1e-6, rt.cum[i] - rt.cum[i - 1]); return [rt.p[i - 1][0] + (rt.p[i][0] - rt.p[i - 1][0]) * k, rt.p[i - 1][1] + (rt.p[i][1] - rt.p[i - 1][1]) * k]; }
+
+function momFrac(t) { const J = TL.mjumps; let k = -1; for (let i = 0; i < J.length; i++) if (t >= J[i][0]) k = i; if (k < 0) return 0; const a = k ? J[k - 1][1] : 0; return a + (J[k][1] - a) * ease((t - J[k][0]) / 0.18); }
+function pinFrac(p, t) { if (t < p.t) return -1; const q = Math.floor((t - p.t) / 0.3) * 0.3, f = u => Math.pow(clamp(u / (p.ta - p.t)), 1.25); const a = f(q - 0.3 < 0 ? 0 : q), b = f(q); return a + (b - a) * ease((t - p.t - q) / 0.14); }
+const fmt = m => m >= 1000 ? `${(m / 1000).toFixed(1)}<small>km</small>` : `${Math.round(m)}<small>m</small>`;
+
+window.init = async function (tl) {
+  TL = tl; buildMap();
+  mom = route(CEM, HOME, 0); KM = 2400 / mom.len;
+  TL.joins.forEach((j, i) => { const rt = route(cemNodes[Math.floor(rnd(i + 40) * cemNodes.length)], HOME, i + 1); pins.push({ ...j, rt, ta: Math.min(42.35, Math.max(j.t + 3, 40.9 + rnd(i + 70) * 1.4)), i }); });
+  banners = [{ t: TL.online, a: '母 さんがオンラインになりました', b: '北陽霊園 付近 ・ たったいま' }, { t: TL.moveStart, a: '母 さんが移動を開始しました', b: '北陽霊園 → ?' },
+    { t: TL.near, a: '母 さんがまもなく到着します', b: '目的地: 自宅' }, { t: TL.arrive, a: '母 さんが到着しました', b: 'あなたと一緒にいます' }]
+    .concat(TL.joins.map(j => ({ t: j.t, a: `${j.name} さんがオンラインになりました`, b: '北陽霊園 付近 ・ たったいま' })))
+    .concat([{ t: TL.final + 0.25, a: '自分 さんの目的地が設定されました', b: '北陽霊園 ・ まもなく出発', final: true }]);
+  await document.fonts.ready;
+  const all = document.body.innerText + banners.map(b => b.a + b.b).join('') + '家族人自宅現在地オフライン年前移動中徒歩時速一緒にいます目的地0123456789.kmまであと';
+  for (const w of ['400', '700', '900']) await document.fonts.load(`${w} 20px "Noto Sans JP"`, all);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  render(0);
+};
+
+function camTarget(t) {
+  const h = nodes[HOME], c = nodes[CEM];
+  const fit = (pts, cap) => { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const p of pts) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+    return { x: (x0 + x1) / 2, y: (y0 + y1) / 2, s: Math.min(cap, 400 / Math.max(1, x1 - x0), 350 / Math.max(1, y1 - y0)) }; };
+  if (t < TL.online + 0.6) return { x: h[0], y: h[1], s: 0.85 };
+  if (t < TL.moveStart) return fit([h, c], 2);
+  if (t < TL.arrive) return fit([h, along(mom, momFrac(t))], 2.6);
+  if (t < TL.joinStart + 0.4) return { x: h[0], y: h[1], s: 2.6 + 0.25 * (t - TL.arrive) };
+  if (t < 40.6) return fit([h, c], 2);
+  if (t < TL.final) return { x: h[0] + 90, y: h[1] - 120, s: 0.75 };
+  return fit([h, c], 2);
+}
+function cam(t) { let x = 0, y = 0, ls = 0; const N = 10; for (let i = 0; i < N; i++) { const c = camTarget(t - i * 0.09); x += c.x; y += c.y; ls += Math.log(c.s); } return { x: x / N, y: y / N, s: Math.exp(ls / N) }; }
+
+function drawPin(g, x, y, r, fill, ring, letter, alpha) {
+  g.globalAlpha = alpha; g.fillStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.arc(x + 1.5, y + 3, r + 1.5, 0, 7); g.fill();
+  g.fillStyle = fill; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.strokeStyle = ring; g.lineWidth = r > 12 ? 2.4 : 1.6; g.stroke();
+  if (letter) { g.fillStyle = '#fff'; g.font = `900 ${Math.round(r * 1.05)}px "Noto Sans JP"`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(letter, x, y + 1); }
+  g.globalAlpha = 1;
+}
+
+window.render = function (t) {
+  const f = Math.round(t * TL.fps);
+  $('hook').style.display = t < TL.hookEnd ? 'flex' : 'none';
+  if (t < TL.hookEnd) { $('h1').style.opacity = clamp((t - 0.1) / 0.3); $('h2').style.opacity = clamp((t - 0.9) / 0.3); $('hook').style.transform = `scale(${1 + 0.03 * t})`; }
+  const rs = Math.max(0, Math.floor(t - TL.hookEnd)); $('rec').textContent = `● 0:${String(rs).padStart(2, '0')}`;
+  $('clock').textContent = t < 20 ? '2:13' : t < 36 ? '2:14' : '2:15';
+  const fin = t >= TL.final;
+
+  // ---- map
+  const g = $('map').getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0);
+  g.fillStyle = '#0a0d12'; g.fillRect(0, 0, 540, 960);
+  const c = cam(t), W = p => [270 + (p[0] - c.x) * c.s, 448 + (p[1] - c.y) * c.s];
+  g.lineCap = 'round'; g.lineJoin = 'round';
+  g.strokeStyle = '#0d1a2a'; g.lineWidth = 60 * c.s; g.beginPath();                       // river
+  for (let i = 0; i <= 24; i++) { const p = W([-900 + i * 140, -900 + i * 55 + Math.sin(i * 0.9) * 120]); g[i ? 'lineTo' : 'moveTo'](p[0], p[1]); } g.stroke();
+  g.fillStyle = '#0d1712'; for (const [x, y, w, h] of [[330, -1500, 300, 290], [-520, -520, 280, 300], [1150, -620, 310, 270]]) { const a = W([x, y]); g.fillRect(a[0], a[1], w * c.s, h * c.s); }
+  const cp = nodes[CEM], ca = W([cp[0] - 250, cp[1] - 250]);                                 // cemetery
+  g.fillStyle = '#15171c'; g.fillRect(ca[0], ca[1], 420 * c.s, 400 * c.s);
+  g.fillStyle = '#2a2d34'; if (c.s > 0.12) for (let i = 0; i < 9; i++) for (let j = 0; j < 8; j++) { const a = W([cp[0] - 225 + i * 46, cp[1] - 225 + j * 48]); g.fillRect(a[0], a[1], 14 * c.s, 22 * c.s); }
+  for (const main of [false, true]) { g.strokeStyle = main ? '#28303b' : '#1a2028'; g.lineWidth = Math.max(main ? 2.2 : 1.2, (main ? 26 : 13) * c.s); g.beginPath();
+    for (const [a, b, m] of edges) if (!!m === main) { const p = W(nodes[a]), q = W(nodes[b]); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); } g.stroke(); }
+  g.font = '700 13px "Noto Sans JP"'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const cl = W([cp[0] - 40, cp[1] - 285]); g.fillStyle = '#7d848e'; g.fillText('北陽霊園', cl[0], cl[1]);
+  const hp = W(nodes[HOME]);
+  // final: a route is drawn for you
+  if (fin) { const k = clamp((t - TL.final - 0.5) / 1.3); g.strokeStyle = '#e0252d'; g.lineWidth = 5; g.setLineDash([2, 9]); g.beginPath();
+    const n = mom.p.length; for (let i = n - 1, d = 0; i >= 0 && d <= k * (n - 1); i--, d++) { const p = W(mom.p[i]); g[d ? 'lineTo' : 'moveTo'](p[0], p[1]); } g.stroke(); g.setLineDash([]); }
+  // mother's breadcrumbs
+  const mf = t >= TL.online ? momFrac(t) : -1;
+  if (mf >= 0) for (const [jt, fr] of TL.mjumps) if (t >= jt && fr < mf - 0.002) { const p = W(along(mom, fr)); g.fillStyle = 'rgba(224,37,45,.42)'; g.beginPath(); g.arc(p[0], p[1], 3, 0, 7); g.fill(); }
+  // home + self
+  g.fillStyle = '#9aa1ab'; g.font = '700 12px "Noto Sans JP"'; g.fillText('自宅', hp[0], hp[1] + 34);
+  const pu = (t * 0.8) % 1; g.strokeStyle = `rgba(59,130,246,${0.6 * (1 - pu)})`; g.lineWidth = 2; g.beginPath(); g.arc(hp[0], hp[1], 18 + 26 * pu, 0, 7); g.stroke();
+  drawPin(g, hp[0], hp[1], 17, '#2f6fe0', '#e8eaed', '自', 1);
+  // the others
+  let online = 1, lastTwo = [];
+  for (const p of pins) { const fr = pinFrac(p, t); if (fr < 0) continue; online++; lastTwo.push(p); const w = W(along(p.rt, fr)), known = p.letter !== '?';
+    const ox = fr >= 1 ? (rnd(p.i + 5) - .5) * 70 : 0, oy = fr >= 1 ? (rnd(p.i + 6) - .5) * 70 : 0;
+    drawPin(g, w[0] + ox, w[1] + oy, known ? 14 : 9.5, known ? '#5d626b' : '#24272d', known ? '#e8eaed' : '#8d939c', known ? p.letter : (c.s > 0.5 ? '?' : ''), clamp((t - p.t) / 0.15)); }
+  if (mf >= 0) { online++; const w = W(along(mom, mf)), moving = t >= TL.moveStart && t < TL.arrive, off = t >= TL.arrive ? [15, -13] : [0, 0];
+    if (moving || t >= TL.arrive) { const q = (t * 1.6) % 1; g.strokeStyle = `rgba(224,37,45,${0.8 * (1 - q)})`; g.lineWidth = 2.5; g.beginPath(); g.arc(w[0] + off[0], w[1] + off[1], 18 + 30 * q, 0, 7); g.stroke(); }
+    drawPin(g, w[0] + off[0], w[1] + off[1], 17, '#6b6f76', moving || t >= TL.arrive ? '#e0252d' : '#e8eaed', '母', clamp((t - TL.online) / 0.3)); }
+
+  // ---- member sheet
+  const remain = mf < 0 ? 0 : (1 - mf) * 2400;
+  let ms, md = '';
+  if (t < TL.online) ms = 'オフライン ・ 3年前';
+  else if (t < TL.moveStart) { ms = '北陽霊園 ・ たったいま'; md = fmt(2400); }
+  else if (t < TL.arrive) { let k = 0; for (let i = 0; i < TL.mjumps.length; i++) if (t >= TL.mjumps[i][0]) k = i; const u = (t - TL.moveStart) / (TL.arrive - TL.moveStart), v = 4 + 57 * Math.pow(Math.floor(u * 22) / 22, 2);
+    ms = `移動中 ・ 徒歩 ・ 時速 ${Math.max(3, Math.round(v))}km`; md = fmt(remain); }
+  else { ms = 'あなたと一緒にいます'; md = fmt(0); }
+  const row = (letter, col, name, stat, dist, red) => `<div class="mrow"><div class="mav" style="background:${col}">${letter}</div><div><div class="mname">${name}</div><div class="mstat ${red ? 'red' : ''}">${stat}</div></div><div class="mdist ${red ? 'red' : ''}">${dist}</div></div>`;
+  let html = row('自', '#2f6fe0', '自分', fin && t >= TL.final + 0.25 ? '目的地: 北陽霊園' : '自宅 ・ 現在地', '', fin && t >= TL.final + 0.25);
+  html += row('母', '#6b6f76', '母', ms, md, t >= TL.moveStart);
+  for (const p of lastTwo.slice(-2).reverse()) { const fr = pinFrac(p, t); html += row(p.letter, p.letter === '?' ? '#24272d' : '#5d626b', p.name, fr >= 1 ? 'あなたと一緒にいます' : '移動中 ・ 徒歩', fmt((1 - fr) * p.rt.len * KM), true); }
+  $('rows').innerHTML = html;
+  $('count').innerHTML = `家族 ・ <span class="${online > 2 ? 'red' : ''}">${online}人</span>がオンライン`;
+
+  // ---- banners (newest on top)
+  let bh = '', shown = 0;
+  for (let i = banners.length - 1; i >= 0 && shown < 2; i--) { const b = banners[i], life = b.final ? 99 : 3.4; if (t < b.t || t > b.t + life || (fin && !b.final)) continue;
+    const pin = ease((t - b.t) / 0.25), out = clamp((t - b.t - life + 0.3) / 0.3);
+    bh += `<div class="ban" style="top:${shown * 66 - (1 - pin) * 90}px;opacity:${(1 - out) * (shown ? 0.9 - shown * 0.12 : 1)};z-index:${9 - shown};transform:scale(${1 - shown * 0.03})"><div class="ic" style="${b.final ? 'background:#d1121a' : ''}">◎</div><div><b>${b.a}</b><span>${b.b}</span></div></div>`; shown++; }
+  $('banners').innerHTML = bh;
+  $('title').style.opacity = shown ? 0 : 1;
+  $('black').style.display = t >= TL.cut ? 'block' : 'none';
+};
+</script>
+</body>
+</html>
