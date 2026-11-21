@@ -83,10 +83,10 @@ function closeUp(t, label, k, z = 1) {    // 雪の地面を上から見たア�
 }
 // 遠くから見た足あと(穴にしか見えない)
 function holes(c, pts, alpha = 1) {
-  for (const [x, y, s] of pts) { c.save(); c.globalAlpha = alpha; const g = c.createRadialGradient(x, y - 2 * s, 1, x, y, 20 * s); g.addColorStop(0, 'rgba(70,85,115,0.9)'); g.addColorStop(1, 'rgba(110,125,155,0.0)'); c.fillStyle = g; c.beginPath(); c.ellipse(x, y, 17 * s, 10 * s, 0, 0, 7); c.fill();
+  for (const [x, y, s] of pts) { c.save(); c.globalAlpha = alpha; const g = c.createRadialGradient(x, y - 2 * s, 1, x, y, 20 * s); g.addColorStop(0, 'rgba(55,68,95,0.95)'); g.addColorStop(0.7, 'rgba(90,105,135,0.6)'); g.addColorStop(1, 'rgba(110,125,155,0.0)'); c.fillStyle = g; c.beginPath(); c.ellipse(x, y, 17 * s, 10 * s, 0, 0, 7); c.fill();
     c.fillStyle = 'rgba(255,255,255,0.5)'; c.beginPath(); c.ellipse(x, y + 8 * s, 16 * s, 4 * s, 0, 0, Math.PI); c.fill(); c.restore(); }
 }
-const WIN_PTS = (() => { const p = []; for (let i = 0; i < 17; i++) { const u = i / 16, y = 700 + u ** 1.25 * 1150, s = 0.45 + u * 1.5, x = 545 + Math.sin(u * 2.6) * 120 + (i % 2 ? 1 : -1) * 16 * s; p.push([x, y, s]); } return p; })();
+const WIN_PTS = (() => { const p = []; for (let i = 0; i < 17; i++) { const u = i / 16, y = 700 + u ** 1.25 * 1150, s = 0.85 + u * 1.9, x = 545 + Math.sin(u * 2.6) * 120 + (i % 2 ? 1 : -1) * 16 * s; p.push([x, y, s]); } return p; })();
 
 // ---- 2階の窓から見た朝の庭 ----
 function windowView(t, o = {}) {
@@ -225,7 +225,8 @@ function figure(c, x, y, s, ph = 0, o = {}) {     // y = 足もと。ph: 歩く�
   c.restore();
 }
 function copBack(c, x, y, s, point, tgt) {      // しゃがんで足あとを指さす、おまわりさん(うしろ姿)。tgt: 指さす先(画面座標)
-  c.save(); c.fillStyle = '#121824';
+  c.save(); const sh = c.createRadialGradient(x - 20 * s, y + 24 * s, 10, x - 20 * s, y + 24 * s, 110 * s); sh.addColorStop(0, 'rgba(60,70,95,0.55)'); sh.addColorStop(1, 'rgba(60,70,95,0)'); c.fillStyle = sh; c.beginPath(); c.ellipse(x - 20 * s, y + 24 * s, 110 * s, 30 * s, 0, 0, 7); c.fill();   // 雪の上の影
+  c.fillStyle = '#121824';
   c.beginPath(); c.ellipse(x, y + 10 * s, 70 * s, 22 * s, 0, 0, 7); c.fill();                                                                                              // しゃがんだ脚とかかと
   c.beginPath(); c.moveTo(x - 62 * s, y); c.quadraticCurveTo(x - 72 * s, y - 70 * s, x - 48 * s, y - 128 * s); c.lineTo(x + 48 * s, y - 128 * s); c.quadraticCurveTo(x + 72 * s, y - 70 * s, x + 62 * s, y); c.closePath(); c.fill();   // 丸まった背中(紺の上着)
   c.fillStyle = 'rgba(200,215,240,0.16)'; c.fillRect(x - 60 * s, y - 80 * s, 120 * s, 7 * s);                                                                                // 反射材のライン
@@ -302,7 +303,9 @@ function phoneHand(t) {     // 私の手と電話(110 を押す)
   ctx.fillStyle = '#121418'; rr(-150, -300, 300, 560, 36); ctx.fill(); ctx.fillStyle = '#20324a'; rr(-134, -284, 268, 528, 26); ctx.fill();
   ctx.font = `700 78px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(typed, 0, -200);
   ctx.font = `500 40px ${SANS}`; ctx.fillStyle = 'rgba(255,255,255,0.75)'; for (let i = 0; i < 9; i++) ctx.fillText(String(i + 1), -80 + (i % 3) * 80, -100 + Math.floor(i / 3) * 74);
-  ctx.fillStyle = '#2a1f1a'; ctx.beginPath(); ctx.ellipse(-150, 120, 70, 160, 0.2, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(150, 60, 40, 120, -0.2, 0, 7); ctx.fill();   // 手(手袋)
+  ctx.fillStyle = '#1a1716'; ctx.beginPath(); ctx.moveTo(-175, 140); ctx.quadraticCurveTo(-190, 300, -120, 420); ctx.lineTo(160, 420); ctx.quadraticCurveTo(200, 300, 170, 150); ctx.quadraticCurveTo(0, 230, -175, 140); ctx.fill();   // 下から支える手のひら(手袋)
+  for (const [fx, fy] of [[-165, 40], [-168, 100]]) { ctx.beginPath(); ctx.ellipse(fx, fy, 22, 34, 0.15, 0, 7); ctx.fill(); }                                                // 左の指
+  ctx.beginPath(); ctx.ellipse(150, 70, 26, 70, -0.35, 0, 7); ctx.fill();                                                                                            // 右の親指
   ctx.restore();
 }
 
@@ -384,7 +387,7 @@ function render(t) {
     else if (t < EV.back) { povScene(t); fadeIn(EV.pov, 0.6); dark = 0.55; }
     else if (t < EV.see) {          // 次の朝: 家へ戻る
       const k = prog(t, EV.back, EV.see), st = EV.stepsMe.filter(s => s <= t).length; const bob = t > EV.stepsMe[0] ? Math.sin((t - EV.stepsMe[0]) / 0.55 * Math.PI) * 10 : 0;
-      ctx.save(); ctx.filter = 'none'; groundView(t, { z: lerp(0.55, 0.9, ease(k)), cx: 540, cy: 760, toHouse: true, old: true, seed: 11, bob }); ctx.restore(); fadeIn(EV.back, 0.6);
+      ctx.save(); ctx.filter = 'none'; groundView(t, { z: lerp(0.55, 0.9, ease(k)), cx: 540, cy: 760, toHouse: true, seed: 11, bob }); ctx.restore(); fadeIn(EV.back, 0.6);
     }
     else if (t < EV.toe2) { groundView(t, { z: lerp(0.95, 1.15, prog(t, EV.see, EV.toe2)), cx: 540, cy: lerp(820, 1000, prog(t, EV.see, EV.toe2)), toHouse: true, seed: 11 }); fadeIn(EV.see, 0.3); }
     else if (t < EV.phone) { closeUp(t, '家', ease(prog(t, EV.toe2 + 0.5, EV.toe2 + 1.1)), lerp(1.15, 1.0, ease(prog(t, EV.toe2, EV.toe2 + 0.8)))); fadeIn(EV.toe2, 0.25); }
@@ -397,7 +400,7 @@ function render(t) {
     }
     const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.75)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
   } else if (t < EV.hit + 0.5) {
-    const k = (t - EV.hit) / 0.5; ctx.fillStyle = f % 2 ? '#bbb' : '#444'; ctx.fillRect(0, 0, W, H); ctx.filter = 'blur(4px)'; figure(ctx, 540, 2500 + 600 * k, 7 + 4 * k, 0, { col: '#050505' }); ctx.filter = 'none';
+    const k = (t - EV.hit) / 0.5; ctx.fillStyle = f % 2 ? '#bbb' : '#444'; ctx.fillRect(0, 0, W, H); ctx.filter = 'blur(4px)'; figure(ctx, 540, 2500 + 600 * k, 7 + 4 * k, 0, { col: '#050505', suit: true }); ctx.filter = 'none';
     ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
     for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
     grain = 0.3;
