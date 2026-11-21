@@ -75,6 +75,8 @@ MELODY = [   # 各行：数え言葉 / 二語目 / 三語目 の音高（1モー
 FPS_SING = 93.75
 EIGHTH_F = 22                       # 8分音符 = 22フレーム（約0.23秒）
 EIGHTH = EIGHTH_F / FPS_SING
+# 行ごとの8分音符の長さ（だんだん遅くなる：テープが伸びていくように）
+LINE_EIGHTH_F = [EIGHTH_F + round(1.5 * i) for i in range(7)]
 
 
 def kata(text):
@@ -103,7 +105,7 @@ def build_score():
 
 
 SCORE = build_score()
-LINE_DUR = [tot * EIGHTH for _, tot in SCORE]
+LINE_DUR = [tot * LINE_EIGHTH_F[i] / FPS_SING for i, (_, tot) in enumerate(SCORE)]
 LINE_START = list(np.cumsum([0.0] + LINE_DUR[:-1]))
 SONG_LEN = sum(LINE_DUR)
 
@@ -216,21 +218,66 @@ def _singer():
 LEAD_F = 10   # 歌い出し前の休符（フレーム）
 
 
-def sing(notes, style=SING_STYLE):
-    """notes: [(カタカナ1モーラ, MIDI, 8分音符の数)] → 歌声（先頭の休符ぶんを除いて返す）."""
+def sing(notes, style=SING_STYLE, eighth_f=EIGHTH_F, flat=0.0, wobble=0.0, sag=0.0, seed=0):
+    """notes: [(カタカナ1モーラ, MIDI, 8分音符の数)] → 歌声（先頭の休符ぶんを除いて返す）.
+
+    flat:   全体を何セント下げるか（音程の狂い）
+    wobble: 不安定な揺れの深さ（セント）
+    sag:    最後の1.3秒で何セント落とすか（テープが止まるように）
+    """
     from voicevox_core import Note, Score
-    key = hashlib.md5(f"sing{style}|{EIGHTH_F}|{notes}".encode()).hexdigest()[:12]
+    key = hashlib.md5(f"sing{style}|{eighth_f}|{notes}|{flat}|{wobble}|{sag}|{seed}".encode()).hexdigest()[:12]
     path = BUILD / f"sing_{key}.wav"
     if not path.exists():
         syn = _singer()
-        sc = [Note(LEAD_F, "")] + [Note(e * EIGHTH_F, ch, k) for ch, k, e in notes] + [Note(30, "")]
+        sc = [Note(LEAD_F, "")] + [Note(e * eighth_f, ch, k) for ch, k, e in notes] + [Note(30, "")]
         q = syn.create_sing_frame_audio_query(Score(sc), SING_TEACHER)
+        f0 = np.array(q.f0, dtype=np.float64)
+        n = len(f0)
+        tt = np.arange(n) / FPS_SING
+        r = np.random.default_rng(seed)
+        drift = smooth(r.standard_normal(n + 60), 40)[30:30 + n]
+        drift /= np.max(np.abs(drift)) + 1e-9
+        cents = -flat + wobble * drift + 0.6 * wobble * np.sin(2 * np.pi * 5.3 * tt + r.uniform(0, 6))
+        if sag:
+            end = n - 30
+            k = int(1.3 * FPS_SING)
+            cents[end - k:end] -= sag * np.linspace(0, 1, k) ** 2
+            cents[end:] -= sag
+        f0 = np.where(f0 > 0, f0 * 2 ** (cents / 1200), 0)
+        q.f0 = f0.tolist()
         path.write_bytes(syn.frame_synthesis(q, style))
     with wave.open(str(path)) as w:
         sr = w.getframerate()
         x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
     x = resample(x, SR / sr)[int(LEAD_F / FPS_SING * SR):]
     return x / (np.max(np.abs(x)) + 1e-9)
+
+
+def creepy_line(li):
+    """数え歌の1行：ささやき混じりの声。後半ほど音程が狂い、二重になる."""
+    notes = SCORE[li][0]
+    last = li == len(SCORE) - 1
+    kw = dict(eighth_f=LINE_EIGHTH_F[li], flat=7 * li ** 1.35, wobble=5 + 4 * li, sag=320 if last else 0, seed=li)
+    a = sing(notes, SING_STYLE, **kw)
+    b = sing(notes, SING_WHISPER, **kw)
+    m = min(len(a), len(b))
+    v = 0.5 * a[:m] + 0.9 * b[:m]
+    if li >= 4:   # 少し遅れて、少し低い、もう一人の声
+        kw2 = dict(kw, flat=kw["flat"] + 38, seed=li + 100)
+        c = sing(notes, SING_WHISPER, **kw2)
+        d = int(0.075 * SR)
+        c = np.pad(c, (d, 0))[:m]
+        v = v + (0.25 + 0.12 * (li - 4)) * np.pad(c, (0, m - len(c)))
+    return v / np.max(np.abs(v))
+
+
+def tape_wow(x, depth_s, rate=0.55):
+    """テープのよれ（ゆっくりした回転むら）."""
+    n = len(x)
+    t = np.arange(n) / SR
+    idx = np.arange(n) + depth_s * SR * (np.sin(2 * np.pi * rate * t) + 0.4 * np.sin(2 * np.pi * 1.7 * rate * t + 1))
+    return np.interp(np.clip(idx, 0, n - 1), np.arange(n), x)
 
 
 def midi_hz(k):
@@ -335,16 +382,23 @@ def make_audio():
     mus += smooth(rng.standard_normal(n), 120) * 0.25 * np.clip(t / 1.0, 0, 1)
     mus += smooth(rng.standard_normal(n), 2) * 0.006
 
-    # 数え歌：四国めたんの歌＋琴（1オクターブ下でなぞる）
+    # 数え歌：ささやき混じりの歌（近く・乾いた声）＋琴。後半ほど狂っていく
+    song = np.zeros(int((SONG_LEN + 3) * SR))
     for li, (notes, _) in enumerate(SCORE):
-        st0 = M["song"] + LINE_START[li]
-        v = sing(notes)
-        v = v + 0.18 * fftconv(v, IR_HALL)[: len(v)]
-        add(mus, st0, v, 0.55)
-        tt0 = st0
-        for ch, k, e in notes:
-            add(mus, tt0, pluck(midi_hz(k - 12), e * EIGHTH * 1.8 + 0.3, 0.16))
-            tt0 += e * EIGHTH
+        st0 = LINE_START[li]
+        v = creepy_line(li)
+        v = v + 0.08 * fftconv(v, IR_ROOM)[: len(v)]
+        add(song, st0, v, 0.62)
+        if li < len(SCORE) - 1:               # 最後の行は声だけ
+            eighth = LINE_EIGHTH_F[li] / FPS_SING
+            tt0 = st0
+            for ch, k, e in notes:
+                add(song, tt0, pluck(midi_hz(k - 12) * 2 ** (-7 * li ** 1.35 / 1200), e * eighth * 1.8 + 0.3,
+                                     0.15 * (1 - 0.1 * li)))
+                tt0 += e * eighth
+    wow = np.clip(np.arange(len(song)) / SR / SONG_LEN, 0, 1) ** 1.5
+    song = tape_wow(song, 0.0006) * (1 - wow) + tape_wow(song, 0.004) * wow
+    add(mus, M["song"], song)
 
     # 写真〜紙：低いドローン
     dr_env = np.clip((t - M["photo"]) / 3, 0, 1) * np.clip((M["end"] - t) / 0.3, 0, 1)
