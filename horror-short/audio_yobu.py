@@ -74,7 +74,7 @@ wind(22.0, 32.4, 0.07)                                                   # morni
 for tt, f in [(22.5, A4), (23.6, G4), (25.6, Eb4), (27.2, D3), (30.9, D3)]: put(pluck(f), tt, 0.6)
 put(don(0.8), 25.5, 0.6); put(don(0.9), 28.8, 0.7)
 
-hearth(32.4, 48.0, 0.22); wind(32.4, 48.0, 0.06)                         # second night: it has learned
+hearth(32.4, 48.8, 0.22); wind(32.4, 48.8, 0.06)                         # second night: it has learned
 for kt in TL["knock2"]: put(knock(), kt, 0.8, pan=-0.3)
 heartbeat(36.2, 45.2, 0.3, 0.9)
 put(creak(0.9, 30), TL["arm"][0] + 0.1, 0.3, pan=0.5)                    # mother shifts her weight
@@ -84,9 +84,9 @@ t = seg(S0, S1); k = t / t[-1]
 put(fade(bp(noise(len(t)), 40, 160) * k ** 1.5 * 3 + (np.sin(2 * np.pi * 40 * t) + np.sin(2 * np.pi * 42.7 * t)) * k * 0.5, 0.2, 0.004), S0, 0.6)
 put(don(), S0, 0.6)
 
-put(pluck(A3), 48.4, 0.5); put(pluck(D3), 49.8, 0.5)                     # grandmother's warning, nearly silent
+put(pluck(A3), 49.2, 0.5); put(pluck(D3), 50.6, 0.5)                     # grandmother's warning, nearly silent
 
-hearth(51.6, TL["cut"], 0.16)                                            # tonight
+hearth(52.4, TL["cut"], 0.16)                                            # tonight
 t = seg(TL["poke"], TL["hole"]); put(fade(bp(noise(len(t)), 1500, 6000) * (0.4 + 0.6 * t / t[-1]), 0.05, 0.01), TL["poke"], 0.12, pan=-0.3)
 x = seg(0, 0.12); put(bp(noise(len(x)), 1200, 8000) * np.exp(-x / 0.02), TL["hole"], 0.7, pan=-0.3)    # the paper gives
 put(don(), TL["lastText"], 0.7)
