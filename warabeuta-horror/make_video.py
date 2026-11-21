@@ -59,7 +59,8 @@ LYRICS = [
 ]
 HIDDEN = "".join(l.split("　")[1][0] for l in LYRICS)
 assert HIDDEN == "わたしがうめた", HIDDEN
-LINE = 2.0
+LINE = 2.4
+CIRCLE = 0.6          # 赤丸の間隔
 NOTE = LINE / 8
 
 
@@ -135,7 +136,7 @@ def grandma(text):
 
 def narrator(text):
     """静かに語る四国めたん（ほんの少し部屋の残響）."""
-    x = tts(text, speed=1.0, pitch=-0.03, intonation=0.85)
+    x = tts(text, speed=0.9, pitch=-0.03, intonation=0.85)
     wet = fftconv(x, IR_ROOM)[: len(x) + int(0.5 * SR)]
     y = np.pad(x, (0, len(wet) - len(x))) + 0.10 * wet
     return y / np.max(np.abs(y)) * 0.8
@@ -203,32 +204,32 @@ def build_timeline():
     tl.wait(0.2)
     tl.mark["hook"] = tl.t
     tl.say("祖母が毎晩、歌ってくれた、数え歌がある。", "祖母が毎晩\n歌ってくれた数え歌がある。")
-    tl.say("大人になって、やっと、その意味がわかった。", "大人になって\nやっと、その意味がわかった。", gap=0.5)
+    tl.say("大人になって、やっと、その意味がわかった。", "大人になって\nやっと、その意味がわかった。", gap=1.0)
     tl.mark["song"] = tl.t
-    tl.t += LINE * len(LYRICS) + 0.4
+    tl.t += LINE * len(LYRICS) + 1.0
     tl.mark["photo"] = tl.t
-    tl.say("祖母には、妹がいたらしい。", gap=0.3)
-    tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.35)
-    tl.say("村では、七つまでは、神さまの子だと、言われていた。", "村では\n七つまでは神さまの子だと\n言われていた。", gap=0.5)
+    tl.say("祖母には、妹がいたらしい。", gap=0.7)
+    tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.9)
+    tl.say("村では、七つまでは、神さまの子だと、言われていた。", "村では\n七つまでは神さまの子だと\n言われていた。", gap=1.2)
     tl.mark["paper"] = tl.t
-    tl.say("先日、祖母の部屋で、この歌詞を書いた、古い紙を見つけた。", "先日、祖母の部屋で\nこの歌詞を書いた古い紙を見つけた。", gap=0.3)
-    tl.say("数字の下の一文字だけが、赤い丸で、囲んであった。", "数字の下の一文字だけが\n赤い丸で囲んであった。", gap=0.4)
+    tl.say("先日、祖母の部屋で、この歌詞を書いた、古い紙を見つけた。", "先日、祖母の部屋で\nこの歌詞を書いた古い紙を見つけた。", gap=0.6)
+    tl.say("数字の下の一文字だけが、赤い丸で、囲んであった。", "数字の下の一文字だけが\n赤い丸で囲んであった。", gap=0.8)
     tl.mark["circles"] = tl.t
-    tl.t += 0.42 * len(LYRICS) + 0.4
+    tl.t += CIRCLE * len(LYRICS) + 0.8
     tl.mark["reveal"] = tl.t
-    tl.t += 2.6
+    tl.t += 4.0
     tl.mark["end"] = tl.t
     tl.wait(0.4)
     tl.mark["end_hum"] = tl.t
-    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=0.6)
+    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=1.4)
     tl.mark["last"] = tl.t
-    tl.say("妹は、来週、七つになる。", gap=0.8)
-    tl.say("祖母は、いつも最後に、こう言った。", "祖母は、いつも最後に\nこう言った。", gap=0.5)
+    tl.say("妹は、来週、七つになる。", gap=1.6)
+    tl.say("祖母は、いつも最後に、こう言った。", "祖母は、いつも最後に\nこう言った。", gap=0.9)
     tl.mark["turn"] = tl.t
     tl.say("お姉ちゃんなんだから、ちゃんと、覚えるんだよ。", "「お姉ちゃんなんだから\nちゃんと覚えるんだよ」", gap=0.2, voice=grandma)
-    tl.t += 1.2
+    tl.t += 2.2
     tl.mark["dark"] = tl.t
-    tl.t += 1.0
+    tl.t += 2.5
     tl.mark["dur"] = tl.t
     return tl
 
@@ -282,7 +283,7 @@ def make_audio():
 
     # 赤丸：一つずつ琴の一音（だんだん低く）
     for k in range(len(LYRICS)):
-        add(mus, M["circles"] + k * 0.42, pluck(BASE * 2 * (1 - 0.03 * k), 1.0, 0.18))
+        add(mus, M["circles"] + k * CIRCLE, pluck(BASE * 2 * (1 - 0.03 * k), 1.0, 0.18))
     # 種明かし：低い衝撃音＋不協和音
     m = int(3.0 * SR)
     tt = np.arange(m) / SR
@@ -605,7 +606,7 @@ def paper_frame(t):
     img = PAPER.copy()
     d = ImageDraw.Draw(img)
     for k, (x, y, ch) in enumerate(TARGETS):          # 赤丸を一つずつ描く
-        p = (t - (M["circles"] + k * 0.42)) / 0.3
+        p = (t - (M["circles"] + k * CIRCLE)) / 0.4
         if p > 0:
             d.arc([x - 52, y - 50, x + 52, y + 52], -100, -100 + 360 * min(1, p), fill=(176, 30, 26), width=7)
     if t < M["circles"]:
