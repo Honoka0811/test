@@ -13,7 +13,7 @@
 <canvas id="c" width="1080" height="1920"></canvas>
 <script>
 // ------------------------------------------------------------
-// 戦前日本の「外地」の鉄道網  (9:16 ショート動画 / 約102秒)
+// 戦前日本の「外地」の鉄道網  (9:16 ショート動画 / 約60秒)
 // render(t) は時刻 t[秒] の静止フレームを決定論的に描画する
 // 地図: Natural Earth 10m(map_data.js)/ 路線・境界は概略
 // ------------------------------------------------------------
@@ -33,7 +33,7 @@ const C = {
   naichiRail: '#8a93a3',
   accent: '#F5C451', red: '#E8524F',
 };
-const FPS = 30, DURATION = 102;
+const FPS = 30, DURATION = 60.5;
 
 // ---------- ユーティリティ ----------
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
@@ -97,6 +97,7 @@ function shapePath(sh) {
 }
 // 外地の強調度(シーンごとに変化)
 let HL = { korea: 0, taiwan: 0, sakhalin: 0, kwantung: 0, nanyo: 0, naichi: 0 };
+let SAKH_NAICHI = 0;   // 樺太が内地に編入される演出(0..1)
 
 function drawMap() {
   ctx.fillStyle = C.sea; ctx.fillRect(0, 0, W, H);
@@ -117,7 +118,7 @@ function drawMap() {
     ctx.strokeStyle = C.landEdge; ctx.lineWidth = 1; ctx.stroke();
   }
   // 樺太: 北緯50度以南だけ外地色
-  clipFill('sakhalin', [[140, 45], [146, 45], [146, 50], [140, 50]], gaichiCol('sakhalin'));
+  clipFill('sakhalin', [[140, 45], [146, 45], [146, 50], [140, 50]], lerpColor(gaichiCol('sakhalin'), C.naichi, SAKH_NAICHI));
   // 関東州(遼東半島先端、概略): 北の境界を北緯39.4度付近とする
   clipFill('china', [[120.6, 38.4], [123.2, 38.4], [123.2, 39.42], [122.25, 39.5], [121.6, 39.42], [120.6, 39.42]], gaichiCol('kwantung'));
   // 南洋群島の島は小さいので、位置を示すリング
@@ -177,37 +178,36 @@ const S = {
 };
 const st = (...names) => names.map(n => (typeof n === 'string' ? S[n] : n));
 
-// シーン番号は SCENES の添字。t0/dur はシーン内の秒
+// シーン番号は SCENES の添字。t0/dur はシーン内の秒。name があるものだけ路線名を表示
 const RAILS = [
   // 台湾 (scene 2)
-  { sc: 2, t0: 1.6, dur: 3.2, g: 'nar', name: '縦貫線', year: '1908', at: [119.85, 24.05], pts: st('基隆', '台北', '桃園', '新竹', '竹南', '苗栗', '豊原T', '台中', '彰化', '斗六', '嘉義', '新営', '台南', '高雄') },
-  { sc: 2, t0: 4.6, dur: 1.0, g: 'nar', pts: st('竹南', '通霄', '大甲', '清水', '彰化') },
-  { sc: 2, t0: 5.2, dur: 0.8, g: 'nar', pts: st('高雄', '屏東', '潮州') },
-  { sc: 2, t0: 5.6, dur: 1.3, g: 'nar', name: '宜蘭線', year: '1924', at: [122.3, 24.7], pts: st('八堵', '瑞芳', '双渓', '頭城', '宜蘭', '羅東', '蘇澳') },
-  { sc: 2, t0: 8.6, dur: 1.6, g: 'lt', name: '台東線', year: '1926', at: [121.55, 23.2], pts: st('花蓮港', '鳳林', '玉里', '池上', '台東') },
-  { sc: 2, t0: 10.0, dur: 1.4, g: 'lt', name: '阿里山', year: '1912', at: [120.95, 23.66], pts: st('嘉義', '竹崎', '奮起湖', '阿里山') },
+  { sc: 2, t0: 0.8, dur: 1.8, g: 'nar', name: '縦貫線', at: [119.85, 24.05], pts: st('基隆', '台北', '桃園', '新竹', '竹南', '苗栗', '豊原T', '台中', '彰化', '斗六', '嘉義', '新営', '台南', '高雄') },
+  { sc: 2, t0: 1.8, dur: 0.6, g: 'nar', pts: st('竹南', '通霄', '大甲', '清水', '彰化') },
+  { sc: 2, t0: 2.2, dur: 0.5, g: 'nar', pts: st('高雄', '屏東', '潮州') },
+  { sc: 2, t0: 2.0, dur: 0.8, g: 'nar', pts: st('八堵', '瑞芳', '双渓', '頭城', '宜蘭', '羅東', '蘇澳') },
+  { sc: 2, t0: 2.4, dur: 0.9, g: 'lt', pts: st('花蓮港', '鳳林', '玉里', '池上', '台東') },
+  { sc: 2, t0: 3.6, dur: 1.0, g: 'lt', name: '阿里山森林鉄道', at: [121.05, 23.7], pts: st('嘉義', '竹崎', '奮起湖', '阿里山') },
   // 朝鮮 (scene 3)
-  { sc: 3, t0: 2.6, dur: 0.8, g: 'std', name: '京仁線', year: '1899', at: [125.95, 37.2], pts: st('京城', '永登浦', '仁川') },
-  { sc: 3, t0: 3.8, dur: 2.0, g: 'std', name: '京釜線', year: '1905', at: [129.95, 35.55], pts: st('京城', '水原', '天安', '大田', '金泉', '大邱', '密陽', '釜山') },
-  { sc: 3, t0: 5.4, dur: 2.0, g: 'std', name: '京義線', year: '1906', at: [124.2, 38.5], pts: st('京城', '開城', '沙里院', '平壌', '新安州', '定州', '新義州') },
-  { sc: 3, t0: 7.6, dur: 1.2, g: 'std', name: '湖南線', year: '1914', at: [126.05, 35.55], pts: st('大田', '論山', '裡里', '井邑', '松汀里', '木浦') },
-  { sc: 3, t0: 8.0, dur: 1.2, g: 'std', name: '京元線', year: '1914', at: [128.0, 38.45], pts: st('京城', '議政府', '鉄原', '平康', [127.33, 38.6], [127.40, 38.95], '元山') },
-  { sc: 3, t0: 8.8, dur: 1.8, g: 'std', name: '咸鏡線', year: '1928', at: [128.35, 41.25], pts: st('元山', '高原', '咸興', '北青', '端川', '城津', '吉州', '朱乙', '輸城', '会寧') },
-  { sc: 3, t0: 9.6, dur: 1.4, g: 'std', name: '中央線', year: '1942', at: [129.75, 36.85], pts: st('京城', [127.49, 37.49], '原州', '堤川', [128.62, 36.81], '安東K', [128.94, 35.97], '慶州') },
-  { sc: 3, t0: 11.0, dur: 1.6, g: 'ferry', name: '関釜連絡船', year: '1905', at: [130.55, 34.75], pts: st('下関', [130.5, 34.15], [129.7, 34.65], '釜山') },
+  { sc: 3, t0: 0.7, dur: 0.5, g: 'std', pts: st('京城', '永登浦', '仁川') },
+  { sc: 3, t0: 0.8, dur: 1.4, g: 'std', name: '京釜線', at: [129.95, 35.55], pts: st('京城', '水原', '天安', '大田', '金泉', '大邱', '密陽', '釜山') },
+  { sc: 3, t0: 1.0, dur: 1.4, g: 'std', name: '京義線', at: [124.2, 38.5], pts: st('京城', '開城', '沙里院', '平壌', '新安州', '定州', '新義州') },
+  { sc: 3, t0: 1.6, dur: 0.8, g: 'std', pts: st('大田', '論山', '裡里', '井邑', '松汀里', '木浦') },
+  { sc: 3, t0: 1.6, dur: 0.8, g: 'std', pts: st('京城', '議政府', '鉄原', '平康', [127.33, 38.6], [127.40, 38.95], '元山') },
+  { sc: 3, t0: 2.0, dur: 1.2, g: 'std', pts: st('元山', '高原', '咸興', '北青', '端川', '城津', '吉州', '朱乙', '輸城', '会寧') },
+  { sc: 3, t0: 4.4, dur: 1.2, g: 'ferry', name: '関釜連絡船', at: [130.55, 34.75], pts: st('下関', [130.5, 34.15], [129.7, 34.65], '釜山') },
   // 満洲・関東州 (scene 4)
-  { sc: 4, t0: 4.0, dur: 2.6, g: 'std', name: '連京線(満鉄本線)', year: '1907', at: [122.35, 42.6], pts: st('大連', '金州', '普蘭店', '瓦房店', '熊岳城', '大石橋', '海城', '遼陽', '奉天', '鉄嶺', '開原', '四平街', '公主嶺', '新京') },
-  { sc: 4, t0: 4.4, dur: 0.6, g: 'std', pts: st('大連', [121.45, 38.88], '旅順') },
-  { sc: 4, t0: 7.4, dur: 1.6, g: 'std', name: '安奉線', year: '1911', at: [124.95, 41.0], pts: st('安東', '鳳凰城', '草河口', '本渓湖', '蘇家屯', '奉天') },
-  { sc: 4, t0: 8.8, dur: 0.4, g: 'std', pts: st('新義州', '安東') },
+  { sc: 4, t0: 0.6, dur: 1.6, g: 'std', name: '満鉄本線', at: [125.45, 42.7], pts: st('大連', '金州', '普蘭店', '瓦房店', '熊岳城', '大石橋', '海城', '遼陽', '奉天', '鉄嶺', '開原', '四平街', '公主嶺', '新京') },
+  { sc: 4, t0: 0.7, dur: 0.4, g: 'std', pts: st('大連', [121.45, 38.88], '旅順') },
+  { sc: 4, t0: 1.2, dur: 1.0, g: 'std', name: '安奉線', at: [124.95, 41.0], pts: st('安東', '鳳凰城', '草河口', '本渓湖', '蘇家屯', '奉天') },
+  { sc: 4, t0: 2.0, dur: 0.3, g: 'std', pts: st('新義州', '安東') },
   // 樺太 (scene 5)
-  { sc: 5, t0: 4.6, dur: 1.4, g: 'ferry', name: '稚泊連絡船', year: '1923', at: [141.0, 45.95], pts: st('稚内', [141.95, 45.62], [142.35, 46.05], [142.62, 46.42], '大泊') },
-  { sc: 5, t0: 6.4, dur: 2.2, g: 'nar', name: '東海岸線', year: '', at: [143.45, 48.1], pts: st('大泊', '豊原', '落合', [142.72, 47.6], '白浦', [142.60, 48.2], '知取', [142.95, 48.95], '敷香') },
-  { sc: 5, t0: 7.6, dur: 1.4, g: 'nar', name: '西海岸線', year: '', at: [141.3, 47.55], pts: st('本斗', [141.96, 46.88], '真岡', '野田', '泊居', '久春内') },
-  { sc: 5, t0: 9.4, dur: 1.0, g: 'nar', name: '豊真線', year: '1928', at: [142.38, 46.82], pts: st('豊原', [142.52, 47.02], [142.36, 46.98], [142.22, 47.04], '真岡') },
-  // 内地(まとめ用, scene 7)
-  { sc: 7, t0: 0.6, dur: 1.2, g: 'naichi', pts: st('東京', '名古屋', '大阪', '広島', '下関') },
-  { sc: 7, t0: 1.0, dur: 1.0, g: 'std', pts: st('新京', [125.8, 44.5], [126.2, 45.1], 'ハルビン') },
+  { sc: 5, t0: 1.6, dur: 1.2, g: 'ferry', name: '稚泊連絡船', at: [141.0, 45.95], pts: st('稚内', [141.95, 45.62], [142.35, 46.05], [142.62, 46.42], '大泊') },
+  { sc: 5, t0: 0.8, dur: 1.6, g: 'nar', pts: st('大泊', '豊原', '落合', [142.72, 47.6], '白浦', [142.60, 48.2], '知取', [142.95, 48.95], '敷香') },
+  { sc: 5, t0: 1.0, dur: 1.0, g: 'nar', pts: st('本斗', [141.96, 46.88], '真岡', '野田', '泊居', '久春内') },
+  { sc: 5, t0: 1.6, dur: 0.6, g: 'nar', pts: st('豊原', [142.52, 47.02], [142.36, 46.98], [142.22, 47.04], '真岡') },
+  // まとめ (scene 7): 内地の幹線と、新京〜ハルビン
+  { sc: 7, t0: 0.0, dur: 0.6, g: 'naichi', pts: st('東京', '名古屋', '大阪', '広島', '下関') },
+  { sc: 7, t0: 0.0, dur: 0.6, g: 'std', pts: st('新京', [125.8, 44.5], [126.2, 45.1], 'ハルビン') },
 ];
 const GAUGE = {
   std: { color: C.std, w: 6, dash: null },
@@ -241,7 +241,6 @@ function strokeRail(r, p, alpha = 1, scale = 1) {
   if (g.dash) ctx.setLineDash(g.dash.map(v => v * scale));
   path(); ctx.stroke();
   ctx.restore();
-  return pts;
 }
 // 折れ線上の位置(0..1)の画面座標
 function pointOn(pts, p) {
@@ -257,45 +256,58 @@ function pointOn(pts, p) {
 
 // ---------- 画面部品 ----------
 function header(no, title, sub, a) {
-  // 上部グラデーション
   const gr = ctx.createLinearGradient(0, 0, 0, 420);
   gr.addColorStop(0, 'rgba(8,12,18,0.95)'); gr.addColorStop(0.7, 'rgba(8,12,18,0.75)'); gr.addColorStop(1, 'rgba(8,12,18,0)');
   ctx.fillStyle = gr; ctx.fillRect(0, 0, W, 420);
   const dy = (1 - easeOut(a)) * 20;
+  let x = 64;
   if (no) {
-    const w = measure(no, 34, 'bold') + 36;
-    rrect(64, 120 + dy, w, 54, 27, C.accent, a);
-    text(no, 64 + w / 2, 158 + dy, { size: 34, weight: 'bold', color: '#1a1408', align: 'center', alpha: a });
+    const w = measure(no, 40, 'bold') + 40;
+    rrect(64, 196 + dy, w, 80, 18, C.accent, a);
+    text(no, 64 + w / 2, 251 + dy, { size: 40, weight: 'bold', color: '#1a1408', align: 'center', alpha: a });
+    x = 64 + w + 22;
   }
-  text(title, 64, 262 + dy, { size: 76, weight: 'bold', alpha: a, halo: 8 });
-  if (sub) text(sub, 66, 326 + dy, { size: 36, color: C.ink2, alpha: a, halo: 6 });
+  text(title, x, 266 + dy, { size: 80, weight: 'bold', alpha: a, halo: 8 });
+  if (sub) text(sub, 66, 330 + dy, { size: 36, color: C.ink2, alpha: a, halo: 6 });
 }
-// rows: [[ラベル, 値, 色?], ...]
-function card(rows, a, y = 1330, keyW = 202) {
-  if (a <= 0) return;
-  const h = 64 + rows.length * 70;
-  const dy = (1 - easeOut(a)) * 30;
-  rrect(48, y + dy, W - 96, h, 28, C.panel, a, 'rgba(255,255,255,0.08)');
-  rows.forEach(([k, v, col], i) => {
-    const yy = y + dy + 76 + i * 70;
-    text(k, 88, yy, { size: 32, color: C.ink3, alpha: a });
-    text(v, 88 + keyW, yy, { size: 40, weight: 'bold', color: col || C.ink, alpha: a });
+// 大きな一言 + 補足1行。phases: [{t, main, sub, color}] を時刻で切り替える
+function banner(phases, lt, a, y = 1380) {
+  const appear = easeOut((lt - phases[0].t) / 0.35) * a;
+  if (appear <= 0) return;
+  const h = 196;
+  const s = 0.94 + 0.06 * appear;
+  ctx.save(); ctx.translate(W / 2, y + h / 2); ctx.scale(s, s); ctx.translate(-W / 2, -(y + h / 2));
+  rrect(48, y, W - 96, h, 28, C.panel, appear, 'rgba(255,255,255,0.10)');
+  phases.forEach((p, i) => {
+    const inn = easeOut((lt - p.t) / 0.3);
+    const next = phases[i + 1];
+    const out = next ? 1 - clamp((lt - next.t) / 0.2) : 1;
+    const al = a * inn * out;
+    if (al <= 0) return;
+    const dy = (1 - inn) * 18;
+    const maxW = W - 176;
+    let size = 68;
+    while (size > 40 && measure(p.main, size, 'bold') > maxW) size -= 2;
+    rrect(48, y + 28, 10, h - 56, 5, p.color || C.accent, al);
+    text(p.main, 88, y + 100 + dy, { size, weight: 'bold', color: p.color || C.ink, alpha: al });
+    if (p.sub) text(p.sub, 90, y + 158 + dy, { size: 34, color: C.ink2, alpha: al });
   });
+  ctx.restore();
 }
-function legend(a, y = 1712) {
+function legend(a, y = 1652) {
   if (a <= 0) return;
   const items = [['std', '1435mm 標準軌'], ['nar', '1067mm 狭軌'], ['lt', '762mm 軽便'], ['ferry', '連絡船']];
   let x = 64;
-  for (const [g, label] of items) {
+  for (const [g, lab] of items) {
     const s = GAUGE[g];
     ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = s.color; ctx.lineWidth = s.w; ctx.lineCap = 'round';
     if (s.dash) ctx.setLineDash(s.dash);
     ctx.beginPath(); ctx.moveTo(x, y - 10); ctx.lineTo(x + 40, y - 10); ctx.stroke(); ctx.restore();
-    text(label, x + 52, y, { size: 26, color: C.ink2, alpha: a, halo: 5 });
-    x += 52 + measure(label, 26) + 30;
+    text(lab, x + 52, y, { size: 26, color: C.ink2, alpha: a, halo: 5 });
+    x += 52 + measure(lab, 26) + 30;
   }
 }
-function footnote(str, a, y = 1770) { text(str, 64, y, { size: 24, color: C.ink3, alpha: a, halo: 5 }); }
+function footnote(str, a, y = 1700) { text(str, 64, y, { size: 24, color: C.ink3, alpha: a, halo: 5 }); }
 function label(name, lon, lat, a, { size = 34, color = C.ink, dx = 14, dy = 12, align = 'left', weight = 'bold', mark = true, mcol = C.ink } = {}) {
   if (a <= 0) return;
   const [x, y] = P(lon, lat);
@@ -305,262 +317,283 @@ function label(name, lon, lat, a, { size = 34, color = C.ink, dx = 14, dy = 12, 
 function railLabel(r, a) {
   if (!r.name || a <= 0) return;
   const [x, y] = P(r.at[0], r.at[1]);
-  const c = GAUGE[r.g].color;
-  text(r.name, x, y, { size: 34, weight: 'bold', color: c, align: 'center', alpha: a, halo: 8 });
-  if (r.year) text(r.year + '年', x, y + 38, { size: 28, color: C.ink2, align: 'center', alpha: a, halo: 6 });
+  text(r.name, x, y, { size: 34, weight: 'bold', color: GAUGE[r.g].color, align: 'center', alpha: a, halo: 8 });
+}
+function railLabels(sc, lt, a) {
+  for (const r of RAILS) if (r.sc === sc) railLabel(r, easeOut((lt - r.t0 - r.dur * 0.7) / 0.35) * a);
 }
 function pulse(lon, lat, t, color, a) {
   const [x, y] = P(lon, lat);
   for (let k = 0; k < 2; k++) {
-    const f = (t * 0.8 + k * 0.5) % 1;
+    const f = (t * 0.9 + k * 0.5) % 1;
     ctx.save(); ctx.globalAlpha = a * (1 - f); ctx.strokeStyle = color; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(x, y, 10 + f * 46, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
   }
 }
+// 走る列車(光る点)。tag があれば点の上に札を出す
+function train(lonlats, p, a, color = C.std, tag = null) {
+  if (a <= 0) return;
+  const pts = lonlats.map(([lon, lat]) => P(lon, lat));
+  const [x, y] = pointOn(pts, p);
+  ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#ffffff'; ctx.shadowColor = color; ctx.shadowBlur = 26;
+  ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  if (tag) {
+    const w = measure(tag, 30, 'bold') + 36;
+    rrect(x - w - 20, y - 86, w, 54, 12, color, a * 0.95);
+    text(tag, x - 20 - w / 2, y - 49, { size: 30, weight: 'bold', color: '#06202b', align: 'center', alpha: a });
+  }
+}
+function stationLabels(list, lt, t0, a) {
+  list.forEach((n, i) => {
+    const p = easeOut((lt - t0 - i * 0.06) / 0.3) * a;
+    const o = Array.isArray(n) ? n[1] : {};
+    const name = Array.isArray(n) ? n[0] : n;
+    label(name.replace(/[TK]$/, ''), S[name][0], S[name][1], p, { size: 30, ...o });
+  });
+}
 
 // ---------- シーン ----------
-// cam: そのシーンで落ち着くカメラ位置 / f: 地図の上に重ねる描画
+// cam: そのシーンで落ち着くカメラ位置 / hl: 外地の強調度 / f: 地図の上に重ねる描画
+const WIDE = { lon: 132, lat: 31, span: 56, cy: 1000 };
+const SUMCAM = { lon: 130.6, lat: 37.6, span: 37, cy: 900 };
 const SCENES = [
-  { s: 0, d: 8.5, cam: { lon: 132, lat: 31, span: 56, cy: 960 }, hl: { korea: .6, taiwan: .6, sakhalin: .6, kwantung: .6, nanyo: .6 }, f: sceneTitle },
-  { s: 8.5, d: 11.5, cam: { lon: 132, lat: 31, span: 56, cy: 960 }, hl: {}, f: sceneOverview },
-  { s: 20, d: 14.5, cam: { lon: 121.05, lat: 23.85, span: 5.4, cy: 860 }, hl: { taiwan: 1 }, f: sceneTaiwan },
-  { s: 34.5, d: 15, cam: { lon: 127.9, lat: 38.1, span: 12.2, cy: 800 }, hl: { korea: 1 }, f: sceneKorea },
-  { s: 49.5, d: 15.5, cam: { lon: 123.9, lat: 41.25, span: 9.6, cy: 840 }, hl: { kwantung: 1 }, f: sceneManchuria },
-  { s: 65, d: 13.5, cam: { lon: 142.35, lat: 47.75, span: 7.6, cy: 865 }, hl: { sakhalin: 1 }, f: sceneKarafuto },
-  { s: 78.5, d: 7.5, cam: { lon: 140, lat: 11.3, span: 16, cy: 860 }, hl: { nanyo: 1 }, f: sceneNanyo },
-  { s: 86, d: 12.5, cam: { lon: 130.6, lat: 36.4, span: 37, cy: 860 }, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneSummary },
-  { s: 98.5, d: 3.5, cam: { lon: 130.6, lat: 36.4, span: 37, cy: 860 }, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneCredits },
+  { s: 0, d: 5.5, cam: WIDE, hl: {}, f: sceneHook },
+  { s: 5.5, d: 7.5, cam: WIDE, hl: {}, f: sceneOverview },
+  { s: 13, d: 7.5, cam: { lon: 121.05, lat: 23.85, span: 5.4, cy: 860 }, hl: { taiwan: 1 }, f: sceneTaiwan },
+  { s: 20.5, d: 8.5, cam: { lon: 127.9, lat: 38.1, span: 12.2, cy: 800 }, hl: { korea: 1 }, f: sceneKorea },
+  { s: 29, d: 7.5, cam: { lon: 123.9, lat: 41.25, span: 9.6, cy: 840 }, hl: { kwantung: 1 }, f: sceneManchuria },
+  { s: 36.5, d: 8, cam: { lon: 142.35, lat: 47.75, span: 7.6, cy: 865 }, hl: { sakhalin: 1 }, f: sceneKarafuto },
+  { s: 44.5, d: 4.5, cam: { lon: 140, lat: 11.3, span: 16, cy: 860 }, hl: { nanyo: 1 }, f: sceneNanyo },
+  { s: 49, d: 8.5, cam: SUMCAM, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneSummary },
+  { s: 57.5, d: 3, cam: SUMCAM, hl: { korea: .5, taiwan: .5, sakhalin: .5, kwantung: .5 }, f: sceneCredits },
 ];
-const MOVE = 1.8;      // カメラ移動にかける秒数(シーン冒頭)
-const XF = 0.45;       // 文字要素のフェード秒数
+const MOVE = 1.0;      // カメラ移動にかける秒数(シーン冒頭)
+const XF = 0.3;        // 文字要素のフェード秒数
+function sceneAlpha(lt, d) { return Math.min(easeOut((lt + 0.05) / XF), easeOut((d - lt) / XF)); }
 
-function sceneAlpha(lt, d) { return Math.min(easeOut((lt - 0.25) / XF), easeOut((d - lt) / XF)); }
-
-function sceneTitle(lt, a) {
-  // タイトルは画面中央寄りに大きく
-  const gr = ctx.createLinearGradient(0, 0, 0, 900);
-  gr.addColorStop(0, 'rgba(8,12,18,0.95)'); gr.addColorStop(0.75, 'rgba(8,12,18,0.7)'); gr.addColorStop(1, 'rgba(8,12,18,0)');
-  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, 900);
-  const a1 = easeOut(lt / 0.8) * a, a2 = easeOut((lt - 0.6) / 0.8) * a, a3 = easeOut((lt - 1.4) / 0.8) * a;
-  text('戦前日本', 64, 250, { size: 52, color: C.ink2, alpha: a1 });
-  text('内地じゃない、', 64, 370, { size: 92, weight: 'bold', alpha: a2, halo: 8 });
-  text('「外地」の鉄道', 64, 490, { size: 112, weight: 'bold', color: C.accent, alpha: a2, halo: 8 });
-  text('朝鮮・台湾・樺太・関東州・南洋群島', 66, 580, { size: 40, color: C.ink, alpha: a3, halo: 6 });
-  text('地図でたどる鉄道網', 66, 640, { size: 40, color: C.ink2, alpha: a3, halo: 6 });
+// 0: フック(最初の1フレームから情報がある状態にする)
+function sceneHook(lt, a) {
+  ctx.fillStyle = 'rgba(8,12,18,0.55)'; ctx.fillRect(0, 0, W, H);
+  // 切符(イメージ)
+  const pt = easeOut((lt + 0.4) / 0.5);
+  ctx.save();
+  ctx.translate(W / 2, 640); ctx.rotate(-0.045); ctx.scale(0.9 + 0.1 * pt, 0.9 + 0.1 * pt);
+  ctx.globalAlpha = a * pt;
+  ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12;
+  ctx.fillStyle = '#efe6cf'; ctx.beginPath(); ctx.roundRect(-430, -190, 860, 380, 22); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = '#b3322f'; ctx.fillRect(-430, -130, 860, 14);
+  ctx.setLineDash([10, 10]); ctx.strokeStyle = 'rgba(80,60,30,0.45)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(290, -190); ctx.lineTo(290, 190); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+  const tx = (s, x, y, o) => {
+    ctx.save(); ctx.translate(W / 2, 640); ctx.rotate(-0.045);
+    text(s, x, y, { alpha: a * pt, ...o }); ctx.restore();
+  };
+  tx('国際連絡 乗車券', -390, -150, { size: 34, weight: 'bold', color: '#5a4320' });
+  tx('東京', -395, 10, { size: 104, weight: 'bold', color: '#1d1a14' });
+  tx('→', -172, 4, { size: 72, weight: 'bold', color: '#b3322f' });
+  tx('ヨーロッパ', -92, 8, { size: 66, weight: 'bold', color: '#1d1a14' });
+  tx('鉄道と船を乗り継ぐ 通しの切符', -390, 100, { size: 34, color: '#5a4320' });
+  tx('※イメージ', 360, 160, { size: 24, color: '#7a6640', align: 'center' });
+  tx('戦前', 360, 20, { size: 54, weight: 'bold', color: '#b3322f', align: 'center' });
+  // 問いかけ → タイトル
+  const q = easeOut((lt + 0.3) / 0.35) * a;
+  text('戦前、こんな切符があった', W / 2, 330, { size: 58, weight: 'bold', align: 'center', alpha: q * (1 - seg(lt, 3.0, 0.3)), halo: 8 });
+  const ti = easeOut((lt - 3.1) / 0.4) * a;
+  text('その道は「外地」の鉄道', W / 2, 330, { size: 72, weight: 'bold', color: C.accent, align: 'center', alpha: ti, halo: 8 });
+  text('朝鮮・台湾・関東州・樺太・南洋群島', W / 2, 1000, { size: 40, align: 'center', alpha: ti, halo: 7 });
 }
 
 const OVERVIEW = [
-  { k: '台湾', y: '1895', note: '日清戦争', at: [121, 23.7], dx: -30, dy: 10, align: 'right', hl: 'taiwan', t: 0.8 },
-  { k: '樺太', y: '1905', note: '日露戦争', at: [142.8, 48.5], dx: 34, dy: 10, align: 'left', hl: 'sakhalin', t: 2.4 },
-  { k: '関東州', y: '1905', note: '租借地', at: [121.6, 39.1], dx: -30, dy: 10, align: 'right', hl: 'kwantung', t: 3.4 },
-  { k: '朝鮮', y: '1910', note: '韓国併合', at: [127.6, 37.6], dx: 0, dy: 10, align: 'center', hl: 'korea', t: 4.4 },
-  { k: '南洋群島', y: '1922', note: '委任統治', at: [140.5, 11.2], dx: 0, dy: 10, align: 'center', hl: 'nanyo', t: 5.8 },
+  { k: '台湾', note: '1895〜', at: [121, 23.7], dx: -30, dy: 10, align: 'right', hl: 'taiwan', t: 2.9 },
+  { k: '朝鮮', note: '1910〜', at: [127.6, 37.6], dx: 0, dy: 10, align: 'center', hl: 'korea', t: 3.5 },
+  { k: '関東州', note: '1905〜 租借地', at: [121.6, 39.1], dx: -30, dy: 10, align: 'right', hl: 'kwantung', t: 4.0 },
+  { k: '樺太', note: '1905〜', at: [142.8, 48.5], dx: 34, dy: 10, align: 'left', hl: 'sakhalin', t: 4.7 },
+  { k: '南洋群島', note: '1922〜 委任統治', at: [140.5, 11.2], dx: 0, dy: 10, align: 'center', hl: 'nanyo', t: 5.3 },
 ];
-// 外地とは: 地域名が出るたびにその地域を明るくし、少しして落ち着かせる
 function overviewHL(lt) {
   for (const r of OVERVIEW) {
-    const p = easeOut((lt - r.t) / 0.6);
-    HL[r.hl] = Math.max(HL[r.hl], p * (1 - 0.5 * seg(lt, r.t + 1.4, 0.8)));
+    const p = easeOut((lt - r.t) / 0.3);
+    HL[r.hl] = Math.max(HL[r.hl], p * (1 - 0.45 * seg(lt, r.t + 0.8, 0.5)));
   }
 }
 function sceneOverview(lt, a) {
-  header(null, '外地とは', '日本の統治下にあった、内地以外の地域', a);
-  for (const r of OVERVIEW) {
-    const p = easeOut((lt - r.t) / 0.6);
-    const [x, y] = P(r.at[0], r.at[1]);
-    text(r.k, x + r.dx, y + r.dy, { size: 44, weight: 'bold', color: C.accent, align: r.align, alpha: p * a, halo: 8 });
-    text(`${r.y}〜 ${r.note}`, x + r.dx, y + r.dy + 40, { size: 28, color: C.ink, align: r.align, alpha: p * a, halo: 6 });
-  }
-  const pn = easeOut((lt - 1.6) / 0.6) * a;
+  header(null, '外地とは', '内地(本土)の外にあった、日本の統治地域', a);
+  const pn = easeOut((lt - 0.6) / 0.4) * a;
   const [nx, ny] = P(138.5, 37.2);
   text('内地', nx + 40, ny, { size: 40, weight: 'bold', color: C.ink2, alpha: pn, halo: 8 });
-  // 凡例と注記
-  const pc = easeOut((lt - 7.2) / 0.6) * a;
-  rrect(48, 1520, W - 96, 150, 24, C.panel, pc);
-  rrect(84, 1560, 34, 34, 6, C.gaichiHi, pc); text('外地', 132, 1590, { size: 34, weight: 'bold', alpha: pc });
-  rrect(260, 1560, 34, 34, 6, C.naichi, pc); text('内地', 308, 1590, { size: 34, weight: 'bold', color: C.ink2, alpha: pc });
-  text('満洲国(1932〜)は形式上「外国」で、外地には含まない', 84, 1640, { size: 26, color: C.ink2, alpha: pc });
-  footnote('地図: Natural Earth / 境界は概略', a);
-}
-
-function stationLabels(list, lt, t0, a, opt = {}) {
-  list.forEach((n, i) => {
-    const p = easeOut((lt - t0 - i * 0.12) / 0.4) * a;
-    const o = Array.isArray(n) ? n[1] : {};
-    const name = Array.isArray(n) ? n[0] : n;
-    label(name.replace(/[TK]$/, ''), S[name][0], S[name][1], p, { size: 30, ...opt, ...o });
-  });
+  for (const r of OVERVIEW) {
+    const p = easeOut((lt - r.t) / 0.3);
+    const [x, y] = P(r.at[0], r.at[1]);
+    const s = 1 + 0.25 * (1 - p);
+    ctx.save(); ctx.translate(x + r.dx, y + r.dy); ctx.scale(s, s);
+    text(r.k, 0, 0, { size: 46, weight: 'bold', color: C.accent, align: r.align, alpha: p * a, halo: 8 });
+    ctx.restore();
+    text(r.note, x + r.dx, y + r.dy + 40, { size: 28, color: C.ink, align: r.align, alpha: p * a, halo: 6 });
+  }
+  const pc = easeOut((lt - 1.0) / 0.4) * a;
+  rrect(48, 1560, W - 96, 116, 24, C.panel, pc);
+  rrect(84, 1600, 34, 34, 6, C.gaichiHi, pc); text('外地', 132, 1630, { size: 34, weight: 'bold', alpha: pc });
+  rrect(250, 1600, 34, 34, 6, C.naichi, pc); text('内地', 298, 1630, { size: 34, weight: 'bold', color: C.ink2, alpha: pc });
+  text('満洲国は形式上「外国」', 440, 1630, { size: 28, color: C.ink2, alpha: pc });
 }
 
 function sceneTaiwan(lt, a) {
   header('01', '台湾', '台湾総督府鉄道', a);
-  stationLabels(['基隆', '台北', '新竹', '台中', '嘉義', '台南', ['高雄', { dx: -14, align: 'right' }], '花蓮港', ['台東', { dx: -14, align: 'right', dy: 28 }], ['宜蘭', { dx: -14, align: 'right' }]], lt, 1.9, a);
-  for (const r of RAILS) if (r.sc === 2) railLabel(r, easeOut((lt - r.t0 - r.dur * 0.6) / 0.5) * a);
-  card([
-    ['運営', '台湾総督府 交通局鉄道部'],
-    ['軌間', '1067mm(内地と同じ)', C.nar],
-    ['縦貫線', '基隆〜高雄 1908年 全通'],
-    ['東部・山岳', '台東線・阿里山 762mm', C.lt],
-  ], easeOut((lt - 3.6) / 0.6) * a, 1300);
-  legend(easeOut((lt - 3.6) / 0.6) * a);
-  footnote('製糖会社の軽便鉄道(762mm)も西部平野に広がった / 路線は概略', a);
+  stationLabels(['基隆', '台北', '台中', ['嘉義', { dx: -14, align: 'right' }], '台南', ['高雄', { dx: -14, align: 'right' }], '花蓮港', ['台東', { dx: -14, align: 'right', dy: 28 }]], lt, 1.0, a);
+  railLabels(2, lt, a);
+  if (lt > 3.6) pulse(120.80, 23.51, lt, C.lt, a * seg(lt, 3.6, 0.2));
+  banner([
+    { t: 0.9, main: '内地と同じ 1067mm', sub: '縦貫線 基隆〜高雄 1908年全通', color: C.nar },
+    { t: 3.7, main: '阿里山森林鉄道 762mm', sub: 'スイッチバックで山を登る', color: C.lt },
+  ], lt, a);
+  legend(easeOut((lt - 0.9) / 0.4) * a);
+  footnote('路線は概略', a);
 }
 
 function sceneKorea(lt, a) {
-  header('02', '朝鮮', '朝鮮総督府鉄道(鮮鉄)', a);
-  stationLabels([['京城', { dx: -14, align: 'right', dy: -8 }], ['仁川', { dx: -14, align: 'right', dy: 30 }], '大田', ['釜山', { dx: -10, align: 'right', dy: 34 }], ['平壌', { dx: -14, align: 'right' }], ['新義州', { dx: -14, align: 'right' }], ['木浦', { dx: -14, align: 'right' }], '元山', '咸興', '清津', ['下関', { dy: 34 }]], lt, 1.8, a);
-  for (const r of RAILS) if (r.sc === 3) railLabel(r, easeOut((lt - r.t0 - r.dur * 0.6) / 0.5) * a);
-  const rows = [
-    ['運営', '朝鮮総督府 鉄道局'],
-    ['軌間', '1435mm 標準軌(内地より広い)', C.std],
-    ['縦断', '京仁 1899 → 京釜 1905 → 京義 1906'],
-    ['内地と', '関釜連絡船 下関〜釜山', C.ferry],
-  ];
-  card(rows, easeOut((lt - 3.0) / 0.6) * a, 1300);
-  legend(easeOut((lt - 3.0) / 0.6) * a);
-  footnote('1917〜25年は満鉄に経営を委託 / 路線は概略', a);
+  header('02', '朝鮮', '朝鮮総督府鉄道', a);
+  stationLabels([['京城', { dx: -14, align: 'right', dy: -8 }], ['釜山', { dx: -10, align: 'right', dy: 34 }], ['平壌', { dx: -14, align: 'right' }], ['新義州', { dx: -14, align: 'right' }], ['下関', { dy: 34 }]], lt, 1.0, a);
+  railLabels(3, lt, a);
+  // 釜山 → 京城 → 新義州へ北上する列車
+  const route = st('釜山', '密陽', '大邱', '金泉', '大田', '天安', '水原', '京城', '開城', '沙里院', '平壌', '新安州', '定州', '新義州');
+  const pt = seg(lt, 5.9, 2.2);
+  train(route, easeInOut(pt), easeOut((lt - 5.7) / 0.2) * a, C.std);
+  banner([
+    { t: 0.9, main: '内地より広い 1435mm', sub: '大陸の鉄道と直通するため', color: C.std },
+    { t: 4.4, main: '下関 →(船)→ 釜山', sub: '関釜連絡船から、列車は北へ', color: C.ferry },
+  ], lt, a);
+  legend(easeOut((lt - 0.9) / 0.4) * a);
+  footnote('路線は概略', a);
 }
 
 function sceneManchuria(lt, a) {
-  header('03', '関東州・満鉄', '南満洲鉄道株式会社(1906年設立)', a);
-  // 関東州の強調
-  const pk = easeOut((lt - 1.6) / 0.6) * a;
+  header('03', '関東州・満鉄', '南満洲鉄道', a);
+  const pk = easeOut((lt - 0.5) / 0.3) * a;
   const [kx, ky] = P(121.5, 39.15);
   text('関東州', kx - 40, ky + 70, { size: 38, weight: 'bold', color: C.accent, align: 'right', alpha: pk, halo: 8 });
   text('(租借地)', kx - 40, ky + 108, { size: 28, color: C.ink, align: 'right', alpha: pk, halo: 6 });
-  stationLabels([['大連', { dy: 34 }], '奉天', '新京', ['安東', { dx: 16, dy: 6 }], '新義州'], lt, 3.0, a);
-  for (const r of RAILS) if (r.sc === 4) railLabel(r, easeOut((lt - r.t0 - r.dur * 0.6) / 0.5) * a);
-  // 鴨緑江橋
-  const pb = seg(lt, 9.0, 0.3) * (1 - seg(lt, 10.6, 0.4));
-  if (pb > 0) {
-    pulse(124.39, 40.115, lt, C.std, pb * a);
-    const [bx, by] = P(124.39, 40.115);
-    text('鴨緑江橋 1911', bx + 40, by + 56, { size: 30, weight: 'bold', color: C.std, alpha: pb * a, halo: 7 });
-    text('朝鮮と直通', bx + 40, by + 92, { size: 28, color: C.ink, alpha: pb * a, halo: 6 });
-  }
-  // 特急あじあ(大連→新京)
-  const main = RAILS.find(r => r.name && r.name.startsWith('連京線'));
-  const pa = seg(lt, 11.2, 3.6);
-  if (lt > 11.0) {
-    const pts = main.pts.map(([lon, lat]) => P(lon, lat));
-    const [x, y] = pointOn(pts, easeInOut(pa));
-    const al = easeOut((lt - 11.0) / 0.4) * a;
-    ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = '#ffffff'; ctx.shadowColor = C.std; ctx.shadowBlur = 24;
-    ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-    rrect(x - 286, y - 84, 264, 52, 12, 'rgba(79,195,232,0.95)', al);
-    text('特急あじあ 1934年', x - 154, y - 48, { size: 28, weight: 'bold', color: '#06202b', align: 'center', alpha: al });
-  }
-  card([
-    ['本線', '大連〜新京(長春) 1907年 営業開始', C.std],
-    ['安奉線', '安東〜奉天 1911年 標準軌に改築', C.std],
-    ['特急あじあ', '1934年 大連〜新京 最速約8時間半'],
-  ], easeOut((lt - 4.4) / 0.6) * a, 1360);
-  legend(easeOut((lt - 4.4) / 0.6) * a);
-  footnote('満洲国(1932〜)は形式上は外国。関東州・満鉄附属地が日本の管轄 / 路線は概略', a);
+  stationLabels([['大連', { dy: 34 }], '奉天', '新京', ['安東', { dx: 16, dy: 6 }]], lt, 0.8, a);
+  railLabels(4, lt, a);
+  const main = RAILS.find(r => r.name === '満鉄本線');
+  train(main.pts, easeInOut(seg(lt, 2.4, 4.4)), easeOut((lt - 2.2) / 0.2) * a, C.std, '特急あじあ');
+  banner([
+    { t: 1.2, main: '大連〜新京 約700km', sub: '特急あじあ(1934年)', color: C.std },
+    { t: 4.3, main: 'わずか 8時間半', sub: '平均時速 約80km', color: C.accent },
+  ], lt, a);
+  legend(easeOut((lt - 1.2) / 0.4) * a);
+  footnote('満洲国は形式上外国。関東州・満鉄附属地が日本の管轄 / 路線は概略', a);
 }
 
 function sceneKarafuto(lt, a) {
   header('04', '樺太', '樺太庁鉄道', a);
-  // 北緯50度線
-  const pb = easeOut((lt - 1.6) / 0.8) * a;
+  const pb = easeOut((lt - 0.4) / 0.6) * a;
   if (pb > 0) {
     const [x0, y0] = P(141.6, 50), [x1] = P(144.6, 50);
     ctx.save(); ctx.globalAlpha = pb; ctx.strokeStyle = C.red; ctx.lineWidth = 4; ctx.setLineDash([14, 10]);
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(lerp(x0, x1, pb), y0); ctx.stroke(); ctx.restore();
+    const [bx, by] = P(141.7, 50);
+    text('北緯50度 国境', bx, by - 22, { size: 30, weight: 'bold', color: C.red, alpha: pb, halo: 7 });
   }
-  stationLabels(['稚内', ['大泊', { dy: 34 }], '豊原', ['真岡', { dx: -14, align: 'right' }], ['本斗', { dx: -14, align: 'right' }], ['久春内', { dx: -14, align: 'right' }], '落合', '知取', '敷香'], lt, 3.0, a);
-  for (const r of RAILS) if (r.sc === 5) railLabel(r, easeOut((lt - r.t0 - r.dur * 0.6) / 0.5) * a);
-  const [bx, by] = P(141.7, 50);
-  text('北緯50度 国境', bx, by - 22, { size: 30, weight: 'bold', color: C.red, alpha: pb, halo: 7 });
-  card([
-    ['軌間', '1067mm(内地と同じ)', C.nar],
-    ['内地と', '稚泊連絡船 稚内〜大泊 1923年', C.ferry],
-    ['1943年', '樺太は内地に編入'],
-  ], easeOut((lt - 3.2) / 0.6) * a, 1390);
-  legend(easeOut((lt - 3.2) / 0.6) * a);
+  stationLabels(['稚内', ['大泊', { dy: 34 }], '豊原', ['真岡', { dx: -14, align: 'right' }], '敷香'], lt, 1.0, a);
+  railLabels(5, lt, a);
+  banner([
+    { t: 1.6, main: '稚内 →(船)→ 大泊', sub: '稚泊連絡船 1923年〜', color: C.ferry },
+    { t: 4.4, main: '1943年 外地 → 内地', sub: '樺太は内地に編入された', color: C.accent },
+  ], lt, a);
+  legend(easeOut((lt - 1.6) / 0.4) * a);
   footnote('落合以北は私鉄の樺太鉄道が建設(1941年 買収) / 路線は概略', a);
 }
 
 function sceneNanyo(lt, a) {
-  header('05', '南洋群島', 'サトウキビと燐鉱石の鉄道', a);
-  const pts = [['サイパン', 0], ['テニアン', 1], ['ロタ', 2], ['パラオ', 3], ['アンガウル', 4]];
-  for (const [n, i] of pts) {
-    const p = easeOut((lt - 1.8 - i * 0.35) / 0.5) * a;
-    const [lon, lat] = S[n];
-    const [x, y] = P(lon, lat);
-    if (p <= 0) continue;
+  header('05', '南洋群島', '', a);
+  const pts = ['サイパン', 'テニアン', 'ロタ', 'パラオ'];
+  pts.forEach((n, i) => {
+    const p = easeOut((lt - 0.6 - i * 0.15) / 0.3) * a;
+    if (p <= 0) return;
+    const [x, y] = P(S[n][0], S[n][1]);
     ctx.save(); ctx.globalAlpha = p; ctx.strokeStyle = i < 3 ? C.lt : C.ink2; ctx.lineWidth = 4; ctx.setLineDash([6, 6]);
     ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     const right = i === 1;
-    text(n, x + (right ? -32 : 32), y + (i === 4 ? 40 : 12), { size: 34, weight: 'bold', align: right ? 'right' : 'left', alpha: p, halo: 7 });
-  }
-  const [sx, sy] = P(145.7, 15.6);
-  const pl = easeOut((lt - 3.2) / 0.5) * a;
-  text('製糖鉄道 762mm', sx - 40, sy - 52, { size: 32, weight: 'bold', color: C.lt, align: 'right', alpha: pl, halo: 7 });
-  const [px, py] = P(134.3, 7.6);
-  text('燐鉱石の鉱山鉄道', px + 40, py - 44, { size: 30, weight: 'bold', color: C.ink2, alpha: easeOut((lt - 4.0) / 0.5) * a, halo: 7 });
-  card([
-    ['事業者', '南洋興発(製糖会社)'],
-    ['路線', 'サトウキビ運搬の軽便鉄道', C.lt],
-    ['島', 'サイパン・テニアン・ロタ'],
-  ], easeOut((lt - 2.6) / 0.6) * a, 1360);
+    text(n, x + (right ? -32 : 32), y + 12, { size: 34, weight: 'bold', align: right ? 'right' : 'left', alpha: p, halo: 7 });
+  });
+  banner([{ t: 0.8, main: 'サトウキビ鉄道 762mm', sub: 'サイパン・テニアン・ロタ(南洋興発)', color: C.lt }], lt, a);
   footnote('公共の旅客鉄道はなく、産業用の鉄道が中心 / 位置は概略', a);
 }
 
 // 大陸ルート: 東京→下関→釜山→京城→新義州→安東→奉天→新京→ハルビン
-const ROUTE = [].concat(
-  st('東京', '名古屋', '大阪', '広島', '下関', [130.5, 34.15], [129.7, 34.65], '釜山', '密陽', '大邱', '金泉', '大田', '天安', '水原', '京城',
-     '開城', '沙里院', '平壌', '新安州', '定州', '新義州', '安東', '鳳凰城', '草河口', '本渓湖', '蘇家屯', '奉天', '鉄嶺', '開原', '四平街', '公主嶺', '新京', [125.8, 44.5], [126.2, 45.1], 'ハルビン'));
-
+const ROUTE = st('東京', '名古屋', '大阪', '広島', '下関', [130.5, 34.15], [129.7, 34.65], '釜山', '密陽', '大邱', '金泉', '大田', '天安', '水原', '京城',
+  '開城', '沙里院', '平壌', '新安州', '定州', '新義州', '安東', '鳳凰城', '草河口', '本渓湖', '蘇家屯', '奉天', '鉄嶺', '開原', '四平街', '公主嶺', '新京', [125.8, 44.5], [126.2, 45.1], 'ハルビン');
+// ナレーションの地名に合わせて、ルート上の到達点を時刻で指定する(ROUTE の添字, シーン内秒)
+const ROUTE_KEYS = [[0, 0.0], [4, 0.6], [7, 1.3], [14, 2.0], [26, 2.7], [34, 3.6]];
+function routeProgress(lt) {
+  const n = ROUTE.length - 1;
+  if (lt <= ROUTE_KEYS[0][1]) return 0;
+  for (let i = 1; i < ROUTE_KEYS.length; i++) {
+    const [i0, t0] = ROUTE_KEYS[i - 1], [i1, t1] = ROUTE_KEYS[i];
+    if (lt <= t1) return lerp(i0, i1, easeInOut((lt - t0) / (t1 - t0))) / n;
+  }
+  return 1;
+}
+// 頂点インデックスの割合 → 折れ線上の点
+function routePoint(pts, f) {
+  const x = f * (pts.length - 1), i = Math.min(Math.floor(x), pts.length - 2), r = x - i;
+  return [lerp(pts[i][0], pts[i + 1][0], r), lerp(pts[i][1], pts[i + 1][1], r)];
+}
 function sceneSummary(lt, a) {
   header(null, 'まとめ', '外地の鉄道は「大陸への道」', a);
-  const pr = seg(lt, 4.6, 5.0);
-  if (pr > 0) {
-    const pts = ROUTE.map(([lon, lat]) => P(lon, lat));
-    // 光の帯
-    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    const head = easeInOut(pr);
-    const steps = 60;
-    for (let k = 0; k < steps; k++) {
-      const p0 = head * k / steps, p1 = head * (k + 1) / steps;
-      const [x0, y0] = pointOn(pts, p0), [x1, y1] = pointOn(pts, p1);
-      ctx.globalAlpha = a * (0.25 + 0.75 * (k / steps));
-      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 5;
-      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-    }
+  const f = routeProgress(lt);
+  const pts = ROUTE.map(([lon, lat]) => P(lon, lat));
+  if (f > 0) {
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.globalAlpha = a;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 6; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 12;
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    const x = f * (pts.length - 1);
+    for (let i = 1; i <= Math.floor(x); i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    const [hx, hy] = routePoint(pts, f); ctx.lineTo(hx, hy); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(hx, hy, 11, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
-    const [hx, hy] = pointOn(pts, head);
-    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 20;
-    ctx.beginPath(); ctx.arc(hx, hy, 10, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   }
-  const names = [['東京', 4.6, { dy: 34 }], ['下関', 6.0, { dy: 34 }], ['京城', 7.0, { dx: -12, align: 'right' }], ['奉天', 8.3, { dx: -12, align: 'right' }], ['ハルビン', 9.5, {}]];
-  for (const [n, t0, o] of names) label(n, S[n][0], S[n][1], easeOut((lt - t0) / 0.4) * a, { size: 30, ...o });
-  const pe = easeOut((lt - 9.8) / 0.6) * a;
-  const [hx, hy] = P(126.63, 45.75);
-  text('→ シベリア鉄道で欧州へ', hx - 10, hy - 34, { size: 30, weight: 'bold', color: C.accent, align: 'center', alpha: pe, halo: 7 });
-  card([
-    ['狭軌 1067mm', '台湾・樺太(内地と同じ)', C.nar],
-    ['標準軌 1435mm', '朝鮮・満洲(大陸と直通)', C.std],
-  ], easeOut((lt - 0.8) / 0.6) * a, 1430, 250);
-  legend(easeOut((lt - 0.8) / 0.6) * a);
-  footnote('東京から下関・関釜連絡船を経て、満洲・欧州への国際連絡運輸があった', a);
+  const names = [['東京', 0.0, { dy: 34 }], ['下関', 0.6, { dy: 34 }], ['釜山', 1.3, { dy: 34 }], ['京城', 2.0, { dx: -12, align: 'right' }], ['奉天', 2.7, { dx: -12, align: 'right' }], ['ハルビン', 3.6, { dx: 16, dy: 10 }]];
+  for (const [n, t0, o] of names) label(n, S[n][0], S[n][1], easeOut((lt - t0) / 0.25) * a, { size: 32, ...o });
+  // ハルビンから西へ(シベリア鉄道 → ヨーロッパ)
+  const pe = seg(lt, 3.8, 0.9);
+  if (pe > 0) {
+    const [hx, hy] = P(126.63, 45.75);
+    const ex = lerp(hx, 70, easeOut(pe));
+    ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = C.accent; ctx.lineWidth = 6; ctx.setLineDash([16, 10]);
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ex, hy - 90 * easeOut(pe)); ctx.stroke(); ctx.restore();
+    const pt = easeOut((lt - 4.3) / 0.3) * a;
+    text('シベリア鉄道で', 70, hy - 160, { size: 32, color: C.ink, alpha: pt, halo: 7 });
+    text('ヨーロッパへ', 70, hy - 112, { size: 52, weight: 'bold', color: C.accent, alpha: pt, halo: 8 });
+  }
+  banner([
+    { t: 0.4, main: '台湾・樺太は 1067mm', sub: '内地と同じ狭軌', color: C.nar },
+    { t: 1.9, main: '朝鮮・満洲は 1435mm', sub: '大陸と直通できる標準軌', color: C.std },
+    { t: 4.6, main: '東京 → ヨーロッパ', sub: '下関・釜山・奉天・ハルビン経由', color: C.accent },
+  ], lt, a, 1400);
+  legend(easeOut((lt - 0.4) / 0.4) * a, 1672);
 }
 
 function sceneCredits(lt, a) {
-  ctx.fillStyle = `rgba(8,12,18,${0.8 * a})`; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = `rgba(8,12,18,${0.85 * a})`; ctx.fillRect(0, 0, W, H);
   text('戦前日本の「外地」の鉄道', W / 2, 820, { size: 60, weight: 'bold', align: 'center', alpha: a });
-  const lines = ['地図: Natural Earth', '路線・境界・年代は概略です', 'ナレーション: Open JTalk', 'BGM: 自作(権利フリー)'];
+  const lines = ['ナレーション: VOICEVOX:四国めたん', '地図: Natural Earth', 'BGM: 自作(権利フリー)', '路線・境界は概略です'];
   lines.forEach((s, i) => text(s, W / 2, 940 + i * 60, { size: 34, color: C.ink2, align: 'center', alpha: a }));
 }
 
 // ---------- カメラと路線の時刻計算 ----------
-function camAt(t) {
+function sceneIndex(t) {
   let i = 0;
   while (i + 1 < SCENES.length && t >= SCENES[i + 1].s) i++;
+  return i;
+}
+function camAt(t) {
+  const i = sceneIndex(t);
   const sc = SCENES[i], prev = SCENES[Math.max(0, i - 1)];
   const f = easeInOut((t - sc.s) / MOVE);
   const A = prev.cam, B = sc.cam;
-  // スケールは対数補間、中心はズームに合わせて補間
   const span = Math.exp(lerp(Math.log(A.span), Math.log(B.span), f));
   // 大きく移動するときは一度引く(ズームアウト→イン)
   const dist = Math.hypot(B.lon - A.lon, B.lat - A.lat);
@@ -568,8 +601,7 @@ function camAt(t) {
   return { lon: lerp(A.lon, B.lon, f), lat: lerp(A.lat, B.lat, f), span: span + pull, cy: lerp(A.cy, B.cy, f) };
 }
 function hlAt(t) {
-  let i = 0;
-  while (i + 1 < SCENES.length && t >= SCENES[i + 1].s) i++;
+  const i = sceneIndex(t);
   const sc = SCENES[i], prev = SCENES[Math.max(0, i - 1)];
   const f = easeInOut((t - sc.s) / MOVE);
   const o = {};
@@ -577,18 +609,17 @@ function hlAt(t) {
   return o;
 }
 function railProgress(r, t) {
-  const sc = SCENES[r.sc];
-  return easeInOut((t - sc.s - r.t0) / r.dur);
+  return easeInOut((t - SCENES[r.sc].s - r.t0) / r.dur);
 }
 
 function render(t) {
   cam = camAt(t);
   HL = hlAt(t);
-  let cur = 0;
-  while (cur + 1 < SCENES.length && t >= SCENES[cur + 1].s) cur++;
+  const cur = sceneIndex(t);
   if (cur === 1) overviewHL(t - SCENES[1].s);
+  // 1943年: 樺太が外地 → 内地(島の色を内地色へ)
+  SAKH_NAICHI = cur === 5 ? seg(t - SCENES[5].s, 4.6, 0.8) : 0;
   drawMap();
-  // 路線(線幅はズームに応じて少し細く)
   const ws = clamp(Math.sqrt(10 / cam.span), 0.55, 1.15);
   for (const r of RAILS) {
     const p = railProgress(r, t);
@@ -596,8 +627,7 @@ function render(t) {
   }
   const sc = SCENES[cur];
   const lt = t - sc.s;
-  sc.f(lt, clamp(sceneAlpha(lt, sc.d + (cur === SCENES.length - 1 ? 10 : 0))));
-  // 進捗バー
+  sc.f(lt, cur === 0 ? clamp(easeOut((sc.d - lt) / XF)) : clamp(sceneAlpha(lt, sc.d + (cur === SCENES.length - 1 ? 10 : 0))));
   rrect(0, H - 10, W, 10, 0, '#2a2f3a', 0.5);
   rrect(0, H - 10, W * clamp(t / DURATION), 10, 0, C.accent, 1);
 }

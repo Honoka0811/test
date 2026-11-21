@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""シーンごとのナレーション(男性寄りの声)を Open JTalk で合成し、BGM(bgm.py)をダッキングしながらミックスして動画に合成する。
+"""シーンごとのナレーションを VOICEVOX(四国めたん ノーマル)で合成し、BGM(bgm.py)をダッキングしながらミックスして動画に合成する。
 使い方: python3 narrate.py [入力mp4] [出力mp4]
-必要: numpy, pyopenjtalk
+環境変数:
+  VOICEVOX_ORT   libvoicevox_onnxruntime.so のパス
+  VOICEVOX_VVMS  *.vvm を置いたディレクトリ(四国めたんは 0.vvm)
+  VOICEVOX_DICT  Open JTalk 辞書ディレクトリ(省略時は pyopenjtalk 同梱のもの)
+  VOICEVOX_STYLE スタイルID(既定 2 = 四国めたん ノーマル。0 = あまあま、6 = ツンツン)
 """
-import sys, os, wave, subprocess
+import sys, os, io, wave, glob, subprocess
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -12,39 +16,66 @@ DST = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, 'output', 'gaichi
 WAV = os.path.join(HERE, 'output', 'narration.wav')
 
 SR = 48000
-TOTAL = 102
-LEAD = 0.45  # シーン開始からナレーション開始までの間
+TOTAL = 60.5
+LEAD = 0.25  # シーン開始からナレーション開始までの間
 
 # (開始秒, シーン長, 原稿)  render.html の SCENES と対応
-# 読み上げ用: 数字は漢数字、Open JTalk が誤読する地名・路線名はカタカナ
+# 読み上げ用: 数字は漢数字、誤読する地名はカタカナ(VOICEVOX も Open JTalk 辞書で読むため)
 SCRIPT = [
-    (0, 8.5, '戦前の日本には、内地とは別に、外地と呼ばれた地域がありました。そこを走った鉄道を、地図でたどります。'),
-    (8.5, 11.5, '外地とは、台湾、樺太、関東州、朝鮮、そして南洋群島。日清戦争から第一次大戦にかけて、日本の統治下に入った地域です。'),
-    (20, 14.5, '台湾では、千九百八年に、基隆と高雄を結ぶ縦貫線が全通。軌間は内地と同じ、千六十七ミリです。東部の台東線やアリサン森林鉄道は、さらに狭い七百六十二ミリでした。'),
-    (34.5, 15, '朝鮮の鉄道は、内地より広い標準軌。千八百九十九年のケイジン線に始まり、ケイフ線とケイギ線で半島を縦断します。下関からのカンプ連絡船と結ばれ、大陸への玄関口になりました。'),
-    (49.5, 15.5, '日露戦争でロシアから得た鉄道をもとに、南満洲鉄道、満鉄が生まれます。関東州のダイレンから新京への本線と、朝鮮へつながるアンポウ線。千九百三十四年には、特急あじあ号が走りました。'),
-    (65, 13.5, '北緯五十度より南の樺太には、樺太庁鉄道が敷かれました。稚内からのチハク連絡船で内地と結ばれ、東海岸線、西海岸線、そして山を越えるホウシン線が走りました。'),
-    (78.5, 7.5, '南洋群島では、サイパンやテニアンで、製糖会社がサトウキビを運ぶ軽便鉄道を走らせていました。'),
-    (86, 12.5, '台湾と樺太は、内地と同じ狭軌。朝鮮と満洲は、大陸と直通できる標準軌。外地の鉄道は、東京から大陸、そしてヨーロッパへと続く道でもありました。'),
+    (0, 5.5, '戦前の日本には、東京からヨーロッパまでの、通しの切符がありました。'),
+    (5.5, 7.5, 'その道をつくったのが、外地の鉄道。台湾、朝鮮、関東州、樺太、そして南洋群島です。'),
+    (13, 7.5, '台湾の縦貫線は、内地と同じ幅の線路。山奥には、スイッチバックで登るアリサン鉄道も走りました。'),
+    (20.5, 8.5, '朝鮮の線路は、内地より広い標準軌。大陸と直通するためです。下関から船で釜山へ渡り、列車は北へ。'),
+    (29, 7.5, 'その先が満鉄。ダイレンから新京まで約七百キロを、特急あじあ号が、八時間半で結びました。'),
+    (36.5, 8, '北の樺太にも鉄道が。稚内からの連絡船で結ばれ、千九百四十三年には、外地から内地になりました。'),
+    (44.5, 4.5, '南の島では、サトウキビを運ぶ小さな鉄道が走っていました。'),
+    (49, 8.5, '下関から釜山、京城、奉天、そしてハルビンへ。外地の鉄道は、日本とヨーロッパを結ぶ道でもあったのです。'),
 ]
 
 # 字幕用テキスト(画面表示向けの表記)
 SUBTITLES = [
-    '戦前の日本には、内地とは別に「外地」と呼ばれた地域がありました。そこを走った鉄道を、地図でたどります。',
-    '外地とは、台湾、樺太、関東州、朝鮮、そして南洋群島。日清戦争から第一次大戦にかけて、日本の統治下に入った地域です。',
-    '台湾では、1908年に基隆と高雄を結ぶ縦貫線が全通。軌間は内地と同じ1067mmです。東部の台東線や阿里山森林鉄道は、さらに狭い762mmでした。',
-    '朝鮮の鉄道は、内地より広い標準軌。1899年の京仁線に始まり、京釜線と京義線で半島を縦断します。下関からの関釜連絡船と結ばれ、大陸への玄関口になりました。',
-    '日露戦争でロシアから得た鉄道をもとに、南満洲鉄道(満鉄)が生まれます。関東州の大連から新京への本線と、朝鮮へつながる安奉線。1934年には特急「あじあ」号が走りました。',
-    '北緯50度より南の樺太には、樺太庁鉄道が敷かれました。稚内からの稚泊連絡船で内地と結ばれ、東海岸線、西海岸線、そして山を越える豊真線が走りました。',
-    '南洋群島では、サイパンやテニアンで、製糖会社がサトウキビを運ぶ軽便鉄道を走らせていました。',
-    '台湾と樺太は内地と同じ狭軌、朝鮮と満洲は大陸と直通できる標準軌。外地の鉄道は、東京から大陸、そしてヨーロッパへと続く道でもありました。',
+    '戦前の日本には、東京からヨーロッパまでの「通しの切符」がありました。',
+    'その道をつくったのが「外地」の鉄道。台湾、朝鮮、関東州、樺太、そして南洋群島です。',
+    '台湾の縦貫線は、内地と同じ幅の線路。山奥には、スイッチバックで登る阿里山鉄道も走りました。',
+    '朝鮮の線路は、内地より広い標準軌。大陸と直通するためです。下関から船で釜山へ渡り、列車は北へ。',
+    'その先が満鉄。大連から新京まで約700kmを、特急「あじあ」号が8時間半で結びました。',
+    '北の樺太にも鉄道が。稚内からの連絡船で結ばれ、1943年には外地から内地になりました。',
+    '南の島では、サトウキビを運ぶ小さな鉄道が走っていました。',
+    '下関から釜山、京城、奉天、そしてハルビンへ。外地の鉄道は、日本とヨーロッパを結ぶ道でもあったのです。',
 ]
 SRT = os.path.join(HERE, 'output', 'subtitles_ja.srt')
 
-import pyopenjtalk
-def engine(text, speed):
-    x, sr = pyopenjtalk.tts(text, speed=speed, half_tone=-1.5)
-    return x.astype(np.float32) / 32768.0, sr
+def _dict_dir():
+    d = os.environ.get('VOICEVOX_DICT')
+    if d: return d
+    import pyopenjtalk
+    return os.path.join(os.path.dirname(pyopenjtalk.__file__), 'open_jtalk_dic_utf_8-1.11')
+
+class VoicevoxEngine:
+    def __init__(self):
+        from voicevox_core.blocking import Onnxruntime, OpenJtalk, Synthesizer, VoiceModelFile
+        ort = Onnxruntime.load_once(filename=os.environ.get('VOICEVOX_ORT',
+            '/home/user/vv/ort/voicevox_onnxruntime-linux-x64-1.17.3/lib/libvoicevox_onnxruntime.so'))
+        self.synth = Synthesizer(ort, OpenJtalk(_dict_dir()))
+        for f in sorted(glob.glob(os.path.join(os.environ.get('VOICEVOX_VVMS', '/home/user/vv/vvms'), '*.vvm'))):
+            with VoiceModelFile.open(f) as m:
+                self.synth.load_voice_model(m)
+        self.style = int(os.environ.get('VOICEVOX_STYLE', '2'))
+        name = next((c.name + '/' + st.name) for c in self.synth.metas() for st in c.styles if st.id == self.style)
+        print('engine: VOICEVOX', name)
+    def __call__(self, text, speed):
+        q = self.synth.create_audio_query(text, self.style)
+        q.speed_scale = speed
+        q.pre_phoneme_length = 0.05
+        q.post_phoneme_length = 0.1
+        wav = self.synth.synthesis(q, self.style)
+        with wave.open(io.BytesIO(wav)) as w:
+            sr = w.getframerate()
+            x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768.0
+        return x, sr
+
+# クレジット(VOICEVOX:四国めたん)と食い違わないよう、VOICEVOX が無い場合はフォールバックせず止める
+engine = VoicevoxEngine()
 
 def resample(x, sr):
     if sr == SR: return x
@@ -62,14 +93,14 @@ def synth(text, speed):
 track = np.zeros(int(TOTAL * SR), dtype=np.float32)
 cues = []
 for li, (start, dur, text) in enumerate(SCRIPT):
-    limit = dur - LEAD - 0.35
+    limit = dur - LEAD - 0.3
     speed = 1.2  # 基準速度(全シーンでペースを揃える)
     for _ in range(6):
         x = synth(text, speed)
         sec = len(x) / SR
         if sec <= limit:
             break
-        speed = min(speed * (sec / limit) * 1.02, 1.3)
+        speed = min(speed * (sec / limit) * 1.02, 1.35)
     print(f'{start:5.1f}s  {sec:4.1f}s / {limit:4.1f}s  speed={speed:.2f}  {text[:18]}…')
     # フェードイン/アウト
     n = len(x); f = min(600, n // 4)
