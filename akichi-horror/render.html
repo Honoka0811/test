@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<title>近所の謎の空き地</title>
+<title>空き地の番号</title>
 <style>
   html,body{margin:0;background:#000;}
   canvas{display:block;max-height:100vh;margin:0 auto;}
@@ -13,63 +13,54 @@
 <script src="output/timeline.js"></script>
 <script>
 // ------------------------------------------------------------
-// 近所の謎の空き地 (9:16 ホラーショート)
+// 空き地の番号 (9:16 ホラーショート / スマホ視点)
 // render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
 // シーンの尺と字幕は narrate.py が書き出す output/timeline.js から読む。
 // ------------------------------------------------------------
 const W = 1080, H = 1920;
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
-const MIN = '"IPAMincho","IPAPMincho",serif';
 const GOTH = '"IPAPGothic","IPAGothic",sans-serif';
 const MONO = '"DejaVu Sans Mono",monospace';
+const SANS = '"DejaVu Sans",' + GOTH;
 const TL = window.TIMELINE;
 const FPS = 30, DURATION = TL.total;
 window.FPS = FPS; window.DURATION = DURATION;
 const SC = Object.fromEntries(TL.scenes.map(s => [s.id, s]));
+const CUE = Object.fromEntries(TL.scenes.map(s => [s.id, TL.cues.find(c => c.a >= s.start && c.a < s.end)]));
 
 // ---------- utils ----------
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
 const lerp = (a, b, t) => a + (b - a) * t;
 const ease = t => { t = clamp(t); return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
 const seg = (t, s, d) => clamp((t - s) / d);
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const noise1 = (x) => { const i = Math.floor(x), f = x - i; const u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u); };
-
 function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+// 手持ちカメラの揺れ
+function shake(t, amt = 1) {
+  return { x: (noise1(t * 1.1) - .5) * 30 * amt + (noise1(t * 6 + 9) - .5) * 5 * amt,
+           y: (noise1(t * 0.9 + 4) - .5) * 26 * amt + (noise1(t * 7 + 3) - .5) * 5 * amt,
+           r: (noise1(t * 0.7 + 7) - .5) * 0.02 * amt };
+}
+function withShake(t, amt, fn) {
+  const s = shake(t, amt); ctx.save(); ctx.translate(W / 2 + s.x, H / 2 + s.y); ctx.rotate(s.r); ctx.scale(1.06, 1.06); ctx.translate(-W / 2, -H / 2); fn(); ctx.restore();
+}
 
 // ---------- 事前生成テクスチャ ----------
-// フィルムグレイン
 const GRAIN = [];
 for (let k = 0; k < 8; k++) {
   const c = mk(540, 960), g = c.getContext('2d'); const id = g.createImageData(540, 960); const r = rng(1000 + k);
   for (let i = 0; i < id.data.length; i += 4) { const v = r() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
   g.putImageData(id, 0, 0); GRAIN.push(c);
 }
-// 土のテクスチャ
-const SOIL = (() => {
-  const c = mk(1080, 1920), g = c.getContext('2d'); const r = rng(77);
-  g.fillStyle = '#2a241d'; g.fillRect(0, 0, 1080, 1920);
-  for (let i = 0; i < 26000; i++) {
-    const x = r() * 1080, y = r() * 1920, s = r() * 3 + 0.5, v = 20 + r() * 50;
-    g.fillStyle = `rgba(${v + 15},${v + 8},${v},${0.35 + r() * 0.4})`; g.fillRect(x, y, s, s);
-  }
-  for (let i = 0; i < 380; i++) {  // 小石
-    const x = r() * 1080, y = r() * 1920, rx = 3 + r() * 11, ry = rx * (0.5 + r() * 0.4), v = 60 + r() * 50;
-    g.fillStyle = `rgb(${v},${v - 4},${v - 10})`; g.beginPath(); g.ellipse(x, y, rx, ry, r() * 3, 0, 7); g.fill();
-    g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(x + 2, y + 3, rx, ry * 0.6, 0, 0, 7); g.fill();
-  }
-  for (let i = 0; i < 40; i++) { // ひび割れ
-    let x = r() * 1080, y = r() * 1920; g.strokeStyle = 'rgba(10,8,6,0.55)'; g.lineWidth = 1 + r() * 1.5; g.beginPath(); g.moveTo(x, y);
-    for (let j = 0; j < 8; j++) { x += (r() - .5) * 60; y += (r() - .5) * 60; g.lineTo(x, y); } g.stroke();
-  }
-  return c;
-})();
-// 空き地を遠くから見た地面(パース付き)
 const GROUND = (() => {
   const c = mk(1080, 920), g = c.getContext('2d'); const r = rng(9);
-  const gr = g.createLinearGradient(0, 0, 0, 920); gr.addColorStop(0, '#0d0e10'); gr.addColorStop(1, '#1d1a16');
+  const gr = g.createLinearGradient(0, 0, 0, 920); gr.addColorStop(0, '#0d0e10'); gr.addColorStop(1, '#221e19');
   g.fillStyle = gr; g.fillRect(0, 0, 1080, 920);
   for (let i = 0; i < 9000; i++) {
     const y = Math.pow(r(), 1.6) * 920, sc = 0.2 + y / 920 * 1.6, x = r() * 1080, v = 15 + r() * 35;
@@ -77,451 +68,372 @@ const GROUND = (() => {
   }
   return c;
 })();
-
-// 家並みのシルエット
 const HOUSES = (() => {
   const r = rng(42), list = []; let x = -40;
   while (x < 1120) {
     const w = 150 + r() * 130, h = 140 + r() * 140, roof = 40 + r() * 50, wins = [];
     const nw = 1 + Math.floor(r() * 3);
-    for (let i = 0; i < nw; i++) wins.push({ x: 20 + r() * (w - 70), y: 30 + r() * (h - 80), on: r() < 0.35, ph: r() * 10 });
-    list.push({ x, w, h, roof, wins, pole: r() < 0.3 }); x += w + 10 + r() * 30;
+    for (let i = 0; i < nw; i++) wins.push({ x: 20 + r() * (w - 70), y: 30 + r() * (h - 80), on: r() < 0.35 });
+    list.push({ x, w, h, roof, wins }); x += w + 10 + r() * 30;
   }
   return list;
 })();
+// 看板の地(汚れ・錆)
+const BOARD = (() => {
+  const c = mk(860, 1100), g = c.getContext('2d'); const r = rng(5);
+  g.fillStyle = '#c3bead'; g.fillRect(0, 0, 860, 1100);
+  for (let i = 0; i < 90; i++) {
+    const x = r() * 860, y = r() * 330, len = 60 + r() * 420;
+    const gr = g.createLinearGradient(0, y, 0, y + len); gr.addColorStop(0, 'rgba(110,60,30,0.35)'); gr.addColorStop(1, 'rgba(110,60,30,0)');
+    g.fillStyle = gr; g.fillRect(x, y, 4 + r() * 14, len);
+  }
+  for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(60,50,40,${r() * 0.12})`; g.fillRect(r() * 860, r() * 1100, 2 + r() * 4, 2 + r() * 4); }
+  g.strokeStyle = '#5a5850'; g.lineWidth = 12; g.strokeRect(6, 6, 848, 1088);
+  return c;
+})();
 
-// ---------- 描画パーツ ----------
+// ---------- 看板 ----------
+// scratch: 0..1 下4桁の上の塗りつぶしがどれだけ削れたか / sold: 「売約済」の札の出現
+function drawSign(scratch = 0, sold = 0) {
+  ctx.drawImage(BOARD, -430, -550);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#8a2219'; ctx.font = `bold 310px ${GOTH}`; ctx.fillText('売地', 0, -150);
+  ctx.fillStyle = '#2b2a27'; ctx.font = `bold 56px ${GOTH}`; ctx.fillText('お問い合わせ', 0, 0);
+  ctx.textAlign = 'left'; ctx.font = `bold 78px ${GOTH}`; ctx.fillText('TEL', -370, 190);
+  ctx.font = `bold 92px ${MONO}`; ctx.fillText('090-', -230, 190);
+  ctx.fillText('4444', 120, 190);
+  ctx.textAlign = 'center'; ctx.font = `bold 48px ${GOTH}`; ctx.fillText('空地管理', 0, 430);
+  // マジックの塗りつぶし(右端の下4桁だけ削れていく)
+  const rr = rng(13);
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = 30;
+  for (let i = 0; i < 28; i++) {
+    const x1 = -250 + rr() * 30, x2 = 390 + rr() * 30, y = 108 + i * 4.2 + rr() * 12, yy = y + (rr() - .5) * 18;
+    ctx.strokeStyle = 'rgba(8,8,8,0.97)';
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, yy); ctx.stroke();
+  }
+  ctx.restore();
+  if (scratch > 0) {
+    // 削れた部分: 看板の地と数字を描き戻し、削りカスを残す
+    ctx.save(); ctx.beginPath(); ctx.rect(110, 90, 290, 130); ctx.clip();
+    const r2 = rng(99);
+    ctx.globalAlpha = scratch;
+    ctx.drawImage(BOARD, 520, 640, 300, 140, 110, 90, 300, 140);
+    ctx.fillStyle = '#2b2a27'; ctx.font = `bold 92px ${MONO}`; ctx.textAlign = 'left'; ctx.fillText('4444', 120, 190);
+    ctx.globalAlpha = 1;
+    for (let i = 0; i < 160; i++) {
+      const x = 110 + r2() * 290, y = 90 + r2() * 130;
+      if (r2() > 1 - scratch * 0.9) continue;
+      ctx.fillStyle = 'rgba(10,10,10,0.9)'; ctx.fillRect(x, y, 6 + r2() * 26, 3 + r2() * 8);
+    }
+    ctx.restore();
+  }
+  if (sold > 0) {
+    // 斜めに貼られた「売約済」
+    ctx.save(); ctx.globalAlpha = sold; ctx.rotate(-0.2); ctx.translate(0, -230);
+    ctx.fillStyle = '#e9e3d0'; ctx.fillRect(-380, -110, 760, 200);
+    ctx.strokeStyle = '#b21c12'; ctx.lineWidth = 14; ctx.strokeRect(-366, -96, 732, 172);
+    ctx.fillStyle = '#b21c12'; ctx.font = `bold 140px ${GOTH}`; ctx.textAlign = 'center'; ctx.fillText('売約済', 0, 40);
+    ctx.restore();
+  }
+}
+// スマホのライト
+function flashlight(x, y, r, dark = 0.93) {
+  const g = ctx.createRadialGradient(x, y, r * 0.12, x, y, r);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.65, `rgba(0,0,0,${dark * 0.55})`); g.addColorStop(1, `rgba(0,0,0,${dark})`);
+  ctx.fillStyle = g; ctx.fillRect(-W, -H, W * 3, H * 3);
+}
+// 指先(爪で削る)
+function drawFinger(x, y, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  const g = ctx.createLinearGradient(-60, 0, 60, 0); g.addColorStop(0, '#6e5040'); g.addColorStop(0.5, '#b58c72'); g.addColorStop(1, '#6a4c3c');
+  ctx.fillStyle = g; rrect(-58, -20, 116, 520, 56); ctx.fill();
+  ctx.fillStyle = 'rgba(235,215,200,0.75)'; rrect(-40, -8, 80, 92, 34); ctx.fill();
+  ctx.strokeStyle = 'rgba(80,50,40,0.6)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-40, 170); ctx.quadraticCurveTo(0, 182, 40, 170); ctx.stroke();
+  ctx.restore();
+}
+
+// ---------- 空き地の全景 ----------
 const HORIZON = 1000;
-function drawSky(t) {
+function drawLot(t, { phoneGlow = 0 } = {}) {
   const g = ctx.createLinearGradient(0, 0, 0, HORIZON);
   g.addColorStop(0, '#020305'); g.addColorStop(0.7, '#0a0f17'); g.addColorStop(1, '#141a22');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, HORIZON + 2);
-  // うっすらとした雲
-  ctx.save(); ctx.globalAlpha = 0.18;
-  for (let i = 0; i < 6; i++) {
-    const cx = ((i * 260 + t * 6) % 1500) - 200, cy = 260 + i * 90;
-    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 300);
-    rg.addColorStop(0, '#2c3442'); rg.addColorStop(1, 'rgba(44,52,66,0)');
-    ctx.fillStyle = rg; ctx.fillRect(cx - 320, cy - 120, 640, 240);
-  }
-  ctx.restore();
-  // 電線
+  ctx.fillStyle = g; ctx.fillRect(-200, -200, W + 400, HORIZON + 202);
   ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 3;
-  for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-10, 330 + k * 26); ctx.quadraticCurveTo(540, 420 + k * 30, 1090, 360 + k * 24); ctx.stroke(); }
-}
-function drawHouses(t, opts = {}) {
+  for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-200, 330 + k * 26); ctx.quadraticCurveTo(540, 420 + k * 30, 1290, 360 + k * 24); ctx.stroke(); }
   const base = HORIZON + 6;
   for (const h of HOUSES) {
-    ctx.fillStyle = '#050608';
-    ctx.fillRect(h.x, base - h.h, h.w, h.h);
+    ctx.fillStyle = '#050608'; ctx.fillRect(h.x, base - h.h, h.w, h.h);
     ctx.beginPath(); ctx.moveTo(h.x - 12, base - h.h); ctx.lineTo(h.x + h.w / 2, base - h.h - h.roof); ctx.lineTo(h.x + h.w + 12, base - h.h); ctx.fill();
-    for (const w of h.wins) {
-      if (!w.on) continue;
-      const fl = opts.dark ? 0 : 0.55 + 0.1 * noise1(t * 0.7 + w.ph);
-      ctx.fillStyle = `rgba(214,170,96,${fl * 0.55})`; ctx.fillRect(h.x + w.x, base - h.h + w.y, 34, 26);
+    for (const w of h.wins) if (w.on) { ctx.fillStyle = 'rgba(214,170,96,0.3)'; ctx.fillRect(h.x + w.x, base - h.h + w.y, 34, 26); }
+  }
+  ctx.drawImage(GROUND, -200, HORIZON, W + 400, 1120);
+  ctx.fillStyle = '#0b0c0e'; ctx.fillRect(-200, HORIZON - 4, W + 400, 26);
+  // 街灯(遠く・弱い)
+  ctx.fillStyle = '#08090b'; ctx.fillRect(-20, 560, 14, 460); ctx.fillRect(-20, 560, 90, 8);
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  const hg = ctx.createRadialGradient(60, 570, 0, 60, 570, 110); hg.addColorStop(0, 'rgba(220,235,220,0.5)'); hg.addColorStop(1, 'rgba(220,235,220,0)');
+  ctx.fillStyle = hg; ctx.fillRect(-60, 450, 240, 240); ctx.restore();
+  // 地面に落ちたスマホ(画面が光っている)
+  if (phoneGlow > 0) {
+    ctx.save(); ctx.translate(560, 1330);
+    ctx.globalCompositeOperation = 'screen';
+    const pg = ctx.createRadialGradient(0, 0, 0, 0, 0, 260); pg.addColorStop(0, `rgba(150,190,255,${0.45 * phoneGlow})`); pg.addColorStop(1, 'rgba(150,190,255,0)');
+    ctx.fillStyle = pg; ctx.fillRect(-300, -300, 600, 600);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.transform(1, 0, -0.5, 0.42, 0, 0);        // 地面に寝かせたパース
+    ctx.fillStyle = '#0b0b0d'; rrect(-48, -96, 96, 192, 14); ctx.fill();
+    ctx.fillStyle = `rgba(190,215,255,${0.85 * phoneGlow})`; rrect(-42, -88, 84, 176, 10); ctx.fill();
+    ctx.fillStyle = `rgba(40,170,90,${phoneGlow})`; ctx.beginPath(); ctx.arc(0, 54, 14, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ---------- スマホ UI ----------
+const PH = { x: 150, y: 260, w: 780, h: 1560, r: 90 };
+function fmtTimer(sec) { sec = Math.max(0, Math.floor(sec)); return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`; }
+function drawPhoneFrame(fn, { glass = 1 } = {}) {
+  ctx.save();
+  // 手
+  ctx.fillStyle = '#21180f';
+  ctx.beginPath(); ctx.ellipse(PH.x + 40, PH.y + PH.h * 0.78, 120, 300, 0.2, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(PH.x + PH.w - 10, PH.y + PH.h * 0.7, 70, 200, -0.25, 0, 7); ctx.fill();
+  // 本体
+  ctx.fillStyle = '#0a0a0c'; rrect(PH.x - 18, PH.y - 18, PH.w + 36, PH.h + 36, PH.r + 14); ctx.fill();
+  ctx.save(); rrect(PH.x, PH.y, PH.w, PH.h, PH.r); ctx.clip();
+  fn();
+  // ガラスの反射
+  const gg = ctx.createLinearGradient(PH.x, PH.y, PH.x + PH.w, PH.y + PH.h);
+  gg.addColorStop(0, `rgba(255,255,255,${0.05 * glass})`); gg.addColorStop(0.4, 'rgba(255,255,255,0)'); gg.addColorStop(1, `rgba(255,255,255,${0.03 * glass})`);
+  ctx.fillStyle = gg; ctx.fillRect(PH.x, PH.y, PH.w, PH.h);
+  ctx.restore();
+  // ノッチ
+  ctx.fillStyle = '#000'; rrect(PH.x + PH.w / 2 - 110, PH.y + 22, 220, 50, 25); ctx.fill();
+  // 指先
+  ctx.fillStyle = '#2a1e16'; ctx.beginPath(); ctx.ellipse(PH.x + PH.w + 12, PH.y + PH.h * 0.42, 34, 90, 0.1, 0, 7); ctx.fill();
+  ctx.restore();
+}
+function statusBar(clock = '2:04') {
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = `bold 40px ${SANS}`; ctx.textAlign = 'left'; ctx.fillText(clock, PH.x + 80, PH.y + 62);
+  ctx.textAlign = 'right'; ctx.fillText('▮▮▮ 12%', PH.x + PH.w - 70, PH.y + 62);
+}
+function callScreen(t, mode, since) {
+  // mode: 'dial' 発信中 / 'talk' 通話中 / 'end' 通話終了
+  const g = ctx.createLinearGradient(0, PH.y, 0, PH.y + PH.h); g.addColorStop(0, '#1d2733'); g.addColorStop(1, '#07090c');
+  ctx.fillStyle = g; ctx.fillRect(PH.x, PH.y, PH.w, PH.h);
+  statusBar();
+  const cx = PH.x + PH.w / 2;
+  // アバター
+  ctx.fillStyle = '#3a4350'; ctx.beginPath(); ctx.arc(cx, PH.y + 420, 120, 0, 7); ctx.fill();
+  ctx.fillStyle = '#566173'; ctx.beginPath(); ctx.arc(cx, PH.y + 395, 48, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx, PH.y + 500, 80, 50, 0, Math.PI, 0); ctx.fill();
+  if (mode === 'dial') for (let k = 0; k < 3; k++) {
+    const ph = ((t * 0.8 + k / 3) % 1); ctx.strokeStyle = `rgba(150,190,240,${0.5 * (1 - ph)})`; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(cx, PH.y + 420, 120 + ph * 160, 0, 7); ctx.stroke();
+  }
+  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = `bold 76px ${MONO}`;
+  ctx.fillText('090-****-4444', cx, PH.y + 700);
+  ctx.font = `44px ${GOTH}`; ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  const label = mode === 'dial' ? '発信中' + '.'.repeat(1 + Math.floor(t * 2) % 3) : mode === 'talk' ? '通話中  ' + fmtTimer(t - since) : '通話終了';
+  ctx.fillText(label, cx, PH.y + 790);
+  if (mode === 'talk') {   // 音声の波形
+    for (let i = 0; i < 24; i++) {
+      const hh = 12 + 90 * Math.pow(noise1(t * 9 + i * 1.7), 2.2);
+      ctx.fillStyle = 'rgba(120,220,150,0.8)'; ctx.fillRect(cx - 300 + i * 25, PH.y + 960 - hh / 2, 12, hh);
     }
   }
+  // 終話ボタン
+  ctx.fillStyle = mode === 'end' ? '#552222' : '#e0392f'; ctx.beginPath(); ctx.arc(cx, PH.y + PH.h - 240, 82, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.save(); ctx.translate(cx, PH.y + PH.h - 240); ctx.rotate(2.36); rrect(-46, -14, 92, 28, 14); ctx.fill(); ctx.restore();
 }
-function lampFlicker(t) {
-  // 基本は点灯。ときどき瞬く
-  const n = noise1(t * 3.1), b = noise1(t * 17 + 5);
-  if (n > 0.82 && b > 0.45) return 0.15;
-  return 0.85 + 0.15 * noise1(t * 9);
-}
-function drawStreetLamp(t, x, top) {
-  const fl = lampFlicker(t);
-  ctx.fillStyle = '#08090b'; ctx.fillRect(x - 9, top, 18, 1600);
-  ctx.fillRect(x, top + 20, 110, 10);
-  ctx.fillStyle = `rgba(230,236,220,${0.3 + fl * 0.7})`; ctx.fillRect(x + 80, top + 30, 50, 10);
-  // 光の円錐と地面の光だまり
-  ctx.save(); ctx.globalCompositeOperation = 'screen';
-  const cg = ctx.createLinearGradient(0, top + 40, 0, 1500);
-  cg.addColorStop(0, `rgba(180,200,190,${0.22 * fl})`); cg.addColorStop(1, 'rgba(180,200,190,0)');
-  ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(x + 85, top + 40); ctx.lineTo(x + 125, top + 40); ctx.lineTo(x + 460, 1500); ctx.lineTo(x - 220, 1500); ctx.fill();
-  const pg = ctx.createRadialGradient(x + 110, 1330, 10, x + 110, 1330, 420);
-  pg.addColorStop(0, `rgba(150,170,160,${0.28 * fl})`); pg.addColorStop(1, 'rgba(150,170,160,0)');
-  ctx.fillStyle = pg; ctx.fillRect(x - 400, 1000, 1000, 700);
-  const hg = ctx.createRadialGradient(x + 105, top + 35, 0, x + 105, top + 35, 90);
-  hg.addColorStop(0, `rgba(240,250,235,${0.8 * fl})`); hg.addColorStop(1, 'rgba(240,250,235,0)');
-  ctx.fillStyle = hg; ctx.fillRect(x, top - 60, 220, 200);
-  ctx.restore();
-}
-function drawFence(t, alpha = 1) {
-  if (alpha <= 0) return;
-  ctx.save(); ctx.globalAlpha = alpha;
-  const top = 1130, bot = 1560;
-  // 支柱
-  ctx.fillStyle = '#16181b';
-  for (let x = -20; x < 1120; x += 270) ctx.fillRect(x, top - 30, 14, bot - top + 60);
-  ctx.fillRect(-20, top - 30, 1140, 8);
-  // 金網(ひし形)
-  ctx.strokeStyle = 'rgba(120,128,130,0.42)'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let k = -40; k < 60; k++) {
-    const x0 = k * 34;
-    ctx.moveTo(x0, top); ctx.lineTo(x0 + (bot - top), bot);
-    ctx.moveTo(x0, bot); ctx.lineTo(x0 + (bot - top), top);
-  }
-  ctx.stroke();
-  // 破れ目
-  ctx.fillStyle = 'rgba(0,0,0,0.0)';
-  ctx.restore();
-}
-function drawSignSmall(alpha = 1) {
-  ctx.save(); ctx.globalAlpha = alpha;
-  ctx.translate(780, 1210); ctx.rotate(0.03);
-  ctx.fillStyle = '#9d9a90'; ctx.fillRect(0, 0, 190, 130);
-  ctx.fillStyle = '#7a2a22'; ctx.font = `bold 64px ${GOTH}`; ctx.textAlign = 'center'; ctx.fillText('売地', 95, 72);
-  ctx.fillStyle = '#111'; ctx.fillRect(18, 92, 154, 22);
-  ctx.restore();
-}
-// 人影。x,y は足元、h は身長(px)
-function drawFigure(x, y, h, { alpha = 1, sway = 0, cloth = null, blur = 8 } = {}) {
-  ctx.save(); ctx.globalAlpha = alpha;
-  ctx.translate(x, y); ctx.rotate(sway * 0.01);
-  const s = h / 300;
-  ctx.scale(s, s);
-  ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = blur;
-  ctx.fillStyle = '#020203';
-  // 脚
-  ctx.beginPath(); ctx.moveTo(-26, -130); ctx.lineTo(-30, 0); ctx.lineTo(-10, 0); ctx.lineTo(-4, -120); ctx.lineTo(4, -120); ctx.lineTo(10, 0); ctx.lineTo(30, 0); ctx.lineTo(26, -130); ctx.fill();
-  // 胴体
-  ctx.beginPath(); ctx.moveTo(-48, -240); ctx.quadraticCurveTo(-56, -180, -40, -120); ctx.lineTo(40, -120); ctx.quadraticCurveTo(56, -180, 48, -240); ctx.quadraticCurveTo(0, -258, -48, -240); ctx.fill();
-  // 腕(だらりと下げる)
-  ctx.beginPath(); ctx.moveTo(-48, -238); ctx.quadraticCurveTo(-66, -170, -58, -104); ctx.lineTo(-44, -104); ctx.quadraticCurveTo(-48, -170, -36, -220); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(48, -238); ctx.quadraticCurveTo(66, -170, 58, -104); ctx.lineTo(44, -104); ctx.quadraticCurveTo(48, -170, 36, -220); ctx.fill();
-  // 首・頭(わずかに傾ける)
-  ctx.fillRect(-10, -262, 20, 20);
-  ctx.beginPath(); ctx.ellipse(3, -287, 23, 29, 0.12, 0, 7); ctx.fill();
-  if (cloth) {
-    // 懐中電灯に照らされた服(同じ服)
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = alpha * cloth.a;
-    ctx.fillStyle = cloth.color;
-    ctx.beginPath(); ctx.moveTo(-46, -236); ctx.quadraticCurveTo(-54, -180, -39, -124); ctx.lineTo(39, -124); ctx.quadraticCurveTo(54, -180, 46, -236); ctx.quadraticCurveTo(0, -252, -46, -236); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(-46, -234); ctx.quadraticCurveTo(-63, -170, -56, -108); ctx.lineTo(-46, -108); ctx.quadraticCurveTo(-50, -170, -38, -218); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(46, -234); ctx.quadraticCurveTo(63, -170, 56, -108); ctx.lineTo(46, -108); ctx.quadraticCurveTo(50, -170, 38, -218); ctx.fill();
-    // フードの紐とポケット
-    ctx.strokeStyle = 'rgba(220,210,200,0.5)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-8, -238); ctx.lineTo(-10, -205); ctx.moveTo(8, -238); ctx.lineTo(10, -205); ctx.stroke();
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-30, -160, 60, 22);
-    ctx.beginPath(); ctx.ellipse(0, -240, 32, 9, 0, 0, 7); ctx.fill();
-    // 立体感(左右を暗く)
-    const g = ctx.createLinearGradient(-50, 0, 50, 0);
-    g.addColorStop(0, 'rgba(0,0,0,0.8)'); g.addColorStop(0.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)');
-    ctx.fillStyle = g; ctx.fillRect(-66, -250, 132, 146);
-  }
-  ctx.restore();
-}
-
-// 空き地の全景。cam = {zoom, fx, fy}
-function drawLot(t, { zoom = 1, fx = 540, fy = 1150, fence = 1, figure = null, sign = true, dark = false, house = 0 } = {}) {
-  ctx.save();
-  ctx.translate(fx, fy); ctx.scale(zoom, zoom); ctx.translate(-fx, -fy);
-  drawSky(t);
-  drawHouses(t, { dark });
-  ctx.drawImage(GROUND, 0, HORIZON);
-  // 空き地の境界(奥のブロック塀)
-  ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, HORIZON - 4, W, 26);
-  ctx.fillStyle = 'rgba(255,255,255,0.03)'; for (let x = 0; x < W; x += 60) ctx.fillRect(x, HORIZON - 4, 2, 26);
-  if (house > 0) drawGhostHouse(house);
-  if (figure) drawFigure(figure.x, figure.y, figure.h, figure);
-  drawStreetLamp(t, 130, 520);
-  drawFence(t, fence);
-  if (sign) drawSignSmall(fence);
-  ctx.restore();
-}
-// 「空き地なんてない」——空き地の場所に家が建っている像
-function drawGhostHouse(a) {
-  ctx.save(); ctx.globalAlpha = a;
-  ctx.fillStyle = '#16171a'; ctx.fillRect(300, 820, 480, 380);
-  ctx.beginPath(); ctx.moveTo(270, 820); ctx.lineTo(540, 650); ctx.lineTo(810, 820); ctx.fill();
-  ctx.fillStyle = 'rgba(214,170,96,0.6)'; ctx.fillRect(360, 880, 90, 70); ctx.fillRect(630, 880, 90, 70);
-  ctx.fillStyle = '#0a0b0c'; ctx.fillRect(500, 1040, 80, 160);
-  ctx.restore();
-}
-
-// 懐中電灯のマスク(周囲を暗くする)
-function flashlight(x, y, r, dark = 0.93) {
-  const g = ctx.createRadialGradient(x, y, r * 0.15, x, y, r);
-  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.7, `rgba(0,0,0,${dark * 0.6})`); g.addColorStop(1, `rgba(0,0,0,${dark})`);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+function profileScreen(t, hi) {
+  ctx.fillStyle = '#f2f2f5'; ctx.fillRect(PH.x, PH.y, PH.w, PH.h);
+  ctx.save(); ctx.fillStyle = '#111'; statusBar(); ctx.restore();
+  ctx.fillStyle = '#111'; ctx.font = `bold 40px ${SANS}`; ctx.textAlign = 'left'; ctx.fillText('2:03', PH.x + 80, PH.y + 62);
+  const cx = PH.x + PH.w / 2;
+  ctx.fillStyle = '#222'; ctx.font = `bold 58px ${GOTH}`; ctx.textAlign = 'center'; ctx.fillText('マイプロフィール', cx, PH.y + 230);
+  ctx.fillStyle = '#c9ccd3'; ctx.beginPath(); ctx.arc(cx, PH.y + 450, 130, 0, 7); ctx.fill();
+  ctx.fillStyle = '#9aa0ab'; ctx.beginPath(); ctx.arc(cx, PH.y + 420, 52, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx, PH.y + 535, 88, 56, 0, Math.PI, 0); ctx.fill();
+  ctx.fillStyle = '#222'; ctx.font = `bold 64px ${GOTH}`; ctx.fillText('自分', cx, PH.y + 690);
+  ctx.fillStyle = '#888'; ctx.font = `40px ${GOTH}`; ctx.fillText('電話番号', cx, PH.y + 820);
+  ctx.fillStyle = '#111'; ctx.font = `bold 80px ${MONO}`; ctx.textAlign = 'left';
+  const x0 = cx - ctx.measureText('090-****-4444').width / 2;
+  ctx.fillText('090-****-', x0, PH.y + 920);
+  ctx.fillStyle = `rgb(${lerp(17, 225, hi)},${lerp(17, 30, hi)},${lerp(17, 30, hi)})`;
+  ctx.fillText('4444', x0 + ctx.measureText('090-****-').width, PH.y + 920);
+  if (hi > 0) { ctx.strokeStyle = `rgba(225,30,30,${hi})`; ctx.lineWidth = 8; ctx.strokeRect(x0 + ctx.measureText('090-****-').width - 14, PH.y + 840, ctx.measureText('4444').width + 28, 106); }
 }
 
 // ---------- シーン ----------
-function sceneTitle(t, u, d) {
-  drawLot(t, { zoom: 1.08 - u * 0.01, fence: 1 });
-  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
-  const a = seg(u, 0.3, 1.0) * (1 - seg(u, d - 0.4, 0.4));
-  const jit = (hash(Math.floor(t * 12)) < 0.15) ? (hash(t * 99) - 0.5) * 24 : 0;
-  ctx.save(); ctx.textAlign = 'center'; ctx.globalAlpha = a;
-  ctx.fillStyle = '#c9c4b8'; ctx.font = `44px ${MIN}`; ctx.fillText('―― 実話かどうかは、わからない ――', W / 2, 700);
-  ctx.font = `bold 150px ${MIN}`;
-  ctx.fillStyle = 'rgba(170,20,20,0.7)'; ctx.fillText('近所の', W / 2 + jit + 6, 900);
-  ctx.fillStyle = '#ece6da'; ctx.fillText('近所の', W / 2 + jit, 896);
-  ctx.font = `bold 176px ${MIN}`;
-  ctx.fillStyle = 'rgba(170,20,20,0.7)'; ctx.fillText('謎の空き地', W / 2 - jit + 6, 1110);
-  ctx.fillStyle = '#ece6da'; ctx.fillText('謎の空き地', W / 2 - jit, 1106);
-  ctx.restore();
-}
-function sceneLot(t, u, d) {
-  drawLot(t, { zoom: 1.0 + u * 0.018, fy: 1150 });
-}
 function sceneSign(t, u, d) {
-  // 金網越しの看板アップ
-  ctx.fillStyle = '#0c0d0e'; ctx.fillRect(0, 0, W, H);
+  // 冒頭いきなり看板。ライトが番号の塗りつぶしへ寄っていく
+  ctx.fillStyle = '#0b0c0d'; ctx.fillRect(0, 0, W, H);
   const p = ease(u / d);
-  ctx.save();
-  ctx.translate(540, 960 + lerp(60, -40, p)); ctx.rotate(0.025 + Math.sin(u * 0.7) * 0.004); ctx.scale(1 + p * 0.06, 1 + p * 0.06);
-  // 看板
-  const bw = 820, bh = 1040;
-  ctx.fillStyle = '#bdb8aa'; ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
-  const r = rng(5);
-  for (let i = 0; i < 70; i++) { // 汚れ・錆
-    const x = -bw / 2 + r() * bw, y = -bh / 2 + r() * bh * 0.3, len = 60 + r() * 300;
-    const g = ctx.createLinearGradient(0, y, 0, y + len); g.addColorStop(0, 'rgba(110,60,30,0.35)'); g.addColorStop(1, 'rgba(110,60,30,0)');
-    ctx.fillStyle = g; ctx.fillRect(x, y, 4 + r() * 14, len);
-  }
-  ctx.strokeStyle = '#5a5850'; ctx.lineWidth = 10; ctx.strokeRect(-bw / 2 + 5, -bh / 2 + 5, bw - 10, bh - 10);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#8a2219'; ctx.font = `bold 300px ${GOTH}`; ctx.fillText('売地', 0, -90);
-  ctx.fillStyle = '#2b2a27'; ctx.font = `bold 56px ${GOTH}`; ctx.fillText('お問い合わせは下記まで', 0, 70);
-  ctx.font = `bold 92px ${GOTH}`; ctx.textAlign = 'left'; ctx.fillText('TEL', -360, 250);
-  ctx.textAlign = 'center'; ctx.font = `bold 48px ${GOTH}`; ctx.fillText('〇〇不動産', 0, 420);
-  // 黒く塗りつぶされた番号(マジックの殴り書き)
-  const rr = rng(13);
-  ctx.strokeStyle = 'rgba(8,8,8,0.95)'; ctx.lineCap = 'round'; ctx.lineWidth = 30;
-  ctx.beginPath();
-  for (let i = 0; i < 26; i++) {
-    const x1 = -180 + rr() * 40, x2 = 350 + rr() * 40, y = 160 + i * 5 + rr() * 14;
-    if (i % 2) { ctx.moveTo(x1, y); ctx.lineTo(x2, y + (rr() - .5) * 20); } else { ctx.moveTo(x2, y); ctx.lineTo(x1, y + (rr() - .5) * 20); }
-  }
-  ctx.stroke();
-  ctx.restore();
-  // 手前の金網
-  ctx.save(); ctx.strokeStyle = 'rgba(70,74,76,0.75)'; ctx.lineWidth = 7; ctx.filter = 'blur(3px)';
-  ctx.beginPath();
-  for (let k = -40; k < 60; k++) { const x0 = k * 120; ctx.moveTo(x0, 0); ctx.lineTo(x0 + H, H); ctx.moveTo(x0, H); ctx.lineTo(x0 + H, 0); }
-  ctx.stroke(); ctx.restore();
-  flashlight(540 + Math.sin(u * 0.8) * 120, 900 + Math.cos(u * 0.6) * 160, 760, 0.9);
+  withShake(t, 1, () => {
+    ctx.save(); ctx.translate(540, lerp(900, 820, p)); ctx.rotate(0.03); const s = lerp(1.0, 1.25, p); ctx.scale(s, s);
+    drawSign(0);
+    ctx.restore();
+    flashlight(lerp(560, 600, p), lerp(760, 1050, p), 820, 0.9);
+  });
 }
-function sceneGround(t, u, d) {
-  const p = u / d;
-  ctx.save(); ctx.translate(0, -p * 120); ctx.drawImage(SOIL, 0, 0, W, H + 200);
-  // 足跡(中央へ向かう)
-  ctx.fillStyle = 'rgba(6,4,2,0.75)';
-  for (let i = 0; i < 9; i++) {
-    const y = 1900 - i * 170, x = 540 + (i % 2 ? 44 : -44) + Math.sin(i) * 10;
-    ctx.beginPath(); ctx.ellipse(x, y, 26, 54, (i % 2 ? 0.08 : -0.08), 0, 7); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(x, y - 70, 22, 22, 0, 0, 7); ctx.fill();
-  }
-  ctx.restore();
-  ctx.fillStyle = 'rgba(10,14,18,0.12)'; ctx.fillRect(0, 0, W, H);
-  const lx = 540 + Math.sin(u * 0.9) * 220, ly = 1000 - Math.sin(u * 0.5) * 300;
-  flashlight(lx, ly, 640, 0.9);
+function sceneScratch(t, u, d) {
+  ctx.fillStyle = '#0b0c0d'; ctx.fillRect(0, 0, W, H);
+  const prog = easeOut(seg(u, 0.4, d - 0.6));
+  withShake(t, 0.7, () => {
+    ctx.save(); ctx.translate(540 - 260 * 2.1 * 0.4, 960 - 150 * 2.1 + 80); ctx.rotate(0.03); ctx.scale(2.1, 2.1);
+    drawSign(prog);
+    ctx.restore();
+    // 爪でこする(往復)
+    const fx = 540 + Math.sin(u * 15) * 150, fy = 960 + 120 + Math.cos(u * 15) * 14;
+    if (u < d - 0.35) drawFinger(fx + 60, fy, -0.35);
+    flashlight(560, 900, 800, 0.88);
+  });
 }
-function sevenSeg(str, x, y, s, on, off) {
-  // 7セグ表示
-  const SEG = { '0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc', '5': 'afgcd', '6': 'afgedc', '7': 'abc', '8': 'abcdefg', '9': 'abcfgd' };
-  const w = 0.62 * s, th = 0.12 * s;
-  let cx = x;
-  for (const ch of str) {
-    if (ch === ':') { ctx.fillStyle = on; ctx.fillRect(cx + 0.1 * s, y + 0.32 * s, th, th); ctx.fillRect(cx + 0.1 * s, y + 0.68 * s, th, th); cx += 0.38 * s; continue; }
-    const lit = SEG[ch] || '';
-    const P = { a: [th, 0, w - 2 * th, th], d: [th, s - th, w - 2 * th, th], g: [th, s / 2 - th / 2, w - 2 * th, th],
-      f: [0, th, th, s / 2 - th * 1.5], b: [w - th, th, th, s / 2 - th * 1.5], e: [0, s / 2 + th / 2, th, s / 2 - th * 1.5], c: [w - th, s / 2 + th / 2, th, s / 2 - th * 1.5] };
-    for (const k in P) { const [a, b, c2, d2] = P[k]; ctx.fillStyle = lit.includes(k) ? on : off; ctx.fillRect(cx + a, y + b, c2, d2); }
-    cx += w + 0.16 * s;
-  }
+function sceneReveal(t, u, d) {
+  ctx.fillStyle = '#0b0c0d'; ctx.fillRect(0, 0, W, H);
+  withShake(t, 0.9, () => {
+    // 看板の「4444」が奥に、手前にスマホ
+    ctx.save(); ctx.translate(540 - 260 * 2.1 * 0.4, 960 - 150 * 2.1 - 300); ctx.rotate(0.03); ctx.scale(2.1, 2.1);
+    drawSign(1); ctx.restore();
+    flashlight(560, 520, 700, 0.9);
+    const up = easeOut(seg(u, 0.0, 0.6));
+    ctx.save(); ctx.translate(0, lerp(1300, 280, up)); ctx.scale(0.8, 0.8); ctx.translate(135, 0);
+    drawPhoneFrame(() => profileScreen(t, seg(u, 0.9, 0.4)));
+    ctx.restore();
+  });
 }
-function sceneClock(t, u, d) {
-  ctx.fillStyle = '#030303'; ctx.fillRect(0, 0, W, H);
-  const flip = 1.3;
-  const str = u < flip ? '1:59' : '2:00';
-  const p = ease(u / d);
-  ctx.save(); ctx.translate(540, 900); ctx.scale(1 + p * 0.12, 1 + p * 0.12);
-  // 時計本体
-  ctx.fillStyle = '#0c0c0d'; ctx.fillRect(-440, -230, 880, 460);
-  ctx.fillStyle = '#000'; ctx.fillRect(-400, -190, 800, 380);
-  ctx.shadowColor = 'rgba(255,30,20,0.9)'; ctx.shadowBlur = 40;
-  const glow = u < flip ? 0.8 : (Math.floor(u * 2) % 2 ? 1 : 0.85);
-  sevenSeg(str, -340, -150, 300, `rgba(255,40,28,${glow})`, 'rgba(60,8,6,0.35)');
-  ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,40,28,0.8)'; ctx.font = `bold 40px ${MONO}`; ctx.fillText('AM', -390, -200);
-  ctx.restore();
-  // 机に映る赤い反射
-  const g = ctx.createRadialGradient(540, 1180, 10, 540, 1180, 600);
-  g.addColorStop(0, 'rgba(120,10,6,0.35)'); g.addColorStop(1, 'rgba(120,10,6,0)');
-  ctx.fillStyle = g; ctx.fillRect(0, 1100, W, 800);
+function lotBehindPhone(t, alpha) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.filter = 'blur(10px)'; drawLot(t); ctx.filter = 'none'; ctx.restore();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
 }
-function sceneFigure(t, u, d) {
-  const p = ease(u / d);
-  const a = seg(u, 0.6, 1.6);
-  drawLot(t, { zoom: 1.05 + p * 0.25, fy: 1150, figure: { x: 560, y: 1200, h: 230, alpha: a, sway: Math.sin(u * 0.8) } });
-}
-function sceneNeighbor(t, u, d) {
-  // 昼。色の抜けた住宅街の路地
-  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#6d7378'); g.addColorStop(1, '#3f4245');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#55595c'; ctx.fillRect(0, 1250, W, 670);         // 道
-  ctx.fillStyle = '#2c2f31'; ctx.fillRect(0, 500, 520, 760);        // 家
-  ctx.beginPath(); ctx.moveTo(-40, 500); ctx.lineTo(240, 320); ctx.lineTo(560, 500); ctx.fill();
-  ctx.fillStyle = '#3a3d40'; ctx.fillRect(0, 1060, 640, 200);       // ブロック塀
-  ctx.strokeStyle = '#2a2c2e'; ctx.lineWidth = 3;
-  for (let y = 1060; y < 1260; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(640, y); ctx.stroke(); }
-  ctx.fillStyle = '#1b1c1d'; ctx.fillRect(640, 980, 26, 280); ctx.fillRect(820, 980, 26, 280); // 門柱
-  // 門の向こうの近所の人(後ろ姿気味の老人)
-  ctx.save(); ctx.translate(740, 1270); ctx.scale(1.05, 1.05);
-  ctx.fillStyle = '#1a1b1c';
-  ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(-50, -230); ctx.quadraticCurveTo(0, -270, 50, -230); ctx.lineTo(60, 0); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(6, -278, 34, 40, 0.3, 0, 7); ctx.fill();
-  ctx.restore();
-  const p = ease(u / d);
-  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = `rgba(90,100,110,${0.6 + p * 0.2})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+function sceneCall(t, u, d) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  withShake(t, 0.8, () => { lotBehindPhone(t, 1); drawPhoneFrame(() => callScreen(t, 'dial')); });
 }
 function sceneAnswer(t, u, d) {
-  // 空き地の映像が、ときどき「家」に置き換わる
-  const g1 = hash(Math.floor(t * 8) + 3);
-  const showHouse = (u > 1.2 && g1 < 0.35) || (u > d - 1.0 && g1 < 0.7);
-  drawLot(t, { zoom: 1.12, fy: 1150, house: showHouse ? 1 : 0, sign: !showHouse, fence: 1 });
-  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  withShake(t, 0.8, () => { lotBehindPhone(t, 1); drawPhoneFrame(() => callScreen(t, 'talk', SC.answer.start)); });
 }
-function sceneApproach(t, u, d) {
-  const p = ease(u / d);
-  // 金網を越えて人影へにじり寄る(手持ち風の揺れ)
-  const shake = Math.sin(u * 2.3) * 6 + Math.sin(u * 5.1) * 3;
-  const reveal = seg(u, d * 0.48, 1.2);
-  drawLot(t, {
-    zoom: 1.4 + p * 1.6, fx: 560 + shake, fy: 1110, fence: 1 - seg(u, 0, 1.5), sign: false,
-    figure: { x: 560, y: 1200, h: 230, sway: Math.sin(u * 0.6) * 0.5, cloth: { color: '#5b1f24', a: reveal * 0.9 } }
+function scenePhone(t, u, d) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  // 画面に寄る
+  withShake(t, 1.2, () => {
+    ctx.save(); const s = lerp(1, 1.35, ease(u / d)); ctx.translate(540, 900); ctx.scale(s, s); ctx.translate(-540, -900);
+    lotBehindPhone(t, 1); drawPhoneFrame(() => callScreen(t, 'talk', SC.answer.start)); ctx.restore();
   });
-  flashlight(560 + shake * 3, 1000, 520 + p * 200, 0.88);
-  // 心音に合わせた脈動
-  const beat = Math.pow(Math.max(0, Math.sin(u * Math.PI * 2 * 1.25)), 18);
-  ctx.fillStyle = `rgba(80,0,0,${0.12 * beat + 0.06 * p})`; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = `rgba(120,0,0,${0.15 + 0.1 * Math.sin(u * 8)})`; ctx.fillRect(0, 0, W, H);
 }
-function drawMyHouse(t, u, zoom, fy, sil) {
-  ctx.save(); ctx.translate(540, fy); ctx.scale(zoom, zoom); ctx.translate(-540, -fy);
-  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#04060a'); g.addColorStop(1, '#0b0d10');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  // 家の外壁
-  ctx.fillStyle = '#111316'; ctx.fillRect(80, 520, 920, 1400);
-  ctx.beginPath(); ctx.moveTo(20, 540); ctx.lineTo(540, 230); ctx.lineTo(1060, 540); ctx.fill();
-  ctx.fillStyle = '#0a0b0d'; for (let y = 560; y < 1900; y += 38) ctx.fillRect(80, y, 920, 3); // サイディング
-  // 2階の窓(私の部屋)
-  const wx = 330, wy = 720, ww = 420, wh = 360;
-  ctx.fillStyle = '#1a1612'; ctx.fillRect(wx - 20, wy - 20, ww + 40, wh + 40);
-  const lit = 0.75 + 0.08 * noise1(t * 2);
-  const wg = ctx.createRadialGradient(wx + ww / 2, wy + wh / 2, 20, wx + ww / 2, wy + wh / 2, 300);
-  wg.addColorStop(0, `rgba(226,196,140,${lit})`); wg.addColorStop(1, `rgba(150,110,70,${lit * 0.8})`);
-  ctx.fillStyle = wg; ctx.fillRect(wx, wy, ww, wh);
-  // 人影(カーテン越し → カーテンの隙間から)
-  if (sil > 0) {
-    ctx.save(); ctx.beginPath(); ctx.rect(wx, wy, ww, wh); ctx.clip();
-    ctx.globalAlpha = sil;
-    ctx.fillStyle = '#050403';
-    const sx = wx + ww / 2 + 10, sy = wy + wh + 10;
-    ctx.beginPath(); ctx.moveTo(sx - 110, sy); ctx.quadraticCurveTo(sx - 100, sy - 170, sx - 40, sy - 190); ctx.lineTo(sx + 40, sy - 190); ctx.quadraticCurveTo(sx + 100, sy - 170, sx + 110, sy); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(sx, sy - 250, 52, 66, 0.1, 0, 7); ctx.fill();
-    // 手を窓に当てている
-    ctx.beginPath(); ctx.ellipse(sx - 130, sy - 200, 22, 30, -0.3, 0, 7); ctx.fill();
+function sceneSweep(t, u, d) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const pan = ease(seg(u, 0, 1.6)), zoomIn = ease(seg(u, 1.8, d - 1.8));
+  const glow = seg(u, 0.9, 0.5) * (0.85 + 0.15 * Math.sin(u * 6));
+  withShake(t, 1.3, () => {
+    ctx.save();
+    const fx = 560, fy = 1330, s = lerp(1.15, 3.2, zoomIn);
+    ctx.translate(lerp(900, 540, pan), lerp(1150, 1050, zoomIn)); ctx.scale(s, s); ctx.translate(-fx, -fy + lerp(-150, 0, zoomIn));
+    drawLot(t, { phoneGlow: glow });
+    ctx.restore();
+    // スマホのライトが左から中央へ
+    const lx = lerp(150, 540, pan), ly = lerp(1300, 1050, pan);
+    ctx.save(); ctx.globalCompositeOperation = 'screen'; const lg = ctx.createRadialGradient(lx, ly, 0, lx, ly, 560);
+    lg.addColorStop(0, 'rgba(120,125,120,0.55)'); lg.addColorStop(1, 'rgba(120,125,120,0)'); ctx.fillStyle = lg; ctx.fillRect(lx - 600, ly - 600, 1200, 1200); ctx.restore();
+    flashlight(lx, ly, 760, 0.8);
+  });
+  // ズームしきった後、地面のスマホの画面が読める
+  const rd = seg(u, d - 1.6, 0.6);
+  if (rd > 0) {
+    ctx.save(); ctx.globalAlpha = rd; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = `bold 60px ${GOTH}`;
+    ctx.fillText('通話中  ' + fmtTimer(t - SC.answer.start), 540, 700);
+    ctx.font = `bold 48px ${MONO}`; ctx.fillText('090-****-4444', 540, 780);
     ctx.restore();
   }
-  // カーテン
-  ctx.fillStyle = 'rgba(120,90,60,0.55)';
-  ctx.fillRect(wx, wy, 70, wh); ctx.fillRect(wx + ww - 70, wy, 70, wh);
-  ctx.fillStyle = '#1a1612'; ctx.fillRect(wx + ww / 2 - 6, wy, 12, wh); ctx.fillRect(wx, wy + wh / 2 - 6, ww, 12);
-  // 1階の玄関灯
-  ctx.fillStyle = '#060708'; ctx.fillRect(420, 1440, 240, 480);
-  ctx.restore();
 }
-function sceneWindow(t, u, d) {
-  // 振り返る(素早いパン)→ 家 → 窓に寄る
-  const turn = seg(u, 0, 0.7);
-  if (turn < 1) {
-    drawLot(t, { zoom: 1.6, fx: 560, fy: 1110, fence: 0, sign: false });
-    ctx.fillStyle = `rgba(0,0,0,${turn})`; ctx.fillRect(0, 0, W, H);
-    // モーションブラー風の横線
-    ctx.fillStyle = 'rgba(255,255,255,0.04)'; for (let y = 0; y < H; y += 9) ctx.fillRect(0, y, W, 3);
-    return;
-  }
-  const p = ease(seg(u, 0.7, d - 0.7));
-  drawMyHouse(t, u, 1 + p * 0.9, 900, seg(u, 1.6, 1.6));
-  ctx.fillStyle = `rgba(0,0,0,${1 - seg(u, 0.7, 0.4)})`; ctx.fillRect(0, 0, W, H);
-}
-function sceneScare(t, u, d) {
+function sceneBehind(t, u, d) {
+  // 自分のスマホ: 通話が切れ、暗転した画面に「後ろの誰か」が映り込む
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  if (u > 1.0) return;     // 最後は暗転
-  const shake = (hash(Math.floor(t * 30)) - 0.5) * 40;
-  ctx.save(); ctx.translate(540 + shake, 900 + shake * 0.5); const s = 1.25 + u * 0.4; ctx.scale(s, s);
-  // 青白い顔
-  const fg = ctx.createRadialGradient(0, -40, 40, 0, 0, 420);
-  fg.addColorStop(0, '#b9bcb6'); fg.addColorStop(0.6, '#6f736f'); fg.addColorStop(1, '#151615');
-  ctx.fillStyle = fg; ctx.beginPath(); ctx.ellipse(0, 0, 300, 400, 0, 0, 7); ctx.fill();
-  // 髪
-  ctx.fillStyle = '#050505';
-  ctx.beginPath(); ctx.moveTo(-330, 420); ctx.quadraticCurveTo(-360, -380, 0, -420); ctx.quadraticCurveTo(360, -380, 330, 420);
-  ctx.lineTo(220, 420); ctx.quadraticCurveTo(260, -120, 120, -260); ctx.quadraticCurveTo(0, -200, -120, -260); ctx.quadraticCurveTo(-260, -120, -220, 420); ctx.fill();
-  // 目(黒い空洞)
-  ctx.fillStyle = '#000';
-  ctx.beginPath(); ctx.ellipse(-110, -40, 62, 46, 0.1, 0, 7); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(110, -40, 62, 46, -0.1, 0, 7); ctx.fill();
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.beginPath(); ctx.ellipse(-110, 10, 70, 30, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(110, 10, 70, 30, 0, 0, 7); ctx.fill();
-  // 口
-  ctx.fillStyle = '#060000'; ctx.beginPath(); ctx.ellipse(0, 210, 70, 110 + u * 60, 0, 0, 7); ctx.fill();
-  ctx.restore();
-  // 初撃の白フラッシュ
-  if (u < 0.1) { ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillRect(0, 0, W, H); }
-  ctx.fillStyle = 'rgba(140,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+  const black = seg(u, 0.6, 0.5);
+  const who = seg(u, 1.6, 1.8);
+  withShake(t, 0.6, () => {
+    drawPhoneFrame(() => {
+      if (black < 1) { callScreen(t, 'end'); }
+      ctx.fillStyle = `rgba(4,5,6,${black})`; ctx.fillRect(PH.x, PH.y, PH.w, PH.h);
+      if (black > 0) {
+        // 反射: 手前に自分、肩越しにもう一人(同じ顔の輪郭)
+        ctx.save(); ctx.globalAlpha = black * 0.16; ctx.filter = 'blur(8px)';
+        ctx.fillStyle = '#7d858c';
+        ctx.beginPath(); ctx.ellipse(540, 980, 150, 190, 0, 0, 7); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(250, 1820); ctx.quadraticCurveTo(300, 1250, 540, 1210); ctx.quadraticCurveTo(780, 1250, 830, 1820); ctx.fill();
+        ctx.fillStyle = '#0b0c0e'; ctx.beginPath(); ctx.ellipse(540, 900, 160, 120, 0, Math.PI, 0); ctx.fill();   // 髪
+        ctx.restore();
+        if (who > 0) {
+          ctx.save(); ctx.globalAlpha = who * 0.24; ctx.filter = 'blur(6px)';
+          ctx.fillStyle = '#9aa2a9';
+          ctx.beginPath(); ctx.ellipse(770, 700, 120, 152, 0.15, 0, 7); ctx.fill();
+          ctx.fillStyle = '#0b0c0e'; ctx.beginPath(); ctx.ellipse(770, 640, 128, 92, 0.15, Math.PI, 0); ctx.fill();
+          // 目だけがわずかに光る
+          ctx.filter = 'blur(1px)'; ctx.globalAlpha = who * 0.9; ctx.fillStyle = `rgba(230,235,240,${who})`;
+          ctx.fillRect(722, 712, 24, 6); ctx.fillRect(800, 718, 24, 6);
+          ctx.restore();
+        }
+      }
+    }, { glass: 2 });
+  });
 }
 function sceneEnd(t, u, d) {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  // かすかに空き地
-  ctx.save(); ctx.globalAlpha = 0.18 * seg(u, 0.5, 2);
-  drawLot(t, { zoom: 1.05, fence: 1, figure: { x: 560, y: 1200, h: 230, alpha: 1 } });
-  ctx.restore();
-  const cue = TL.cues[TL.cues.length - 1];
-  const a = seg(t, cue.a - 0.2, 0.8);
-  ctx.save(); ctx.textAlign = 'center'; ctx.globalAlpha = a; ctx.fillStyle = '#e8e2d6';
-  ctx.font = `bold 96px ${MIN}`; ctx.fillText('今夜2時。', W / 2, 860);
-  ctx.font = `bold 76px ${MIN}`; ctx.fillText('窓の外は、', W / 2, 1010); ctx.fillText('見ないでください。', W / 2, 1110);
-  ctx.globalAlpha = seg(u, 3.5, 1);
-  ctx.fillStyle = '#8b867c'; ctx.font = `30px ${GOTH}`;
-  ctx.fillText('※この物語はフィクションです', W / 2, 1640);
-  ctx.fillText('ナレーション VOICEVOX:青山龍星', W / 2, 1690);
-  ctx.restore();
-}
-const SCENE_FN = { title: sceneTitle, lot: sceneLot, sign: sceneSign, ground: sceneGround, clock: sceneClock, figure: sceneFigure,
-  neighbor: sceneNeighbor, answer: sceneAnswer, approach: sceneApproach, window: sceneWindow, scare: sceneScare, end: sceneEnd };
-
-// ---------- 字幕 ----------
-function wrapLines(str, maxW) {
-  const out = [];
-  for (const para of str.split('\n')) {
-    let line = '';
-    for (const ch of para) { if (ctx.measureText(line + ch).width > maxW && line && !'、。」』?!…)'.includes(ch)) { out.push(line); line = ch; } else line += ch; }
-    out.push(line);
+  // 視聴者のスマホに通知が来た体の着信バナー
+  const a = seg(u, 0.5, 0.35);
+  if (a > 0) {
+    const y = lerp(-220, 90, easeOut(a)) + (u > 0.85 ? Math.sin(u * 60) * 4 : 0);
+    ctx.save(); ctx.fillStyle = 'rgba(40,42,48,0.96)'; rrect(60, y, 960, 190, 44); ctx.fill();
+    ctx.fillStyle = '#2fbf5a'; ctx.beginPath(); ctx.arc(150, y + 95, 50, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.save(); ctx.translate(150, y + 95); ctx.rotate(-0.8); rrect(-26, -10, 52, 20, 10); ctx.fill(); ctx.restore();
+    ctx.textAlign = 'left'; ctx.font = `bold 44px ${GOTH}`; ctx.fillText('着信', 230, y + 80);
+    ctx.font = `bold 52px ${MONO}`; ctx.fillText('090-****-4444', 230, y + 148);
+    ctx.restore();
   }
-  return out;
+  ctx.save(); ctx.textAlign = 'center'; ctx.globalAlpha = seg(u, 1.6, 0.8);
+  ctx.fillStyle = '#7d786f'; ctx.font = `30px ${GOTH}`;
+  ctx.fillText('※この物語はフィクションです', W / 2, 1720);
+  ctx.fillText('ナレーション VOICEVOX:青山龍星', W / 2, 1770);
+  ctx.restore();
 }
-function drawSubtitle(t, sid) {
-  if (sid === 'end') return;
-  const c = TL.cues.find(c => t >= c.a - 0.15 && t <= c.b);
+const SCENE_FN = { sign: sceneSign, scratch: sceneScratch, reveal: sceneReveal, call: sceneCall, answer: sceneAnswer,
+  phone: scenePhone, sweep: sceneSweep, behind: sceneBehind, end: sceneEnd };
+
+// ---------- 字幕(大きめ・縁取り。電話の声は赤) ----------
+function drawSubtitle(t) {
+  const c = TL.cues.find(c => t >= c.a - 0.1 && t <= c.b);
   if (!c) return;
-  const a = Math.min(seg(t, c.a - 0.15, 0.2), 1 - seg(t, c.b - 0.2, 0.2));
-  ctx.save(); ctx.font = `bold 62px ${MIN}`; ctx.textAlign = 'center';
-  const lines = wrapLines(c.text, 980);
-  const lh = 88, y0 = 1500 - (lines.length - 1) * lh / 2;
-  ctx.globalAlpha = a;
+  const a = Math.min(seg(t, c.a - 0.1, 0.12), 1 - seg(t, c.b - 0.15, 0.15));
+  const pop = 1 + 0.08 * (1 - easeOut(seg(t, c.a - 0.1, 0.18)));
+  const red = c.kind !== 'me';
+  const lines = c.text.split('\n');
+  const size = red ? 84 : 92, lh = size * 1.32;
+  const base = c === CUE.reveal ? 1700 : (red ? 1420 : 1460);
+  const y0 = base - (lines.length - 1) * lh / 2;
+  ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.translate(W / 2, y0); ctx.scale(pop, pop);
+  ctx.font = `bold ${size}px ${GOTH}`;
   lines.forEach((ln, i) => {
-    const y = y0 + i * lh;
-    ctx.lineJoin = 'round'; ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,0.92)'; ctx.strokeText(ln, W / 2, y);
-    ctx.fillStyle = '#f1ece2'; ctx.fillText(ln, W / 2, y);
+    const y = i * lh;
+    ctx.lineJoin = 'round'; ctx.lineWidth = 18; ctx.strokeStyle = '#000'; ctx.strokeText(ln, 0, y);
+    ctx.fillStyle = red ? '#ff3a30' : '#ffffff'; ctx.fillText(ln, 0, y);
   });
   ctx.restore();
 }
+// 画面上の注釈(下4桁)
+function drawCallouts(t, sid, u) {
+  if (sid === 'scratch' && u > SC.scratch.end - SC.scratch.start - 1.2) {
+    const a = seg(u, SC.scratch.end - SC.scratch.start - 1.2, 0.2);
+    ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
+    ctx.fillStyle = '#e1261c'; rrect(300, 420, 480, 120, 20); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `bold 70px ${GOTH}`; ctx.fillText('下4桁「4444」', 540, 505);
+    ctx.restore();
+  }
+}
 
-// ---------- 仕上げ(色調・グレイン・走査線・グリッチ・録画風オーバーレイ) ----------
+// ---------- 仕上げ ----------
 const BUF = mk(W, H), bctx = BUF.getContext('2d');
 function glitch(t, amount) {
   if (amount <= 0) return;
@@ -532,49 +444,26 @@ function glitch(t, amount) {
     const y = r() * H, h = 8 + r() * 90 * amount, dx = (r() - 0.5) * 120 * amount;
     ctx.drawImage(BUF, 0, y, W, h, dx, y, W, h);
   }
-  // 色ずれ
-  ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.35 * amount;
-  ctx.drawImage(BUF, 10 * amount, 0); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.3 * amount; ctx.drawImage(BUF, 10 * amount, 0); ctx.restore();
 }
 function glitchAmount(t, sid, u, d) {
   let g = 0;
-  // 各シーン頭の短いノイズ
-  if (u < 0.12 && sid !== 'title') g = Math.max(g, 0.5);
-  if (sid === 'clock' && u > 1.3 && u < 1.55) g = 1;
-  if (sid === 'figure' && u > 0.6 && u < 0.9) g = 0.8;
-  if (sid === 'answer') { const h = hash(Math.floor(t * 8) + 3); if (u > 1.2 && h < 0.35) g = 0.7; if (u > d - 1) g = Math.max(g, 0.6); }
-  if (sid === 'approach' && u > d * 0.48 && u < d * 0.48 + 0.3) g = 0.9;
-  if (sid === 'window' && u > d - 0.5) g = seg(u, d - 0.5, 0.5);
-  if (sid === 'scare' && u < 1.0) g = 0.8;
-  // まれな自然発生ノイズ
-  if (hash(Math.floor(t * 6) + 101) < 0.04) g = Math.max(g, 0.35);
+  if (u < 0.1 && sid !== 'sign') g = 0.45;
+  if (sid === 'reveal' && u > 0.9 && u < 1.15) g = 0.8;
+  if (sid === 'phone' && u < 0.35) g = 0.7;
+  if (sid === 'sweep' && u > d - 1.6 && u < d - 1.35) g = 0.7;
+  if (sid === 'behind' && u > 1.6 && u < 1.8) g = 0.9;
+  if (sid === 'behind' && u > d - 0.3) g = 1;
   return g;
 }
 function post(t, sid, u, d) {
   glitch(t, glitchAmount(t, sid, u, d));
-  // 青緑の色かぶり
-  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = sid === 'clock' || sid === 'scare' ? '#d9c9c6' : '#b9c8c8'; ctx.fillRect(0, 0, W, H); ctx.restore();
-  // グレイン
-  ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.22;
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = '#c0cccb'; ctx.fillRect(0, 0, W, H); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.2;
   ctx.drawImage(GRAIN[Math.floor(t * FPS) % GRAIN.length], 0, 0, W, H); ctx.restore();
-  // 走査線
-  ctx.fillStyle = 'rgba(0,0,0,0.13)'; for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 2);
-  // ビネット
-  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.72);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.8)');
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.75)');
   ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
-  // 録画風オーバーレイ(夜のシーンのみ)
-  if (!['title', 'neighbor', 'end', 'scare', 'clock'].includes(sid)) {
-    ctx.save(); ctx.font = `bold 40px ${MONO}`; ctx.fillStyle = 'rgba(235,235,225,0.75)';
-    if (Math.floor(t * 1.5) % 2) { ctx.fillStyle = 'rgba(220,30,30,0.9)'; ctx.beginPath(); ctx.arc(90, 170, 16, 0, 7); ctx.fill(); }
-    ctx.fillStyle = 'rgba(235,235,225,0.75)'; ctx.fillText('REC', 120, 184);
-    const base = sid === 'lot' || sid === 'sign' || sid === 'ground' ? 23 * 3600 + 41 * 60 : 2 * 3600 + 0 * 60 + 4;
-    const s = Math.floor(base + (t - SC[sid].start) + (sid === 'approach' ? 3600 * 24 + 60 : 0)) % 86400;
-    const hh = String(Math.floor(s / 3600)).padStart(2, '0'), mm = String(Math.floor(s / 60) % 60).padStart(2, '0'), ss = String(s % 60).padStart(2, '0');
-    ctx.textAlign = 'right'; ctx.fillText(`${hh}:${mm}:${ss}`, W - 80, 184);
-    ctx.font = `30px ${MONO}`; ctx.fillText('NIGHT', W - 80, 228);
-    ctx.restore();
-  }
 }
 
 function render(t) {
@@ -585,13 +474,11 @@ function render(t) {
   SCENE_FN[sc.id](t, u, d);
   ctx.restore();
   post(t, sc.id, u, d);
-  drawSubtitle(t, sc.id);
-  // 冒頭のフェードイン
-  if (t < 0.4) { ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.4})`; ctx.fillRect(0, 0, W, H); }
+  drawCallouts(t, sc.id, u);
+  drawSubtitle(t);
 }
 window.render = render;
 
-// ブラウザで開いたときのプレビュー再生
 if (!navigator.webdriver) {
   const t0 = performance.now();
   (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
