@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ペットカメラ</title>
+<style>
+  html,body{margin:0;background:#000;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// ペットカメラ (9:16 ホラーショート / モキュメンタリー)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// シーンの尺と字幕は narrate.py が書き出す output/timeline.js から読む。
+//
+// 部屋の配置: カメラは部屋の高い角。カメラの真下は死角。
+// 犬はカメラの真下(死角)に向かって座り、正面奥のテレビの黒い画面には、その死角が映り込む。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const main = cv.getContext('2d');
+const GOTH = '"IPAPGothic","IPAGothic",sans-serif';
+const MONO = '"DejaVu Sans Mono",monospace';
+const TL = window.TIMELINE;
+const FPS = 30, DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const SC = Object.fromEntries(TL.scenes.map(s => [s.id, s]));
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => { t = clamp(t); return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+const easeOut = t => { t = clamp(t); return 1 - Math.pow(1 - t, 3); };
+const seg = (t, s, d) => clamp((t - s) / d);
+function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const noise1 = (x) => { const i = Math.floor(x), f = x - i; const u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u); };
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+// 描画先(X)を切り替えながら使う
+let X = main;
+function rr(x, y, w, h, r) { X.beginPath(); X.moveTo(x + r, y); X.arcTo(x + w, y, x + w, y + h, r); X.arcTo(x + w, y + h, x, y + h, r); X.arcTo(x, y + h, x, y, r); X.arcTo(x, y, x + w, y, r); X.closePath(); }
+function ell(x, y, rx, ry, rot = 0) { X.beginPath(); X.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); }
+
+// ---------- 事前生成 ----------
+const GRAIN = [];
+for (let k = 0; k < 6; k++) {
+  const c = mk(360, 640), g = c.getContext('2d'); const id = g.createImageData(360, 640); const r = rng(500 + k);
+  for (let i = 0; i < id.data.length; i += 4) { const v = r() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+  g.putImageData(id, 0, 0); GRAIN.push(c);
+}
+// 床板
+const FLOOR = (() => {
+  const c = mk(1080, 1200), g = c.getContext('2d'); const r = rng(3);
+  g.fillStyle = '#9a7653'; g.fillRect(0, 0, 1080, 1200);
+  for (let i = 0; i < 16; i++) {
+    const v = r() * 22 - 11; g.fillStyle = `rgb(${154 + v},${118 + v},${83 + v})`;
+    g.beginPath(); const x0 = -900 + i * 190, x1 = -60 + i * 75;
+    g.moveTo(x1, 0); g.lineTo(x1 + 75, 0); g.lineTo(x0 + 190, 1200); g.lineTo(x0, 1200); g.fill();
+    g.strokeStyle = 'rgba(60,40,25,0.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(x1, 0); g.lineTo(x0, 1200); g.stroke();
+  }
+  for (let i = 0; i < 300; i++) { g.strokeStyle = `rgba(70,45,25,${r() * 0.15})`; g.beginPath(); const x = r() * 1080, y = r() * 1200; g.moveTo(x, y); g.lineTo(x + (r() - .5) * 30, y + 40 + r() * 80); g.stroke(); }
+  return c;
+})();
+
+// ---------- 部屋 ----------
+const TV = { x: 300, y: 380, w: 480, h: 290 };   // テレビの画面(部屋の座標)
+function drawRoom(t, o) {
+  const night = o.night;
+  // 奥の壁
+  X.fillStyle = night ? '#3b3b3b' : '#d8cfbd'; X.fillRect(0, 0, W, 760);
+  // 窓(左奥)
+  X.fillStyle = night ? '#141414' : '#eef3f6'; X.fillRect(40, 120, 210, 380);
+  X.fillStyle = night ? '#4a4a4a' : '#b8a48a'; X.fillRect(20, 100, 70, 440); X.fillRect(210, 100, 60, 440);
+  // 壁掛け時計
+  X.fillStyle = night ? '#555' : '#f4f1ea'; ell(900, 200, 56, 56); X.fill();
+  X.strokeStyle = '#222'; X.lineWidth = 6; X.stroke();
+  X.lineWidth = 5; X.beginPath(); X.moveTo(900, 200); X.lineTo(900 + 30 * Math.cos(o.clockA || -1), 200 + 30 * Math.sin(o.clockA || -1)); X.moveTo(900, 200); X.lineTo(900, 160); X.stroke();
+  // 床
+  X.drawImage(FLOOR, 0, 740, W, 1200);
+  X.fillStyle = night ? '#2a2a2a' : '#8b7a63'; X.fillRect(0, 740, W, 22);   // 幅木
+  // ラグ
+  X.fillStyle = night ? 'rgba(120,120,120,0.5)' : 'rgba(176,150,120,0.75)';
+  X.beginPath(); X.moveTo(230, 1050); X.lineTo(850, 1050); X.lineTo(1000, 1700); X.lineTo(80, 1700); X.fill();
+  // テレビ台とテレビ
+  X.fillStyle = night ? '#1d1d1d' : '#5c4433'; X.fillRect(250, 690, 580, 120);
+  X.fillStyle = night ? '#111' : '#3e2e22'; X.fillRect(250, 800, 580, 14);
+  X.fillStyle = '#0c0c0d'; X.fillRect(TV.x - 14, TV.y - 14, TV.w + 28, TV.h + 28); X.fillRect(530, 680, 20, 14);
+  // テレビの黒い画面と、そこへの映り込み
+  X.save(); X.beginPath(); X.rect(TV.x, TV.y, TV.w, TV.h); X.clip();
+  X.fillStyle = '#060708'; X.fillRect(TV.x, TV.y, TV.w, TV.h);
+  drawReflection(t, TV.x, TV.y, TV.w, TV.h, o);
+  const gl = X.createLinearGradient(TV.x, TV.y, TV.x + TV.w, TV.y + TV.h);
+  gl.addColorStop(0, 'rgba(255,255,255,0.07)'); gl.addColorStop(0.5, 'rgba(255,255,255,0)'); X.fillStyle = gl; X.fillRect(TV.x, TV.y, TV.w, TV.h);
+  X.restore();
+  // ソファ(左手前)
+  X.fillStyle = night ? '#3a3a3a' : '#59677a';
+  rr(-60, 860, 330, 520, 40); X.fill();
+  X.fillStyle = night ? '#454545' : '#6a7a8f'; rr(-40, 1000, 300, 200, 30); X.fill();
+  // 観葉植物(右)
+  X.fillStyle = night ? '#2c2c2c' : '#7a5a44'; X.fillRect(900, 880, 110, 140);
+  X.fillStyle = night ? '#3c3c3c' : '#3f6b3a';
+  for (let i = 0; i < 7; i++) { ell(955 + Math.cos(i) * 60, 820 - i * 22 + Math.sin(i * 2) * 20, 60, 24, i * 0.7); X.fill(); }
+  // 犬
+  if (o.dog !== false) drawDog(t, 540, 1500, o.dog || {}, night);
+}
+// 柴犬(正面向き・カメラの真下を見上げている)
+function drawDog(t, x, y, d, night) {
+  const tan = night ? '#9d9d9d' : '#c9813f', white = night ? '#e6e6e6' : '#f3ead9', dark = '#1a1410';
+  X.save(); X.translate(x, y); const s = d.scale || 1; X.scale(s, s);
+  // 影
+  X.fillStyle = 'rgba(0,0,0,0.25)'; ell(0, 150, 190, 40); X.fill();
+  if (d.lie) {
+    // 伏せ
+    X.fillStyle = tan; ell(0, 90, 200, 80); X.fill();
+    X.fillStyle = tan; ell(0, 40, 110, 95); X.fill();
+    X.fillStyle = white; ell(0, 75, 60, 50); X.fill();
+    X.fillStyle = white; ell(-70, 135, 46, 26); X.fill(); ell(70, 135, 46, 26); X.fill();
+    drawHead(t, 0, 40 + 0, d, tan, white, dark, 0.9);
+    X.restore(); return;
+  }
+  // 尻尾(背中の上で巻いている・振れる)
+  const wag = (d.wag || 0) * Math.sin(t * 2 * Math.PI * (d.wagHz || 4));
+  X.save(); X.translate(70, -60); X.rotate(wag * 0.45);
+  X.strokeStyle = tan; X.lineWidth = 42; X.lineCap = 'round'; X.beginPath(); X.arc(30, -40, 45, Math.PI * 0.9, Math.PI * 2.3); X.stroke();
+  X.strokeStyle = white; X.lineWidth = 16; X.beginPath(); X.arc(30, -40, 45, Math.PI * 1.7, Math.PI * 2.2); X.stroke();
+  X.restore();
+  // 胴体(お座り)
+  X.fillStyle = tan; ell(0, 40, 140, 150); X.fill();
+  X.fillStyle = white; ell(0, 30, 80, 120); X.fill();
+  // 後ろ足
+  X.fillStyle = tan; ell(-110, 120, 60, 45); X.fill(); ell(110, 120, 60, 45); X.fill();
+  // 前足(お手)
+  const paw = d.paw ? Math.max(0, Math.sin(t * Math.PI * 1.6)) : 0;
+  X.fillStyle = white;
+  rr(-62, 40, 40, 110, 18); X.fill();
+  X.save(); X.translate(42, 60 - paw * 70); X.rotate(-paw * 0.5); rr(-20, -20, 40, 110 - paw * 30, 18); X.fill(); X.restore();
+  drawHead(t, 0, -120, d, tan, white, dark, 1);
+  X.restore();
+}
+function drawHead(t, x, y, d, tan, white, dark, s) {
+  X.save(); X.translate(x, y);
+  // 撫でられているような首の傾き
+  const tilt = (d.pet ? Math.sin(t * 2.2) * 0.12 : 0) + (d.tilt || 0);
+  X.rotate(tilt); X.scale(s, s);
+  // 耳
+  X.fillStyle = tan;
+  X.beginPath(); X.moveTo(-95, -40); X.lineTo(-70, -150); X.lineTo(-20, -75); X.fill();
+  X.beginPath(); X.moveTo(95, -40); X.lineTo(70, -150); X.lineTo(20, -75); X.fill();
+  X.fillStyle = 'rgba(80,40,20,0.5)';
+  X.beginPath(); X.moveTo(-80, -55); X.lineTo(-68, -125); X.lineTo(-38, -75); X.fill();
+  X.beginPath(); X.moveTo(80, -55); X.lineTo(68, -125); X.lineTo(38, -75); X.fill();
+  // 顔
+  X.fillStyle = tan; ell(0, 0, 110, 95); X.fill();
+  X.fillStyle = white; ell(-50, 35, 52, 45); X.fill(); ell(50, 35, 52, 45); X.fill(); ell(0, 45, 48, 45); X.fill();
+  // 目(上=カメラの真下の方を見上げる)
+  const closed = d.pet && Math.sin(t * 2.2) > 0.2;
+  if (d.glow) { X.fillStyle = '#fff'; X.shadowColor = '#fff'; X.shadowBlur = 14; }
+  else X.fillStyle = dark;
+  if (closed) { X.strokeStyle = dark; X.lineWidth = 5; X.beginPath(); X.moveTo(-52, -18); X.quadraticCurveTo(-40, -10, -28, -18); X.moveTo(28, -18); X.quadraticCurveTo(40, -10, 52, -18); X.stroke(); }
+  else { ell(-40, -18, 11, 13); X.fill(); ell(40, -18, 11, 13); X.fill(); }
+  X.shadowBlur = 0;
+  // 鼻と口
+  X.fillStyle = dark; ell(0, 30, 18, 12); X.fill();
+  X.strokeStyle = dark; X.lineWidth = 4; X.beginPath(); X.moveTo(0, 40); X.lineTo(0, 55); X.moveTo(-20, 62); X.quadraticCurveTo(0, 70, 20, 62); X.stroke();
+  if (d.happy) { X.fillStyle = '#d0606a'; ell(0, 72, 14, 12); X.fill(); }
+  X.restore();
+}
+// テレビの画面に映る「カメラの真下(死角)」。反射なので左右反転・暗く・ぼやける。
+// 手前に犬の背中、その奥でしゃがんで犬を撫でている男。
+function drawReflection(t, x, y, w, h, o) {
+  const a = o.refl == null ? 0.11 : o.refl;     // 映り込みの濃さ
+  const man = o.man == null ? 0.7 : o.man;
+  X.save(); X.translate(x, y); X.scale(w / 480, h / 290);
+  X.globalAlpha = a;
+  // 反射した部屋(窓の光とカメラ側の壁)
+  X.fillStyle = '#8c8c8c'; X.fillRect(0, 0, 480, 150);
+  X.fillStyle = '#c9c9c9'; X.fillRect(330, 20, 90, 110);                 // 窓の反射
+  X.fillStyle = '#5c5c5c'; X.fillRect(0, 150, 480, 140);                 // 床
+  X.fillStyle = '#444'; X.fillRect(150, 60, 14, 90);                     // 棚の脚(カメラの台)
+  X.fillStyle = '#6a6a6a'; X.fillRect(120, 40, 120, 20);
+  if (man > 0) {
+    X.save(); X.globalAlpha = a * man;
+    // しゃがんだ男(こちら=テレビ側を向いている)
+    X.fillStyle = '#1e1e1e';
+    X.beginPath(); X.moveTo(160, 285); X.quadraticCurveTo(150, 170, 200, 140); X.lineTo(260, 140); X.quadraticCurveTo(312, 170, 300, 285); X.fill();
+    // 犬へ伸ばした腕
+    X.beginPath(); X.moveTo(210, 160); X.quadraticCurveTo(200 + Math.sin(t * 2.2) * 6, 210, 230 + Math.sin(t * 2.2) * 8, 228); X.lineTo(250 + Math.sin(t * 2.2) * 8, 222); X.quadraticCurveTo(225, 200, 232, 160); X.fill();
+    // 顔(青白く、目元は影で落ちくぼんでいる)
+    X.filter = 'blur(1.2px)';
+    X.fillStyle = '#1a1a1a'; ell(230, 100, 33, 36); X.fill();                       // 髪(ぼさぼさ)
+    for (let i = 0; i < 9; i++) { ell(200 + i * 7.5, 120 + (i % 3) * 4, 5, 18); X.fill(); }
+    const fg = X.createRadialGradient(232, 116, 3, 230, 118, 30); fg.addColorStop(0, '#bdbdb8'); fg.addColorStop(0.7, '#7c7c78'); fg.addColorStop(1, '#3a3a38');
+    X.fillStyle = fg; ell(230, 118, 23, 29); X.fill();
+    X.fillStyle = 'rgba(15,15,15,0.85)'; ell(220, 114, 6, 5); X.fill(); ell(241, 114, 6, 5); X.fill();   // 目の影
+    X.fillStyle = 'rgba(20,20,20,0.5)'; X.fillRect(224, 134, 13, 2.5);              // 口
+    X.fillStyle = '#1a1a1a'; for (let i = 0; i < 6; i++) { ell(208 + i * 9, 103, 6, 14); X.fill(); }   // 前髪が目にかかる
+    X.filter = 'none';
+    if (o.look) {  // ラスト: 男が顔を上げてカメラ(=こちら)を見る
+      X.fillStyle = `rgba(255,255,255,${o.look})`; ell(220, 110, 2, 2); X.fill(); ell(240, 110, 2, 2); X.fill();
+    }
+    X.restore();
+  }
+  // 手前に犬の背中
+  X.fillStyle = '#9a6a3c'; ell(240, 260, 60, 48); X.fill(); ell(240, 210, 38, 34); X.fill();
+  X.beginPath(); X.moveTo(214, 196); X.lineTo(220, 168); X.lineTo(234, 190); X.fill(); X.beginPath(); X.moveTo(266, 196); X.lineTo(260, 168); X.lineTo(246, 190); X.fill();
+  X.restore();
+}
+
+// ---------- カメラ映像(低解像度・魚眼・色) ----------
+const LO = mk(432, 768), lctx = LO.getContext('2d');
+const PIX = mk(432, 768), pctx = PIX.getContext('2d');
+const FEED = mk(W, H), fctx = FEED.getContext('2d');
+function renderFeed(t, o, cam = { zoom: 1, cx: 540, cy: 960, pix: 1 }) {
+  // 1) 低解像度に描く(カメラの安っぽい画質)
+  X = lctx; lctx.save(); lctx.setTransform(1, 0, 0, 1, 0, 0); lctx.fillStyle = '#000'; lctx.fillRect(0, 0, 432, 768);
+  lctx.scale(0.4, 0.4);
+  lctx.translate(W / 2, H / 2); lctx.scale(cam.zoom, cam.zoom); lctx.translate(-cam.cx, -cam.cy);
+  drawRoom(t, o);
+  lctx.restore();
+  // 2) デジタルズームの粗さ
+  let src = LO;
+  if (cam.pix > 1) {
+    const pw = Math.max(8, Math.round(432 / cam.pix)), ph = Math.max(8, Math.round(768 / cam.pix));
+    pctx.clearRect(0, 0, 432, 768); pctx.imageSmoothingEnabled = true; pctx.drawImage(LO, 0, 0, pw, ph);
+    src = mk(432, 768); const sx = src.getContext('2d'); sx.imageSmoothingEnabled = false; sx.drawImage(PIX, 0, 0, pw, ph, 0, 0, 432, 768);
+  }
+  // 3) 魚眼っぽい歪み(行ごとに横幅を変える)+ 色
+  X = fctx; fctx.save(); fctx.setTransform(1, 0, 0, 1, 0, 0); fctx.clearRect(0, 0, W, H);
+  fctx.filter = o.night ? 'grayscale(1) brightness(1.25) contrast(1.25)' : (o.filter || 'saturate(0.85) contrast(0.95) brightness(1.02)');
+  fctx.imageSmoothingEnabled = true;
+  const K = cam.zoom > 1.5 ? 0.0 : 0.07, rows = 96;
+  for (let i = 0; i < rows; i++) {
+    const sy = i * 768 / rows, dy = i * H / rows, ny = (i + 0.5) / rows * 2 - 1;
+    const m = K * 432 * (1 - ny * ny);
+    fctx.drawImage(src, m, sy, 432 - 2 * m, 768 / rows + 0.5, 0, dy, W, H / rows + 1);
+  }
+  fctx.restore();
+  return FEED;
+}
+// カメラ映像の上に重なる表示(タイムスタンプ、録画/ライブ表示)
+function camOSD(t, label, stamp, { live = false, ir = false, paused = false, seek = null } = {}) {
+  X = main;
+  X.save();
+  X.font = `bold 40px ${MONO}`; X.fillStyle = 'rgba(255,255,255,0.9)'; X.strokeStyle = 'rgba(0,0,0,0.7)'; X.lineWidth = 6;
+  X.textAlign = 'left';
+  X.strokeText(stamp, 50, 1860); X.fillText(stamp, 50, 1860);
+  X.font = `bold 36px ${GOTH}`; X.strokeText(label, 50, 120); X.fillText(label, 50, 120);
+  if (live) {
+    X.fillStyle = '#e53935'; rr(W - 210, 78, 160, 56, 12); X.fill();
+    X.fillStyle = '#fff'; X.font = `bold 36px ${MONO}`; X.fillText('LIVE', W - 180, 119);
+  } else {
+    X.fillStyle = 'rgba(0,0,0,0.55)'; rr(W - 250, 78, 200, 56, 12); X.fill();
+    X.fillStyle = '#fff'; X.font = `bold 32px ${GOTH}`; X.fillText('録画再生', W - 225, 117);
+  }
+  if (ir) { X.fillStyle = 'rgba(255,255,255,0.85)'; X.font = `bold 30px ${MONO}`; X.fillText('IR', W - 120, 190); }
+  if (paused) {
+    X.fillStyle = 'rgba(0,0,0,0.45)'; ell(W / 2, 960, 90, 90); X.fill();
+    X.fillStyle = '#fff'; X.fillRect(W / 2 - 30, 920, 20, 80); X.fillRect(W / 2 + 10, 920, 20, 80);
+  }
+  if (seek != null) {
+    X.fillStyle = 'rgba(255,255,255,0.35)'; X.fillRect(50, 1770, W - 100, 8);
+    X.fillStyle = '#4fc3f7'; X.fillRect(50, 1770, (W - 100) * seek, 8); ell(50 + (W - 100) * seek, 1774, 14, 14); X.fill();
+  }
+  X.restore();
+}
+
+// ---------- シーン ----------
+function pad2(n) { return String(n).padStart(2, '0'); }
+function stampAt(day, h, m, s) { s = Math.floor(s); m += Math.floor(s / 60); s %= 60; return `2026/11/${pad2(day)} ${pad2(h)}:${pad2(m)}:${pad2(s)}`; }
+
+function sceneDay1(t, u, d) {
+  main.drawImage(renderFeed(t, { dog: { wag: 1, happy: true, wagHz: 4.5 }, clockA: -0.3 }), 0, 0);
+  camOSD(t, 'リビング', stampAt(10, 14, 2, 11 + u));
+}
+function sceneDay3(t, u, d) {
+  main.drawImage(renderFeed(t, { dog: { wag: 0.8, paw: true, happy: true }, clockA: 0.6 }), 0, 0);
+  camOSD(t, 'リビング', stampAt(12, 13, 47, 3 + u));
+}
+function sceneGrandma(t, u, d) {
+  // 祖母の思い出: 少し暖かい色で、犬は伏せてくつろいでいる
+  main.drawImage(renderFeed(t, { dog: { lie: true, pet: true }, filter: 'sepia(0.35) saturate(0.9) brightness(1.05)', clockA: 1.4 }), 0, 0);
+  // 祖母の座椅子の思い出(半透明で重ねる)
+  const a = 0.5 * seg(u, 0.4, 1.2) * (1 - seg(u, d - 1.2, 1));
+  if (a > 0) {
+    X = main; X.save(); X.globalAlpha = a;
+    X.fillStyle = 'rgba(0,0,0,0.5)'; X.fillRect(0, 0, W, H);
+    // 古い写真風: 座椅子に座る祖母の後ろ姿
+    X.translate(540, 760); X.rotate(-0.04);
+    X.fillStyle = '#efe6d2'; X.fillRect(-300, -230, 600, 460);
+    X.fillStyle = '#b79d74'; X.fillRect(-270, -200, 540, 400);
+    X.fillStyle = '#6d4a3a'; rr(-120, -40, 240, 230, 30); X.fill();          // 座椅子
+    X.fillStyle = '#6b6b78'; ell(0, 40, 85, 110); X.fill();                    // 体
+    X.fillStyle = '#d9d4cc'; ell(0, -90, 52, 56); X.fill();                    // 白髪
+    X.fillStyle = 'rgba(255,240,210,0.25)'; X.fillRect(-270, -200, 540, 400);
+    X.restore();
+  }
+  camOSD(t, 'リビング', stampAt(13, 15, 10, 40 + u));
+}
+function sceneFriend(t, u, d) {
+  // 録画を一時停止して見返している
+  const z = 1 + 0.08 * ease(u / d);
+  main.drawImage(renderFeed(SC.day3.start + 2.0, { dog: { wag: 0.8, paw: true, happy: true }, clockA: 0.6 }, { zoom: z, cx: 540, cy: 900, pix: 1 }), 0, 0);
+  camOSD(t, 'リビング', stampAt(12, 13, 47, 5), { paused: true, seek: 0.37 });
+}
+function sceneZoom(t, u, d) {
+  // テレビの画面をデジタル拡大 → 明るさ補正
+  const zp = easeOut(seg(u, 0.1, 1.4));
+  const zoom = lerp(1, 3.6, zp);
+  const cx = lerp(540, TV.x + TV.w / 2, zp), cy = lerp(900, TV.y + TV.h / 2 + 10, zp);
+  const bright = seg(u, 1.8, 1.4);
+  const refl = lerp(0.16, 0.95, ease(bright));
+  const pix = lerp(1, 5, zp) * (1 - 0.5 * bright);
+  main.drawImage(renderFeed(SC.day3.start + 2.0, { dog: { wag: 0.8, paw: true, happy: true }, refl, man: lerp(0.7, 1, bright), clockA: 0.6,
+    filter: `saturate(0.6) contrast(${1 + bright * 0.6}) brightness(${1 + bright * 0.5})` }, { zoom, cx, cy, pix }), 0, 0);
+  X = main; X.save();
+  // 解析中の表示
+  X.fillStyle = 'rgba(0,0,0,0.6)'; rr(50, 170, 520, 150, 16); X.fill();
+  X.fillStyle = '#fff'; X.font = `bold 40px ${GOTH}`; X.textAlign = 'left';
+  X.fillText(`拡大 ×${(zoom).toFixed(1)}`, 80, 228);
+  X.fillText(`明るさ補正 +${Math.round(bright * 80)}`, 80, 290);
+  if (zp > 0.9) { X.strokeStyle = 'rgba(255,230,80,0.9)'; X.lineWidth = 5; X.setLineDash([18, 12]); X.strokeRect(160, 560, 760, 900); X.setLineDash([]); }
+  X.restore();
+  camOSD(t, 'リビング', stampAt(12, 13, 47, 5), { seek: 0.37 });
+}
+function sceneReveal(t, u, d) {
+  // 補正後の映り込み。男の顔へゆっくり寄る
+  const p = ease(u / d);
+  const zoom = lerp(3.6, 6.2, p);
+  const cx = lerp(TV.x + TV.w / 2, TV.x + 230 * TV.w / 480, p), cy = lerp(TV.y + TV.h / 2 + 10, TV.y + 140 * TV.h / 290, p);
+  main.drawImage(renderFeed(SC.day3.start + 2.0 + u, { dog: { wag: 0.8, paw: true, happy: true }, refl: 0.95, man: 1, clockA: 0.6,
+    filter: 'saturate(0.5) contrast(1.5) brightness(1.4)' }, { zoom, cx, cy, pix: 2.5 }), 0, 0);
+  // 赤枠で男を示す
+  X = main; X.save(); const a = seg(u, 0.2, 0.3);
+  X.globalAlpha = a; X.strokeStyle = '#ff3b30'; X.lineWidth = 8; X.beginPath(); X.ellipse(540, 860, 300 + 40 * p, 360 + 40 * p, 0, 0, 7); X.stroke();
+  X.restore();
+  camOSD(t, 'リビング', stampAt(12, 13, 47, 5 + u), { paused: false, seek: 0.37 + u * 0.004 });
+}
+function sceneTonight(t, u, d) {
+  // 寝室: 暗い。スマホに通知 → タップでライブ映像(暗視)
+  X = main; main.fillStyle = '#000'; main.fillRect(0, 0, W, H);
+  const cue = TL.cues.find(c => c.a >= SC.tonight.start);
+  const tNotify = cue.b - SC.tonight.start + 0.2;     // セリフの後に通知
+  const tLive = tNotify + 1.3;
+  if (u < tLive) {
+    // スマホのロック画面
+    X.save();
+    X.fillStyle = '#05070b'; rr(120, 200, 840, 1600, 80); X.fill();
+    X.strokeStyle = '#1b1f27'; X.lineWidth = 10; X.stroke();
+    X.fillStyle = 'rgba(255,255,255,0.85)'; X.textAlign = 'center'; X.font = `200px ${'"DejaVu Sans",sans-serif'}`; X.fillText('2:13', 540, 560);
+    X.font = `40px ${GOTH}`; X.fillText('11月14日 土曜日', 540, 380);
+    const na = seg(u, tNotify, 0.25);
+    if (na > 0) {
+      const y = lerp(560, 660, easeOut(na));
+      X.globalAlpha = na; X.fillStyle = 'rgba(60,64,72,0.95)'; rr(170, y, 740, 190, 36); X.fill();
+      X.fillStyle = '#4fc3f7'; rr(200, y + 40, 90, 90, 20); X.fill();
+      X.fillStyle = '#fff'; ell(245, y + 85, 22, 18); X.fill(); ell(228, y + 62, 8, 9); X.fill(); ell(262, y + 62, 8, 9); X.fill();
+      X.textAlign = 'left'; X.fillStyle = '#fff'; X.font = `bold 38px ${GOTH}`; X.fillText('ペットカメラ', 320, y + 72);
+      X.font = `40px ${GOTH}`; X.fillText('リビングで動きを検知しました', 320, y + 135);
+    }
+    // タップ
+    if (u > tLive - 0.4) { const ta = seg(u, tLive - 0.4, 0.2); X.globalAlpha = ta * 0.6; X.fillStyle = '#fff'; ell(560, 760, 50, 50); X.fill(); }
+    X.restore();
+    // 画面の明かりだけが顔を照らしているような周辺の暗さ
+    return;
+  }
+  const lu = u - tLive;
+  const look = seg(lu, 1.6, 0.4);
+  main.drawImage(renderFeed(t, { night: true, dog: { wag: 1, happy: false, glow: true, wagHz: 3.5 }, refl: 0.22, look, clockA: 0.3 }), 0, 0);
+  camOSD(t, 'リビング', stampAt(14, 2, 13, 2 + lu), { live: true, ir: true });
+}
+function sceneEnd(t, u, d) {
+  X = main; main.fillStyle = '#000'; main.fillRect(0, 0, W, H);
+  X.save(); X.textAlign = 'center'; X.globalAlpha = seg(u, 0.6, 0.8);
+  X.fillStyle = '#7d786f'; X.font = `30px ${GOTH}`;
+  X.fillText('※この物語はフィクションです', W / 2, 1700);
+  X.fillText('VOICEVOX:もち子(cv 明日葉よもぎ) / 小夜/SAYO', W / 2, 1750);
+  X.restore();
+}
+const SCENE_FN = { day1: sceneDay1, day3: sceneDay3, grandma: sceneGrandma, friend: sceneFriend, zoom: sceneZoom,
+  reveal: sceneReveal, tonight: sceneTonight, end: sceneEnd };
+
+// ---------- 字幕 ----------
+function drawSubtitle(t) {
+  const c = TL.cues.find(c => t >= c.a - 0.1 && t <= c.b);
+  if (!c) return;
+  X = main;
+  const a = Math.min(seg(t, c.a - 0.1, 0.12), 1 - seg(t, c.b - 0.15, 0.15));
+  const pop = 1 + 0.07 * (1 - easeOut(seg(t, c.a - 0.1, 0.18)));
+  const lines = c.text.split('\n');
+  const size = 76, lh = size * 1.3;
+  const y0 = 1420 - (lines.length - 1) * lh / 2;
+  X.save(); X.globalAlpha = a; X.textAlign = 'center'; X.textBaseline = 'middle';
+  X.translate(W / 2, y0); X.scale(pop, pop);
+  X.font = `bold ${size}px ${GOTH}`;
+  lines.forEach((ln, i) => {
+    const y = i * lh;
+    X.lineJoin = 'round'; X.lineWidth = 18; X.strokeStyle = '#000'; X.strokeText(ln, 0, y);
+    X.fillStyle = c.kind === 'friend' ? '#ffd54a' : '#ffffff'; X.fillText(ln, 0, y);
+  });
+  X.restore();
+}
+
+// ---------- 仕上げ ----------
+function post(t, sid, u, d) {
+  X = main;
+  main.save(); main.globalCompositeOperation = 'overlay'; main.globalAlpha = sid === 'tonight' ? 0.3 : 0.16;
+  main.drawImage(GRAIN[Math.floor(t * FPS) % GRAIN.length], 0, 0, W, H); main.restore();
+  const vg = main.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  main.fillStyle = vg; main.fillRect(0, 0, W, H);
+  // シーン切り替えの一瞬のノイズ
+  if (u < 0.08 && sid !== 'day1') { main.fillStyle = 'rgba(255,255,255,0.08)'; for (let y = 0; y < H; y += 6) if (hash(y + t * 50) < 0.3) main.fillRect(0, y, W, 3); }
+}
+
+function render(t) {
+  t = Math.min(t, DURATION - 1e-3);
+  const sc = TL.scenes.find(s => t >= s.start && t < s.end) || TL.scenes[TL.scenes.length - 1];
+  const u = t - sc.start, d = sc.end - sc.start;
+  X = main; main.save(); main.clearRect(0, 0, W, H);
+  SCENE_FN[sc.id](t, u, d);
+  main.restore();
+  post(t, sc.id, u, d);
+  drawSubtitle(t);
+  if (t < 0.25) { main.fillStyle = `rgba(0,0,0,${1 - t / 0.25})`; main.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
