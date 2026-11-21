@@ -138,6 +138,23 @@ function emptyRoom(t, o) {    // 押し入れまで開けて探した、誰も�
   const lg = ctx.createLinearGradient(0, 0, W, 0); lg.addColorStop(0, 'rgba(255,250,235,0.1)'); lg.addColorStop(1, 'rgba(0,0,0,0.45)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
 }
 
+// ---- 不動産屋で、鍵を3本わたされる(上から見た机) ----
+function keyShape(c, x, y, a, s) { c.save(); c.translate(x, y); c.rotate(a); c.scale(s, s); c.fillStyle = '#c9c3b2'; c.beginPath(); c.arc(0, 0, 26, 0, 7); c.fill(); c.fillStyle = '#6b5f4c'; c.beginPath(); c.arc(0, -6, 7, 0, 7); c.fill(); c.fillStyle = '#c9c3b2'; c.fillRect(-7, 20, 14, 120); for (let k = 0; k < 5; k++) c.fillRect(7, 70 + k * 13, 8 + (k * 7 % 9), 8); c.restore(); }
+function handScene(t, o) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-540, -960);
+  ctx.fillStyle = '#4a3a2c'; ctx.fillRect(-200, -200, W + 400, H + 400); const r = rngOf(21); for (let i = 0; i < 120; i++) { ctx.strokeStyle = `rgba(0,0,0,${0.05 + r() * 0.08})`; ctx.lineWidth = 2 + r() * 3; const y = r() * H; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y + (r() - 0.5) * 20); ctx.stroke(); }
+  ctx.save(); ctx.translate(320, 760); ctx.rotate(-0.06); ctx.fillStyle = '#ece8df'; ctx.fillRect(-230, -330, 460, 650); ctx.fillStyle = '#3a3a3a'; ctx.font = `800 34px ${MIN}`; ctx.textAlign = 'center'; ctx.fillText('重要事項説明書', 0, -270);
+  ctx.fillStyle = 'rgba(60,60,60,0.45)'; for (let i = 0; i < 16; i++) ctx.fillRect(-190, -210 + i * 32, 200 + (i * 53 % 180), 7); ctx.strokeStyle = '#c03030'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(130, 250, 34, 0, 7); ctx.stroke(); ctx.restore();   // 書類とハンコ
+  const k = o.place, kx = 700, ky = lerp(560, 980, k);
+  ctx.save(); ctx.translate(kx, ky); for (const [a, dx] of [[-0.5, -40], [0.05, 0], [0.55, 40]]) keyShape(ctx, dx * 0.4, 0, a, 1.1); ctx.fillStyle = '#9a9a9e'; ctx.lineWidth = 6; ctx.strokeStyle = '#a7a7ab'; ctx.beginPath(); ctx.arc(0, -36, 30, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#e3dccb'; ctx.save(); ctx.rotate(-0.3); ctx.fillRect(-150, -80, 110, 64); ctx.fillStyle = '#333'; ctx.font = `800 30px ${MIN}`; ctx.textAlign = 'center'; ctx.fillText('玄関', -95, -46); ctx.restore(); ctx.restore();   // 鍵束と札
+  const hy = ky - 90 - (1 - o.hand) * 900;     // スーツの袖の手(顔は映らない)
+  ctx.save(); ctx.translate(kx + 40, hy); ctx.rotate(0.12); ctx.fillStyle = '#1b2233'; ctx.fillRect(-70, -1200, 150, 1120); ctx.fillStyle = '#e8e6e2'; ctx.fillRect(-72, -95, 154, 34);
+  ctx.fillStyle = '#c9ad94'; ctx.beginPath(); ctx.ellipse(5, -10, 70, 62, 0, 0, 7); ctx.fill(); for (const fx of [-46, -16, 14, 42]) { ctx.beginPath(); ctx.ellipse(fx, 52, 14, 34, 0, 0, 7); ctx.fill(); } ctx.fillStyle = 'rgba(90,60,40,0.3)'; ctx.beginPath(); ctx.ellipse(5, 10, 60, 30, 0, 0, Math.PI); ctx.fill(); ctx.restore();
+  ctx.restore();
+  const lg = ctx.createRadialGradient(560, 820, 200, 560, 900, 1100); lg.addColorStop(0, 'rgba(255,240,215,0.06)'); lg.addColorStop(1, 'rgba(0,0,0,0.55)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+}
+
 // ---- 人のシルエット(うしろ姿 / 正面の暗い影) ----
 function figure(c, x, y, s, ph = 0, o = {}) {     // y = 足もと。ph: 歩く動き
   c.save(); c.translate(x, y); c.scale(s, s); c.fillStyle = o.col || '#08090c';
@@ -147,6 +164,7 @@ function figure(c, x, y, s, ph = 0, o = {}) {     // y = 足もと。ph: 歩く�
   c.beginPath(); c.moveTo(-34, -92); c.lineTo(34, -92); c.lineTo(30, -205); c.quadraticCurveTo(26, -232, 0, -234); c.quadraticCurveTo(-26, -232, -30, -205); c.closePath(); c.fill();   // コート
   for (const sd of [-1, 1]) { c.save(); c.translate(sd * 30, -205); c.rotate(-sd * sw * 0.2 + sd * 0.08); c.beginPath(); c.moveTo(-7, 0); c.lineTo(7, 0); c.lineTo(6, 100); c.lineTo(-6, 100); c.closePath(); c.fill(); c.restore(); }   // 腕
   c.fillRect(-9, -246, 18, 16); c.beginPath(); c.ellipse(0, -264, 17, 21, 0, 0, 7); c.fill();                                                                  // 首と頭
+  if (o.suit) { c.fillStyle = '#8d8f94'; c.beginPath(); c.moveTo(-12, -232); c.lineTo(0, -196); c.lineTo(12, -232); c.closePath(); c.fill(); c.fillStyle = o.col || '#08090c'; c.beginPath(); c.moveTo(-3, -228); c.lineTo(3, -228); c.lineTo(4, -192); c.lineTo(0, -186); c.lineTo(-4, -192); c.closePath(); c.fill(); }   // スーツの白いシャツの襟と、ネクタイ
   c.restore();
 }
 function copBack(c, x, y, s, point, tgt) {      // しゃがんで足あとを指さす、おまわりさん(うしろ姿)。tgt: 指さす先(画面座標)
@@ -189,7 +207,7 @@ function house(c, door, inside) {    // 古い2階建て。正面に玄関の引
   c.fillStyle = '#6e6052'; c.fillRect(420, 430, 240, 300);
   c.save(); c.beginPath(); c.rect(430, 440, 220, 290); c.clip();
   { const ig = c.createLinearGradient(0, 440, 0, 730); ig.addColorStop(0, '#3a3c43'); ig.addColorStop(1, '#1d1e23'); c.fillStyle = ig; c.fillRect(430, 440, 220, 290); }             // すき間の奥は、暗い廊下
-  if (inside > 0) { c.save(); c.globalAlpha = inside; c.filter = 'blur(2px)'; figure(c, 598, 760 + 30 * inside, 1.0 + 0.3 * inside, 0, { col: '#030304' }); c.restore(); }   // 暗がりに立つ人影
+  if (inside > 0) { c.save(); c.globalAlpha = inside; c.filter = 'blur(2px)'; figure(c, 598, 760 + 30 * inside, 1.0 + 0.3 * inside, 0, { col: '#030304', suit: true }); c.restore(); }   // 暗がりに立つ人影
   const g = c.createLinearGradient(0, 440, 0, 730); g.addColorStop(0, '#8f949c'); g.addColorStop(1, '#6d727a');
   for (const [x0, mv] of [[430, 0], [540, door]]) { const x = x0 + mv * 105; c.fillStyle = g; c.fillRect(x, 440, 110, 290); c.fillStyle = '#4a3e32'; c.fillRect(x, 440, 110, 8); c.fillRect(x, 722, 110, 8); c.fillRect(x, 440, 8, 290); c.fillRect(x + 102, 440, 8, 290); for (let k = 1; k < 4; k++) c.fillRect(x, 440 + k * 72, 110, 5); }   // 引き戸(右の戸が左へ動く)
   c.restore();
@@ -277,8 +295,13 @@ function render(t) {
   let grain = 0.1, dark = 0.25;
   const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
   if (t < EV.hit) {
-    if (t < EV.lock) {             // 2階の窓から: 道路から玄関まで、足あと
-      const k = ease(prog(t, 0, LN.l3.end)); windowView(t, { z: lerp(1.0, 1.45, k), cx: 560, cy: lerp(900, 1150, k) }); fadeIn(0, 0.8);
+    if (t >= EV.hand && t < LN.l2.start - 0.2) {     // 不動産屋の担当者が「これで全部です」と鍵を3本わたす
+      const pl = ease(prog(t, EV.hand + 0.6, EV.hand + 1.6)), hd = pl * (1 - ease(prog(t, EV.hand + 2.4, EV.hand + 3.4))); handScene(t, { z: lerp(1.0, 1.1, prog(t, EV.hand, LN.l2.start)), place: pl, hand: Math.max(hd, 1 - ease(prog(t, EV.hand + 2.4, EV.hand + 3.4)) * (pl >= 1 ? 1 : 0)) }); fadeIn(EV.hand, 0.3); dark = 0.15; }
+    else if (t >= EV.memo && t < EV.memo + 2.4) {     // あの声は…鍵を渡した、あの人
+      handScene(t, { z: 1.25, place: 1, hand: 1 }); ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore(); fadeIn(EV.memo, 0.15);
+      ring(540 + (740 - 540) * 1.25, 960 + (880 - 960) * 1.25, 150, ease(prog(t, EV.memo + 0.5, EV.memo + 1.1))); dark = 0.3; }
+    else if (t < EV.lock) {             // 2階の窓から: 道路から玄関まで、足あと
+      const k = ease(prog(t, 0, LN.l3.end)); windowView(t, { z: lerp(1.0, 1.45, k), cx: 560, cy: lerp(900, 1150, k) }); fadeIn(0, 0.8); if (t > LN.l2.start - 0.2) fadeIn(LN.l2.start - 0.2, 0.3);
       if (t > LN.l3.start) { const a = ease(prog(t, LN.l3.start + 0.2, LN.l3.start + 0.8)); ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = RED; ctx.lineWidth = 8; ctx.setLineDash([22, 14]); ctx.shadowColor = RED; ctx.shadowBlur = 12;
         ctx.beginPath(); ctx.moveTo(470, 470); ctx.lineTo(560, 1520); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = RED; ctx.beginPath(); ctx.moveTo(565, 1600); ctx.lineTo(520, 1510); ctx.lineTo(605, 1505); ctx.closePath(); ctx.fill(); ctx.restore(); }   // 入ってきた?(と思った矢印)
     }
@@ -307,7 +330,7 @@ function render(t) {
     else if (t < EV.phone) { closeUp(t, '家', ease(prog(t, EV.toe2 + 0.5, EV.toe2 + 1.1)), lerp(1.15, 1.0, ease(prog(t, EV.toe2, EV.toe2 + 0.8)))); fadeIn(EV.toe2, 0.25); }
     else {                          // 外から電話しようとすると、玄関の戸が内側から開く
       const door = -ease(prog(t, EV.open, EV.open + 2.0)), ins = ease(prog(t, EV.open + 1.4, EV.open + 3.4)) * (0.7 + 0.3 * prog(t, LN.now.start, LN.now.end));
-      const z = lerp(1.0, 1.5, ease(prog(t, EV.open + 0.5, LN.now.start))) * lerp(1, 1.5, ease(prog(t, LN.now.start, EV.hit)));
+      const z = lerp(1.0, 1.5, ease(prog(t, EV.open + 0.5, LN.now.start))) * lerp(1, 1.5, ease(prog(t, LN.now.start, EV.memo))) * (t > EV.memo ? lerp(1.2, 1.4, prog(t, EV.memo + 2.4, EV.hit)) : 1);
       groundView(t, { z, cx: lerp(540, 600, ease(prog(t, EV.open, EV.hit))), cy: lerp(760, 600, ease(prog(t, EV.open, EV.hit))), toHouse: true, seed: 11, door, inside: ins });
       const ph = 1 - ease(prog(t, EV.open + 0.4, EV.open + 1.2)); if (ph > 0) { ctx.save(); ctx.translate(0, (1 - ph) * 700); phoneHand(t); ctx.restore(); }   // 戸が開いた音で、手が下がる
       fadeIn(EV.phone, 0.3); dark = 0.35;
@@ -346,6 +369,6 @@ function mapScene(t) {     // 上から見た図: 道路 / 足あと / 家
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '道路家玄関入ってきた?出ていったつま先かかと私の部屋雪の朝は足あとの「向き」を見てください。ナレーション四国めたん').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '重要事項説明書道路家玄関入ってきた?出ていったつま先かかと私の部屋雪の朝は足あとの「向き」を見てください。ナレーション四国めたん').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>

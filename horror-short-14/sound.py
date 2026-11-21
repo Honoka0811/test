@@ -8,10 +8,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SR = 48000; FPS = 30
 TL = json.load(open(os.path.join(HERE, 'timeline.json')))
 L = {l['id']: l for l in TL['lines']}
-VK = 0.86                                            # 男の声は 0.86 倍の速さで再生して低くする(そのぶん長くなる)
-if not L['now'].get('scaled'):
-    L['now']['end'] = round(L['now']['start'] + (L['now']['end'] - L['now']['start']) / VK, 3); L['now']['scaled'] = True
-    TL['duration'] = round(L['now']['end'] + 2.6, 2); json.dump(TL, open(os.path.join(HERE, 'timeline.json'), 'w'), ensure_ascii=False, indent=1)
 DUR = TL['duration']; N = int(DUR * SR)
 rng = np.random.default_rng(214)
 
@@ -55,10 +51,12 @@ T_SEE = L['l13']['start'] - 0.2                      # また足あと
 T_TOE2 = L['l14']['start'] + 0.3                     # つま先は家を向いている
 T_PHONE = L['l15']['start'] - 0.1                    # 外から電話しようとする
 T_OPEN = at('l15', 0.62)                             # 玄関の引き戸が、内側から開く
-HIT = L['now']['end'] + 0.4
+HIT = L['l16']['end'] + 0.4
+T_HAND = L['l1b']['start'] - 0.2                     # 不動産屋の担当者が、鍵を3本わたす
+T_MEMO = L['l16']['start'] - 0.1                     # あの声は…
 STEPS_OUT = [T_KEY + 1.45 + k * 0.5 for k in range(3)]          # 鍵をかけて、雪の上を歩いていく
 STEPS_ME = [at('l12', 0.62) + k * 0.55 for k in range(9)]       # 次の朝、私が家まで歩く
-EV = dict(lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, open=T_OPEN, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
+EV = dict(hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, open=T_OPEN, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
 
 def noise(n, seed=None): return (np.random.default_rng(seed).standard_normal(n) if seed is not None else rng.standard_normal(n)).astype(np.float32)
 def wind():
@@ -153,10 +151,12 @@ def main():
     add(big, T_SEE + 0.3, taiko(0.5)); add(big, T_TOE2 + 0.3, taiko(0.8))
     for k in range(3): add(fx, T_PHONE + 0.8 + k * 0.28, tap(), 0.5)             # 電話の画面を押す
     add(fx, T_OPEN, slidedoor(2.2), 0.55); add(big, T_OPEN + 0.2, taiko(0.6))
+    add(fx, T_HAND + 1.6, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
+    add(big, T_MEMO + 0.1, taiko(0.8))
     add(big, HIT, stinger(), 0.75)
     nar = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']:
-        if l['id'] == 'now': add(last, l['start'], resample(segs['now'], VK))   # 低くして、男の声に
+        if l['id'] == 'now': add(last, l['start'], segs['now'])                 # narrate.py で低くした男の声
         else: add(nar, l['start'], segs[l['id']])
     last = lowpass(last, 3200) * 1.1
     hop = SR // 20; rms = np.sqrt(np.mean(nar[:N // hop * hop].reshape(-1, hop) ** 2, axis=1)); e = np.zeros_like(rms)

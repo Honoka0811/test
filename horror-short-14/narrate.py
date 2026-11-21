@@ -36,6 +36,7 @@ def main():
             x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
         if sr != SR:
             x = np.interp(np.arange(int(len(x) * SR / sr)) * sr / SR, np.arange(len(x)), x).astype(np.float32)
+        if st == 'm': x = np.interp(np.arange(int(len(x) / 0.86)) * 0.86, np.arange(len(x)), x).astype(np.float32)   # 0.86倍の速さで再生して、低い男の声に
         x *= p['vol']; dur = len(x) / SR
         print(f'{t:6.2f}  {dur:5.2f}s  [{kind}/{st}] {q.kana}')
         tl.append(dict(id=lid, kind=kind, start=round(t, 3), end=round(t + dur, 3), text=disp))
