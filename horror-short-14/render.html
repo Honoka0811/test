@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>雪の足あと</title>
+<link rel="stylesheet" href="node_modules/@fontsource/shippori-mincho/800.css">
+<style>html,body{margin:0;background:#000}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="c" width="1080" height="1920"></canvas>
+<script src="data.js"></script>
+<script>
+// render(t) が時刻 t 秒のフレームを決定論的に描く。ブラウザで直接開くとプレビュー再生。
+const W = 1080, H = 1920, FPS = 30;
+const D = window.DATA, EV = D.ev, DURATION = D.duration;
+const LN = Object.fromEntries(D.lines.map(l => [l.id, l]));
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const MIN = '"Shippori Mincho", "IPAGothic", serif', GOT = '"IPAGothic", sans-serif', SANS = '"DejaVu Sans", sans-serif';
+const RED = '#ff2b2b', PINK = '#ff6fa3', BLUE = '#5aa2ff', DIMC = '#8a93ad';
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const ease = k => k * k * (3 - 2 * k);
+const hash = n => { let x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rngOf(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TILES = [];
+for (let k = 0; k < 8; k++) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d'), im = g.createImageData(256, 256), r = rngOf(14000 + k);
+  for (let i = 0; i < 256 * 256; i++) { const v = r() * 255 | 0; im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = 255; }
+  g.putImageData(im, 0, 0); TILES.push(c);
+}
+function noise(alpha, f, scale = 2, op = 'overlay') {
+  const tile = TILES[f % TILES.length], ox = hash(f * 3.1) * 256 | 0, oy = hash(f * 7.7) * 256 | 0;
+  ctx.save(); ctx.globalAlpha = alpha; ctx.globalCompositeOperation = op; ctx.translate(-ox * scale, -oy * scale); ctx.scale(scale, scale); ctx.fillStyle = ctx.createPattern(tile, 'repeat');
+  ctx.fillRect(0, 0, (W + 256 * scale) / scale, (H + 256 * scale) / scale); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function tx(s, x, y, size, col, o = {}) {
+  ctx.font = `${o.w || ''} ${size}px ${o.font || GOT}`; ctx.textAlign = o.align || 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = col;
+  if (o.bold) { ctx.lineWidth = size * 0.035; ctx.strokeStyle = col; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y); }
+  ctx.fillText(s, x, y);
+}
+
+const mix = (a, b, k) => `rgb(${a.map((v, i) => Math.round(lerp(v, b[i], k))).join(',')})`;
+
+// ---- 雪 ----
+function flakes(t, n, alpha, seed = 1, speed = 1) {    // 降っている雪
+  if (alpha <= 0) return; const r = rngOf(seed); ctx.save(); ctx.fillStyle = '#fff';
+  for (let i = 0; i < n; i++) { const z = 0.3 + r() * 0.7, x0 = r() * W, y0 = r() * H, sp = (60 + 140 * z) * speed;
+    const y = (y0 + t * sp) % (H + 40) - 20, x = (x0 + Math.sin(t * 0.8 + i) * 30 * z + t * 20 * z) % W; ctx.globalAlpha = alpha * (0.35 + 0.65 * z); ctx.beginPath(); ctx.arc(x, y, 1.5 + 4 * z, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+function snowGround(c, y0, y1, light = 1) {     // 雪の地面(奥ほど青く暗い)
+  const g = c.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, mix([150, 162, 182], [40, 46, 60], 1 - light)); g.addColorStop(1, mix([226, 232, 242], [70, 78, 96], 1 - light)); c.fillStyle = g; c.fillRect(-1200, y0, W + 2400, y1 - y0 + 800);
+  const r = rngOf(5); c.fillStyle = `rgba(255,255,255,${0.25 * light})`; for (let i = 0; i < 260; i++) { const y = y0 + r() ** 0.6 * (y1 - y0); c.fillRect(r() * W, y, 2, 2); }   // きらきら
+}
+// 靴あと(上から見た形)。つま先が -y 方向。a: 回転
+function bootShape(c) {
+  c.beginPath(); c.moveTo(0, -1); c.bezierCurveTo(0.24, -1, 0.3, -0.75, 0.29, -0.45); c.bezierCurveTo(0.28, -0.15, 0.2, 0.05, 0.2, 0.25); c.bezierCurveTo(0.22, 0.6, 0.22, 1, 0, 1);
+  c.bezierCurveTo(-0.22, 1, -0.22, 0.6, -0.2, 0.25); c.bezierCurveTo(-0.2, 0.05, -0.28, -0.15, -0.29, -0.45); c.bezierCurveTo(-0.3, -0.75, -0.24, -1, 0, -1); c.closePath();
+}
+function closePrint(x, y, s, a, label, k) {   // 足あとのアップ: 形、くつ底のもよう、つま先の前にけり出された雪
+  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+  const r = rngOf(31); ctx.fillStyle = 'rgba(255,255,255,0.9)'; for (let i = 0; i < 26; i++) { const px = (r() - 0.5) * 0.7 * s, py = -s * (1.05 + r() * 0.35); ctx.beginPath(); ctx.ellipse(px, py, 4 + r() * 10, 3 + r() * 6, r() * 3, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(150,165,190,0.5)'; ctx.beginPath(); ctx.ellipse(px + 3, py + 3, 4 + r() * 8, 2 + r() * 4, 0, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.9)'; }   // けり出された雪のかたまり
+  ctx.save(); ctx.scale(s, s); bootShape(ctx); ctx.restore();
+  const g = ctx.createLinearGradient(0, -s, 0, s); g.addColorStop(0, '#5f6f8c'); g.addColorStop(0.5, '#8494b0'); g.addColorStop(1, '#6d7d99'); ctx.fillStyle = g; ctx.fill();
+  ctx.save(); ctx.clip(); ctx.strokeStyle = 'rgba(40,50,75,0.55)'; ctx.lineWidth = s * 0.035; for (let i = -9; i <= 9; i++) { const yy = i * s * 0.1; if (Math.abs(yy - s * 0.15) < s * 0.07) continue; ctx.beginPath(); ctx.moveTo(-s * 0.3, yy - s * 0.03); ctx.lineTo(0, yy + s * 0.03); ctx.lineTo(s * 0.3, yy - s * 0.03); ctx.stroke(); }   // くつ底のギザギザ
+  ctx.fillStyle = 'rgba(30,40,60,0.25)'; ctx.fillRect(-s, -s * 1.1, s * 2, s * 0.35); ctx.restore();   // つま先側は深くえぐれている
+  ctx.save(); ctx.scale(s, s); bootShape(ctx); ctx.restore(); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 5; ctx.stroke();
+  ctx.restore();
+  if (k > 0) {   // ラベル: つま先 → 行き先
+    ctx.save(); ctx.globalAlpha = k; const ax = x + Math.sin(a) * s * 1.5, ay = y - Math.cos(a) * s * 1.5;
+    ctx.strokeStyle = RED; ctx.fillStyle = RED; ctx.lineWidth = 10; ctx.shadowColor = RED; ctx.shadowBlur = 14; ctx.beginPath(); ctx.moveTo(x - Math.sin(a) * s * 0.2, y + Math.cos(a) * s * 0.2); ctx.lineTo(ax, ay); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ax + Math.sin(a) * 50, ay - Math.cos(a) * 50); ctx.lineTo(ax + Math.cos(a) * 34, ay + Math.sin(a) * 34); ctx.lineTo(ax - Math.cos(a) * 34, ay - Math.sin(a) * 34); ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.font = `800 70px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#000'; ctx.lineWidth = 14; ctx.strokeText(label, ax, ay - 110); ctx.fillStyle = '#fff'; ctx.fillText(label, ax, ay - 110);
+    ctx.font = `800 46px ${MIN}`; for (const [lb, d] of [['つま先', -1.05], ['かかと', 1.08]]) { const lx = x + 260, ly = y + d * s * 0.85; ctx.strokeStyle = '#000'; ctx.lineWidth = 10; ctx.strokeText(lb, lx, ly); ctx.fillStyle = '#e8eef8'; ctx.fillText(lb, lx, ly); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(lx - 90, ly); ctx.lineTo(x + s * 0.33, ly); ctx.stroke(); }
+    ctx.restore();
+  }
+}
+function closeUp(t, label, k, z = 1) {    // 雪の地面を上から見たアップ
+  ctx.save(); ctx.translate(540, 900); ctx.scale(z, z); ctx.translate(-540, -900);
+  const g = ctx.createRadialGradient(540, 800, 100, 540, 900, 1200); g.addColorStop(0, '#e9eef6'); g.addColorStop(1, '#9aa8c0'); ctx.fillStyle = g; ctx.fillRect(-300, -300, W + 600, H + 600);
+  const r = rngOf(8); for (let i = 0; i < 500; i++) { ctx.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '140,155,185'},${0.2 + r() * 0.3})`; ctx.fillRect(r() * W, r() * H, 2 + r() * 3, 2 + r() * 3); }
+  ctx.save(); ctx.globalAlpha = 0.55; closePrint(330, 1450, 180, 0.08, '', 0); ctx.restore();   // となりの足あと(半分だけ見える)
+  closePrint(620, 820, 300, -0.05, label, k);
+  ctx.restore();
+}
+// 遠くから見た足あと(穴にしか見えない)
+function holes(c, pts, alpha = 1) {
+  for (const [x, y, s] of pts) { c.save(); c.globalAlpha = alpha; const g = c.createRadialGradient(x, y - 2 * s, 1, x, y, 20 * s); g.addColorStop(0, 'rgba(70,85,115,0.9)'); g.addColorStop(1, 'rgba(110,125,155,0.0)'); c.fillStyle = g; c.beginPath(); c.ellipse(x, y, 17 * s, 10 * s, 0, 0, 7); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.5)'; c.beginPath(); c.ellipse(x, y + 8 * s, 16 * s, 4 * s, 0, 0, Math.PI); c.fill(); c.restore(); }
+}
+const WIN_PTS = (() => { const p = []; for (let i = 0; i < 17; i++) { const u = i / 16, y = 700 + u ** 1.25 * 1150, s = 0.45 + u * 1.5, x = 545 + Math.sin(u * 2.6) * 120 + (i % 2 ? 1 : -1) * 16 * s; p.push([x, y, s]); } return p; })();
+
+// ---- 2階の窓から見た朝の庭 ----
+function windowView(t, o = {}) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z || 1, o.z || 1); ctx.translate(-(o.cx || 540), -(o.cy || 960));
+  const sky = ctx.createLinearGradient(0, -200, 0, 420); sky.addColorStop(0, '#5d6678'); sky.addColorStop(1, '#a9b0bc'); ctx.fillStyle = sky; ctx.fillRect(-300, -300, W + 600, 760);
+  for (const [x, w, h] of [[-80, 360, 150], [330, 300, 120], [700, 420, 170]]) { ctx.fillStyle = '#4a4f5c'; ctx.fillRect(x, 410 - h, w, h); ctx.fillStyle = '#e8ecf3'; ctx.beginPath(); ctx.moveTo(x - 20, 410 - h); ctx.lineTo(x + w / 2, 410 - h - 70); ctx.lineTo(x + w + 20, 410 - h); ctx.closePath(); ctx.fill(); ctx.fillStyle = 'rgba(255,230,180,0.5)'; ctx.fillRect(x + 40, 410 - h + 40, 40, 30); }   // 向かいの家(雪の屋根)
+  snowGround(ctx, 400, 2100);
+  ctx.fillStyle = 'rgba(120,130,150,0.55)'; ctx.fillRect(-300, 470, W + 600, 90); ctx.fillStyle = 'rgba(90,100,120,0.5)'; for (const y of [492, 532]) ctx.fillRect(-300, y, W + 600, 10);   // 道路(車のわだち)
+  ctx.fillStyle = '#3a3a40'; ctx.fillRect(160, 300, 14, 280);                                                                                       // 電柱
+  ctx.fillStyle = '#7d756a'; for (let x = -100; x < W + 100; x += 46) { if (x > 440 && x < 640) continue; ctx.fillRect(x, 610, 12, 70); } ctx.fillRect(-100, 618, 540, 8); ctx.fillRect(640, 618, 600, 8);   // 低い塀(門のところだけ切れている)
+  ctx.fillStyle = '#eef2f8'; ctx.fillRect(-100, 604, 540, 10); ctx.fillRect(640, 604, 600, 10);
+  holes(ctx, WIN_PTS);
+  ctx.fillStyle = '#dfe5ee'; ctx.beginPath(); ctx.moveTo(-300, 1750); ctx.lineTo(W + 300, 1720); ctx.lineTo(W + 300, 2300); ctx.lineTo(-300, 2300); ctx.closePath(); ctx.fill();   // 1階のひさしの雪(この下に玄関)
+  ctx.fillStyle = 'rgba(80,90,110,0.5)'; ctx.fillRect(-300, 1742, W + 600, 12);
+  ctx.restore();
+  flakes(t, 40, 0.35, 3, 0.4);
+  // 窓わく(アルミサッシ)と、ガラスのくもり
+  const fr = '#2b2d31'; ctx.fillStyle = fr; ctx.fillRect(0, 0, W, 90); ctx.fillRect(0, H - 120, W, 120); ctx.fillRect(0, 0, 70, H); ctx.fillRect(W - 70, 0, 70, H); ctx.fillRect(650, 0, 34, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(650, 0, 6, H);
+  for (const [x0, x1] of [[70, 650], [684, W - 70]]) { const g = ctx.createLinearGradient(0, H - 600, 0, H - 120); g.addColorStop(0, 'rgba(230,235,245,0)'); g.addColorStop(1, 'rgba(230,235,245,0.55)'); ctx.fillStyle = g; ctx.fillRect(x0, H - 600, x1 - x0, 480); }   // 結露
+  const r = rngOf(4); ctx.fillStyle = 'rgba(255,255,255,0.35)'; for (let i = 0; i < 70; i++) { const x = 80 + r() * 920, y = H - 140 - r() ** 2 * 420; if (Math.abs(x - 667) < 30) continue; ctx.beginPath(); ctx.ellipse(x, y, 2 + r() * 4, 3 + r() * 5, 0, 0, 7); ctx.fill(); }
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+}
+
+// ---- 家の中(玄関の鍵 / 誰もいない部屋) ----
+function genkanIn(t, o) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  ctx.fillStyle = '#2a2622'; ctx.fillRect(-300, -300, W + 600, H + 600);
+  ctx.fillStyle = '#8b7b66'; ctx.fillRect(160, 260, 760, 1120);                                                                       // 引き戸のわく
+  for (const [x, w] of [[180, 365], [535, 365]]) { const g = ctx.createLinearGradient(0, 280, 0, 1360); g.addColorStop(0, '#d6dbe3'); g.addColorStop(1, '#aeb6c2'); ctx.fillStyle = g; ctx.fillRect(x, 280, w, 1080);   // すりガラス(外の雪あかり)
+    ctx.fillStyle = '#5a4c3c'; ctx.fillRect(x, 280, w, 22); ctx.fillRect(x, 1338, w, 22); ctx.fillRect(x, 280, 22, 1080); ctx.fillRect(x + w - 22, 280, 22, 1080); for (let k = 1; k < 4; k++) ctx.fillRect(x, 280 + k * 270, w, 12); }
+  ctx.fillStyle = '#3c3530'; ctx.fillRect(522, 700, 38, 130); ctx.fillStyle = '#c9c2b4'; ctx.fillRect(530, 740, 22, 50);                         // 戸先の鍵
+  ctx.save(); ctx.translate(541, 765); ctx.fillStyle = '#e0d8c8'; ctx.fillRect(-20, -6, 40, 12); ctx.restore();                                  // つまみは横 = 鍵がかかっている
+  ctx.fillStyle = '#4b4540'; ctx.fillRect(-300, 1360, W + 600, 260); ctx.fillStyle = '#5c4532'; ctx.fillRect(-300, 1620, W + 600, 700);           // たたきと、上がりかまち
+  ctx.fillStyle = '#1c1a1a'; for (const x of [330, 420]) { ctx.beginPath(); ctx.ellipse(x, 1500, 40, 22, 0, 0, 7); ctx.fill(); ctx.fillRect(x - 32, 1420, 64, 80); }   // 私の長靴
+  ctx.restore();
+  const lg = ctx.createRadialGradient(540, 760, 200, 540, 900, 1100); lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.6)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+}
+function emptyRoom(t, o) {    // 押し入れまで開けて探した、誰もいない和室
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  ctx.fillStyle = '#5c5648'; ctx.fillRect(-300, -300, W + 600, 1200);
+  ctx.fillStyle = '#d9d2bd'; ctx.fillRect(-60, 120, 380, 760); ctx.strokeStyle = '#6a5a44'; ctx.lineWidth = 6; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-60 + i * 95, 120); ctx.lineTo(-60 + i * 95, 880); ctx.stroke(); } for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(-60, 120 + i * 127); ctx.lineTo(320, 120 + i * 127); ctx.stroke(); }   // 障子(朝の光)
+  ctx.fillStyle = '#c8bfa6'; ctx.fillRect(440, 140, 620, 740); ctx.fillStyle = '#141210'; ctx.fillRect(700, 160, 340, 700); ctx.fillStyle = '#2a2622'; ctx.fillRect(700, 500, 340, 16);   // 開けた押し入れ(中は空)
+  ctx.fillStyle = '#b8ae94'; ctx.fillRect(450, 150, 250, 720); ctx.strokeStyle = '#8a7c62'; ctx.lineWidth = 4; ctx.strokeRect(450, 150, 250, 720);
+  ctx.fillStyle = '#3e372b'; ctx.fillRect(-300, 880, W + 600, 24);
+  const fl = ctx.createLinearGradient(0, 900, 0, 2200); fl.addColorStop(0, '#8d8a5e'); fl.addColorStop(1, '#5a573a'); ctx.fillStyle = fl; ctx.beginPath(); ctx.moveTo(-300, 900); ctx.lineTo(W + 300, 900); ctx.lineTo(W + 900, 2300); ctx.lineTo(-900, 2300); ctx.closePath(); ctx.fill();   // 畳
+  ctx.strokeStyle = 'rgba(40,35,20,0.6)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(540, 900); ctx.lineTo(540, 2300); ctx.moveTo(-300, 1300); ctx.lineTo(W + 500, 1300); ctx.stroke();
+  ctx.restore();
+  const lg = ctx.createLinearGradient(0, 0, W, 0); lg.addColorStop(0, 'rgba(255,250,235,0.1)'); lg.addColorStop(1, 'rgba(0,0,0,0.45)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H);
+}
+
+// ---- 人のシルエット(うしろ姿 / 正面の暗い影) ----
+function figure(c, x, y, s, ph = 0, o = {}) {     // y = 足もと。ph: 歩く動き
+  c.save(); c.translate(x, y); c.scale(s, s); c.fillStyle = o.col || '#08090c';
+  const sw = Math.sin(ph) * (o.walk ? 1 : 0), bob = Math.abs(Math.cos(ph)) * 3 * (o.walk ? 1 : 0);
+  c.translate(0, -bob);
+  for (const sd of [-1, 1]) { c.save(); c.translate(sd * 11, -92); c.rotate(sd * sw * 0.25); c.beginPath(); c.moveTo(-9, 0); c.lineTo(9, 0); c.lineTo(8, 90); c.lineTo(-8, 90); c.closePath(); c.fill(); c.restore(); }   // 脚
+  c.beginPath(); c.moveTo(-34, -92); c.lineTo(34, -92); c.lineTo(30, -205); c.quadraticCurveTo(26, -232, 0, -234); c.quadraticCurveTo(-26, -232, -30, -205); c.closePath(); c.fill();   // コート
+  for (const sd of [-1, 1]) { c.save(); c.translate(sd * 30, -205); c.rotate(-sd * sw * 0.2 + sd * 0.08); c.beginPath(); c.moveTo(-7, 0); c.lineTo(7, 0); c.lineTo(6, 100); c.lineTo(-6, 100); c.closePath(); c.fill(); c.restore(); }   // 腕
+  c.fillRect(-9, -246, 18, 16); c.beginPath(); c.ellipse(0, -264, 17, 21, 0, 0, 7); c.fill();                                                                  // 首と頭
+  c.restore();
+}
+function copBack(c, x, y, s, point, tgt) {      // しゃがんで足あとを指さす、おまわりさん(うしろ姿)。tgt: 指さす先(画面座標)
+  c.save(); c.fillStyle = '#121824';
+  c.beginPath(); c.ellipse(x, y + 10 * s, 70 * s, 22 * s, 0, 0, 7); c.fill();                                                                                              // しゃがんだ脚とかかと
+  c.beginPath(); c.moveTo(x - 62 * s, y); c.quadraticCurveTo(x - 72 * s, y - 70 * s, x - 48 * s, y - 128 * s); c.lineTo(x + 48 * s, y - 128 * s); c.quadraticCurveTo(x + 72 * s, y - 70 * s, x + 62 * s, y); c.closePath(); c.fill();   // 丸まった背中(紺の上着)
+  c.fillStyle = 'rgba(200,215,240,0.16)'; c.fillRect(x - 60 * s, y - 80 * s, 120 * s, 7 * s);                                                                                // 反射材のライン
+  c.strokeStyle = 'rgba(220,230,250,0.18)'; c.lineWidth = 3; c.beginPath(); c.moveTo(x - 62 * s, y); c.quadraticCurveTo(x - 72 * s, y - 70 * s, x - 48 * s, y - 128 * s); c.lineTo(x + 48 * s, y - 128 * s); c.quadraticCurveTo(x + 72 * s, y - 70 * s, x + 62 * s, y); c.stroke();   // 雪あかりのふち
+  const sx = x - 44 * s, sy = y - 110 * s, ex = lerp(sx - 20 * s, tgt[0], point), ey = lerp(sy + 60 * s, tgt[1] - 14 * s, point);
+  c.strokeStyle = '#1e2738'; c.lineCap = 'round'; c.lineWidth = 20 * s; c.beginPath(); c.moveTo(sx, sy); c.quadraticCurveTo((sx + ex) / 2, sy - 10 * s, ex, ey); c.stroke();                // のばした腕
+  c.lineWidth = 6 * s; c.strokeStyle = '#2a2420'; c.beginPath(); c.moveTo(ex, ey); c.lineTo(ex + (tgt[0] - ex) * 0.0 - 14 * s * Math.sign(sx - tgt[0]), ey + 10 * s); c.stroke();              // 指先(手袋)
+  c.fillStyle = '#0d0e10'; c.fillRect(x - 12 * s, y - 150 * s, 24 * s, 26 * s); c.beginPath(); c.ellipse(x - 4 * s, y - 170 * s, 25 * s, 29 * s, -0.25, 0, 7); c.fill();               // 首と、うつむいた頭
+  c.fillStyle = '#18202e'; c.beginPath(); c.ellipse(x - 6 * s, y - 190 * s, 30 * s, 13 * s, -0.25, Math.PI, 0); c.fill(); c.save(); c.translate(x - 6 * s, y - 190 * s); c.rotate(-0.25); c.fillRect(-31 * s, -2 * s, 62 * s, 10 * s); c.fillStyle = '#0a0d14'; c.fillRect(-35 * s, 7 * s, 70 * s, 6 * s); c.restore();   // 制帽
+  c.restore();
+}
+// ---- 地面の高さから見た庭(足あとが奥へ続く) ----
+function groundView(t, o) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy + (o.bob || 0));
+  const HZ = 720;
+  if (o.toHouse) {   // 門から玄関を見る
+    const sky = ctx.createLinearGradient(0, -300, 0, HZ); sky.addColorStop(0, '#59616f'); sky.addColorStop(1, '#9aa2b0'); ctx.fillStyle = sky; ctx.fillRect(-1200, -1500, W + 2400, HZ + 1500);
+    house(ctx, o.door || 0, o.inside || 0);
+  } else {           // 玄関前から、道路の方を見る
+    const sky = ctx.createLinearGradient(0, -300, 0, HZ); sky.addColorStop(0, '#5d6678'); sky.addColorStop(1, '#a9b0bc'); ctx.fillStyle = sky; ctx.fillRect(-400, -400, W + 800, HZ + 400);
+    for (const [x, w, h] of [[-200, 420, 200], [420, 360, 160], [820, 420, 210]]) { ctx.fillStyle = '#4a4f5c'; ctx.fillRect(x, HZ - h, w, h); ctx.fillStyle = '#e8ecf3'; ctx.beginPath(); ctx.moveTo(x - 20, HZ - h); ctx.lineTo(x + w / 2, HZ - h - 80); ctx.lineTo(x + w + 20, HZ - h); ctx.closePath(); ctx.fill(); }
+    ctx.fillStyle = '#3a3a40'; ctx.fillRect(220, 380, 16, 340);
+  }
+  snowGround(ctx, HZ, 2300);
+  if (!o.toHouse) { ctx.fillStyle = 'rgba(120,130,150,0.5)'; ctx.fillRect(-400, HZ + 6, W + 800, 30); ctx.fillStyle = '#7d756a'; for (let x = -200; x < W + 200; x += 70) { if (x > 400 && x < 680) continue; ctx.fillRect(x, HZ + 30, 16, 80); } }
+  // 足あと: 手前(下)から奥(上)へ
+  for (let i = 14; i >= 0; i--) { const [x, y, s] = gPrint(i); holes(ctx, [[x, y, s]], o.old ? 0.35 : 1); }
+  ctx.restore();
+}
+function gPrint(i) { const z = 1.1 + i * 0.7; return [540 + (Math.sin(i * 0.5) * 90 + (i % 2 ? 1 : -1) * 70) / z * 2.2, 720 + 1250 / z, 3.2 / z]; }
+function house(c, door, inside) {    // 古い2階建て。正面に玄関の引き戸
+  c.fillStyle = '#6b665d'; c.fillRect(140, 120, 800, 610); c.fillStyle = '#e9edf4'; c.beginPath(); c.moveTo(100, 125); c.lineTo(540, -40); c.lineTo(980, 125); c.closePath(); c.fill();   // 壁と雪の屋根
+  c.fillStyle = '#2e3138'; c.fillRect(220, 200, 180, 130); c.fillRect(680, 200, 180, 130);                                                                                // 2階の窓
+  c.fillStyle = '#e9edf4'; c.fillRect(120, 380, 840, 34); c.fillStyle = '#4b463f'; c.fillRect(120, 408, 840, 10);                                                          // ひさし
+  c.fillStyle = '#2e3138'; c.fillRect(190, 470, 170, 120);
+  c.fillStyle = '#6e6052'; c.fillRect(420, 430, 240, 300);
+  c.save(); c.beginPath(); c.rect(430, 440, 220, 290); c.clip();
+  { const ig = c.createLinearGradient(0, 440, 0, 730); ig.addColorStop(0, '#3a3c43'); ig.addColorStop(1, '#1d1e23'); c.fillStyle = ig; c.fillRect(430, 440, 220, 290); }             // すき間の奥は、暗い廊下
+  if (inside > 0) { c.save(); c.globalAlpha = inside; c.filter = 'blur(2px)'; figure(c, 598, 760 + 30 * inside, 1.0 + 0.3 * inside, 0, { col: '#030304' }); c.restore(); }   // 暗がりに立つ人影
+  const g = c.createLinearGradient(0, 440, 0, 730); g.addColorStop(0, '#8f949c'); g.addColorStop(1, '#6d727a');
+  for (const [x0, mv] of [[430, 0], [540, door]]) { const x = x0 + mv * 105; c.fillStyle = g; c.fillRect(x, 440, 110, 290); c.fillStyle = '#4a3e32'; c.fillRect(x, 440, 110, 8); c.fillRect(x, 722, 110, 8); c.fillRect(x, 440, 8, 290); c.fillRect(x + 102, 440, 8, 290); for (let k = 1; k < 4; k++) c.fillRect(x, 440 + k * 72, 110, 5); }   // 引き戸(右の戸が左へ動く)
+  c.restore();
+}
+
+// ---- ゆうべの家(夜) ----
+function nightHouse(t, o) {
+  ctx.save(); ctx.translate(540, 960); ctx.scale(o.z, o.z); ctx.translate(-o.cx, -o.cy);
+  ctx.fillStyle = '#0b0e16'; ctx.fillRect(-400, -400, W + 800, 1200);
+  const HZ = 1100; ctx.save(); ctx.translate(0, 380); ctx.filter = 'brightness(0.32)'; house(ctx, o.door || 0, 0); ctx.filter = 'none';
+  ctx.fillStyle = 'rgba(255,205,130,0.95)'; ctx.fillRect(220, 200, 180, 130); ctx.fillStyle = 'rgba(120,90,60,0.6)'; ctx.fillRect(305, 200, 10, 130);                 // 私の部屋(2階)だけ明かり
+  const w1 = '#1a2030'; ctx.fillStyle = w1; ctx.fillRect(190, 470, 170, 120);                                                                                               // 1階の暗い窓(雪あかりで少し青い)
+  if (o.sil > 0) { ctx.save(); ctx.beginPath(); ctx.rect(190, 470, 170, 120); ctx.clip(); ctx.globalAlpha = o.sil; ctx.fillStyle = '#05060a'; ctx.beginPath(); ctx.ellipse(275, 512, 17, 21, 0, 0, 7); ctx.fill(); ctx.fillRect(240, 535, 70, 80); ctx.restore(); }   // 窓の中に立つ人影
+  ctx.restore();
+  ctx.font = `800 44px ${MIN}`; ctx.textAlign = 'center'; ctx.fillStyle = `rgba(255,220,160,${o.lab})`; ctx.fillText('私の部屋', 310, 545);
+  const sg = ctx.createLinearGradient(0, HZ, 0, 2300); sg.addColorStop(0, '#2c3448'); sg.addColorStop(1, '#4a5470'); ctx.fillStyle = sg; ctx.fillRect(-400, HZ, W + 800, 1300);
+  if (o.walker) { const k = o.walker; figure(ctx, lerp(545, 600, k), lerp(1130, 1750, k), lerp(1.2, 2.6, k), o.wph, { walk: k > 0.02, col: '#05060a' }); }     // 出ていく人(ふり返らない)
+  if (o.prints) { const n = Math.floor(o.prints * 10); const p = []; for (let i = 0; i < n; i++) { const u = i / 9; p.push([545 + (i % 2 ? 1 : -1) * 14 * (1 + u * 2) + u * 50, 1150 + u * 580, 0.8 + u * 1.6]); } ctx.save(); ctx.filter = 'brightness(0.5)'; holes(ctx, p); ctx.restore(); }
+  ctx.restore();
+}
+function keyClose(t, k) {     // 外から、合いかぎで玄関の鍵をかける
+  ctx.fillStyle = '#2b2a2c'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#3c3a3e'; ctx.fillRect(160, 0, 340, H); ctx.fillStyle = '#56504a'; ctx.fillRect(500, 0, 40, H);
+  ctx.fillStyle = 'rgba(150,160,180,0.25)'; ctx.fillRect(540, 0, 540, H);
+  ctx.fillStyle = '#8c8578'; rr(330, 820, 120, 240, 18); ctx.fill(); ctx.fillStyle = '#151414'; ctx.beginPath(); ctx.arc(390, 900, 14, 0, 7); ctx.fill(); ctx.fillRect(384, 900, 12, 36);   // 鍵穴
+  const rot = ease(prog(t, EV.key + 0.85, EV.key + 1.1)) * Math.PI / 2;
+  ctx.save(); ctx.translate(390, 918); ctx.rotate(rot);
+  ctx.fillStyle = '#b9b2a2'; rr(-34, -95, 68, 190, 30); ctx.fill(); ctx.fillStyle = '#3c3a3e'; ctx.beginPath(); ctx.arc(0, -58, 13, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.35)'; rr(-24, -10, 10, 90, 5); ctx.fill();   // 鍵の持ち手(正面から見える)
+  ctx.fillStyle = '#0b0b0d'; rr(14, -70, 150, 140, 50); ctx.fill(); ctx.fillRect(110, -55, 1100, 110);       // 持ち手をつまむ手袋の手と腕(鍵といっしょに回る)
+  ctx.restore();
+  const g = ctx.createRadialGradient(390, 900, 100, 390, 900, 900); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.85)'); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+function phoneHand(t) {     // 私の手と電話(110 を押す)
+  const n = EV.phone + 0.8, typed = '110'.slice(0, (t > n ? 1 : 0) + (t > n + 0.28 ? 1 : 0) + (t > n + 0.56 ? 1 : 0));
+  ctx.save(); ctx.translate(860, 1120); ctx.scale(0.75, 0.75); ctx.rotate(-0.1);
+  ctx.fillStyle = '#121418'; rr(-150, -300, 300, 560, 36); ctx.fill(); ctx.fillStyle = '#20324a'; rr(-134, -284, 268, 528, 26); ctx.fill();
+  ctx.font = `700 78px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(typed, 0, -200);
+  ctx.font = `500 40px ${SANS}`; ctx.fillStyle = 'rgba(255,255,255,0.75)'; for (let i = 0; i < 9; i++) ctx.fillText(String(i + 1), -80 + (i % 3) * 80, -100 + Math.floor(i / 3) * 74);
+  ctx.fillStyle = '#2a1f1a'; ctx.beginPath(); ctx.ellipse(-150, 120, 70, 160, 0.2, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(150, 60, 40, 120, -0.2, 0, 7); ctx.fill();   // 手(手袋)
+  ctx.restore();
+}
+
+// ---- 字幕 ----
+function subtitle(t) {
+  const l = D.lines.find(l => l.kind !== 'kid' && t >= l.start - 0.08 && t < l.end + 0.3); if (!l) return;
+  const a = Math.min(prog(t, l.start - 0.08, l.start + 0.1), 1 - prog(t, l.end + 0.15, l.end + 0.3));
+  const rows = l.text.split('\n').map(r => { const segs = []; r.split(/(\[[^\]]*\])/).forEach(p => { if (!p) return; segs.push(p[0] === '[' ? { s: p.slice(1, -1), red: true } : { s: p, red: false }); }); return segs; });
+  let fs = l.id === 'now' ? 130 : 66; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.lineJoin = 'round';
+  const width = r => r.reduce((w, s) => w + ctx.measureText(s.s).width, 0);
+  ctx.font = `800 ${fs}px ${MIN}`; const mw = Math.max(...rows.map(width)); if (mw > 960) { fs = Math.floor(fs * 960 / mw); ctx.font = `800 ${fs}px ${MIN}`; }
+  const lh = fs * 1.42, y0 = 1480 - (rows.length - 1) * lh / 2, f = Math.round(t * FPS);
+  ctx.save(); ctx.globalAlpha = a;
+  rows.forEach((r, i) => {
+    let x = W / 2 - width(r) / 2; const y = y0 + i * lh + (l.id === 'now' ? (hash(f) - 0.5) * 8 : 0);
+    r.forEach(s => { ctx.strokeStyle = 'rgba(0,0,0,0.95)'; ctx.lineWidth = fs * 0.2; ctx.strokeText(s.s, x, y); ctx.fillStyle = s.red ? RED : '#fff'; ctx.shadowColor = s.red ? 'rgba(255,0,0,0.7)' : 'rgba(0,0,0,0)'; ctx.shadowBlur = s.red ? 18 : 0; ctx.fillText(s.s, x, y); ctx.shadowBlur = 0; x += ctx.measureText(s.s).width; });
+  });
+  ctx.restore();
+}
+
+const lowCv = document.createElement('canvas'); lowCv.width = W / 3; lowCv.height = H / 3; const lc = lowCv.getContext('2d');
+const prevCv = document.createElement('canvas'); prevCv.width = W; prevCv.height = H; const pc = prevCv.getContext('2d'); let prevF = -9;
+const grainCv = document.createElement('canvas'); grainCv.width = 540; grainCv.height = 960; const gc = grainCv.getContext('2d'); const gImg = gc.createImageData(540, 960);
+function lowLight(t, f, dark) {
+  // dark: 0=昼(ほぼそのまま) 〜 1=真っ暗な夜
+  const src = document.createElement('canvas'); src.width = W; src.height = H; src.getContext('2d').drawImage(cv, 0, 0);
+  // 解像感を落として、やわらかくぼかす(暗いほど強く)
+  lc.filter = `blur(${(0.5 + 1.0 * dark).toFixed(2)}px)`; lc.clearRect(0, 0, lowCv.width, lowCv.height); lc.drawImage(src, 0, 0, lowCv.width, lowCv.height); lc.filter = 'none';
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.filter = `saturate(${(1 - 0.45 * dark).toFixed(2)}) contrast(${(1 + 0.08 * dark).toFixed(2)})`;
+  // 手ぶれ(ゆっくりした揺れと、細かいふるえ)
+  const sx = Math.sin(t * 0.9) * 5 + Math.sin(t * 2.3 + 1) * 2 + (hash(f) - 0.5) * 1.4 * dark, sy = Math.sin(t * 0.7 + 2) * 4 + Math.sin(t * 1.9) * 2, rot = Math.sin(t * 0.5) * 0.004;
+  ctx.translate(540 + sx, 960 + sy); ctx.rotate(rot); ctx.scale(1.02, 1.02); ctx.translate(-540, -960);
+  ctx.imageSmoothingQuality = 'high'; ctx.drawImage(lowCv, 0, 0, W, H); ctx.filter = 'none';
+  ctx.globalAlpha = 0.12 + 0.5 * (1 - dark); ctx.drawImage(src, 0, 0); ctx.restore();   // 少しだけ元の細部を残す
+  // 残像(暗いところで動くものは尾を引く)
+  if (prevF === f - 1 && dark > 0.2) { ctx.save(); ctx.globalAlpha = 0.28 * dark; ctx.drawImage(prevCv, 0, 0); ctx.restore(); }
+  // ざらつき(暗い部分ほど目立つ、明るさのノイズ)
+  const r = rngOf(f * 7 + 3), d = gImg.data; for (let i = 0; i < d.length; i += 4) { const v = (r() + r() + r() - 1.5) * 150; d[i] = d[i + 1] = d[i + 2] = 128 + v; d[i + 3] = 255; }
+  gc.putImageData(gImg, 0, 0); ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.1 + 0.22 * dark; ctx.drawImage(grainCv, 0, 0, W, H); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = 'soft-light'; ctx.globalAlpha = 0.35; ctx.fillStyle = dark > 0.5 ? '#2a3550' : '#5a4a36'; ctx.fillRect(0, 0, W, H); ctx.restore();   // 夜は青く、昼は暖かく
+  pc.clearRect(0, 0, W, H); pc.drawImage(cv, 0, 0); prevF = f;
+}
+function render(t) {
+  const f = Math.round(t * FPS);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.shadowBlur = 0; ctx.filter = 'none';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let grain = 0.1, dark = 0.25;
+  const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
+  if (t < EV.hit) {
+    if (t < EV.lock) {             // 2階の窓から: 道路から玄関まで、足あと
+      const k = ease(prog(t, 0, LN.l3.end)); windowView(t, { z: lerp(1.0, 1.45, k), cx: 560, cy: lerp(900, 1150, k) }); fadeIn(0, 0.8);
+      if (t > LN.l3.start) { const a = ease(prog(t, LN.l3.start + 0.2, LN.l3.start + 0.8)); ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = RED; ctx.lineWidth = 8; ctx.setLineDash([22, 14]); ctx.shadowColor = RED; ctx.shadowBlur = 12;
+        ctx.beginPath(); ctx.moveTo(470, 470); ctx.lineTo(560, 1520); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = RED; ctx.beginPath(); ctx.moveTo(565, 1600); ctx.lineTo(520, 1510); ctx.lineTo(605, 1505); ctx.closePath(); ctx.fill(); ctx.restore(); }   // 入ってきた?(と思った矢印)
+    }
+    else if (t < EV.room) { genkanIn(t, { z: lerp(1.0, 1.8, ease(prog(t, EV.lock, EV.lock + 1.4))), cx: 541, cy: lerp(900, 770, ease(prog(t, EV.lock, EV.lock + 1.4))) }); fadeIn(EV.lock); const a = ease(prog(t, EV.lock + 1.4, EV.lock + 1.8)); if (a > 0) { const z = 1.8; ring(540, 960 + (765 - 770) * z, 90, a, '#ffd24a'); } }
+    else if (t < EV.cop) { emptyRoom(t, { z: lerp(1.05, 1.2, prog(t, EV.room, EV.cop)), cx: lerp(560, 640, prog(t, EV.room, EV.cop)), cy: 900 }); fadeIn(EV.room, 0.3); }
+    else if (t < EV.toe) {          // おまわりさんが、足あとを見る
+      groundView(t, { z: 1.0, cx: 540, cy: 960 }); const fp = gPrint(2); copBack(ctx, 880, 1330, 2.3, ease(prog(t, LN.l5.end - 0.8, LN.l5.end)), fp); ring(fp[0], fp[1], 60, ease(prog(t, LN.l6.start - 0.2, LN.l6.start + 0.2)), '#ffd24a'); fadeIn(EV.cop); }
+    else if (t < EV.map) { closeUp(t, '道路', ease(prog(t, EV.toe + 0.9, EV.toe + 1.5)), lerp(1.15, 1.0, ease(prog(t, EV.toe, EV.toe + 0.8)))); fadeIn(EV.toe, 0.25); }
+    else if (t < LN.l8.start - 0.2) { mapScene(t); fadeIn(EV.map, 0.3); dark = 0.15; }
+    else if (t < EV.night) {        // 遠くから見ると、ただの穴
+      windowView(t, { z: 1.45, cx: 560, cy: 1150 }); fadeIn(LN.l8.start - 0.2);
+      const a = ease(prog(t, LN.l8.start + 0.6, LN.l8.start + 1.2)); ring(560 + (WIN_PTS[9][0] - 560) * 1.45, 960 + (WIN_PTS[9][1] - 1150) * 1.45, 80, a, '#ffd24a'); }
+    else if (t < EV.key) {          // ゆうべ: 雪が降っている。私の部屋だけ明かり。1階の暗い窓に人影 → 玄関から出ていく
+      const snowA = 1 - prog(t, LN.l10.start - 0.5, LN.l10.start + 1.0);
+      const door = ease(prog(t, EV.out, EV.out + 0.8)) * (1 - ease(prog(t, EV.out + 1.5, EV.out + 2.0)));
+      nightHouse(t, { z: lerp(1.0, 1.12, prog(t, EV.night, EV.key)), cx: 540, cy: 980, sil: ease(prog(t, EV.sil, EV.sil + 1.0)) * (1 - ease(prog(t, EV.out - 0.6, EV.out - 0.1))), lab: ease(prog(t, LN.l9.start + 1.4, LN.l9.start + 1.9)), door, walker: t > EV.out + 0.6 && t < EV.out + 1.6 ? 0.02 : 0 });
+      flakes(t, 160, 0.8 * snowA, 9, 1); fadeIn(EV.night, 0.5); dark = 0.5; }
+    else if (t < EV.stepsOut[0] - 0.2) { keyClose(t, 0); fadeIn(EV.key, 0.25); dark = 0.5; }
+    else if (t < EV.back) {         // 鍵をかけて、雪の上を歩いていく
+      const k = prog(t, EV.stepsOut[0] - 0.2, EV.back); nightHouse(t, { z: 1.12, cx: 540, cy: 980, sil: 0, lab: 0, door: 0, walker: 0.15 + k * 0.85, wph: k * 9, prints: 0.15 + k * 0.85 }); dark = 0.5; }
+    else if (t < EV.see) {          // 次の朝: 家へ戻る
+      const k = prog(t, EV.back, EV.see), st = EV.stepsMe.filter(s => s <= t).length; const bob = t > EV.stepsMe[0] ? Math.sin((t - EV.stepsMe[0]) / 0.55 * Math.PI) * 10 : 0;
+      ctx.save(); ctx.filter = 'none'; groundView(t, { z: lerp(0.55, 0.9, ease(k)), cx: 540, cy: 760, toHouse: true, old: true, seed: 11, bob }); ctx.restore(); fadeIn(EV.back, 0.6);
+    }
+    else if (t < EV.toe2) { groundView(t, { z: lerp(0.95, 1.15, prog(t, EV.see, EV.toe2)), cx: 540, cy: lerp(820, 1000, prog(t, EV.see, EV.toe2)), toHouse: true, seed: 11 }); fadeIn(EV.see, 0.3); }
+    else if (t < EV.phone) { closeUp(t, '家', ease(prog(t, EV.toe2 + 0.5, EV.toe2 + 1.1)), lerp(1.15, 1.0, ease(prog(t, EV.toe2, EV.toe2 + 0.8)))); fadeIn(EV.toe2, 0.25); }
+    else {                          // 外から電話しようとすると、玄関の戸が内側から開く
+      const door = -ease(prog(t, EV.open, EV.open + 2.0)), ins = ease(prog(t, EV.open + 1.4, EV.open + 3.4)) * (0.7 + 0.3 * prog(t, LN.now.start, LN.now.end));
+      const z = lerp(1.0, 1.5, ease(prog(t, EV.open + 0.5, LN.now.start))) * lerp(1, 1.5, ease(prog(t, LN.now.start, EV.hit)));
+      groundView(t, { z, cx: lerp(540, 600, ease(prog(t, EV.open, EV.hit))), cy: lerp(760, 600, ease(prog(t, EV.open, EV.hit))), toHouse: true, seed: 11, door, inside: ins });
+      const ph = 1 - ease(prog(t, EV.open + 0.4, EV.open + 1.2)); if (ph > 0) { ctx.save(); ctx.translate(0, (1 - ph) * 700); phoneHand(t); ctx.restore(); }   // 戸が開いた音で、手が下がる
+      fadeIn(EV.phone, 0.3); dark = 0.35;
+    }
+    const g = ctx.createLinearGradient(0, 1330, 0, 1520); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.75)'); ctx.fillStyle = g; ctx.fillRect(0, 1330, W, 600);
+  } else if (t < EV.hit + 0.5) {
+    const k = (t - EV.hit) / 0.5; ctx.fillStyle = f % 2 ? '#bbb' : '#444'; ctx.fillRect(0, 0, W, H); ctx.filter = 'blur(4px)'; figure(ctx, 540, 2500 + 600 * k, 7 + 4 * k, 0, { col: '#050505' }); ctx.filter = 'none';
+    ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = f % 2 ? '#ff4038' : '#ffffff'; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+    for (let i = 0; i < 9; i++) { const y = hash(f * 3 + i) * H | 0, h = 30 + hash(f + i) * 140 | 0, dx = (hash(f * 7 + i) - 0.5) * 400 | 0; ctx.drawImage(cv, 0, y, W, h, dx, y, W, h); }
+    grain = 0.3;
+  } else {
+    const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('雪の朝は', W / 2, 860);
+    ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('足あとの「向き」を見てください。', W / 2, 960);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+  }
+  if (t < EV.hit + 0.5) lowLight(t, f, dark);
+  subtitle(t);
+  noise(grain * 0.4, f + 17, 2, 'overlay');
+  const v = ctx.createRadialGradient(W / 2, H / 2, 540, W / 2, H / 2, 1180); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)'); ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+}
+function ring(x, y, r, k, col = RED) { if (k <= 0) return; ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.shadowColor = col; ctx.shadowBlur = 16; ctx.beginPath(); ctx.arc(x, y, r, -1.6, -1.6 + 6.4 * k); ctx.stroke(); ctx.restore(); }
+function mapScene(t) {     // 上から見た図: 道路 / 足あと / 家
+  ctx.fillStyle = '#dfe5ee'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#9aa3b2'; ctx.fillRect(0, 230, W, 170); ctx.fillStyle = '#7d8696'; for (const y of [270, 350]) ctx.fillRect(0, y, W, 10);
+  ctx.fillStyle = '#6b665d'; ctx.fillRect(240, 1180, 600, 380); ctx.fillStyle = '#4a463f'; ctx.fillRect(470, 1170, 140, 26);
+  ctx.font = `800 58px ${MIN}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText('道路', 540, 315); ctx.fillText('家', 540, 1380); ctx.font = `800 40px ${MIN}`; ctx.fillStyle = '#2b2a28'; ctx.fillText('玄関', 540, 1130);
+  const fl = ease(prog(t, EV.flip - 0.3, EV.flip + 0.3));
+  for (let i = 0; i < 9; i++) { const u = i / 8, x = 540 + Math.sin(u * 2.6) * 60 + (i % 2 ? 26 : -26), y = 1080 - u * 640;
+    ctx.save(); ctx.globalAlpha = 1 - fl; holes(ctx, [[x, y, 1.6]]); ctx.restore();
+    if (fl > 0) { ctx.save(); ctx.globalAlpha = fl; ctx.translate(x, y); ctx.scale(46, 46); bootShape(ctx); ctx.restore(); ctx.save(); ctx.globalAlpha = fl; ctx.fillStyle = '#6d7d99'; ctx.fill(); ctx.restore(); } }   // 穴 → くつの形(つま先は道路向き)
+  const arrow = (y0, y1, col, a, label) => { if (a <= 0) return; ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 14; ctx.beginPath(); ctx.moveTo(800, y0); ctx.lineTo(800, y1); ctx.stroke(); const d = Math.sign(y1 - y0); ctx.beginPath(); ctx.moveTo(800, y1 + d * 40); ctx.lineTo(765, y1 - d * 10); ctx.lineTo(835, y1 - d * 10); ctx.closePath(); ctx.fill();
+    ctx.font = `800 56px ${MIN}`; ctx.textAlign = 'center'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 12; ctx.strokeText(label, 800, (y0 + y1) / 2 + 120); ctx.fillText(label, 800, (y0 + y1) / 2 + 120); ctx.restore(); };
+  const a1 = ease(prog(t, EV.map + 0.3, EV.map + 0.8)); arrow(480, 1020, '#8a93ad', a1 * (1 - fl * 0.6), '入ってきた?'); if (fl > 0.5) { ctx.save(); ctx.globalAlpha = (fl - 0.5) * 2; ctx.strokeStyle = '#8a93ad'; ctx.lineWidth = 10; ctx.beginPath(); ctx.moveTo(680, 820); ctx.lineTo(920, 900); ctx.stroke(); ctx.restore(); }
+  ctx.save(); ctx.translate(-540, 0); arrow(1020, 480, RED, fl, '出ていった'); ctx.restore();
+}
+
+window.FPS = FPS; window.DURATION = DURATION; window.render = render;
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '道路家玄関入ってきた?出ていったつま先かかと私の部屋雪の朝は足あとの「向き」を見てください。ナレーション四国めたん').then(() => document.fonts.ready);
+if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
+</script></body></html>
