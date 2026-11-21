@@ -1,0 +1,223 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="fonts/local.css" rel="stylesheet">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head><body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+const W=1080,H=1920,cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const F="'M PLUS Rounded 1c', 'IPAGothic', sans-serif";
+const PINK='#E2559A',PINK_L='#FCE4F0',BLUE='#3A8EDB',BLUE_L='#DDEFFF',INK='#2E2A3A',MIST='#9FD3FF';
+let LINES=[],DURS=[],SC=[],TOTAL=0;
+const GAP=0.4,START=0.3,TAIL=2.2;
+const TITLES=['耳鼻科のアレ、なに？','ネブライザー療法','霧のしくみ','どこまで届く？','中身のお薬','なぜ診察の後？','吸入のコツ','まとめ'];
+
+window.setup=(lines,durs)=>{LINES=lines;DURS=durs;let t=START;SC=durs.map((d,i)=>{const s={start:t,dur:d};t+=d+GAP;return s});TOTAL=t-GAP+TAIL;return TOTAL};
+
+// ---------- helpers ----------
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease=x=>{x=clamp(x);return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2};
+const back=x=>{x=clamp(x);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(x-1,3)+c1*Math.pow(x-1,2)};
+const rnd=(i,k=0)=>{const v=Math.sin(i*12.9898+k*78.233)*43758.5453;return v-Math.floor(v)};
+function rr(x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
+function txt(s,x,y,size,color=INK,weight=800,align='center'){ctx.font=`${weight} ${size}px ${F}`;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(s,x,y)}
+function pop(lt,at,d=.45){return back((lt-at)/d)}
+function withA(a,fn){if(a<=0)return;ctx.save();ctx.globalAlpha*=clamp(a);fn();ctx.restore()}
+function scaleAt(x,y,s,fn){if(s<=0.001)return;ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.translate(-x,-y);fn();ctx.restore()}
+function arrow(x1,y1,x2,y2,color,w=10,head=26){const a=Math.atan2(y2-y1,x2-x1);ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2-Math.cos(a)*head*.6,y2-Math.sin(a)*head*.6);ctx.stroke();ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-head*Math.cos(a-.5),y2-head*Math.sin(a-.5));ctx.lineTo(x2-head*Math.cos(a+.5),y2-head*Math.sin(a+.5));ctx.closePath();ctx.fill()}
+function chip(s,x,y,size,bg,fg='#fff',padX=28,h=null){ctx.font=`800 ${size}px ${F}`;const w=ctx.measureText(s).width+padX*2;h=h||size*1.7;rr(x-w/2,y-h/2,w,h,h/2);ctx.fillStyle=bg;ctx.fill();txt(s,x,y+2,size,fg);return w}
+function card(x,y,w,h,fill='#fff',stroke=null,r=36){ctx.save();ctx.shadowColor='rgba(60,40,90,.15)';ctx.shadowBlur=30;ctx.shadowOffsetY=10;rr(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();ctx.restore();if(stroke){rr(x,y,w,h,r);ctx.strokeStyle=stroke;ctx.lineWidth=6;ctx.stroke()}}
+// time (sec into scene) when keyword is spoken (char-proportional estimate)
+function kw(i,word){const L=LINES[i];const k=L.indexOf(word);return k<0?0:DURS[i]*(k/L.length)}
+
+// mist particles flowing from origin in a direction
+function mist(t,ox,oy,ang,dist,spread,n,period=1.6,size=14,col=MIST,seed=0){
+  for(let i=0;i<n;i++){const life=((t/period)+rnd(i,seed+1))%1;const d=life*dist;const off=(rnd(i,seed+2)-.5)*spread*(0.25+life);
+    const wob=Math.sin(t*3+i)*8*life;const x=ox+Math.cos(ang)*d-Math.sin(ang)*(off+wob),y=oy+Math.sin(ang)*d+Math.cos(ang)*(off+wob);
+    const r=size*(0.5+rnd(i,seed+3)*.8)*(0.6+life*.8);ctx.globalAlpha=Math.sin(Math.PI*life)*.8;ctx.fillStyle=col;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill()}
+  ctx.globalAlpha=1}
+// particles along a polyline path
+function pathPt(P,u){let L=[],tot=0;for(let i=1;i<P.length;i++){const l=Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]);L.push(l);tot+=l}
+  let d=u*tot;for(let i=0;i<L.length;i++){if(d<=L[i]||i==L.length-1){const f=clamp(d/L[i]);const a=P[i],b=P[i+1];return[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,Math.atan2(b[1]-a[1],b[0]-a[0])]}d-=L[i]}}
+function flow(t,P,n,width,period,size,col,seed,maxU=1,alpha=.85){for(let i=0;i<n;i++){const life=((t/period)+rnd(i,seed))%1;const u=life*maxU;const [x,y,a]=pathPt(P,u);const off=(rnd(i,seed+5)-.5)*width;
+  ctx.globalAlpha=alpha*Math.min(1,life*6,(1-life)*4);ctx.fillStyle=col;ctx.beginPath();ctx.arc(x-Math.sin(a)*off,y+Math.cos(a)*off,size*(.6+rnd(i,seed+7)*.7),0,7);ctx.fill()}ctx.globalAlpha=1}
+
+// ---------- background, header, subtitle ----------
+function bg(t){const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#F3F9FF');g.addColorStop(.55,'#FFF6FB');g.addColorStop(1,'#FBEAF4');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  for(let i=0;i<14;i++){const x=(rnd(i,9)*W+t*12*(rnd(i,4)+.3))%(W+200)-100,y=(rnd(i,8)*1300+120+Math.sin(t*.6+i)*30);ctx.globalAlpha=.10;ctx.fillStyle=i%2?BLUE:PINK;ctx.beginPath();ctx.arc(x,y,20+rnd(i,5)*60,0,7);ctx.fill()}ctx.globalAlpha=1}
+function header(i,a,t){
+  rr(60,70,W-120,14,7);ctx.fillStyle='rgba(0,0,0,.07)';ctx.fill();rr(60,70,(W-120)*clamp(t/TOTAL),14,7);ctx.fillStyle=PINK;ctx.fill();
+  chip('耳鼻科の吸入治療をかんたん解説',W/2,150,34,'#fff',PINK,30);rr(W/2-ctx.measureText('耳鼻科の吸入治療をかんたん解説').width/2-30,150-29,ctx.measureText('耳鼻科の吸入治療をかんたん解説').width+60,58,29);ctx.strokeStyle=PINK;ctx.lineWidth=3;ctx.stroke();
+  withA(a,()=>{ctx.save();ctx.translate(0,(1-ease(a))*20);txt(TITLES[i],W/2,262,84,INK);ctx.fillStyle=PINK;rr(W/2-80,322,160,10,5);ctx.fill();ctx.restore()})}
+function wrap(s,maxW,size){ctx.font=`800 ${size}px ${F}`;const out=[];let cur='';for(const ch of s){if(ctx.measureText(cur+ch).width>maxW&&!'、。」！？'.includes(ch)){out.push(cur);cur=ch}else cur+=ch}if(cur)out.push(cur);return out}
+function subtitle(i,lt,a){
+  const L=LINES[i];const parts=L.split(/(?<=。)/).filter(x=>x.trim());let acc=0,cur=parts[0];
+  for(const p of parts){const st=DURS[i]*acc/L.length;if(lt>=st-0.05)cur=p;acc+=p.length}
+  withA(a,()=>{const y0=1450;card(60,y0,W-120,330,'#fff',PINK,44);
+    chip('四国めたん',220,y0,40,PINK,'#fff',34,70);
+    let fs=56,ls=wrap(cur,W-220,fs);if(ls.length>3){fs=48;ls=wrap(cur,W-200,fs)}const lh=fs*1.38;const sy=y0+175-(ls.length-1)*lh/2;
+    ls.forEach((l,k)=>txt(l,W/2,sy+k*lh,fs,INK))})
+  txt('VOICEVOX:四国めたん',W/2,1855,30,'rgba(46,42,58,.55)',500)}
+
+// ---------- common illustration pieces ----------
+function faceProfile(cx,cy,s){ // side head facing left
+  ctx.save();ctx.translate(cx,cy);ctx.scale(s,s);
+  ctx.beginPath();ctx.moveTo(60,-330);ctx.bezierCurveTo(-120,-330,-190,-230,-190,-120);ctx.lineTo(-200,-60);ctx.lineTo(-290,40);ctx.quadraticCurveTo(-300,60,-270,70);ctx.lineTo(-215,75);
+  ctx.quadraticCurveTo(-230,110,-215,130);ctx.quadraticCurveTo(-240,150,-215,175);ctx.quadraticCurveTo(-215,250,-120,270);ctx.lineTo(0,280);ctx.lineTo(60,400);ctx.lineTo(260,400);ctx.lineTo(230,250);
+  ctx.bezierCurveTo(300,150,300,-330,60,-330);ctx.closePath();ctx.fillStyle='#FDE3D3';ctx.fill();ctx.strokeStyle='#E8B9A0';ctx.lineWidth=6;ctx.stroke();
+  // hair
+  ctx.beginPath();ctx.moveTo(-180,-150);ctx.bezierCurveTo(-170,-320,180,-380,270,-120);ctx.bezierCurveTo(300,0,280,120,240,230);ctx.bezierCurveTo(200,60,150,-140,-60,-200);ctx.quadraticCurveTo(-140,-200,-180,-150);ctx.fillStyle='#8E5BA8';ctx.fill();
+  ctx.restore()}
+function noseCavity(cx,cy,s,highlight=1){ctx.save();ctx.translate(cx,cy);ctx.scale(s,s);
+  // nasal cavity channel
+  ctx.beginPath();ctx.moveTo(-262,58);ctx.quadraticCurveTo(-210,0,-120,-10);ctx.lineTo(60,-15);ctx.quadraticCurveTo(120,-10,130,60);ctx.lineTo(140,250);ctx.lineTo(95,250);ctx.lineTo(85,90);ctx.quadraticCurveTo(80,45,30,45);ctx.lineTo(-150,48);ctx.quadraticCurveTo(-200,52,-230,72);ctx.closePath();
+  ctx.fillStyle='#F7A9A8';ctx.fill();
+  // sinus
+  ctx.globalAlpha=highlight;ctx.beginPath();ctx.ellipse(-60,-90,85,55,0,0,7);ctx.fillStyle='#D9C4F5';ctx.fill();ctx.strokeStyle='#9C7BD6';ctx.lineWidth=5;ctx.setLineDash([12,10]);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='#D9C4F5';ctx.fillRect(-72,-40,24,32);ctx.globalAlpha=1;ctx.restore()}
+
+// ---------- scenes ----------
+const S=[];
+S[0]=(lt,t)=>{ // title
+  const cx=W/2;
+  withA(ease(lt/.5),()=>{ctx.save();const s=pop(lt,0,.6);scaleAt(cx,520,s,()=>{txt('耳鼻科で鼻に当てる',cx,440,62,INK);txt('あの「シュー」',cx,560,110,PINK);txt('の正体とは？',cx,680,72,INK)});ctx.restore()});
+  // nozzle and mist
+  const nx=300,ny=1060;ctx.save();ctx.translate(nx,ny);ctx.rotate(-.35);rr(-230,-38,260,76,38);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=BLUE;ctx.lineWidth=6;ctx.stroke();rr(20,-26,70,52,18);ctx.fillStyle=BLUE_L;ctx.fill();ctx.stroke();ctx.restore();
+  const puff=lt>.6?1:0;if(puff)mist(t,nx+90,ny-30,-.35,520,220,70,1.4,16,MIST,1);
+  // nose icon
+  const fx=820,fy=900;ctx.beginPath();ctx.arc(fx,fy,150,0,7);ctx.fillStyle='#FDE3D3';ctx.fill();ctx.strokeStyle='#E8B9A0';ctx.lineWidth=6;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(fx-10,fy-70);ctx.quadraticCurveTo(fx-60,fy+30,fx-20,fy+40);ctx.strokeStyle='#D08F78';ctx.lineWidth=8;ctx.lineCap='round';ctx.stroke();
+  ctx.beginPath();ctx.arc(fx-60,fy-50,12,0,7);ctx.arc(fx+40,fy-50,12,0,7);ctx.fillStyle=INK;ctx.fill();
+  const q=pop(lt,1.2);scaleAt(880,640+Math.sin(t*4)*12,q,()=>{ctx.beginPath();ctx.arc(900,700,70,0,7);ctx.fillStyle=PINK;ctx.fill();txt('？',900,705,90,'#fff')});
+  withA(ease((lt-kw(0,'わたくし'))/.4),()=>chip('今回はこれを解説！',W/2,1300,46,BLUE));
+};
+S[1]=(lt,t)=>{
+  const steps=[['お薬（液体）',BLUE],['霧にする',PINK],['鼻・のどの奥へ',BLUE]];const tk=[kw(1,'お薬'),kw(1,'霧状'),kw(1,'奥まで')];
+  steps.forEach(([s,c],k)=>{const p=pop(lt,tk[k]);const y=420+k*0;const x=[200,540,880][k];scaleAt(x,430,p,()=>chip(s,x,430,40,c,'#fff',22,84));if(k<2)withA(ease((lt-tk[k+1])/.3),()=>arrow(x+128,430,x+212,430,'#bbb',8,22))});
+  withA(ease(lt/.4),()=>{txt('ネブライザー',W/2,560,46,PINK);txt('＝ 薬を霧にして届ける装置',W/2,620,40,INK,500)});
+  // machine
+  card(110,860,330,260,'#fff',BLUE,40);rr(150,900,110,70,16);ctx.fillStyle=BLUE_L;ctx.fill();txt('ON',205,935,34,BLUE);
+  for(let k=0;k<3;k++){ctx.beginPath();ctx.arc(320+k*0,900+k*0,0,0,7)}ctx.beginPath();ctx.arc(360,1040,36,0,7);ctx.fillStyle=PINK_L;ctx.fill();ctx.strokeStyle=PINK;ctx.lineWidth=5;ctx.stroke();
+  txt('吸入器',275,1080,36,INK);
+  // cup + tube
+  rr(300,760,120,110,20);ctx.fillStyle='rgba(159,211,255,.5)';ctx.fill();ctx.strokeStyle=BLUE;ctx.lineWidth=5;ctx.stroke();
+  const lvl=760+110-80*(1-0.3*((lt/DURS[1])));rr(306,lvl,108,870-lvl-6,14);ctx.fillStyle='#6FB6F2';ctx.fill();
+  ctx.beginPath();ctx.moveTo(360,760);ctx.bezierCurveTo(360,640,560,640,600,760);ctx.strokeStyle='#cfd8e3';ctx.lineWidth=26;ctx.lineCap='round';ctx.stroke();
+  ctx.save();ctx.translate(615,790);ctx.rotate(.55);rr(-30,-40,160,60,26);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle=BLUE;ctx.lineWidth=5;ctx.stroke();ctx.restore();
+  if(lt>tk[1])mist(t,720,850,-.15,240,90,50,1.2,13,MIST,2);
+  faceProfile(1080,980,.62);
+  withA(ease((lt-tk[2])/.4),()=>chip('直接届く！',870,1290,44,PINK));
+};
+S[2]=(lt,t)=>{
+  // droplet splitting
+  const sp=ease((lt-0.3)/1.6);const cx=W/2,cy=520;
+  ctx.globalAlpha=1-sp;ctx.beginPath();ctx.arc(cx,cy,110,0,7);ctx.fillStyle='#6FB6F2';ctx.fill();ctx.globalAlpha=1;
+  for(let i=0;i<40;i++){const a=rnd(i,3)*7,d=sp*(60+rnd(i,4)*260);ctx.globalAlpha=sp*.85;ctx.fillStyle=MIST;ctx.beginPath();ctx.arc(cx+Math.cos(a)*d*1.6,cy+Math.sin(a)*d*.55+Math.sin(t*2+i)*6,6+rnd(i,6)*10,0,7);ctx.fill()}ctx.globalAlpha=1;
+  withA(sp,()=>{txt('薬液',160,430,40,BLUE);txt('→ とっても細かい粒に',W/2,700,46,INK)});
+  // two panels
+  const pA=pop(lt,kw(2,'超音波')),pB=pop(lt,kw(2,'圧縮空気'));
+  scaleAt(290,960,pA,()=>{card(80,790,420,360,'#fff',BLUE,36);txt('超音波',290,840,44,BLUE);
+    rr(150,1080,280,30,10);ctx.fillStyle='#8C9BB0';ctx.fill();const v=Math.sin(t*40)*4;rr(170,1050+v,240,30,12);ctx.fillStyle='#B7C4D6';ctx.fill();
+    for(let k=0;k<3;k++){const r=((t*1.5+k/3)%1);ctx.globalAlpha=1-r;ctx.strokeStyle=BLUE;ctx.lineWidth=5;ctx.beginPath();ctx.arc(290,1060,40+r*90,Math.PI*1.15,Math.PI*1.85);ctx.stroke()}ctx.globalAlpha=1;
+    mist(t,290,1010,-Math.PI/2,130,160,26,1.2,9,MIST,4);txt('振動で細かく',290,1125,30,INK,500)});
+  scaleAt(790,960,pB,()=>{card(580,790,420,360,'#fff',PINK,36);txt('圧縮空気',790,840,44,PINK);
+    for(let k=0;k<4;k++){const o=((t*2+k/4)%1);withA(1-o,()=>arrow(620+o*60,980+k*0,700+o*60,980,'#F39AC2',7,18))}
+    rr(760,1000,40,110,10);ctx.fillStyle='#6FB6F2';ctx.fill();mist(t,790,975,-.2,190,120,30,1.1,9,MIST,5);txt('風で吹き飛ばす',790,1125,30,INK,500)});
+  // not hot
+  const pc=pop(lt,kw(2,'蒸気'));scaleAt(W/2,1300,pc,()=>{card(130,1210,820,180,'#FFF7E0','#F2B33D',40);
+    rr(190,1245,36,110,18);ctx.fillStyle='#fff';ctx.fill();ctx.strokeStyle='#999';ctx.lineWidth=4;ctx.stroke();ctx.beginPath();ctx.arc(208,1355,26,0,7);ctx.fillStyle=BLUE;ctx.fill();rr(200,1290,16,60,8);ctx.fill();
+    txt('湯気じゃない！',560,1268,48,'#C9781B');txt('だから熱くない',560,1335,44,INK)});
+};
+S[3]=(lt,t)=>{
+  const cx=560,cy=840,s=1.25;faceProfile(cx,cy,s);noseCavity(cx,cy,s);
+  const tr=(x,y)=>[cx+x*s,cy+y*s];
+  const P1=[[-330,52],[-240,40],[-150,20],[0,15],[80,25],[108,90],[115,240]].map(p=>tr(...p));
+  const P2=[[-330,52],[-240,40],[-150,25],[-60,20],[-60,-30],[-60,-90],[-20,-110]].map(p=>tr(...p));
+  // drops (oral/spray) stop early
+  const tA=kw(3,'飲み薬'),tB=kw(3,'鼻の奥');
+  withA(ease((lt-tA)/.3)*(1-ease((lt-tB)/.4)),()=>{for(let i=0;i<6;i++){const life=((lt*1.2)+i/6)%1;const [x,y]=pathPt(P1,life*.18);ctx.globalAlpha=Math.sin(Math.PI*life);ctx.fillStyle='#F28C38';ctx.beginPath();ctx.arc(x,y-6,16,0,7);ctx.fill()}ctx.globalAlpha=1;chip('点鼻薬：手前で止まりがち',W/2,1310,40,'#F28C38')});
+  if(lt>tB-.2){flow(t,P1,40,26,2.0,8,'#3A8EDB',11);if(lt>kw(3,'副鼻腔')-.2)flow(t,P2,24,18,2.2,8,'#7A4FD0',21)}
+  withA(ease((lt-kw(3,'副鼻腔'))/.4),()=>{const [x,y]=tr(-60,-90);chip('副鼻腔',x-130,y-120,40,'#9C7BD6');arrow(x-110,y-90,x-50,y-55,'#9C7BD6',6,18)});
+  withA(ease((lt-tB)/.4),()=>{const [x,y]=tr(40,-15);chip('鼻の奥（鼻腔）',x+150,y+190,36,'#E46C6A');withA(ease((lt-kw(3,'入っていける'))/.4),()=>chip('霧なら奥まで届く！',W/2,1310,44,BLUE))});
+};
+S[4]=(lt,t)=>{
+  const items=[['抗菌薬','細菌をやっつける','kin','#46A86B'],['ステロイド','炎症をおさえる','fire','#E57A3A'],['血管収縮薬','鼻づまりを和らげる','nose','#3A8EDB']];
+  const tk=[kw(4,'細菌'),kw(4,'炎症'),kw(4,'鼻づまり')];
+  withA(ease(lt/.4),()=>txt('症状に合わせて組み合わせ',W/2,420,46,INK,500));
+  items.forEach(([n,d,ic,c],k)=>{const y=520+k*290,p=pop(lt,tk[k]-.15),lk=lt-tk[k];
+    ctx.save();ctx.translate((1-ease((lt-tk[k]+.15)/.45))*700,0);withA(p,()=>{card(80,y,920,250,'#fff',c,40);
+      txt(n,560,y+90,62,c);txt(d,560,y+170,42,INK,500);
+      const ix=210,iy=y+125;ctx.beginPath();ctx.arc(ix,iy,90,0,7);ctx.fillStyle=c+'22';ctx.fill();
+      if(ic=='kin'){const sh=clamp(1-(lk-1)/1);const ba=ctx.globalAlpha;for(let b=0;b<3;b++){const bx=ix-35+b*35,by=iy+(b%2?-25:20);ctx.globalAlpha=ba*Math.max(.15,sh);ctx.fillStyle='#7BC46B';ctx.beginPath();ctx.ellipse(bx,by,24,16,b,0,7);ctx.fill();for(let l=0;l<6;l++){const a=l;ctx.strokeStyle='#5AA04B';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(bx+Math.cos(a)*22,by+Math.sin(a)*14);ctx.lineTo(bx+Math.cos(a)*32,by+Math.sin(a)*22);ctx.stroke()}}ctx.globalAlpha=ba;
+        withA(ease((lk-.8)/.3),()=>{ctx.strokeStyle='#D9363E';ctx.lineWidth=12;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(ix-50,iy-50);ctx.lineTo(ix+50,iy+50);ctx.moveTo(ix+50,iy-50);ctx.lineTo(ix-50,iy+50);ctx.stroke()})}
+      if(ic=='fire'){const sh=1-.6*ease((lk-.6)/1.2);const fl=Math.sin(t*12)*.06;scaleAt(ix,iy+50,sh*(1+fl),()=>{ctx.beginPath();ctx.moveTo(ix,iy-70);ctx.bezierCurveTo(ix+60,iy-10,ix+55,iy+50,ix,iy+50);ctx.bezierCurveTo(ix-55,iy+50,ix-60,iy-10,ix,iy-70);ctx.fillStyle='#F58A3A';ctx.fill();ctx.beginPath();ctx.moveTo(ix,iy-20);ctx.bezierCurveTo(ix+30,iy+10,ix+28,iy+45,ix,iy+45);ctx.bezierCurveTo(ix-28,iy+45,ix-30,iy+10,ix,iy-20);ctx.fillStyle='#FFD25A';ctx.fill()});
+        withA(ease((lk-.6)/.5),()=>arrow(ix+70,iy-50,ix+70,iy+40,'#E57A3A',7,18))}
+      if(ic=='nose'){const o=12+40*ease((lk-.5)/1.2);rr(ix-75,iy-o/2-28,150,28,14);ctx.fillStyle='#F7A9A8';ctx.fill();rr(ix-75,iy+o/2,150,28,14);ctx.fill();
+        if(lk>1)mist(t,ix-80,iy,0,160,o*.8,14,1,6,'#3A8EDB',7)}
+    });ctx.restore()});
+};
+S[5]=(lt,t)=>{
+  const half=kw(5,'方が'),cx=W/2;
+  const st=lt<half?1:2;
+  chip(st==1?'① 診察で鼻水を吸い取る':'② 薬がしっかり届く',cx,460,46,st==1?'#E2A62B':BLUE,'#fff',30,90);
+  // channel
+  const x0=120,x1=960,yc=820,hh=110;rr(x0,yc-hh,x1-x0,hh*2,hh);ctx.fillStyle='#F7A9A8';ctx.fill();rr(x0+20,yc-hh+20,x1-x0-40,hh*2-40,hh-20);ctx.fillStyle='#FBD3D2';ctx.fill();
+  txt('鼻の通り道',cx,yc-hh-50,38,'#C25856');
+  // mucus blobs sucked away
+  const suck=ease((lt-1.2)/(Math.max(1.2,half-1.6)));
+  const tipX=x0+40+260*ease((lt-.4)/.8);
+  for(let i=0;i<7;i++){const bx0=320+i*95,by0=yc+(rnd(i,2)-.5)*120;const k=clamp(suck*1.6-i*.09);const bx=bx0+(tipX-bx0)*ease(k),by=by0+(yc-by0)*ease(k);ctx.globalAlpha=1-clamp((k-.85)/.15);ctx.fillStyle='#D9D36A';ctx.beginPath();ctx.ellipse(bx,by,52*(1-k*.5),40*(1-k*.5),i,0,7);ctx.fill()}ctx.globalAlpha=1;
+  if(st==1){rr(-40,yc-24,tipX+40,48,24);ctx.fillStyle='#B9C6D6';ctx.fill();rr(tipX-30,yc-18,34,36,14);ctx.fillStyle='#8899AE';ctx.fill();txt('吸引',tipX-110,yc+75,34,INK)}
+  else{withA(ease((lt-half)/.4),()=>{flow(t,[[x0+30,yc],[x1-30,yc]],60,150,1.6,10,BLUE,31)})}
+  // compare
+  withA(ease((lt-half)/.5),()=>{card(100,1060,400,250,'#fff','#ccc',36);card(580,1060,400,250,'#fff',BLUE,36);
+    txt('鼻水があると',300,1110,36,'#888');txt('ブロック…',300,1170,44,'#888');for(let i=0;i<5;i++){ctx.fillStyle=MIST;ctx.beginPath();ctx.arc(160+((t*60+i*30)%100),1250,9,0,7);ctx.fill()}ctx.fillStyle='#D9D36A';ctx.beginPath();ctx.ellipse(300,1250,50,38,0,0,7);ctx.fill();
+    txt('きれいにすると',780,1110,36,BLUE);txt('奥まで届く！',780,1170,44,BLUE);flow(t,[[620,1250],[940,1250]],18,40,1.4,9,BLUE,41)});
+};
+S[6]=(lt,t)=>{
+  const t2=kw(6,'終わった');const cx=W/2,cy=800;
+  // front face
+  ctx.beginPath();ctx.arc(cx,cy,230,0,7);ctx.fillStyle='#FDE3D3';ctx.fill();ctx.strokeStyle='#E8B9A0';ctx.lineWidth=6;ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy-120,240,Math.PI*1.02,Math.PI*1.98);ctx.fillStyle='#8E5BA8';ctx.fill();
+  ctx.fillStyle=INK;ctx.beginPath();ctx.arc(cx-80,cy-30,14,0,7);ctx.arc(cx+80,cy-30,14,0,7);ctx.fill();
+  ctx.beginPath();ctx.moveTo(cx,cy-10);ctx.quadraticCurveTo(cx-30,cy+50,cx,cy+55);ctx.strokeStyle='#D08F78';ctx.lineWidth=7;ctx.lineCap='round';ctx.stroke();
+  const cyc=(lt%4)/4,inh=cyc<.5;const ph=inh?cyc*2:(cyc-.5)*2;
+  ctx.beginPath();ctx.ellipse(cx,cy+120,inh?30:42,inh?10:26,0,0,7);ctx.fillStyle='#C2566A';ctx.fill();
+  if(lt<t2+.3){
+    if(inh){for(let k=0;k<2;k++){const o=(ph+k*.5)%1;withA(Math.sin(Math.PI*o),()=>arrow(cx-330+o*230,cy+40+k*0-60+o*80,cx-260+o*230,cy-10+o*80-20,BLUE,12,30))}chip('鼻から ゆっくり吸う',cx,1200,52,BLUE,'#fff',36,100)}
+    else{for(let k=0;k<2;k++){const o=(ph+k*.5)%1;withA(Math.sin(Math.PI*o),()=>arrow(cx+40+o*200,cy+130+o*60,cx+110+o*200,cy+150+o*60,'#E57A3A',12,30))}chip('口から ゆっくり吐く',cx,1200,52,'#E57A3A','#fff',36,100)}
+    const bar=inh?ph:1-ph;rr(cx-300,1310,600,30,15);ctx.fillStyle='#eee';ctx.fill();rr(cx-300,1310,600*bar,30,15);ctx.fillStyle=inh?BLUE:'#E57A3A';ctx.fill()}
+  withA(ease((lt-t2)/.4),()=>{rr(70,400,W-140,990,50);ctx.fillStyle='rgba(255,255,255,.94)';ctx.fill();
+    const p=pop(lt,t2+.1);scaleAt(cx,820,p,()=>{card(260,560,560,480,'#fff','#D9363E',44);
+      rr(400,680,280,200,20);ctx.fillStyle='#F2F2F2';ctx.fill();ctx.strokeStyle='#bbb';ctx.lineWidth=5;ctx.stroke();ctx.beginPath();ctx.moveTo(470,680);ctx.quadraticCurveTo(540,600,610,680);ctx.fillStyle='#fff';ctx.fill();ctx.stroke();txt('ティッシュ',540,790,36,'#999',500);
+      withA(ease((lt-t2-.5)/.25),()=>{ctx.strokeStyle='#D9363E';ctx.lineWidth=22;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(380,620);ctx.lineTo(700,940);ctx.moveTo(700,620);ctx.lineTo(380,940);ctx.stroke()})});
+    withA(ease((lt-t2-.4)/.4),()=>{txt('直後に強く',cx,1150,58,'#D9363E');txt('鼻をかまない！',cx,1235,64,'#D9363E')})});
+};
+S[7]=(lt,t)=>{
+  const cx=W/2;
+  // calendar
+  card(100,420,880,420,'#fff',PINK,40);txt('通院カレンダー',cx,480,42,PINK);
+  for(let d=0;d<8;d++){const x=170+(d%4)*200,y=580+Math.floor(d/4)*140;rr(x,y,150,110,20);ctx.fillStyle='#F7F3FA';ctx.fill();txt(`${d+1}回目`,x+75,y+30,28,'#999',500);
+    const p=pop(lt,.4+d*.45,.35);scaleAt(x+75,y+70,p,()=>{ctx.strokeStyle=PINK;ctx.lineWidth=10;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x+50,y+70);ctx.lineTo(x+70,y+90);ctx.lineTo(x+105,y+50);ctx.stroke()})}
+  // graph
+  card(100,890,880,400,'#fff',BLUE,40);txt('症状',170,950,36,BLUE);
+  ctx.strokeStyle='#ccc';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(180,990);ctx.lineTo(180,1240);ctx.lineTo(920,1240);ctx.stroke();
+  const g=ease(lt/(DURS[7]-.3));ctx.beginPath();const N=60;for(let k=0;k<=N*g;k++){const u=k/N;const x=180+u*740,y=1010+u*200+Math.sin(u*25)*14*(1-u);k?ctx.lineTo(x,y):ctx.moveTo(x,y)}ctx.strokeStyle=BLUE;ctx.lineWidth=10;ctx.lineJoin='round';ctx.stroke();
+  txt('少しずつ良くなる ↘',700,990,36,BLUE);
+  withA(ease((lt-DURS[7]+.6)/.5),()=>{card(70,400,W-140,990,'rgba(255,250,253,.97)',PINK,50);
+    const p=pop(lt,DURS[7]-.5,.6);scaleAt(cx,860,p,()=>{txt('ネブライザーは',cx,680,64,INK);txt('続けることが',cx,820,100,PINK);txt('大切！',cx,960,120,PINK)});
+    withA(ease((lt-DURS[7]-.3)/.5),()=>txt('※治療内容は医師の指示に従ってください',cx,1200,34,'#777',500))});
+};
+
+window.render=(t)=>{
+  bg(t);
+  let i=0;for(let k=0;k<SC.length;k++)if(t>=SC[k].start-GAP/2)i=k;
+  const lt=t-SC[i].start;const fade=0.35;
+  const a=clamp((lt+GAP/2)/fade);
+  // previous scene crossfade
+  if(i>0&&a<1){withA(1-a,()=>S[i-1](t-SC[i-1].start,t))}
+  withA(a,()=>S[i](Math.max(0,lt),t));
+  header(i,a,t);
+  subtitle(i,Math.max(0,lt),1);
+};
+</script></body></html>
