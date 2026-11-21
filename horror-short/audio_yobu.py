@@ -61,12 +61,12 @@ def heartbeat(t0, t1, g0, g1):
 SC = [(s["k"], s["t"]) for s in TL["scenes"]]
 D3, A3, D4, Eb4, G4, A4, Bb4 = 146.8, 220.0, 293.7, 311.1, 392.0, 440.0, 466.2
 
-put(don(), 0.1, 1.0)                                                    # hook
+put(don(), 0.1, 0.6)                                                    # hook
 wind(3.0, 9.9, 0.16); wind(3.0, 9.9, 0.05, 900, 3500, 0.23)             # outside, in the snow
 for tt, f in [(3.4, D4), (4.3, Eb4), (5.4, D4), (6.7, A3), (7.6, Bb4), (8.4, A4)]: put(pluck(f), tt, 0.7, pan=rng.uniform(-.2, .2))
 
 hearth(9.6, 24.0, 0.22); wind(9.6, 24.0, 0.05)                           # first night, indoors
-put(knock(), TL["knock1"], 1.3, pan=-0.3)
+put(knock(), TL["knock1"], 0.8, pan=-0.3)
 heartbeat(14.0, 23.6, 0.25, 0.7)
 put(pluck(D3), 20.9, 0.6)
 
@@ -75,24 +75,24 @@ for tt, f in [(24.5, A4), (25.6, G4), (27.9, Eb4), (29.4, D3)]: put(pluck(f), tt
 put(don(0.8), 27.8, 0.7)
 
 hearth(31.0, 47.0, 0.22); wind(31.0, 47.0, 0.06)                         # second night: it has learned
-for kt in TL["knock2"]: put(knock(), kt, 1.3, pan=-0.3)
+for kt in TL["knock2"]: put(knock(), kt, 0.8, pan=-0.3)
 heartbeat(35.0, 44.2, 0.3, 0.9)
 put(creak(0.9, 30), TL["arm"][0] + 0.1, 0.3, pan=0.5)                    # mother shifts her weight
 S0, S1 = TL["stretch"]
-put(creak(S1 - S0, 34), S0, 0.9, pan=-0.3); put(creak(S1 - S0 - 0.4, 51), S0 + 0.4, 0.5, pan=-0.2)
+put(creak(S1 - S0, 34), S0, 0.6, pan=-0.3); put(creak(S1 - S0 - 0.4, 51), S0 + 0.4, 0.5, pan=-0.2)
 t = seg(S0, S1); k = t / t[-1]
-put(fade(bp(noise(len(t)), 40, 160) * k ** 1.5 * 3 + (np.sin(2 * np.pi * 40 * t) + np.sin(2 * np.pi * 42.7 * t)) * k * 0.5, 0.2, 0.004), S0, 1.0)
-put(don(), S0, 1.0)
+put(fade(bp(noise(len(t)), 40, 160) * k ** 1.5 * 3 + (np.sin(2 * np.pi * 40 * t) + np.sin(2 * np.pi * 42.7 * t)) * k * 0.5, 0.2, 0.004), S0, 0.6)
+put(don(), S0, 0.6)
 
 put(pluck(A3), 47.4, 0.5); put(pluck(D3), 48.8, 0.5)                     # grandmother's warning, nearly silent
 
 hearth(51.0, TL["cut"], 0.16)                                            # tonight
 t = seg(TL["poke"], TL["hole"]); put(fade(bp(noise(len(t)), 1500, 6000) * (0.4 + 0.6 * t / t[-1]), 0.05, 0.01), TL["poke"], 0.12, pan=-0.3)
 x = seg(0, 0.12); put(bp(noise(len(x)), 1200, 8000) * np.exp(-x / 0.02), TL["hole"], 0.7, pan=-0.3)    # the paper gives
-put(don(), TL["lastText"], 1.1)
-kt = TL["lastText"] + 0.5; iv = 0.42; g = 0.8                            # ...and now it calls as many times as it likes
+put(don(), TL["lastText"], 0.7)
+kt = TL["lastText"] + 0.5; iv = 0.42; g = 0.5                            # ...and now it calls as many times as it likes
 while kt < TL["cut"]:
-    put(knock(1.2), kt, g, pan=-0.3); kt += iv; iv = max(0.11, iv * 0.86); g = min(1.6, g * 1.07)
+    put(knock(1.2), kt, g, pan=-0.3); kt += iv; iv = max(0.11, iv * 0.86); g = min(1.0, g * 1.07)
 
 mix[int(TL["cut"] * SR):] = 0
 mix /= np.abs(mix).max() / 1.4
