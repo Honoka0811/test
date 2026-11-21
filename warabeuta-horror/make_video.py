@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""わらべうた系ホラー・ショート動画「七つ目の数え歌」生成スクリプト (v2).
+"""【意味がわかると怖い】祖母の数え歌 — ショート動画生成スクリプト (v3).
 
-縦型 1080x1920 / 30fps / 約50秒。ナレーションは Open JTalk（オフライン音声合成）、
-それ以外の映像・音声もすべてプログラムで生成する。
+縦型 1080x1920 / 30fps / 60秒未満。ナレーションは Open JTalk（オフライン音声合成）、
+映像・音楽・効果音もすべてプログラムで生成する。
 
 使い方:  python3 make_video.py [出力パス]
 必要:    ffmpeg, numpy, Pillow, open-jtalk (+ naist-jdic, nitech m001 voice), IPAフォント
 
 構成
-  0. つかみ   「この動画、最後まで聴かないでください。」
-  1. ルール   七つ目を歌うと、鳥居の奥から“何か”が来る
-  2. 数え歌   ひとつ…むっつ（数えるたびに影が近づく）
-  3. 静寂     むっつで、やめた。…やめたはずだった。
-  4. ななつ   誰かが七つ目を歌う（影が目の前に）
-  5. やっつ   わたしは歌っていない／声は、うしろから
-  6. 振り向く → 顔「みぃつけた」
-  7. 余韻     ここのつ目は、あなたの番。（冒頭にループする）
+  0. つかみ   祖母が毎晩歌ってくれた数え歌。大人になって、やっと意味がわかった。
+  1. 数え歌   夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
+  2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。
+  3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
+  4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。
 """
 import hashlib
 import math
@@ -33,7 +30,7 @@ SR = 44100
 HERE = Path(__file__).resolve().parent
 BUILD = HERE / ".build"
 BUILD.mkdir(exist_ok=True)
-OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "kazoeuta_horror.mp4"
+OUT = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else HERE / "kazoeuta_horror.mp4"
 
 MINCHO = "/usr/share/fonts/opentype/ipafont-mincho/ipam.ttf"
 GOTHIC = "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"
@@ -44,7 +41,22 @@ except OSError:
 JT_DIC = "/var/lib/mecab/dic/open-jtalk/naist-jdic"
 JT_VOICE = "/usr/share/hts-voice/nitech-jp-atr503-m001/nitech_jp_atr503_m001.htsvoice"
 
-rng = np.random.default_rng(7)
+rng = np.random.default_rng(11)
+
+# 数字の次の一文字を縦に読むと「わたしがうめた」
+LYRICS = [
+    "ひとつ　わらって　てをつなぎ",
+    "ふたつ　たんぼの　あぜみちを",
+    "みっつ　しずかに　ふたりきり",
+    "よっつ　がけした　いどのそば",
+    "いつつ　うしろで　ないてても",
+    "むっつ　めかくし　ふたをして",
+    "ななつ　たったひとりで　かえりみち",
+]
+HIDDEN = "".join(l.split("　")[1][0] for l in LYRICS)
+assert HIDDEN == "わたしがうめた", HIDDEN
+LINE = 2.15
+NOTE = LINE / 8
 
 
 # ================================================================ 音声ユーティリティ
@@ -57,20 +69,22 @@ def fftconv(x, k):
 def reverb_ir(sec, decay, seed=1):
     r = np.random.default_rng(seed)
     t = np.arange(int(sec * SR)) / SR
-    ir = r.standard_normal(len(t)) * np.exp(-t * decay)
-    ir = np.convolve(ir, np.ones(6) / 6, mode="same")   # 少し丸める
+    ir = np.convolve(r.standard_normal(len(t)) * np.exp(-t * decay), np.ones(6) / 6, mode="same")
     ir[0] = 0
     return ir / np.sqrt(np.sum(ir ** 2))
 
 
 def resample(x, ratio):
-    """ratio>1 で長く・低く."""
     n = int(len(x) * ratio)
     return np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x)
 
 
 def smooth(x, win):
     return np.convolve(x, np.ones(win) / win, mode="same")
+
+
+IR_ROOM = reverb_ir(0.7, 7, 1)
+IR_HALL = reverb_ir(2.2, 2.6, 2)
 
 
 def tts(text, speed, pitch, alpha=0.55):
@@ -83,42 +97,22 @@ def tts(text, speed, pitch, alpha=0.55):
         sr = w.getframerate()
         x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float64) / 32768
     x = resample(x, SR / sr)
-    # 前後の無音を詰める
     idx = np.where(np.abs(x) > 0.01)[0]
     x = x[max(0, idx[0] - 400): idx[-1] + 2000]
     return x / (np.max(np.abs(x)) + 1e-9)
 
 
-IR_ROOM = reverb_ir(0.7, 7, 1)
-IR_HALL = reverb_ir(2.2, 2.6, 2)
-
-
 def narrator(text):
-    """古いカセットに録音された語り（こもり＋ヒス）."""
-    x = tts(text, 0.86, -3)
-    x = smooth(x, 4) - 0.6 * smooth(x, 200)              # 帯域を狭めてラジオっぽく
+    """古いカセットに録った語り."""
+    x = tts(text, 1.0, -3)
+    x = smooth(x, 4) - 0.6 * smooth(x, 200)
     wet = fftconv(x, IR_ROOM)[: len(x) + int(0.5 * SR)]
     y = np.pad(x, (0, len(wet) - len(x))) + 0.12 * wet
     y += rng.standard_normal(len(y)) * 0.004
     return y / np.max(np.abs(y)) * 0.8
 
 
-def child(text, whisper=False, wet=0.45, speed=0.62, pitch=11):
-    """子どもの声（高く・遅く・わずかに二重・残響）."""
-    x = tts(text, speed, pitch, 0.5)
-    x = x + 0.5 * resample(x, 1.012)[: len(x)]           # わずかなズレで不気味な二重声
-    if whisper:
-        env = smooth(np.abs(x), 300)
-        nz = rng.standard_normal(len(x))
-        nz = smooth(nz, 3) - smooth(nz, 25)              # 高域のささやき成分
-        x = 0.25 * x + 5.0 * env * nz
-    tail = fftconv(x, IR_HALL)[: len(x) + int(1.8 * SR)]
-    y = np.pad(x, (0, len(tail) - len(x))) + wet * tail
-    return y / np.max(np.abs(y)) * 0.85
-
-
 def pluck(freq, dur, amp=0.5, bright=1.0):
-    """琴っぽい撥弦音."""
     n = int(dur * SR)
     t = np.arange(n) / SR
     sig = np.zeros(n)
@@ -130,84 +124,79 @@ def pluck(freq, dur, amp=0.5, bright=1.0):
     return amp * sig * np.minimum(1, t / 0.004)
 
 
-# ================================================================ 台本とタイムライン
-LYRICS = [
-    ("ひとつ", "ひとつ　ひとりで　かくれんぼ"),
-    ("ふたつ", "ふたつ　ふりむきゃ　おにがくる"),
-    ("みっつ", "みっつ　みつけて　もらえぬこ"),
-    ("よっつ", "よっつ　よなかに　かぞえてる"),
-    ("いつつ", "いつつ　いつまで　まっている"),
-    ("むっつ", "むっつ　むかえに　いきますよ"),
-]
-LINE = 2.45
-NOTE = LINE / 8
+def hum(notes, note_len, detune=1.0):
+    """老婆のハミング（ビブラート付きの柔らかい声）。notes: 周波数のリスト."""
+    n = int(len(notes) * note_len * SR + 0.6 * SR)
+    t = np.arange(n) / SR
+    f = np.zeros(n)
+    for i, fr in enumerate(notes):
+        f[int(i * note_len * SR):] = fr * detune
+    f = smooth(f, 1500)
+    f[: 1500] = f[1500]
+    f *= 1 + 0.012 * np.sin(2 * np.pi * 5.2 * t) * np.clip(t / 0.5, 0, 1)
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    sig = np.sin(ph) + 0.35 * np.sin(2 * ph) + 0.12 * np.sin(3 * ph) + 0.05 * np.sin(5 * ph)
+    env = np.zeros(n)
+    for i in range(len(notes)):
+        a = int(i * note_len * SR)
+        b = int((i + 0.92) * note_len * SR)
+        seg = np.ones(b - a)
+        k = min(len(seg), int(0.06 * SR))
+        seg[:k] = np.linspace(0.55, 1, k)
+        env[a:b] = seg
+    env = smooth(env, 800)
+    breath = smooth(rng.standard_normal(n), 3) * 0.03
+    return (sig * env + breath * env) * 0.5
 
 
+# ================================================================ タイムライン
 class TL:
-    """ナレーションの長さからタイムラインを組み立てる."""
-
     def __init__(self):
         self.t = 0.0
-        self.voice = []     # (start, signal, pan, gain)
-        self.subs = []      # (start, end, text, style)
+        self.voice = []
+        self.subs = []
         self.mark = {}
 
-    def say(self, sig, text, style="narr", pan=0.0, gain=1.0, gap=0.35, sub_extra=0.25):
-        st = self.t
+    def say(self, text, sub=None, gap=0.35):
+        sig = narrator(text)
         loud = np.where(np.abs(sig) > 0.08)[0]
-        dur = (loud[-1] if len(loud) else len(sig)) / SR   # 残響の尾は次と重ねる
-        self.voice.append((st, sig, pan, gain))
-        if text:
-            self.subs.append((st, st + dur + sub_extra, text, style))
-        self.t = st + dur + gap
-        return st
+        dur = loud[-1] / SR
+        self.voice.append((self.t, sig))
+        self.subs.append((self.t, self.t + dur + 0.25, sub or text))
+        self.t += dur + gap
 
-    def wait(self, sec):
-        self.t += sec
+    def wait(self, s):
+        self.t += s
 
 
 def build_timeline():
     tl = TL()
-    tl.wait(0.25)
+    tl.wait(0.2)
     tl.mark["hook"] = tl.t
-    tl.say(narrator("この動画、最後まで、聴かないでください。"), "この動画、最後まで\n聴かないでください。", gap=0.6)
-
-    tl.mark["setup"] = tl.t
-    tl.say(narrator("祖母の村には、七つ目を、歌ってはいけない、数え歌がある。"), "祖母の村には\n七つ目を歌ってはいけない\n数え歌がある。")
-    tl.mark["figure_far"] = tl.t
-    tl.say(narrator("ひとつ数えるたびに、鳥居の奥から、なにかが、一歩ずつ、近づいてくるから。"),
-           "ひとつ数えるたびに\n鳥居の奥から“なにか”が\n一歩ずつ近づいてくるから。", gap=0.5)
-
+    tl.say("祖母が毎晩、歌ってくれた、数え歌がある。", "祖母が毎晩\n歌ってくれた数え歌がある。")
+    tl.say("大人になって、やっと、その意味がわかった。", "大人になって\nやっと、その意味がわかった。", gap=0.5)
     tl.mark["song"] = tl.t
-    for i, (word, _) in enumerate(LYRICS):   # 子どもの声で数える（遠く・小さく）
-        tl.voice.append((tl.t + i * LINE, child(word, wet=0.7), 0.0, 0.32 + 0.04 * i))
-    tl.t += LINE * len(LYRICS)
-    tl.mark["stop"] = tl.t
-    tl.wait(0.9)
-    tl.say(narrator("むっつで、やめた。"), "むっつで、やめた。", gap=0.5)
-    tl.say(narrator("やめた、はずだった。"), "……やめた、はずだった。", gap=1.0)
-
-    tl.mark["nanatsu"] = tl.t
-    tl.say(child("ななつ。", wet=0.3, speed=0.55), "「ななつ」", style="child", gap=1.0, sub_extra=0.8)
-
-    tl.mark["empty"] = tl.t
-    tl.say(narrator("わたしは、歌っていない。"), "わたしは、歌っていない。", gap=0.8)
-    tl.mark["yattsu"] = tl.t
-    tl.say(child("やっつ。", whisper=True, wet=0.15, speed=0.6), "「やっつ」", style="child", pan=-0.85, gain=1.1,
-           gap=0.4, sub_extra=0.6)
-    tl.say(narrator("声は、すぐ、うしろから、聞こえた。"), "声は\nすぐ、うしろから聞こえた。", gap=0.3)
-    tl.wait(0.7)                                   # 完全な無音
-    tl.mark["whip"] = tl.t
-    tl.wait(0.35)
-    tl.mark["scare"] = tl.t
-    tl.voice.append((tl.t, child("みいつけた。", wet=0.2, speed=0.7, pitch=8), 0.0, 1.0))
-    tl.subs.append((tl.t, tl.t + 1.9, "みぃつけた", "scare"))
-    tl.wait(1.9)
+    tl.t += LINE * len(LYRICS) + 0.4
+    tl.mark["photo"] = tl.t
+    tl.say("祖母には、妹がいたらしい。", gap=0.3)
+    tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.5)
+    tl.mark["paper"] = tl.t
+    tl.say("先日、祖母の部屋で、この歌詞を書いた、古い紙を見つけた。", "先日、祖母の部屋で\nこの歌詞を書いた古い紙を見つけた。", gap=0.3)
+    tl.say("数字の下の一文字だけが、赤い丸で、囲んであった。", "数字の下の一文字だけが\n赤い丸で囲んであった。", gap=0.4)
+    tl.mark["circles"] = tl.t
+    tl.t += 0.42 * len(LYRICS) + 0.4
+    tl.mark["reveal"] = tl.t
+    tl.t += 2.9
     tl.mark["end"] = tl.t
-    tl.wait(0.8)
-    tl.say(child("ここのつ。", whisper=True, wet=0.5, speed=0.6), "", gap=0.2)
-    tl.mark["end_text"] = tl.mark["end"] + 0.6
-    tl.wait(2.4)
+    tl.wait(0.4)
+    tl.mark["end_hum"] = tl.t
+    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=0.8)
+    tl.mark["last"] = tl.t
+    tl.say("妹は、来週、七つになる。", gap=0.6)
+    tl.mark["turn"] = tl.t
+    tl.t += 2.0
+    tl.mark["dark"] = tl.t
+    tl.t += 1.2
     tl.mark["dur"] = tl.t
     return tl
 
@@ -226,115 +215,71 @@ def add(buf, start, sig, gain=1.0):
     buf[i:j] += sig[: j - i] * gain
 
 
+BASE = 293.66
+RAT = {0: 1.0, 1: 16 / 15, 2: 4 / 3, 3: 3 / 2, 4: 8 / 5, 5: 2.0}
+PHRASE = [[3, 3, 2, 3, 4, 3, 2, 0], [3, 3, 2, 3, 5, 4, 3, 3], [4, 4, 3, 2, 3, 3, 2, 0], [2, 2, 3, 4, 3, 2, 1, 0],
+          [3, 3, 2, 3, 4, 3, 2, 0], [3, 4, 5, 4, 3, 2, 1, 1], [0, 1, 2, 1, 0, 1, 0, 0]]
+
+
 def make_audio():
     n = int(DUR * SR) + SR
-    L = np.zeros(n)
-    R = np.zeros(n)
+    mus = np.zeros(n)
+    voc = np.zeros(n)
     t = np.arange(n) / SR
 
-    def add_st(start, sig, pan=0.0, gain=1.0):
-        add(L, start, sig, gain * math.sqrt((1 - pan) / 2) * 1.414)
-        add(R, start, sig, gain * math.sqrt((1 + pan) / 2) * 1.414)
+    # 環境音：ヒグラシ風の虫（歌の間）＋部屋の空気＋テープヒス
+    cic_env = np.clip((t - M["song"] + 0.5) / 1.0, 0, 1) * np.clip((M["photo"] - t) / 1.0, 0, 1)
+    cic = np.sin(2 * np.pi * 4200 * t + 3 * np.sin(2 * np.pi * 30 * t)) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.35 * t)) ** 4
+    mus += cic * cic_env * 0.02
+    mus += smooth(rng.standard_normal(n), 120) * 0.25 * np.clip(t / 1.0, 0, 1)
+    mus += smooth(rng.standard_normal(n), 2) * 0.006
 
-    # ---- 環境音：風・ドローン（「振り向く」直前で消える）
-    silence_from = M["whip"] - 0.7
-    amb_env = np.clip(t / 2, 0, 1) * np.clip((silence_from - t) / 0.4, 0, 1)
-    wind = smooth(rng.standard_normal(n), 60) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.13 * t) * np.sin(2 * np.pi * 0.31 * t))
-    wind2 = smooth(rng.standard_normal(n), 60) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.11 * t + 2))
-    L += wind * amb_env * 0.35
-    R += wind2 * amb_env * 0.35
-    grow = 1 + 1.2 * np.clip((t - M["song"]) / (M["nanatsu"] - M["song"]), 0, 1)
-    drone = 0.05 * (np.sin(2 * np.pi * 55 * t) + 0.8 * np.sin(2 * np.pi * 56.4 * t) + 0.35 * np.sin(2 * np.pi * 77.9 * t))
-    L += drone * amb_env * grow
-    R += drone * amb_env * grow
-
-    # ---- 数え歌（都節音階・行ごとに音程が狂っていく）
-    base = 293.66
-    ratios = {0: 1.0, 1: 16 / 15, 2: 4 / 3, 3: 3 / 2, 4: 8 / 5, 5: 2.0}
-    phrase = [[3, 3, 2, 3, 4, 3, 2, 0], [3, 3, 2, 3, 5, 4, 3, 3], [4, 4, 3, 2, 3, 3, 2, 0],
-              [2, 2, 3, 4, 3, 2, 1, 0], [3, 3, 2, 3, 4, 3, 2, 0], [3, 4, 5, 4, 3, 2, 1, 1]]
-    # 前奏：ナレーションの下で静かに
-    for k, deg in enumerate([3, 3, 2, 0]):
-        add_st(M["figure_far"] + 1.0 + k * NOTE * 1.5, pluck(base * ratios[deg], 1.2, 0.12), 0.2)
-    for li, notes in enumerate(phrase):
-        detune = 1 - 0.004 * li ** 1.6
+    # 数え歌：琴＋ハミング
+    for li, notes in enumerate(PHRASE):
+        st0 = M["song"] + li * LINE
         for ni, deg in enumerate(notes):
-            st = M["song"] + li * LINE + ni * NOTE + (0.015 * li * rng.standard_normal() if li > 2 else 0)
-            f = base * ratios[deg] * detune
-            d = NOTE * (2.5 if ni == 7 else 1.6)
-            add_st(st, pluck(f, d, 0.3), -0.15)
-            if li >= 3:
-                add_st(st + 0.025, pluck(f * 1.059, d, 0.05 * (li - 2)), 0.3)
-    # 最後の音はブツッと切る
-    cut = int(M["stop"] * SR)
-    L[cut:cut + int(0.9 * SR)] *= 0
-    R[cut:cut + int(0.9 * SR)] *= 0
-    # 切れた瞬間のテープノイズ
-    add_st(M["stop"], rng.standard_normal(int(0.08 * SR)) * 0.15)
+            add(mus, st0 + ni * NOTE, pluck(BASE * RAT[deg], NOTE * (2.4 if ni == 7 else 1.6), 0.22))
+        h = hum([BASE / 2 * RAT[d] for d in notes], NOTE)
+        h = h + 0.25 * fftconv(h, IR_HALL)[: len(h)]
+        add(mus, st0, h, 0.5)
 
-    # ---- 心音（歌の後半〜「うしろ」まで、だんだん速く）
-    hb_start, hb_end = M["song"] + LINE * 3, silence_from
-    hb = hb_start
-    while hb < hb_end:
-        p = (hb - hb_start) / (hb_end - hb_start)
-        m = int(0.25 * SR)
-        tt = np.arange(m) / SR
-        thump = np.sin(2 * np.pi * (46 + 30 * np.exp(-tt * 30)) * tt) * np.exp(-tt * 18)
-        add_st(hb, thump, 0, 0.3 + 0.4 * p)
-        add_st(hb + 0.17, thump, 0, (0.3 + 0.4 * p) * 0.7)
-        hb += 1.0 - 0.5 * p
+    # 写真〜紙：低いドローン
+    dr_env = np.clip((t - M["photo"]) / 3, 0, 1) * np.clip((M["end"] - t) / 0.3, 0, 1)
+    drone = np.sin(2 * np.pi * 55 * t) + 0.8 * np.sin(2 * np.pi * 55.9 * t) + 0.3 * np.sin(2 * np.pi * 82.4 * t)
+    mus += drone * dr_env * 0.07 * (1 + 1.2 * np.clip((t - M["paper"]) / (M["reveal"] - M["paper"]), 0, 1))
 
-    # ---- 「ななつ」：影が目の前に来る瞬間の低い衝撃音
-    m = int(1.5 * SR)
+    # 赤丸：一つずつ琴の一音（だんだん低く）
+    for k in range(len(LYRICS)):
+        add(mus, M["circles"] + k * 0.42, pluck(BASE * 2 * (1 - 0.03 * k), 1.0, 0.18))
+    # 種明かし：低い衝撃音＋不協和音
+    m = int(3.0 * SR)
     tt = np.arange(m) / SR
-    hit = np.sin(2 * np.pi * (30 + 50 * np.exp(-tt * 10)) * tt) * np.exp(-tt * 3)
-    add_st(M["nanatsu"] - 0.05, hit, 0, 0.7)
+    hit = np.sin(2 * np.pi * (34 + 50 * np.exp(-tt * 9)) * tt) * np.exp(-tt * 1.5)
+    clu = sum(pluck(BASE * r, 3.0, 0.12) for r in (1.0, 16 / 15, 3 / 2 * 16 / 15))
+    add(mus, M["reveal"], hit * 0.7 + clu)
 
-    # ---- 鈴（誰もいない参道）
-    m = int(2.5 * SR)
+    # オチ：祖母が妹に歌を教えるハミング → 「七つになる」の直前で途切れる
+    h = hum([BASE / 2 * RAT[d] for d in PHRASE[0] + PHRASE[1]], NOTE * 1.15, detune=0.99)
+    h = 0.5 * h + 0.5 * fftconv(h, IR_HALL)[: len(h)]
+    h[int((M["last"] - M["end_hum"] + 0.1) * SR):] = 0
+    add(mus, M["end_hum"], h, 0.35)
+    # 振り向く：畳のきしみ → 灯りが消える
+    m = int(0.5 * SR)
     tt = np.arange(m) / SR
-    bell = sum(np.sin(2 * np.pi * 1318 * r * tt) * np.exp(-tt * (3 + i)) / (i + 1)
-               for i, r in enumerate([1, 2.76, 5.4, 8.93]))
-    add_st(M["empty"] - 0.3, bell, 0.6, 0.12)
+    creak = np.sin(2 * np.pi * (180 + 40 * np.sin(2 * np.pi * 23 * tt)) * tt) * np.exp(-tt * 6) * (rng.random(m) < 0.3)
+    add(mus, M["turn"] + 0.2, smooth(creak, 6), 0.4)
+    m = int(0.25 * SR)
+    add(mus, M["dark"], smooth(rng.standard_normal(m), 30) * np.exp(-np.arange(m) / SR * 15), 0.8)
+    add(mus, M["dark"] + 0.5, pluck(BASE * 0.5, 2.0, 0.25))
 
-    # ---- 叫び（スティンガー）
-    m = int(2.4 * SR)
-    tt = np.arange(m) / SR
-    env = np.exp(-tt * 1.4) * np.minimum(1, tt / 0.004)
-    sting = np.zeros(m)
-    for f in [311, 329.6, 349.2, 466.2, 493.9, 622.3, 659.3, 698.5]:
-        ph = f * tt * (1 + 0.025 * np.sin(2 * np.pi * 6.5 * tt))
-        sting += 2 * (ph % 1) - 1
-    sting /= 8
-    scream_nz = rng.standard_normal(m)
-    scream_nz = smooth(scream_nz, 2) - smooth(scream_nz, 12)
-    boom = np.sin(2 * np.pi * (32 + 70 * np.exp(-tt * 8)) * tt) * np.exp(-tt * 2.2)
-    add_st(M["scare"], (0.55 * sting + 0.6 * scream_nz * np.exp(-tt * 2.5) + 0.9 * boom) * env, 0, 1.0)
-    # 振り向くときの風切り音
-    m = int(0.35 * SR)
-    tt = np.arange(m) / SR
-    sw = smooth(rng.standard_normal(m), 8) * np.sin(np.pi * tt / 0.35) ** 2
-    add_st(M["whip"], sw, 0, 0.8)
-
-    # ---- 声（ナレーション中は環境音・音楽を下げる）
-    VL, VR = np.zeros(n), np.zeros(n)
-    for st, sig, pan, gain in TLN.voice:
-        add(VL, st, sig, gain * math.sqrt((1 - pan) / 2) * 1.414)
-        add(VR, st, sig, gain * math.sqrt((1 + pan) / 2) * 1.414)
-    venv = np.clip(smooth(np.abs(VL) + np.abs(VR), 4000) * 6, 0, 1)
-    duck = 1 - 0.5 * venv
-    # 叫びまでは全体を抑えて、叫びで一気に大きくする
-    pre = np.where((t >= M["scare"]) & (t < M["scare"] + 2.4), 1.0, 0.42)
-    L = L * duck * pre + VL * 0.95 * np.where(pre < 1, 0.55, 1.0)
-    R = R * duck * pre + VR * 0.95 * np.where(pre < 1, 0.55, 1.0)
-
-    # ---- 余韻：オルゴール一音
-    add_st(M["end_text"] + 0.2, pluck(base * 2 * 0.98, 2.2, 0.1, bright=3), 0.1)
-
-    st = np.stack([L, R], axis=1)[: int(DUR * SR)]
-    st = np.tanh(st * 1.2) / np.tanh(1.2)
-    st /= np.max(np.abs(st)) / 0.95
-    return (st * 32767).astype(np.int16)
+    for st, sig in TLN.voice:
+        add(voc, st, sig)
+    venv = np.clip(smooth(np.abs(voc), 4000) * 6, 0, 1)
+    mix = mus * (1 - 0.45 * venv) + voc * 0.9
+    mix = np.tanh(mix * 1.2) / np.tanh(1.2)
+    mix = mix[: int(DUR * SR)]
+    mix /= np.max(np.abs(mix)) / 0.92
+    return (np.stack([mix, mix], axis=1) * 32767).astype(np.int16)
 
 
 # ================================================================ 映像パーツ
@@ -342,19 +287,21 @@ def font(path, size):
     return ImageFont.truetype(path, size)
 
 
-F_LYRIC = font(MINCHO, 70)
-F_SUB = font(GOTHIC, 58)
-F_CHILD = font(MINCHO, 96)
-F_SCARE = font(MINCHO, 200)
-F_END = font(MINCHO, 74)
+F_SUB = font(GOTHIC, 56)
+F_TAG = font(GOTHIC, 40)
+F_TITLE = font(MINCHO, 76)
+F_LYRIC = font(MINCHO, 72)
+F_PAPER = font(MINCHO, 62)
+F_REVEAL = font(MINCHO, 128)
+F_REV_SIZES = {s: font(MINCHO, s) for s in range(62, 129)}
 
 yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-VIGNETTE = np.clip(1.25 - (((xx - W / 2) / (W * 0.62)) ** 2 + ((yy - H / 2) / (H * 0.6)) ** 2) ** 1.1, 0, 1)[..., None]
-SCAN = (1 - 0.06 * (np.arange(H) % 4 < 1)).astype(np.float32)[:, None, None]
+VIGNETTE = np.clip(1.3 - (((xx - W / 2) / (W * 0.6)) ** 2 + ((yy - H / 2) / (H * 0.58)) ** 2) ** 1.1, 0, 1)[..., None]
+SEPIA = np.array([1.08, 0.88, 0.64], np.float32)
 
 
-def vtext(draw, x, y, text, fnt, fill, jitter=0.0):
-    step = int(fnt.size * 1.12)
+def vtext(draw, x, y, text, fnt, fill, step=None):
+    step = step or int(fnt.size * 1.12)
     cy = y
     for ch in text:
         if ch == "　":
@@ -363,320 +310,321 @@ def vtext(draw, x, y, text, fnt, fill, jitter=0.0):
         bb = draw.textbbox((0, 0), ch, font=fnt)
         cw = bb[2] - bb[0]
         off = (fnt.size * 0.12, -fnt.size * 0.12) if ch in "っゃゅょぃ" else (0, 0)
-        draw.text((x - cw / 2 + off[0] + rng.uniform(-jitter, jitter), cy + off[1] + rng.uniform(-jitter, jitter)),
-                  ch, font=fnt, fill=fill)
+        draw.text((x - cw / 2 + off[0], cy + off[1]), ch, font=fnt, fill=fill, stroke_width=3, stroke_fill=(20, 12, 8))
         cy += step
 
 
-def subtitle(draw, text, style, alpha):
-    lines = text.split("\n")
-    if style == "narr":
-        fnt, fill, stroke = F_SUB, (int(235 * alpha),) * 3, (0, 0, 0)
-        lh = 78
-        y0 = 1380 - (len(lines) - 1) * lh / 2
-    elif style == "child":
-        fnt, fill, stroke = F_CHILD, (int(230 * alpha), int(30 * alpha), int(30 * alpha)), (0, 0, 0)
-        lh = 110
-        y0 = 820
-    else:
-        return
-    for i, ln in enumerate(lines):
-        bb = draw.textbbox((0, 0), ln, font=fnt)
-        tw = bb[2] - bb[0]
-        jit = 3 if style == "child" else 0
-        draw.text(((W - tw) / 2 + rng.uniform(-jit, jit), y0 + i * lh), ln, font=fnt, fill=fill,
-                  stroke_width=5, stroke_fill=stroke)
+def kid(d, x, by, s, col=(14, 10, 8)):
+    """着物におかっぱの子どもの影."""
+    h = 230 * s
+    d.polygon([(x - 46 * s, by), (x + 46 * s, by), (x + 26 * s, by - h * 0.62), (x - 26 * s, by - h * 0.62)], fill=col)
+    hr = 32 * s
+    hy = by - h * 0.62 - hr * 0.85
+    d.ellipse([x - hr, hy - hr * 1.05, x + hr, hy + hr * 0.9], fill=col)
+    d.rectangle([x - hr, hy - hr * 0.2, x + hr, hy + hr * 1.05], fill=col)
 
 
-def make_face():
-    """振り向いた先の顔（ジャンプスケア）."""
-    img = Image.new("RGB", (W, H), (14, 3, 3))
-    d = ImageDraw.Draw(img)
-    cx, cy = W // 2 + 20, H // 2 - 40
-    d.ellipse([cx - 560, cy - 760, cx + 560, cy + 900], fill=(6, 5, 5))           # 髪
-    d.ellipse([cx - 360, cy - 520, cx + 360, cy + 600], fill=(205, 200, 192))     # 顔
-    img = img.filter(ImageFilter.GaussianBlur(6))
-    arr = np.asarray(img).astype(np.float32)
-    # 立体感（下からの光）
-    dist = ((xx - cx) / 380) ** 2 + ((yy - (cy + 160)) / 650) ** 2
-    shade = np.clip(1.15 - 0.55 * dist, 0.25, 1.15)[..., None]
-    arr *= shade
-
-    def mask(draw_fn, blur):
-        m = Image.new("L", (W, H), 0)
-        draw_fn(ImageDraw.Draw(m))
-        return (np.asarray(m.filter(ImageFilter.GaussianBlur(blur))).astype(np.float32) / 255)[..., None]
-
-    # 落ちくぼんだ眼窩
-    sockets = mask(lambda q: [q.ellipse([cx + s * 170 - 140, cy - 150 + (12 if s > 0 else 0),
-                                         cx + s * 170 + 140, cy + 60 + (12 if s > 0 else 0)], fill=255)
-                              for s in (-1, 1)], 38)
-    arr *= 1 - 0.85 * sockets
-    # 黒目（大きすぎる瞳）と小さな光
-    eyes = mask(lambda q: [q.ellipse([cx + s * 170 - 70, cy - 95 + (12 if s > 0 else 0),
-                                      cx + s * 170 + 70, cy + 15 + (12 if s > 0 else 0)], fill=255)
-                           for s in (-1, 1)], 5)
-    arr *= 1 - 0.97 * eyes
-    hl = mask(lambda q: [q.ellipse([cx + s * 170 - 9, cy - 60, cx + s * 170 + 9, cy - 42], fill=255) for s in (-1, 1)], 2)
-    arr += 200 * hl
-    # 縦に開いた口
-    mouth = mask(lambda q: q.ellipse([cx - 95, cy + 230, cx + 95, cy + 540], fill=255), 16)
-    arr = arr * (1 - 0.95 * mouth) + np.array([40, 0, 0], np.float32) * mouth
-    # 血の涙
-    tears = mask(lambda q: [q.line([(cx + s * 170 + s * 25, cy + 30), (cx + s * 175 + s * 35, cy + 420)],
-                                   fill=255, width=12) for s in (-1, 1)], 3)
-    arr = arr * (1 - 0.8 * tears) + np.array([110, 0, 0], np.float32) * tears * 0.8
-    # 顔にかかる髪の毛
-    hair = Image.new("L", (W, H), 0)
-    hd = ImageDraw.Draw(hair)
-    r = np.random.default_rng(3)
-    for _ in range(75):
-        side = r.choice([-1, 1])
-        x0 = cx + side * abs(r.normal(0, 1)) * 170 + side * 120
-        x0 = cx + r.uniform(-60, 60) if r.random() < 0.15 else x0
-        pts = [(x0, cy - 700)]
-        x, y = x0, cy - 700
-        length = r.uniform(500, 1500)
-        while y < cy - 700 + length:
-            y += 40
-            x += r.uniform(-14, 14) + (x - cx) * 0.01
-            pts.append((x, y))
-        hd.line(pts, fill=255, width=int(r.uniform(2, 8)))
-    hm = (np.asarray(hair.filter(ImageFilter.GaussianBlur(1.5))).astype(np.float32) / 255)[..., None]
-    arr *= 1 - 0.9 * hm
-    arr *= 1 + 0.1 * rng.standard_normal((H, W, 1)).astype(np.float32)            # 肌のざらつき
-    # 冷たい色＋少し傾ける
-    arr = arr * np.array([0.95, 1.0, 1.05], np.float32)
-    img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8)).rotate(-7, resample=Image.BICUBIC,
-                                                                        center=(cx, cy), fillcolor=(14, 3, 3))
-    return np.asarray(img).astype(np.float32)
+# ---------------------------------------------------------------- 夕暮れのあぜ道
+P_NEAR = (430, 1760)
+P_FAR = (690, 1040)
+WELL = (760, 1028)
 
 
-FACE = make_face()
-
-
-def figure_layer(s, cx, by, tilt=0.0, eyes=False, beckon=None):
-    """おかっぱの子どもの影（RGBAレイヤー）."""
-    lay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(lay)
-    hh = 300 * s
-    rim = (110, 40, 36, 255)
-    body = [(cx - 62 * s, by), (cx + 62 * s, by), (cx + 34 * s, by - hh * 0.62), (cx - 34 * s, by - hh * 0.62)]
-    d.polygon(body, fill=(4, 3, 3, 255), outline=rim)
-    if beckon is not None:
-        ay = by - hh * 0.5 + beckon * 14 * s
-        d.line([(cx + 30 * s, by - hh * 0.5), (cx + 82 * s, ay - 46 * s)], fill=(4, 3, 3, 255), width=max(2, int(14 * s)))
-    hr = 40 * s
-    neck = (cx, by - hh * 0.62)
-    head = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    hd = ImageDraw.Draw(head)
-    hy = neck[1] - hr * 0.9
-    hrim = rim if s < 2 else (60, 22, 20, 255)
-    # おかっぱ：丸い頭頂＋ギザギザに切りそろえた裾
-    hd.ellipse([cx - hr * 1.1, hy - hr * 1.15, cx + hr * 1.1, hy + hr * 0.9], fill=(4, 3, 3, 255), outline=hrim,
-               width=max(1, int(s * 1.5)))
-    hem = [(cx - hr * 1.1, hy - hr * 0.1)]
-    r_ = np.random.default_rng(5)
-    for k in range(13):
-        x = cx - hr * 1.1 + k * hr * 2.2 / 12
-        hem.append((x, hy + hr * (1.15 + r_.uniform(-0.08, 0.12))))
-    hem.append((cx + hr * 1.1, hy - hr * 0.1))
-    hd.polygon(hem, fill=(4, 3, 3, 255))
-    hd.line(hem, fill=hrim, width=max(1, int(s * 1.5)))
-    if eyes:
-        for ss in (-1, 1):
-            ex = cx + ss * hr * 0.38
-            r = max(1.5, hr * 0.07)
-            hd.ellipse([ex - r, hy + hr * 0.25 - r, ex + r, hy + hr * 0.25 + r], fill=(235, 225, 215, 255))
-    if tilt:
-        head = head.rotate(tilt, resample=Image.BICUBIC, center=neck)
-    lay.alpha_composite(head)
-    return lay
-
-
-def corridor(t, speed=0.5):
+def paddy_bg():
     img = Image.new("RGB", (W, H))
     d = ImageDraw.Draw(img)
-    for y in range(0, H, 8):
-        k = y / H
-        d.rectangle([0, y, W, y + 8], fill=(int(6 + 10 * k), int(7 + 6 * k), int(14 + 4 * k)))
-    hz = int(H * 0.44)
-    cx = W / 2 + 10 * math.sin(t * 0.4)
-    d.polygon([(cx - 18, hz), (cx + 18, hz), (W * 0.95, H), (W * 0.05, H)], fill=(20, 18, 18))
-    for r, c in ((260, (26, 14, 14)), (170, (40, 20, 18)), (90, (58, 28, 24))):
-        d.ellipse([cx - r * 1.4, hz + 40 - r * 0.6, cx + r * 1.4, hz + 40 + r * 0.6], fill=c)
-    cam = t * speed
-    f = 2.2
-    for z in sorted([i + (1.0 - cam % 1.0) + 0.5 for i in range(14)], reverse=True):
-        s = f / z
-        fog = max(0.0, min(1.0, 1.25 - z / 10))
-        col = (int(120 * fog + 10), int(16 * fog + 6), int(14 * fog + 8))
-        dark = (int(20 * fog + 6),) * 3
-        gw, gh = 520 * s, 900 * s
-        base_y = hz + 330 * s
-        pw = max(2, 34 * s)
-        x0, x1 = cx - gw, cx + gw
-        top = base_y - gh
-        d.rectangle([x0 + gw * 0.18 - pw, top, x0 + gw * 0.18 + pw, base_y], fill=col)
-        d.rectangle([x1 - gw * 0.18 - pw, top, x1 - gw * 0.18 + pw, base_y], fill=col)
-        d.polygon([(x0 - 40 * s, top - 40 * s), (x1 + 40 * s, top - 40 * s),
-                   (x1 + 10 * s, top + 28 * s), (x0 - 10 * s, top + 28 * s)], fill=dark)
-        d.rectangle([x0 + 10 * s, top + 28 * s, x1 - 10 * s, top + 62 * s], fill=col)
-        d.rectangle([x0 + gw * 0.05, top + 170 * s, x1 - gw * 0.05, top + 200 * s], fill=col)
-    return img, hz, cx
+    hz = 960
+    for y in range(0, hz, 6):
+        k = y / hz
+        d.rectangle([0, y, W, y + 6], fill=(int(40 + 190 * k ** 1.6), int(28 + 110 * k ** 1.6), int(50 + 20 * k)))
+    d.ellipse([230, 760, 370, 900], fill=(250, 205, 130))
+    mt = [(0, 900)] + [(x, 880 - 70 * math.sin(x / 170) - 40 * math.sin(x / 61 + 1)) for x in range(0, W + 40, 40)] + [(W, 960), (0, 960)]
+    d.polygon(mt, fill=(60, 38, 42))
+    d.rectangle([0, hz, W, H], fill=(42, 34, 22))
+    for i in range(26):          # 水田（空を映す）
+        y = hz + 10 + (i ** 1.7) * 2.6
+        d.rectangle([0, y, W, y + 3 + i * 0.9], fill=(int(150 - i * 3), int(90 - i * 2), int(55 - i)))
+    d.polygon([(P_FAR[0] - 8, P_FAR[1] - 20), (P_FAR[0] + 14, P_FAR[1] - 20), (P_NEAR[0] + 230, H), (P_NEAR[0] - 260, H)],
+              fill=(58, 46, 30))
+    d.polygon([(WELL[0] + 40, 960), (W, 940), (W, 1120), (WELL[0] + 70, 1060)], fill=(30, 24, 20))   # 崖
+    wx, wy = WELL
+    d.rectangle([wx - 26, wy - 26, wx + 26, wy], fill=(36, 30, 26))                              # 井戸
+    d.line([(wx - 22, wy - 26), (wx - 22, wy - 72)], fill=(30, 24, 20), width=4)
+    d.line([(wx + 22, wy - 26), (wx + 22, wy - 72)], fill=(30, 24, 20), width=4)
+    d.polygon([(wx - 36, wy - 70), (wx + 36, wy - 70), (wx, wy - 92)], fill=(30, 24, 20))
+    d.line([(110, 1010), (100, 700)], fill=(26, 20, 18), width=16)                               # 木
+    for k in range(10):
+        d.line([(102, 740 + k * 18), (102 + (k % 2 * 2 - 1) * (45 + k * 7), 705 + k * 15)], fill=(26, 20, 18), width=6)
+    return img
 
 
-def post(arr, t, intensity, chroma=True):
-    flick = 1 - 0.08 * (rng.random() < 0.15 + 0.3 * intensity) - 0.03 * math.sin(t * 50)
-    arr = arr * VIGNETTE * flick
-    if intensity > 0 and chroma:
-        sh = int(3 + 16 * intensity)
-        arr[..., 0] = np.roll(arr[..., 0], sh, axis=1)
-        arr[..., 2] = np.roll(arr[..., 2], -sh, axis=1)
-    grain = rng.normal(0, 9 + 10 * intensity, (H // 2, W // 2, 1)).astype(np.float32)
-    grain = np.repeat(np.repeat(grain, 2, 0), 2, 1)
-    return arr * SCAN + grain
+PADDY = paddy_bg()
 
 
-def draw_subs(d, t):
-    for st, en, text, style in TLN.subs:
+def path_point(u):
+    x = P_NEAR[0] + (P_FAR[0] - P_NEAR[0]) * u
+    y = P_NEAR[1] + (P_FAR[1] - P_NEAR[1]) * u
+    return x, y, 2.3 / (1 + u * 6.5)
+
+
+def paddy_frame(t):
+    img = PADDY.copy()
+    d = ImageDraw.Draw(img)
+    st = t - M["song"]
+    li = min(len(LYRICS) - 1, int(st // LINE)) if st >= 0 else -1
+    lt = (st - li * LINE) / LINE if li >= 0 else 0
+    if li <= 3:
+        u = (li + lt) / 4 * 0.86
+        kids = [(u, -1), (u, 1)]
+    elif li == 4:
+        kids = [(0.86, -1), (0.9, 0.4)]          # 一人がうしろに
+    elif li == 5:
+        kids = [(0.86, -1)]
+    else:
+        kids = [(0.86 - 0.62 * min(1, lt * 1.2), -1)]   # ひとりで帰ってくる
+    if li >= 5:                                  # 井戸に蓋
+        wx, wy = WELL
+        d.rectangle([wx - 32, wy - 32, wx + 32, wy - 24], fill=(22, 18, 16))
+    for u, side in kids:
+        x, y, s = path_point(u)
+        bob = math.sin(t * 7 + side) * 3 * s
+        kid(d, x + side * 40 * s, y + bob, s * (1.0 if side < 0 else 0.86))
+    if len(kids) == 2 and li <= 3:               # 手をつなぐ
+        x, y, s = path_point(kids[0][0])
+        d.line([(x - 22 * s, y - 120 * s), (x + 22 * s, y - 115 * s)], fill=(14, 10, 8), width=max(2, int(9 * s)))
+    vtext(d, W - 130, 360, LYRICS[max(0, li)], F_LYRIC, (245, 236, 220))
+    return img
+
+
+# ---------------------------------------------------------------- 古い写真
+def make_photo():
+    img = Image.new("RGB", (W, H), (40, 28, 18))
+    d = ImageDraw.Draw(img)
+    r = np.random.default_rng(4)
+    for y in range(0, H, 9):           # 木目の机
+        c = int(40 + 10 * math.sin(y / 23) + r.uniform(-4, 4))
+        d.line([(0, y), (W, y + r.uniform(-6, 6))], fill=(c, int(c * 0.7), int(c * 0.45)), width=6)
+    ph = Image.new("RGB", (760, 980), (226, 218, 198))
+    pd = ImageDraw.Draw(ph)
+    for y in range(36, 830, 4):
+        k = (y - 36) / 794
+        pd.line([(36, y), (724, y)], fill=(int(150 - 50 * k),) * 3)
+    pd.rectangle([36, 560, 724, 830], fill=(84, 80, 74))
+    pd.rectangle([50, 330, 710, 560], fill=(70, 66, 62))
+    pd.polygon([(20, 340), (740, 340), (630, 240), (130, 240)], fill=(52, 48, 44))
+    for x in range(90, 700, 90):
+        pd.line([(x, 340), (x, 560)], fill=(58, 54, 50), width=6)
+    kid(pd, 300, 760, 2.0, col=(38, 36, 34))                        # 姉（祖母）
+    kid(pd, 490, 770, 1.7, col=(38, 36, 34))                        # 妹
+    pd.line([(330, 520), (460, 540)], fill=(38, 36, 34), width=16)
+    for _ in range(70):                                             # 妹の顔だけ、ひっかいて消してある
+        x0, y0 = 490 + r.uniform(-60, 60), 440 + r.uniform(-60, 60)
+        pd.line([(x0, y0), (x0 + r.uniform(-50, 50), y0 + r.uniform(-50, 50))], fill=(232, 228, 216), width=int(r.uniform(2, 5)))
+    pd.text((60, 870), "昭和二十四年　夏", font=font(MINCHO, 44), fill=(90, 70, 50))
+    ph = ph.filter(ImageFilter.GaussianBlur(1.2)).rotate(4, expand=True, fillcolor=(0, 0, 0))
+    mask = Image.new("L", (760, 980), 255).rotate(4, expand=True)
+    img.paste(ph, ((W - ph.width) // 2, 430), mask)
+    return img
+
+
+PHOTO = make_photo()
+
+
+# ---------------------------------------------------------------- 古い紙
+PAPER_COLS = [W - 170 - i * 118 for i in range(len(LYRICS))]
+PAPER_TOP = 380
+
+
+def make_paper():
+    base = np.full((H, W, 3), (222, 208, 176), np.float32)
+    nz = np.asarray(Image.fromarray((rng.random((H // 4, W // 4)) * 255).astype(np.uint8)).resize((W, H)).filter(
+        ImageFilter.GaussianBlur(6))).astype(np.float32)[..., None] / 255
+    base *= 0.9 + 0.15 * nz
+    stain = np.exp(-(((xx - 260) / 300) ** 2 + ((yy - 1500) / 260) ** 2))[..., None]
+    base *= 1 - 0.18 * stain * np.array([0.6, 0.9, 1.4], np.float32)
+    img = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
+    d = ImageDraw.Draw(img)
+    r = np.random.default_rng(9)
+    for _ in range(180):      # 和紙の繊維
+        x, y = r.uniform(0, W), r.uniform(0, H)
+        d.line([(x, y), (x + r.uniform(-30, 30), y + r.uniform(-30, 30))], fill=(200, 186, 152), width=1)
+    targets = []
+    for li, line in enumerate(LYRICS):
+        x = PAPER_COLS[li]
+        cy = PAPER_TOP + r.uniform(-8, 8)
+        step = 74
+        idx = 0
+        for ch in line:
+            if ch == "　":
+                cy += step // 2
+                continue
+            ci = Image.new("L", (100, 100), 0)
+            ImageDraw.Draw(ci).text((50, 50), ch, font=F_PAPER, fill=255, anchor="mm")
+            ci = ci.rotate(r.uniform(-6, 6), resample=Image.BICUBIC).filter(ImageFilter.GaussianBlur(0.6))
+            px = int(x - 50 + r.uniform(-4, 4))
+            py = int(cy - 50 + 31 + r.uniform(-3, 3))
+            img.paste(Image.new("RGB", (100, 100), (40, 30, 26)), (px, py), ci)
+            if idx == 3:        # 数字の次の一文字
+                targets.append((x, cy + 31, ch))
+            idx += 1
+            cy += step
+    return img, targets
+
+
+PAPER, TARGETS = make_paper()
+
+
+# ---------------------------------------------------------------- 祖母の部屋
+def room_frame(lamp=1.0, child_=False, eyes=0.0, turn=0.0):
+    img = Image.new("RGB", (W, H), (int(22 * lamp + 2), int(16 * lamp + 2), int(10 * lamp + 2)))
+    d = ImageDraw.Draw(img)
+    sx0, sy0, sx1, sy1 = 120, 520, 960, 1260
+    frame_c = (int(44 * lamp), int(30 * lamp), int(18 * lamp))
+    d.rectangle([sx0, sy0, sx1, sy1], fill=(int(140 * lamp), int(104 * lamp), int(62 * lamp)))     # 障子
+    for x in range(sx0, sx1 + 1, 105):
+        d.line([(x, sy0), (x, sy1)], fill=frame_c, width=7)
+    for y in range(sy0, sy1 + 1, 123):
+        d.line([(sx0, y), (sx1, y)], fill=frame_c, width=7)
+    d.rectangle([0, 1260, W, H], fill=(int(58 * lamp + 3), int(46 * lamp + 3), int(28 * lamp + 2)))  # 畳
+    for y in (1360, 1520, 1740):
+        d.line([(0, y), (W, y)], fill=(int(36 * lamp), int(28 * lamp), int(16 * lamp)), width=4)
+    d.rectangle([780, 1080, 900, 1300], fill=(int(240 * lamp), int(196 * lamp), int(120 * lamp)))  # 行灯
+    d.rectangle([772, 1070, 908, 1086], fill=(30, 22, 14))
+    c = (10, 7, 5)
+    gx = 420                                                           # 祖母（正座の影）
+    d.ellipse([gx - 210, 1120, gx + 210, 1420], fill=c)
+    d.polygon([(gx - 120, 1170), (gx + 120, 1170), (gx + 80, 930), (gx - 80, 930)], fill=c)
+    hx = gx + 26 * (1 - turn)                                          # 妹の方 → こちらを向く
+    d.ellipse([hx - 70, 770, hx + 70, 940], fill=c)
+    d.ellipse([hx - 34 + 20 * (1 - turn), 718, hx + 34 + 20 * (1 - turn), 790], fill=c)   # 髷
+    if eyes > 0:
+        for s in (-1, 1):
+            ex = hx + s * 26
+            v = int(220 * eyes)
+            d.ellipse([ex - 6, 846, ex + 6, 856], fill=(v, int(v * 0.95), int(v * 0.9)))
+    if child_:
+        kid(d, 660, 1330, 1.55, col=c)
+    return img
+
+
+# ---------------------------------------------------------------- 共通処理
+def film(arr, t, sepia=1.0, dust=True):
+    if sepia > 0:
+        y = arr @ np.array([0.3, 0.59, 0.11], np.float32)
+        arr = arr * (1 - sepia) + (y[..., None] * SEPIA) * sepia
+    arr = arr * VIGNETTE * (1 - 0.05 * rng.random() - 0.02 * math.sin(t * 40))
+    grain = rng.normal(0, 10, (H // 2, W // 2, 1)).astype(np.float32)
+    arr = arr + np.repeat(np.repeat(grain, 2, 0), 2, 1)
+    if dust:
+        img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+        d = ImageDraw.Draw(img)
+        for _ in range(int(rng.integers(0, 5))):
+            x, y = rng.uniform(0, W), rng.uniform(0, H)
+            r = rng.uniform(1.5, 5)
+            v = int(rng.choice([20, 230]))
+            d.ellipse([x - r, y - r, x + r, y + r], fill=(v, v, v))
+        if rng.random() < 0.3:
+            x = rng.uniform(80, W - 80)
+            d.line([(x, 0), (x + rng.uniform(-20, 20), H)], fill=(200, 190, 170), width=1)
+        arr = np.asarray(img).astype(np.float32)
+    return arr
+
+
+def overlay_text(img, t):
+    d = ImageDraw.Draw(img)
+    if t < M["dark"]:
+        tag = "【意味がわかると怖い】"
+        bb = d.textbbox((0, 0), tag, font=F_TAG)
+        d.text(((W - (bb[2] - bb[0])) / 2, 150), tag, font=F_TAG, fill=(230, 60, 50), stroke_width=4, stroke_fill=(0, 0, 0))
+        ttl = "祖母の数え歌"
+        bb = d.textbbox((0, 0), ttl, font=F_TITLE)
+        d.text(((W - (bb[2] - bb[0])) / 2, 205), ttl, font=F_TITLE, fill=(245, 240, 230), stroke_width=5, stroke_fill=(0, 0, 0))
+    for st, en, text in TLN.subs:
         if st <= t < en:
-            a = min(1, (t - st) / 0.15, (en - t) / 0.2)
-            subtitle(d, text, style, max(0, a))
+            a = max(0.0, min(1, (t - st) / 0.15, (en - t) / 0.2))
+            lines = text.split("\n")
+            y0 = 1440 - (len(lines) - 1) * 40
+            for i, ln in enumerate(lines):
+                bb = d.textbbox((0, 0), ln, font=F_SUB)
+                d.text(((W - (bb[2] - bb[0])) / 2, y0 + i * 78), ln, font=F_SUB, fill=(int(245 * a),) * 3,
+                       stroke_width=5, stroke_fill=(0, 0, 0))
+
+
+def ease(x):
+    x = max(0.0, min(1.0, x))
+    return x * x * (3 - 2 * x)
+
+
+def zoom_crop(img, z, cx=W / 2, cy=H / 2):
+    if z <= 1.0001:
+        return img
+    nw, nh = int(W * z), int(H * z)
+    big = img.resize((nw, nh), Image.BILINEAR)
+    ox = int(min(max(cx * z - W / 2, 0), nw - W))
+    oy = int(min(max(cy * z - H / 2, 0), nh - H))
+    return big.crop((ox, oy, ox + W, oy + H))
 
 
 # ================================================================ フレーム
+def paper_frame(t):
+    img = PAPER.copy()
+    d = ImageDraw.Draw(img)
+    for k, (x, y, ch) in enumerate(TARGETS):          # 赤丸を一つずつ描く
+        p = (t - (M["circles"] + k * 0.42)) / 0.3
+        if p > 0:
+            d.arc([x - 52, y - 50, x + 52, y + 52], -100, -100 + 360 * min(1, p), fill=(176, 30, 26), width=7)
+    if t < M["circles"]:
+        return zoom_crop(img, 1.0 + 0.06 * (t - M["paper"]) / (M["circles"] - M["paper"]))
+    if t < M["reveal"] - 0.2:
+        return img
+    p = ease((t - (M["reveal"] - 0.2)) / 0.6)            # 赤丸の字が抜け出して横一列に並ぶ
+    img = Image.fromarray((np.asarray(img).astype(np.float32) * (1 - 0.72 * p)).astype(np.uint8))
+    d = ImageDraw.Draw(img)
+    bb = d.textbbox((0, 0), HIDDEN, font=F_REVEAL)
+    tw = bb[2] - bb[0]
+    for k, ch in enumerate(HIDDEN):
+        sx, sy, _ = TARGETS[k]
+        pre = d.textbbox((0, 0), HIDDEN[:k], font=F_REVEAL)[2] if k else 0
+        ex, ey = (W - tw) / 2 + pre + F_REVEAL.size / 2, 1000
+        fs = F_REV_SIZES[int(62 + (128 - 62) * p)]
+        d.text((sx + (ex - sx) * p, sy + (ey - sy) * p), ch, font=fs, fill=(int(176 + 40 * p), 24, 20), anchor="mm",
+               stroke_width=int(3 * p), stroke_fill=(10, 0, 0))
+    if p >= 1:
+        img = zoom_crop(img, 1.0 + 0.04 * (t - M["reveal"] - 0.4))
+    return img
+
+
 def render_frame(fi):
     t = fi / FPS
-    f = 2.2
-
-    # ---- 7. 余韻
-    if t >= M["end"]:
+    sepia, dust = 0.85, True
+    if t < M["song"]:                                     # 0. つかみ：祖母の部屋
+        img = zoom_crop(room_frame(lamp=0.25 + 0.75 * ease(t / 1.2)), 1.08 - 0.06 * t / M["song"])
+    elif t < M["photo"]:                                  # 1. 数え歌
+        img = zoom_crop(paddy_frame(t), 1.0 + 0.05 * (t - M["song"]) / (M["photo"] - M["song"]), W / 2, 1150)
+    elif t < M["paper"]:                                  # 2. 写真
+        p = (t - M["photo"]) / (M["paper"] - M["photo"])
+        img = zoom_crop(PHOTO, 1.0 + 0.55 * ease(p), 560, 900 - 60 * p)
+    elif t < M["end"]:                                    # 3. 紙
+        sepia = 0.35
+        img = paper_frame(t)
+    elif t < M["dark"]:                                   # 4. オチ：祖母と妹
+        turn = ease((t - M["turn"]) / 1.4) if t >= M["turn"] else 0.0
+        eyes = ease((t - M["turn"] - 0.9) / 0.8) if t >= M["turn"] else 0.0
+        lamp = 0.08 + 0.4 * (rng.random() < 0.4) if t >= M["dark"] - 0.35 else 1.0
+        img = room_frame(lamp=lamp, child_=True, eyes=eyes, turn=turn)
+        img = zoom_crop(img, 1.0 + 0.10 * ease((t - M["end"]) / (M["dark"] - M["end"])), 450, 950)
+    else:                                                 # 暗転
         img = Image.new("RGB", (W, H))
-        d = ImageDraw.Draw(img)
-        if t >= M["end_text"]:
-            a = min(1, (t - M["end_text"]) / 0.8)
-            vtext(d, W / 2 + 70, 520, "ここのつ目は", F_END, (int(200 * a), int(190 * a), int(180 * a)))
-            vtext(d, W / 2 - 70, 760, "あなたの番", F_END, (int(190 * a), 0, 0))
-        return np.clip(post(np.asarray(img).astype(np.float32), t, 0), 0, 255).astype(np.uint8)
-
-    # ---- 6. 顔
-    if t >= M["scare"]:
-        p = (t - M["scare"]) / (M["end"] - M["scare"])
-        zoom = 1.0 + 0.3 * p
-        img = Image.fromarray(FACE.astype(np.uint8))
-        nw, nh = int(W * zoom), int(H * zoom)
-        img = img.resize((nw, nh))
-        amp = 45 * (1 - p) + 8
-        ox = (nw - W) // 2 + int(rng.uniform(-amp, amp))
-        oy = (nh - H) // 2 + int(rng.uniform(-amp, amp))
-        img = img.crop((ox, oy, ox + W, oy + H))
-        d = ImageDraw.Draw(img)
-        msg = "みぃつけた"
-        bb = d.textbbox((0, 0), msg, font=F_SCARE)
-        for k in range(3):
-            d.text(((W - (bb[2] - bb[0])) / 2 + rng.uniform(-14, 14), 1560 + rng.uniform(-10, 10)), msg,
-                   font=F_SCARE, fill=(150 + 50 * k, 0, 0), stroke_width=4, stroke_fill=(0, 0, 0))
-        arr = np.asarray(img).astype(np.float32)
-        if fi % 5 == 0:
-            arr = 255 - arr
-        arr[..., 0] *= 1.2
-        arr[..., 1:] *= 0.8
-        arr *= max(0.0, 1 - max(0, p - 0.85) * 7)
-        return np.clip(post(arr, t, 0.8, chroma=False), 0, 255).astype(np.uint8)
-
-    # ---- 5→6. 振り向く（ウィップパン）
-    if t >= M["whip"]:
-        p = (t - M["whip"]) / (M["scare"] - M["whip"])
-        img, _, _ = corridor(M["whip"], 0.5)
-        base = np.asarray(img).astype(np.float32) * 0.5
-        shift = int(W * 1.6 * p * p)
-        acc = sum(np.roll(base, shift + k * int(40 + 200 * p), axis=1) for k in range(6)) / 6
-        acc *= 1 - p * 0.7
-        return np.clip(post(acc, t, 0.6), 0, 255).astype(np.uint8)
-
-    # ---- 0. つかみ（暗闇、ときどき参道が見える）
-    if t < M["setup"]:
-        if fi < 3:     # 冒頭0.1秒、顔がちらっと映る
-            arr = FACE * 0.55
-        else:
-            img, _, _ = corridor(t)
-            arr = np.asarray(img).astype(np.float32) * (0.35 if rng.random() < 0.12 else 0.06)
-        img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
-        draw_subs(ImageDraw.Draw(img), t)
-        return np.clip(post(np.asarray(img).astype(np.float32), t, 0.1), 0, 255).astype(np.uint8)
-
-    # ---- 1〜5. 参道
-    speed = 0.5 if t < M["stop"] else 0.0
-    img, hz, cx = corridor(min(t, M["stop"]) if speed == 0 else t, 0.5)
-    li = int((t - M["song"]) // LINE) if t >= M["song"] else -1
-    fig = None
-    if M["figure_far"] <= t < M["song"]:
-        a = min(1, (t - M["figure_far"]) / 1.5)
-        if a > 0.3:
-            fig = (12.0, False, 0.0, None)
-    elif M["song"] <= t < M["stop"]:
-        fig = (12.0 / (1 + li * 0.85), li >= 3, 0.0, math.sin(t * 9) if li == 5 else None)
-    elif M["stop"] <= t < M["nanatsu"]:
-        fig = (12.0 / (1 + 5 * 0.85), True, 0.0, None)
-    elif M["nanatsu"] <= t < M["empty"]:
-        tilt = min(1, (t - M["nanatsu"]) / 1.6) * 28      # 目の前で首をかしげる
-        fig = (0.55, True, tilt, None)
-    if fig is not None:
-        z, eyes, tilt, beck = fig
-        s = f / z
-        lay = figure_layer(s, cx, hz + 330 * s, tilt, eyes, beck)
-        img = img.convert("RGBA")
-        img.alpha_composite(lay)
-        img = img.convert("RGB")
-    d = ImageDraw.Draw(img)
-
-    # 歌詞（縦書き、1文字ずつ）
-    if M["song"] <= t < M["stop"] + 0.6:
-        lii = min(li, len(LYRICS) - 1)
-        text = LYRICS[lii][1]
-        lt = t - (M["song"] + lii * LINE)
-        nch = sum(1 for c in text if c != "　")
-        shown = min(nch, int(lt / (LINE * 0.9) * nch) + 1)
-        out, cnt = "", 0
-        for c in text:
-            if c != "　":
-                if cnt >= shown:
-                    break
-                cnt += 1
-            out += c
-        col = (225, 215, 205) if lii < 4 else (225, 70, 60)
-        vtext(d, W - 130, 230, out, F_LYRIC, col, jitter=max(0, lii - 2) * 1.5)
-        # 何番目か（大きな漢数字）
-        vtext(d, 120, 260, "一二三四五六"[lii], font(MINCHO, 150), (90, 20, 20))
-    if M["nanatsu"] <= t < M["empty"]:
-        vtext(d, 120, 260, "七", font(MINCHO, 150), (200, 20, 20), jitter=4)
-    if M["yattsu"] <= t < M["whip"]:
-        vtext(d, 120, 260, "八", font(MINCHO, 150), (200, 20, 20), jitter=4)
-    draw_subs(d, t)
-
-    arr = np.asarray(img).astype(np.float32)
-    # 数え歌：行が変わる瞬間の暗転（その間に近づく）
-    if li >= 1 and t < M["stop"]:
-        if (t - M["song"]) - li * LINE < 0.08:
-            arr *= 0.06
-    # 「ななつ」直前の暗転
-    if M["nanatsu"] - 0.25 <= t < M["nanatsu"]:
-        arr *= 0.03
-    if M["stop"] <= t:
-        arr *= 0.75
-    if M["whip"] - 0.7 <= t:        # 無音の間は暗く固まる
-        arr *= 0.55
-    intensity = 0.0
-    if t >= M["song"]:
-        intensity = min(1.0, (t - M["song"]) / (M["whip"] - M["song"])) * 0.35
-    if M["nanatsu"] <= t < M["nanatsu"] + 0.4:
-        intensity = 0.9
-    return np.clip(post(arr, t, intensity), 0, 255).astype(np.uint8)
+        dust = False
+    overlay_text(img, t)
+    arr = film(np.asarray(img).astype(np.float32), t, sepia, dust)
+    if M["reveal"] <= t < M["reveal"] + 0.12:             # 種明かしの瞬間に一瞬白く
+        arr = arr * 0.4 + 150
+    return np.clip(arr, 0, 255).astype(np.uint8)
 
 
 def main():
-    print("timeline:", {k: round(v, 2) for k, v in M.items()}, flush=True)
+    print("timeline:", {k: round(float(v), 2) for k, v in M.items()}, flush=True)
     wav_path = BUILD / "audio.wav"
     audio = make_audio()
     with wave.open(str(wav_path), "wb") as wf:
@@ -695,7 +643,7 @@ def main():
     total = int(DUR * FPS)
     for fi in range(total):
         proc.stdin.write(render_frame(fi).tobytes())
-        if fi % 150 == 0:
+        if fi % 300 == 0:
             print(f"  {fi}/{total}", flush=True)
     proc.stdin.close()
     proc.wait()
