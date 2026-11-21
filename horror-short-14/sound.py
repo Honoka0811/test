@@ -155,16 +155,16 @@ def main():
     add(big, T_SEE + 0.3, taiko(0.5)); add(big, T_TOE2 + 0.3, taiko(0.8))
     for k in range(3): add(fx, T_PHONE + 0.8 + k * 0.28, tap(), 0.5)             # 電話の画面を押す
     add(fx, T_OPEN, slidedoor(2.2), 0.55); add(big, T_OPEN + 0.2, taiko(0.6))
-    add(fx, T_HAND + 1.6, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
+    add(fx, L['agent']['start'] + 0.55, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
     add(big, T_MEMO + 0.1, taiko(0.8))
     add(fx, T_TEN + 0.3, click(1800), 0.3)                                            # 懐中電灯
     add(fx, T_OPEN_TEN, slidedoor(0.7)[:int(0.7 * SR)], 0.3); add(big, T_PHOTOS, taiko(0.8)); add(big, T_POV + 0.4, taiko(0.6))
     add(big, HIT, stinger(), 0.75)
     nar = np.zeros(N, np.float32); last = np.zeros(N, np.float32)
     for l in TL['lines']:
-        if l['id'] == 'now': add(last, l['start'], segs['now'])                 # narrate.py で低くした男の声
+        if l['id'] == 'now': add(last, l['start'], segs['now'])                 # 不動産屋の担当者の声(剣崎雌雄)
         else: add(nar, l['start'], segs[l['id']])
-    last = lowpass(last, 3200) * 1.1
+    last = lowpass(last, 5000) * 0.9                                                  # 家の中から聞こえる声
     hop = SR // 20; rms = np.sqrt(np.mean(nar[:N // hop * hop].reshape(-1, hop) ** 2, axis=1)); e = np.zeros_like(rms)
     for i, x in enumerate(rms): e[i] = max(x, (e[i - 1] if i else 0) * 0.9)
     e = np.pad(np.repeat(e, hop), (0, N - len(e) * hop)); duck = 1 - 0.5 * np.clip(e / 0.08, 0, 1)

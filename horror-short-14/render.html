@@ -145,7 +145,7 @@ function handScene(t, o) {
   ctx.fillStyle = '#4a3a2c'; ctx.fillRect(-200, -200, W + 400, H + 400); const r = rngOf(21); for (let i = 0; i < 120; i++) { ctx.strokeStyle = `rgba(0,0,0,${0.05 + r() * 0.08})`; ctx.lineWidth = 2 + r() * 3; const y = r() * H; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y + (r() - 0.5) * 20); ctx.stroke(); }
   ctx.save(); ctx.translate(320, 760); ctx.rotate(-0.06); ctx.fillStyle = '#ece8df'; ctx.fillRect(-230, -330, 460, 650); ctx.fillStyle = '#3a3a3a'; ctx.font = `800 34px ${MIN}`; ctx.textAlign = 'center'; ctx.fillText('重要事項説明書', 0, -270);
   ctx.fillStyle = 'rgba(60,60,60,0.45)'; for (let i = 0; i < 16; i++) ctx.fillRect(-190, -210 + i * 32, 200 + (i * 53 % 180), 7); ctx.strokeStyle = '#c03030'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(130, 250, 34, 0, 7); ctx.stroke(); ctx.restore();   // 書類とハンコ
-  const k = o.place, kx = 700, ky = lerp(560, 980, k);
+  const k = o.place, kx = 700, ky = lerp(-300, 980, k);
   ctx.save(); ctx.translate(kx, ky); for (const [a, dx] of [[-0.5, -40], [0.05, 0], [0.55, 40]]) keyShape(ctx, dx * 0.4, 0, a, 1.1); ctx.fillStyle = '#9a9a9e'; ctx.lineWidth = 6; ctx.strokeStyle = '#a7a7ab'; ctx.beginPath(); ctx.arc(0, -36, 30, 0, 7); ctx.stroke();
   ctx.fillStyle = '#e3dccb'; ctx.save(); ctx.rotate(-0.3); ctx.fillRect(-150, -80, 110, 64); ctx.fillStyle = '#333'; ctx.font = `800 30px ${MIN}`; ctx.textAlign = 'center'; ctx.fillText('玄関', -95, -46); ctx.restore(); ctx.restore();   // 鍵束と札
   const hy = ky - 90 - (1 - o.hand) * 900;     // スーツの袖の手(顔は映らない)
@@ -353,7 +353,7 @@ function render(t) {
   const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
   if (t < EV.hit) {
     if (t >= EV.hand && t < LN.l2.start - 0.2) {     // 不動産屋の担当者が「これで全部です」と鍵を3本わたす
-      const pl = ease(prog(t, EV.hand + 0.6, EV.hand + 1.6)), hd = pl * (1 - ease(prog(t, EV.hand + 2.4, EV.hand + 3.4))); handScene(t, { z: lerp(1.0, 1.1, prog(t, EV.hand, LN.l2.start)), place: pl, hand: Math.max(hd, 1 - ease(prog(t, EV.hand + 2.4, EV.hand + 3.4)) * (pl >= 1 ? 1 : 0)) }); fadeIn(EV.hand, 0.3); dark = 0.15; }
+      const a0 = LN.agent.start - 0.4, pl = ease(prog(t, a0, a0 + 1.0)), back = ease(prog(t, LN.l1c.start, LN.l1c.start + 1.0)); handScene(t, { z: lerp(1.0, 1.1, prog(t, EV.hand, LN.l2.start)), place: pl, hand: pl * (1 - back) + (t < a0 ? 0 : 0) }); fadeIn(EV.hand, 0.3); dark = 0.15; }
     else if (t >= EV.memo && t < EV.memo + 2.4) {     // あの声は…鍵を渡した、あの人
       handScene(t, { z: 1.25, place: 1, hand: 1 }); ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore(); fadeIn(EV.memo, 0.15);
       ring(540 + (740 - 540) * 1.25, 960 + (880 - 960) * 1.25, 150, ease(prog(t, EV.memo + 0.5, EV.memo + 1.1))); dark = 0.3; }
@@ -405,7 +405,7 @@ function render(t) {
     const a = prog(t, EV.hit + 0.7, EV.hit + 1.0); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.font = `800 64px ${MIN}`; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillText('雪の朝は', W / 2, 860);
     ctx.fillStyle = `rgba(255,43,43,${a})`; ctx.fillText('足あとの「向き」を見てください。', W / 2, 960);
-    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250);
+    ctx.font = `800 38px ${MIN}`; ctx.fillStyle = `rgba(190,190,190,${a * 0.85})`; ctx.fillText('ナレーション  VOICEVOX:四国めたん', W / 2, 1250); ctx.fillText('不動産屋の男  VOICEVOX:剣崎雌雄', W / 2, 1310);
   }
   if (t < EV.hit + 0.5) lowLight(t, f, dark);
   subtitle(t);
@@ -429,6 +429,6 @@ function mapScene(t) {     // 上から見た図: 道路 / 足あと / 家
 }
 
 window.FPS = FPS; window.DURATION = DURATION; window.render = render;
-window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '重要事項説明書道路家玄関入ってきた?出ていったつま先かかと私の部屋雪の朝は足あとの「向き」を見てください。ナレーション四国めたん').then(() => document.fonts.ready);
+window.ready = document.fonts.load(`800 60px "Shippori Mincho"`, D.lines.map(l => l.text).join('') + '重要事項説明書道路家玄関入ってきた?出ていったつま先かかと私の部屋雪の朝は足あとの「向き」を見てください。ナレーション四国めたん不動産屋の男剣崎雌雄').then(() => document.fonts.ready);
 if (!navigator.webdriver) window.ready.then(() => { const t0 = performance.now(); (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })(); });
 </script></body></html>

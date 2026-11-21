@@ -8,9 +8,9 @@ from script import LINES
 HERE = os.path.dirname(os.path.abspath(__file__))
 SR = 48000
 # 四国めたんのスタイル: 2=ノーマル 36=ささやき
-STYLES = {'n': 2, 'm': 37}
+STYLES = {'n': 2, 'a': 21}        # 2=四国めたん ノーマル / 21=剣崎雌雄 ノーマル(4.vvm)
 PARAMS = {'n': dict(speed=1.2, pitch=-0.03, into=0.9, vol=1.0),
-          'm': dict(speed=0.72, pitch=-0.15, into=0.9, vol=2.0)}      # 家にいた男の声(sound.py でさらに低くする)
+          'a': dict(speed=0.9, pitch=-0.02, into=0.75, vol=1.0)}      # 不動産屋の担当者(落ち着いた、低い男の声)
 START = 0.4
 
 def engine():
@@ -36,7 +36,6 @@ def main():
             x = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
         if sr != SR:
             x = np.interp(np.arange(int(len(x) * SR / sr)) * sr / SR, np.arange(len(x)), x).astype(np.float32)
-        if st == 'm': x = np.interp(np.arange(int(len(x) / 0.86)) * 0.86, np.arange(len(x)), x).astype(np.float32)   # 0.86倍の速さで再生して、低い男の声に
         x *= p['vol']; dur = len(x) / SR
         print(f'{t:6.2f}  {dur:5.2f}s  [{kind}/{st}] {q.kana}')
         tl.append(dict(id=lid, kind=kind, start=round(t, 3), end=round(t + dur, 3), text=disp))
