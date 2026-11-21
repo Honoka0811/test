@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""【意味がわかると怖い】祖母の数え歌 — ショート動画生成スクリプト (v3).
+"""【意味がわかると怖い】七つの数え歌 — ショート動画生成スクリプト (v4・メタナレーション版).
 
 縦型 1080x1920 / 30fps / 60秒未満。ナレーションは Open JTalk（オフライン音声合成）、
 映像・音楽・効果音もすべてプログラムで生成する。
@@ -7,12 +7,14 @@
 使い方:  python3 make_video.py [出力パス]
 必要:    ffmpeg, numpy, Pillow, open-jtalk (+ naist-jdic, nitech m001 voice), IPAフォント
 
-構成
-  0. つかみ   祖母が毎晩歌ってくれた数え歌。大人になって、やっと意味がわかった。
+構成（ナレーションは「動画であること」を自覚して視聴者に話しかける）
+  0. つかみ   この動画は◯秒です。字幕を、目で追ってください。
   1. 数え歌   夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
-  2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。
-  3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
-  4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。
+  2. 写真     今、スワイプしようとしましたね。あと◯秒です。／この歌を作った人には妹がいた。
+  3. 紙       数字の次の一文字だけ → 「わたしがうめた」／答えはコメント欄に書かないでください。
+  4. オチ     この歌を作った人は、まだ生きています。この声は合成音声です。本当の声は聞かせられないので。
+              あと、三秒です。（本当に三秒で終わる）
+  ※ 「◯秒」は実際の尺から自動計算する。
 """
 import hashlib
 import math
@@ -55,7 +57,7 @@ LYRICS = [
 ]
 HIDDEN = "".join(l.split("　")[1][0] for l in LYRICS)
 assert HIDDEN == "わたしがうめた", HIDDEN
-LINE = 2.15
+LINE = 2.0
 NOTE = LINE / 8
 
 
@@ -104,7 +106,7 @@ def tts(text, speed, pitch, alpha=0.55):
 
 def narrator(text):
     """古いカセットに録った語り."""
-    x = tts(text, 1.0, -3)
+    x = tts(text, 1.1, -3)
     x = smooth(x, 4) - 0.6 * smooth(x, 200)
     wet = fftconv(x, IR_ROOM)[: len(x) + int(0.5 * SR)]
     y = np.pad(x, (0, len(wet) - len(x))) + 0.12 * wet
@@ -169,39 +171,53 @@ class TL:
         self.t += s
 
 
-def build_timeline():
+def build_timeline(D=58, R=30):
     tl = TL()
     tl.wait(0.2)
     tl.mark["hook"] = tl.t
-    tl.say("祖母が毎晩、歌ってくれた、数え歌がある。", "祖母が毎晩\n歌ってくれた数え歌がある。")
-    tl.say("大人になって、やっと、その意味がわかった。", "大人になって\nやっと、その意味がわかった。", gap=0.5)
+    tl.say(f"この動画は、{D}秒です。", gap=0.2)
+    tl.say("字幕を、目で、追ってください。", "字幕を、目で追ってください。", gap=0.5)
     tl.mark["song"] = tl.t
     tl.t += LINE * len(LYRICS) + 0.4
     tl.mark["photo"] = tl.t
-    tl.say("祖母には、妹がいたらしい。", gap=0.3)
-    tl.say("七つのとき、裏山の井戸の近くで、いなくなったそうだ。", "七つのとき\n裏山の井戸の近くで\nいなくなったそうだ。", gap=0.5)
+    tl.say(f"今、スワイプしようとしましたね。あと、{R}秒です。", f"今、スワイプしようとしましたね。\nあと{R}秒です。", gap=0.3)
+    tl.mark["swipe_end"] = tl.t
+    tl.say("この歌を作った人には、妹がいました。", "この歌を作った人には\n妹がいました。", gap=0.25)
+    tl.say("七つのとき、井戸の近くで、いなくなりました。", "七つのとき\n井戸の近くで、いなくなりました。", gap=0.4)
     tl.mark["paper"] = tl.t
-    tl.say("先日、祖母の部屋で、この歌詞を書いた、古い紙を見つけた。", "先日、祖母の部屋で\nこの歌詞を書いた古い紙を見つけた。", gap=0.3)
-    tl.say("数字の下の一文字だけが、赤い丸で、囲んであった。", "数字の下の一文字だけが\n赤い丸で囲んであった。", gap=0.4)
+    tl.say("では、もう一度、歌詞を見てください。", "では、もう一度\n歌詞を見てください。", gap=0.2)
+    tl.say("数字の、次の一文字だけです。", "数字の次の一文字だけです。", gap=0.3)
     tl.mark["circles"] = tl.t
     tl.t += 0.42 * len(LYRICS) + 0.4
     tl.mark["reveal"] = tl.t
-    tl.t += 2.9
+    tl.t += 0.9
+    tl.say("答えは、コメント欄に、書かないでください。", "答えは\nコメント欄に書かないでください。", gap=0.5)
     tl.mark["end"] = tl.t
-    tl.wait(0.4)
-    tl.mark["end_hum"] = tl.t
-    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=0.8)
-    tl.mark["last"] = tl.t
-    tl.say("妹は、来週、七つになる。", gap=0.6)
+    tl.say("ひとつ、言っていなかったことがあります。", "ひとつ\n言っていなかったことがあります。", gap=0.4)
+    tl.say("この歌を作った人は、まだ、生きています。", "この歌を作った人は\nまだ、生きています。", gap=0.5)
+    tl.say("この声は、合成音声です。本当の声は、聞かせられないので。", "この声は、合成音声です。\n本当の声は、聞かせられないので。", gap=0.4)
     tl.mark["turn"] = tl.t
-    tl.t += 2.0
-    tl.mark["dark"] = tl.t
-    tl.t += 1.2
+    tl.say("あと、三秒です。", gap=0.0)
+    tl.mark["three"] = tl.t
+    tl.t = tl.mark["turn"] + 3.0 + 0.6
+    tl.mark["dark"] = tl.t - 0.9
     tl.mark["dur"] = tl.t
     return tl
 
 
-TLN = build_timeline()
+def stable_timeline():
+    D, R = 58, 30
+    for _ in range(5):
+        tl = build_timeline(D, R)
+        nd = int(round(tl.mark["dur"]))
+        nr = int(round(tl.mark["dur"] - tl.mark["swipe_end"]))
+        if (nd, nr) == (D, R):
+            break
+        D, R = nd, nr
+    return tl
+
+
+TLN = stable_timeline()
 M = TLN.mark
 DUR = M["dur"]
 
@@ -258,11 +274,6 @@ def make_audio():
     clu = sum(pluck(BASE * r, 3.0, 0.12) for r in (1.0, 16 / 15, 3 / 2 * 16 / 15))
     add(mus, M["reveal"], hit * 0.7 + clu)
 
-    # オチ：祖母が妹に歌を教えるハミング → 「七つになる」の直前で途切れる
-    h = hum([BASE / 2 * RAT[d] for d in PHRASE[0] + PHRASE[1]], NOTE * 1.15, detune=0.99)
-    h = 0.5 * h + 0.5 * fftconv(h, IR_HALL)[: len(h)]
-    h[int((M["last"] - M["end_hum"] + 0.1) * SR):] = 0
-    add(mus, M["end_hum"], h, 0.35)
     # 振り向く：畳のきしみ → 灯りが消える
     m = int(0.5 * SR)
     tt = np.arange(m) / SR
@@ -513,7 +524,7 @@ def film(arr, t, sepia=1.0, dust=True):
         y = arr @ np.array([0.3, 0.59, 0.11], np.float32)
         arr = arr * (1 - sepia) + (y[..., None] * SEPIA) * sepia
     arr = arr * VIGNETTE * (1 - 0.05 * rng.random() - 0.02 * math.sin(t * 40))
-    grain = rng.normal(0, 10, (H // 2, W // 2, 1)).astype(np.float32)
+    grain = rng.normal(0, 7, (H // 2, W // 2, 1)).astype(np.float32)
     arr = arr + np.repeat(np.repeat(grain, 2, 0), 2, 1)
     if dust:
         img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
@@ -536,7 +547,7 @@ def overlay_text(img, t):
         tag = "【意味がわかると怖い】"
         bb = d.textbbox((0, 0), tag, font=F_TAG)
         d.text(((W - (bb[2] - bb[0])) / 2, 150), tag, font=F_TAG, fill=(230, 60, 50), stroke_width=4, stroke_fill=(0, 0, 0))
-        ttl = "祖母の数え歌"
+        ttl = "七つの数え歌"
         bb = d.textbbox((0, 0), ttl, font=F_TITLE)
         d.text(((W - (bb[2] - bb[0])) / 2, 205), ttl, font=F_TITLE, fill=(245, 240, 230), stroke_width=5, stroke_fill=(0, 0, 0))
     for st, en, text in TLN.subs:
@@ -557,7 +568,7 @@ def ease(x):
 
 def zoom_crop(img, z, cx=W / 2, cy=H / 2):
     if z <= 1.0001:
-        return img
+        return img.copy()
     nw, nh = int(W * z), int(H * z)
     big = img.resize((nw, nh), Image.BILINEAR)
     ox = int(min(max(cx * z - W / 2, 0), nw - W))
@@ -608,10 +619,10 @@ def render_frame(fi):
         sepia = 0.35
         img = paper_frame(t)
     elif t < M["dark"]:                                   # 4. オチ：祖母と妹
-        turn = ease((t - M["turn"]) / 1.4) if t >= M["turn"] else 0.0
+        turn = ease((t - M["turn"] - 0.3) / 1.4) if t >= M["turn"] else 0.0
         eyes = ease((t - M["turn"] - 0.9) / 0.8) if t >= M["turn"] else 0.0
         lamp = 0.08 + 0.4 * (rng.random() < 0.4) if t >= M["dark"] - 0.35 else 1.0
-        img = room_frame(lamp=lamp, child_=True, eyes=eyes, turn=turn)
+        img = room_frame(lamp=lamp, child_=False, eyes=eyes, turn=turn)
         img = zoom_crop(img, 1.0 + 0.10 * ease((t - M["end"]) / (M["dark"] - M["end"])), 450, 950)
     else:                                                 # 暗転
         img = Image.new("RGB", (W, H))
@@ -637,7 +648,7 @@ def main():
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav_path),
-           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "6M", "-bufsize", "12M",
+           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "8M", "-bufsize", "16M", "-tune", "grain",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(OUT)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     total = int(DUR * FPS)
