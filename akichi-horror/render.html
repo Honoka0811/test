@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>近所の謎の空き地</title>
+<style>
+  html,body{margin:0;background:#000;}
+  canvas{display:block;max-height:100vh;margin:0 auto;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="output/timeline.js"></script>
+<script>
+// ------------------------------------------------------------
+// 近所の謎の空き地 (9:16 ホラーショート)
+// render(t) は時刻 t[秒] の静止フレームを決定論的に描画する。
+// シーンの尺と字幕は narrate.py が書き出す output/timeline.js から読む。
+// ------------------------------------------------------------
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MIN = '"IPAMincho","IPAPMincho",serif';
+const GOTH = '"IPAPGothic","IPAGothic",sans-serif';
+const MONO = '"DejaVu Sans Mono",monospace';
+const TL = window.TIMELINE;
+const FPS = 30, DURATION = TL.total;
+window.FPS = FPS; window.DURATION = DURATION;
+const SC = Object.fromEntries(TL.scenes.map(s => [s.id, s]));
+
+// ---------- utils ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = t => { t = clamp(t); return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+const seg = (t, s, d) => clamp((t - s) / d);
+function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const noise1 = (x) => { const i = Math.floor(x), f = x - i; const u = f * f * (3 - 2 * f); return lerp(hash(i), hash(i + 1), u); };
+
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+// ---------- 事前生成テクスチャ ----------
+// フィルムグレイン
+const GRAIN = [];
+for (let k = 0; k < 8; k++) {
+  const c = mk(540, 960), g = c.getContext('2d'); const id = g.createImageData(540, 960); const r = rng(1000 + k);
+  for (let i = 0; i < id.data.length; i += 4) { const v = r() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; }
+  g.putImageData(id, 0, 0); GRAIN.push(c);
+}
+// 土のテクスチャ
+const SOIL = (() => {
+  const c = mk(1080, 1920), g = c.getContext('2d'); const r = rng(77);
+  g.fillStyle = '#2a241d'; g.fillRect(0, 0, 1080, 1920);
+  for (let i = 0; i < 26000; i++) {
+    const x = r() * 1080, y = r() * 1920, s = r() * 3 + 0.5, v = 20 + r() * 50;
+    g.fillStyle = `rgba(${v + 15},${v + 8},${v},${0.35 + r() * 0.4})`; g.fillRect(x, y, s, s);
+  }
+  for (let i = 0; i < 380; i++) {  // 小石
+    const x = r() * 1080, y = r() * 1920, rx = 3 + r() * 11, ry = rx * (0.5 + r() * 0.4), v = 60 + r() * 50;
+    g.fillStyle = `rgb(${v},${v - 4},${v - 10})`; g.beginPath(); g.ellipse(x, y, rx, ry, r() * 3, 0, 7); g.fill();
+    g.fillStyle = 'rgba(0,0,0,0.35)'; g.beginPath(); g.ellipse(x + 2, y + 3, rx, ry * 0.6, 0, 0, 7); g.fill();
+  }
+  for (let i = 0; i < 40; i++) { // ひび割れ
+    let x = r() * 1080, y = r() * 1920; g.strokeStyle = 'rgba(10,8,6,0.55)'; g.lineWidth = 1 + r() * 1.5; g.beginPath(); g.moveTo(x, y);
+    for (let j = 0; j < 8; j++) { x += (r() - .5) * 60; y += (r() - .5) * 60; g.lineTo(x, y); } g.stroke();
+  }
+  return c;
+})();
+// 空き地を遠くから見た地面(パース付き)
+const GROUND = (() => {
+  const c = mk(1080, 920), g = c.getContext('2d'); const r = rng(9);
+  const gr = g.createLinearGradient(0, 0, 0, 920); gr.addColorStop(0, '#0d0e10'); gr.addColorStop(1, '#1d1a16');
+  g.fillStyle = gr; g.fillRect(0, 0, 1080, 920);
+  for (let i = 0; i < 9000; i++) {
+    const y = Math.pow(r(), 1.6) * 920, sc = 0.2 + y / 920 * 1.6, x = r() * 1080, v = 15 + r() * 35;
+    g.fillStyle = `rgba(${v + 10},${v + 6},${v},${0.4 + r() * 0.4})`; g.fillRect(x, y, 2.5 * sc, 1.4 * sc);
+  }
+  return c;
+})();
+
+// 家並みのシルエット
+const HOUSES = (() => {
+  const r = rng(42), list = []; let x = -40;
+  while (x < 1120) {
+    const w = 150 + r() * 130, h = 140 + r() * 140, roof = 40 + r() * 50, wins = [];
+    const nw = 1 + Math.floor(r() * 3);
+    for (let i = 0; i < nw; i++) wins.push({ x: 20 + r() * (w - 70), y: 30 + r() * (h - 80), on: r() < 0.35, ph: r() * 10 });
+    list.push({ x, w, h, roof, wins, pole: r() < 0.3 }); x += w + 10 + r() * 30;
+  }
+  return list;
+})();
+
+// ---------- 描画パーツ ----------
+const HORIZON = 1000;
+function drawSky(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, HORIZON);
+  g.addColorStop(0, '#020305'); g.addColorStop(0.7, '#0a0f17'); g.addColorStop(1, '#141a22');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, HORIZON + 2);
+  // うっすらとした雲
+  ctx.save(); ctx.globalAlpha = 0.18;
+  for (let i = 0; i < 6; i++) {
+    const cx = ((i * 260 + t * 6) % 1500) - 200, cy = 260 + i * 90;
+    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 300);
+    rg.addColorStop(0, '#2c3442'); rg.addColorStop(1, 'rgba(44,52,66,0)');
+    ctx.fillStyle = rg; ctx.fillRect(cx - 320, cy - 120, 640, 240);
+  }
+  ctx.restore();
+  // 電線
+  ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.lineWidth = 3;
+  for (let k = 0; k < 3; k++) { ctx.beginPath(); ctx.moveTo(-10, 330 + k * 26); ctx.quadraticCurveTo(540, 420 + k * 30, 1090, 360 + k * 24); ctx.stroke(); }
+}
+function drawHouses(t, opts = {}) {
+  const base = HORIZON + 6;
+  for (const h of HOUSES) {
+    ctx.fillStyle = '#050608';
+    ctx.fillRect(h.x, base - h.h, h.w, h.h);
+    ctx.beginPath(); ctx.moveTo(h.x - 12, base - h.h); ctx.lineTo(h.x + h.w / 2, base - h.h - h.roof); ctx.lineTo(h.x + h.w + 12, base - h.h); ctx.fill();
+    for (const w of h.wins) {
+      if (!w.on) continue;
+      const fl = opts.dark ? 0 : 0.55 + 0.1 * noise1(t * 0.7 + w.ph);
+      ctx.fillStyle = `rgba(214,170,96,${fl * 0.55})`; ctx.fillRect(h.x + w.x, base - h.h + w.y, 34, 26);
+    }
+  }
+}
+function lampFlicker(t) {
+  // 基本は点灯。ときどき瞬く
+  const n = noise1(t * 3.1), b = noise1(t * 17 + 5);
+  if (n > 0.82 && b > 0.45) return 0.15;
+  return 0.85 + 0.15 * noise1(t * 9);
+}
+function drawStreetLamp(t, x, top) {
+  const fl = lampFlicker(t);
+  ctx.fillStyle = '#08090b'; ctx.fillRect(x - 9, top, 18, 1600);
+  ctx.fillRect(x, top + 20, 110, 10);
+  ctx.fillStyle = `rgba(230,236,220,${0.3 + fl * 0.7})`; ctx.fillRect(x + 80, top + 30, 50, 10);
+  // 光の円錐と地面の光だまり
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  const cg = ctx.createLinearGradient(0, top + 40, 0, 1500);
+  cg.addColorStop(0, `rgba(180,200,190,${0.22 * fl})`); cg.addColorStop(1, 'rgba(180,200,190,0)');
+  ctx.fillStyle = cg; ctx.beginPath(); ctx.moveTo(x + 85, top + 40); ctx.lineTo(x + 125, top + 40); ctx.lineTo(x + 460, 1500); ctx.lineTo(x - 220, 1500); ctx.fill();
+  const pg = ctx.createRadialGradient(x + 110, 1330, 10, x + 110, 1330, 420);
+  pg.addColorStop(0, `rgba(150,170,160,${0.28 * fl})`); pg.addColorStop(1, 'rgba(150,170,160,0)');
+  ctx.fillStyle = pg; ctx.fillRect(x - 400, 1000, 1000, 700);
+  const hg = ctx.createRadialGradient(x + 105, top + 35, 0, x + 105, top + 35, 90);
+  hg.addColorStop(0, `rgba(240,250,235,${0.8 * fl})`); hg.addColorStop(1, 'rgba(240,250,235,0)');
+  ctx.fillStyle = hg; ctx.fillRect(x, top - 60, 220, 200);
+  ctx.restore();
+}
+function drawFence(t, alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  const top = 1130, bot = 1560;
+  // 支柱
+  ctx.fillStyle = '#16181b';
+  for (let x = -20; x < 1120; x += 270) ctx.fillRect(x, top - 30, 14, bot - top + 60);
+  ctx.fillRect(-20, top - 30, 1140, 8);
+  // 金網(ひし形)
+  ctx.strokeStyle = 'rgba(120,128,130,0.42)'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let k = -40; k < 60; k++) {
+    const x0 = k * 34;
+    ctx.moveTo(x0, top); ctx.lineTo(x0 + (bot - top), bot);
+    ctx.moveTo(x0, bot); ctx.lineTo(x0 + (bot - top), top);
+  }
+  ctx.stroke();
+  // 破れ目
+  ctx.fillStyle = 'rgba(0,0,0,0.0)';
+  ctx.restore();
+}
+function drawSignSmall(alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.translate(780, 1210); ctx.rotate(0.03);
+  ctx.fillStyle = '#9d9a90'; ctx.fillRect(0, 0, 190, 130);
+  ctx.fillStyle = '#7a2a22'; ctx.font = `bold 64px ${GOTH}`; ctx.textAlign = 'center'; ctx.fillText('売地', 95, 72);
+  ctx.fillStyle = '#111'; ctx.fillRect(18, 92, 154, 22);
+  ctx.restore();
+}
+// 人影。x,y は足元、h は身長(px)
+function drawFigure(x, y, h, { alpha = 1, sway = 0, cloth = null, blur = 8 } = {}) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.translate(x, y); ctx.rotate(sway * 0.01);
+  const s = h / 300;
+  ctx.scale(s, s);
+  ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = blur;
+  ctx.fillStyle = '#020203';
+  // 脚
+  ctx.beginPath(); ctx.moveTo(-26, -130); ctx.lineTo(-30, 0); ctx.lineTo(-10, 0); ctx.lineTo(-4, -120); ctx.lineTo(4, -120); ctx.lineTo(10, 0); ctx.lineTo(30, 0); ctx.lineTo(26, -130); ctx.fill();
+  // 胴体
+  ctx.beginPath(); ctx.moveTo(-48, -240); ctx.quadraticCurveTo(-56, -180, -40, -120); ctx.lineTo(40, -120); ctx.quadraticCurveTo(56, -180, 48, -240); ctx.quadraticCurveTo(0, -258, -48, -240); ctx.fill();
+  // 腕(だらりと下げる)
+  ctx.beginPath(); ctx.moveTo(-48, -238); ctx.quadraticCurveTo(-66, -170, -58, -104); ctx.lineTo(-44, -104); ctx.quadraticCurveTo(-48, -170, -36, -220); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(48, -238); ctx.quadraticCurveTo(66, -170, 58, -104); ctx.lineTo(44, -104); ctx.quadraticCurveTo(48, -170, 36, -220); ctx.fill();
+  // 首・頭(わずかに傾ける)
+  ctx.fillRect(-10, -262, 20, 20);
+  ctx.beginPath(); ctx.ellipse(3, -287, 23, 29, 0.12, 0, 7); ctx.fill();
+  if (cloth) {
+    // 懐中電灯に照らされた服(同じ服)
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = alpha * cloth.a;
+    ctx.fillStyle = cloth.color;
+    ctx.beginPath(); ctx.moveTo(-46, -236); ctx.quadraticCurveTo(-54, -180, -39, -124); ctx.lineTo(39, -124); ctx.quadraticCurveTo(54, -180, 46, -236); ctx.quadraticCurveTo(0, -252, -46, -236); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-46, -234); ctx.quadraticCurveTo(-63, -170, -56, -108); ctx.lineTo(-46, -108); ctx.quadraticCurveTo(-50, -170, -38, -218); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(46, -234); ctx.quadraticCurveTo(63, -170, 56, -108); ctx.lineTo(46, -108); ctx.quadraticCurveTo(50, -170, 38, -218); ctx.fill();
+    // フードの紐とポケット
+    ctx.strokeStyle = 'rgba(220,210,200,0.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-8, -238); ctx.lineTo(-10, -205); ctx.moveTo(8, -238); ctx.lineTo(10, -205); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-30, -160, 60, 22);
+    ctx.beginPath(); ctx.ellipse(0, -240, 32, 9, 0, 0, 7); ctx.fill();
+    // 立体感(左右を暗く)
+    const g = ctx.createLinearGradient(-50, 0, 50, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0.8)'); g.addColorStop(0.5, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.8)');
+    ctx.fillStyle = g; ctx.fillRect(-66, -250, 132, 146);
+  }
+  ctx.restore();
+}
+
+// 空き地の全景。cam = {zoom, fx, fy}
+function drawLot(t, { zoom = 1, fx = 540, fy = 1150, fence = 1, figure = null, sign = true, dark = false, house = 0 } = {}) {
+  ctx.save();
+  ctx.translate(fx, fy); ctx.scale(zoom, zoom); ctx.translate(-fx, -fy);
+  drawSky(t);
+  drawHouses(t, { dark });
+  ctx.drawImage(GROUND, 0, HORIZON);
+  // 空き地の境界(奥のブロック塀)
+  ctx.fillStyle = '#0b0c0e'; ctx.fillRect(0, HORIZON - 4, W, 26);
+  ctx.fillStyle = 'rgba(255,255,255,0.03)'; for (let x = 0; x < W; x += 60) ctx.fillRect(x, HORIZON - 4, 2, 26);
+  if (house > 0) drawGhostHouse(house);
+  if (figure) drawFigure(figure.x, figure.y, figure.h, figure);
+  drawStreetLamp(t, 130, 520);
+  drawFence(t, fence);
+  if (sign) drawSignSmall(fence);
+  ctx.restore();
+}
+// 「空き地なんてない」——空き地の場所に家が建っている像
+function drawGhostHouse(a) {
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = '#16171a'; ctx.fillRect(300, 820, 480, 380);
+  ctx.beginPath(); ctx.moveTo(270, 820); ctx.lineTo(540, 650); ctx.lineTo(810, 820); ctx.fill();
+  ctx.fillStyle = 'rgba(214,170,96,0.6)'; ctx.fillRect(360, 880, 90, 70); ctx.fillRect(630, 880, 90, 70);
+  ctx.fillStyle = '#0a0b0c'; ctx.fillRect(500, 1040, 80, 160);
+  ctx.restore();
+}
+
+// 懐中電灯のマスク(周囲を暗くする)
+function flashlight(x, y, r, dark = 0.93) {
+  const g = ctx.createRadialGradient(x, y, r * 0.15, x, y, r);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.7, `rgba(0,0,0,${dark * 0.6})`); g.addColorStop(1, `rgba(0,0,0,${dark})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- シーン ----------
+function sceneTitle(t, u, d) {
+  drawLot(t, { zoom: 1.08 - u * 0.01, fence: 1 });
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+  const a = seg(u, 0.3, 1.0) * (1 - seg(u, d - 0.4, 0.4));
+  const jit = (hash(Math.floor(t * 12)) < 0.15) ? (hash(t * 99) - 0.5) * 24 : 0;
+  ctx.save(); ctx.textAlign = 'center'; ctx.globalAlpha = a;
+  ctx.fillStyle = '#c9c4b8'; ctx.font = `44px ${MIN}`; ctx.fillText('―― 実話かどうかは、わからない ――', W / 2, 700);
+  ctx.font = `bold 150px ${MIN}`;
+  ctx.fillStyle = 'rgba(170,20,20,0.7)'; ctx.fillText('近所の', W / 2 + jit + 6, 900);
+  ctx.fillStyle = '#ece6da'; ctx.fillText('近所の', W / 2 + jit, 896);
+  ctx.font = `bold 176px ${MIN}`;
+  ctx.fillStyle = 'rgba(170,20,20,0.7)'; ctx.fillText('謎の空き地', W / 2 - jit + 6, 1110);
+  ctx.fillStyle = '#ece6da'; ctx.fillText('謎の空き地', W / 2 - jit, 1106);
+  ctx.restore();
+}
+function sceneLot(t, u, d) {
+  drawLot(t, { zoom: 1.0 + u * 0.018, fy: 1150 });
+}
+function sceneSign(t, u, d) {
+  // 金網越しの看板アップ
+  ctx.fillStyle = '#0c0d0e'; ctx.fillRect(0, 0, W, H);
+  const p = ease(u / d);
+  ctx.save();
+  ctx.translate(540, 960 + lerp(60, -40, p)); ctx.rotate(0.025 + Math.sin(u * 0.7) * 0.004); ctx.scale(1 + p * 0.06, 1 + p * 0.06);
+  // 看板
+  const bw = 820, bh = 1040;
+  ctx.fillStyle = '#bdb8aa'; ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+  const r = rng(5);
+  for (let i = 0; i < 70; i++) { // 汚れ・錆
+    const x = -bw / 2 + r() * bw, y = -bh / 2 + r() * bh * 0.3, len = 60 + r() * 300;
+    const g = ctx.createLinearGradient(0, y, 0, y + len); g.addColorStop(0, 'rgba(110,60,30,0.35)'); g.addColorStop(1, 'rgba(110,60,30,0)');
+    ctx.fillStyle = g; ctx.fillRect(x, y, 4 + r() * 14, len);
+  }
+  ctx.strokeStyle = '#5a5850'; ctx.lineWidth = 10; ctx.strokeRect(-bw / 2 + 5, -bh / 2 + 5, bw - 10, bh - 10);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8a2219'; ctx.font = `bold 300px ${GOTH}`; ctx.fillText('売地', 0, -90);
+  ctx.fillStyle = '#2b2a27'; ctx.font = `bold 56px ${GOTH}`; ctx.fillText('お問い合わせは下記まで', 0, 70);
+  ctx.font = `bold 92px ${GOTH}`; ctx.textAlign = 'left'; ctx.fillText('TEL', -360, 250);
+  ctx.textAlign = 'center'; ctx.font = `bold 48px ${GOTH}`; ctx.fillText('〇〇不動産', 0, 420);
+  // 黒く塗りつぶされた番号(マジックの殴り書き)
+  const rr = rng(13);
+  ctx.strokeStyle = 'rgba(8,8,8,0.95)'; ctx.lineCap = 'round'; ctx.lineWidth = 30;
+  ctx.beginPath();
+  for (let i = 0; i < 26; i++) {
+    const x1 = -180 + rr() * 40, x2 = 350 + rr() * 40, y = 160 + i * 5 + rr() * 14;
+    if (i % 2) { ctx.moveTo(x1, y); ctx.lineTo(x2, y + (rr() - .5) * 20); } else { ctx.moveTo(x2, y); ctx.lineTo(x1, y + (rr() - .5) * 20); }
+  }
+  ctx.stroke();
+  ctx.restore();
+  // 手前の金網
+  ctx.save(); ctx.strokeStyle = 'rgba(70,74,76,0.75)'; ctx.lineWidth = 7; ctx.filter = 'blur(3px)';
+  ctx.beginPath();
+  for (let k = -40; k < 60; k++) { const x0 = k * 120; ctx.moveTo(x0, 0); ctx.lineTo(x0 + H, H); ctx.moveTo(x0, H); ctx.lineTo(x0 + H, 0); }
+  ctx.stroke(); ctx.restore();
+  flashlight(540 + Math.sin(u * 0.8) * 120, 900 + Math.cos(u * 0.6) * 160, 760, 0.9);
+}
+function sceneGround(t, u, d) {
+  const p = u / d;
+  ctx.save(); ctx.translate(0, -p * 120); ctx.drawImage(SOIL, 0, 0, W, H + 200);
+  // 足跡(中央へ向かう)
+  ctx.fillStyle = 'rgba(6,4,2,0.75)';
+  for (let i = 0; i < 9; i++) {
+    const y = 1900 - i * 170, x = 540 + (i % 2 ? 44 : -44) + Math.sin(i) * 10;
+    ctx.beginPath(); ctx.ellipse(x, y, 26, 54, (i % 2 ? 0.08 : -0.08), 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x, y - 70, 22, 22, 0, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+  ctx.fillStyle = 'rgba(10,14,18,0.12)'; ctx.fillRect(0, 0, W, H);
+  const lx = 540 + Math.sin(u * 0.9) * 220, ly = 1000 - Math.sin(u * 0.5) * 300;
+  flashlight(lx, ly, 640, 0.9);
+}
+function sevenSeg(str, x, y, s, on, off) {
+  // 7セグ表示
+  const SEG = { '0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc', '5': 'afgcd', '6': 'afgedc', '7': 'abc', '8': 'abcdefg', '9': 'abcfgd' };
+  const w = 0.62 * s, th = 0.12 * s;
+  let cx = x;
+  for (const ch of str) {
+    if (ch === ':') { ctx.fillStyle = on; ctx.fillRect(cx + 0.1 * s, y + 0.32 * s, th, th); ctx.fillRect(cx + 0.1 * s, y + 0.68 * s, th, th); cx += 0.38 * s; continue; }
+    const lit = SEG[ch] || '';
+    const P = { a: [th, 0, w - 2 * th, th], d: [th, s - th, w - 2 * th, th], g: [th, s / 2 - th / 2, w - 2 * th, th],
+      f: [0, th, th, s / 2 - th * 1.5], b: [w - th, th, th, s / 2 - th * 1.5], e: [0, s / 2 + th / 2, th, s / 2 - th * 1.5], c: [w - th, s / 2 + th / 2, th, s / 2 - th * 1.5] };
+    for (const k in P) { const [a, b, c2, d2] = P[k]; ctx.fillStyle = lit.includes(k) ? on : off; ctx.fillRect(cx + a, y + b, c2, d2); }
+    cx += w + 0.16 * s;
+  }
+}
+function sceneClock(t, u, d) {
+  ctx.fillStyle = '#030303'; ctx.fillRect(0, 0, W, H);
+  const flip = 1.3;
+  const str = u < flip ? '1:59' : '2:00';
+  const p = ease(u / d);
+  ctx.save(); ctx.translate(540, 900); ctx.scale(1 + p * 0.12, 1 + p * 0.12);
+  // 時計本体
+  ctx.fillStyle = '#0c0c0d'; ctx.fillRect(-440, -230, 880, 460);
+  ctx.fillStyle = '#000'; ctx.fillRect(-400, -190, 800, 380);
+  ctx.shadowColor = 'rgba(255,30,20,0.9)'; ctx.shadowBlur = 40;
+  const glow = u < flip ? 0.8 : (Math.floor(u * 2) % 2 ? 1 : 0.85);
+  sevenSeg(str, -340, -150, 300, `rgba(255,40,28,${glow})`, 'rgba(60,8,6,0.35)');
+  ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,40,28,0.8)'; ctx.font = `bold 40px ${MONO}`; ctx.fillText('AM', -390, -200);
+  ctx.restore();
+  // 机に映る赤い反射
+  const g = ctx.createRadialGradient(540, 1180, 10, 540, 1180, 600);
+  g.addColorStop(0, 'rgba(120,10,6,0.35)'); g.addColorStop(1, 'rgba(120,10,6,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 1100, W, 800);
+}
+function sceneFigure(t, u, d) {
+  const p = ease(u / d);
+  const a = seg(u, 0.6, 1.6);
+  drawLot(t, { zoom: 1.05 + p * 0.25, fy: 1150, figure: { x: 560, y: 1200, h: 230, alpha: a, sway: Math.sin(u * 0.8) } });
+}
+function sceneNeighbor(t, u, d) {
+  // 昼。色の抜けた住宅街の路地
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#6d7378'); g.addColorStop(1, '#3f4245');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#55595c'; ctx.fillRect(0, 1250, W, 670);         // 道
+  ctx.fillStyle = '#2c2f31'; ctx.fillRect(0, 500, 520, 760);        // 家
+  ctx.beginPath(); ctx.moveTo(-40, 500); ctx.lineTo(240, 320); ctx.lineTo(560, 500); ctx.fill();
+  ctx.fillStyle = '#3a3d40'; ctx.fillRect(0, 1060, 640, 200);       // ブロック塀
+  ctx.strokeStyle = '#2a2c2e'; ctx.lineWidth = 3;
+  for (let y = 1060; y < 1260; y += 50) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(640, y); ctx.stroke(); }
+  ctx.fillStyle = '#1b1c1d'; ctx.fillRect(640, 980, 26, 280); ctx.fillRect(820, 980, 26, 280); // 門柱
+  // 門の向こうの近所の人(後ろ姿気味の老人)
+  ctx.save(); ctx.translate(740, 1270); ctx.scale(1.05, 1.05);
+  ctx.fillStyle = '#1a1b1c';
+  ctx.beginPath(); ctx.moveTo(-60, 0); ctx.lineTo(-50, -230); ctx.quadraticCurveTo(0, -270, 50, -230); ctx.lineTo(60, 0); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(6, -278, 34, 40, 0.3, 0, 7); ctx.fill();
+  ctx.restore();
+  const p = ease(u / d);
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = `rgba(90,100,110,${0.6 + p * 0.2})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+}
+function sceneAnswer(t, u, d) {
+  // 空き地の映像が、ときどき「家」に置き換わる
+  const g1 = hash(Math.floor(t * 8) + 3);
+  const showHouse = (u > 1.2 && g1 < 0.35) || (u > d - 1.0 && g1 < 0.7);
+  drawLot(t, { zoom: 1.12, fy: 1150, house: showHouse ? 1 : 0, sign: !showHouse, fence: 1 });
+  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+}
+function sceneApproach(t, u, d) {
+  const p = ease(u / d);
+  // 金網を越えて人影へにじり寄る(手持ち風の揺れ)
+  const shake = Math.sin(u * 2.3) * 6 + Math.sin(u * 5.1) * 3;
+  const reveal = seg(u, d * 0.48, 1.2);
+  drawLot(t, {
+    zoom: 1.4 + p * 1.6, fx: 560 + shake, fy: 1110, fence: 1 - seg(u, 0, 1.5), sign: false,
+    figure: { x: 560, y: 1200, h: 230, sway: Math.sin(u * 0.6) * 0.5, cloth: { color: '#5b1f24', a: reveal * 0.9 } }
+  });
+  flashlight(560 + shake * 3, 1000, 520 + p * 200, 0.88);
+  // 心音に合わせた脈動
+  const beat = Math.pow(Math.max(0, Math.sin(u * Math.PI * 2 * 1.25)), 18);
+  ctx.fillStyle = `rgba(80,0,0,${0.12 * beat + 0.06 * p})`; ctx.fillRect(0, 0, W, H);
+}
+function drawMyHouse(t, u, zoom, fy, sil) {
+  ctx.save(); ctx.translate(540, fy); ctx.scale(zoom, zoom); ctx.translate(-540, -fy);
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#04060a'); g.addColorStop(1, '#0b0d10');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 家の外壁
+  ctx.fillStyle = '#111316'; ctx.fillRect(80, 520, 920, 1400);
+  ctx.beginPath(); ctx.moveTo(20, 540); ctx.lineTo(540, 230); ctx.lineTo(1060, 540); ctx.fill();
+  ctx.fillStyle = '#0a0b0d'; for (let y = 560; y < 1900; y += 38) ctx.fillRect(80, y, 920, 3); // サイディング
+  // 2階の窓(私の部屋)
+  const wx = 330, wy = 720, ww = 420, wh = 360;
+  ctx.fillStyle = '#1a1612'; ctx.fillRect(wx - 20, wy - 20, ww + 40, wh + 40);
+  const lit = 0.75 + 0.08 * noise1(t * 2);
+  const wg = ctx.createRadialGradient(wx + ww / 2, wy + wh / 2, 20, wx + ww / 2, wy + wh / 2, 300);
+  wg.addColorStop(0, `rgba(226,196,140,${lit})`); wg.addColorStop(1, `rgba(150,110,70,${lit * 0.8})`);
+  ctx.fillStyle = wg; ctx.fillRect(wx, wy, ww, wh);
+  // 人影(カーテン越し → カーテンの隙間から)
+  if (sil > 0) {
+    ctx.save(); ctx.beginPath(); ctx.rect(wx, wy, ww, wh); ctx.clip();
+    ctx.globalAlpha = sil;
+    ctx.fillStyle = '#050403';
+    const sx = wx + ww / 2 + 10, sy = wy + wh + 10;
+    ctx.beginPath(); ctx.moveTo(sx - 110, sy); ctx.quadraticCurveTo(sx - 100, sy - 170, sx - 40, sy - 190); ctx.lineTo(sx + 40, sy - 190); ctx.quadraticCurveTo(sx + 100, sy - 170, sx + 110, sy); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(sx, sy - 250, 52, 66, 0.1, 0, 7); ctx.fill();
+    // 手を窓に当てている
+    ctx.beginPath(); ctx.ellipse(sx - 130, sy - 200, 22, 30, -0.3, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+  // カーテン
+  ctx.fillStyle = 'rgba(120,90,60,0.55)';
+  ctx.fillRect(wx, wy, 70, wh); ctx.fillRect(wx + ww - 70, wy, 70, wh);
+  ctx.fillStyle = '#1a1612'; ctx.fillRect(wx + ww / 2 - 6, wy, 12, wh); ctx.fillRect(wx, wy + wh / 2 - 6, ww, 12);
+  // 1階の玄関灯
+  ctx.fillStyle = '#060708'; ctx.fillRect(420, 1440, 240, 480);
+  ctx.restore();
+}
+function sceneWindow(t, u, d) {
+  // 振り返る(素早いパン)→ 家 → 窓に寄る
+  const turn = seg(u, 0, 0.7);
+  if (turn < 1) {
+    drawLot(t, { zoom: 1.6, fx: 560, fy: 1110, fence: 0, sign: false });
+    ctx.fillStyle = `rgba(0,0,0,${turn})`; ctx.fillRect(0, 0, W, H);
+    // モーションブラー風の横線
+    ctx.fillStyle = 'rgba(255,255,255,0.04)'; for (let y = 0; y < H; y += 9) ctx.fillRect(0, y, W, 3);
+    return;
+  }
+  const p = ease(seg(u, 0.7, d - 0.7));
+  drawMyHouse(t, u, 1 + p * 0.9, 900, seg(u, 1.6, 1.6));
+  ctx.fillStyle = `rgba(0,0,0,${1 - seg(u, 0.7, 0.4)})`; ctx.fillRect(0, 0, W, H);
+}
+function sceneScare(t, u, d) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  if (u > 1.0) return;     // 最後は暗転
+  const shake = (hash(Math.floor(t * 30)) - 0.5) * 40;
+  ctx.save(); ctx.translate(540 + shake, 900 + shake * 0.5); const s = 1.25 + u * 0.4; ctx.scale(s, s);
+  // 青白い顔
+  const fg = ctx.createRadialGradient(0, -40, 40, 0, 0, 420);
+  fg.addColorStop(0, '#b9bcb6'); fg.addColorStop(0.6, '#6f736f'); fg.addColorStop(1, '#151615');
+  ctx.fillStyle = fg; ctx.beginPath(); ctx.ellipse(0, 0, 300, 400, 0, 0, 7); ctx.fill();
+  // 髪
+  ctx.fillStyle = '#050505';
+  ctx.beginPath(); ctx.moveTo(-330, 420); ctx.quadraticCurveTo(-360, -380, 0, -420); ctx.quadraticCurveTo(360, -380, 330, 420);
+  ctx.lineTo(220, 420); ctx.quadraticCurveTo(260, -120, 120, -260); ctx.quadraticCurveTo(0, -200, -120, -260); ctx.quadraticCurveTo(-260, -120, -220, 420); ctx.fill();
+  // 目(黒い空洞)
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(-110, -40, 62, 46, 0.1, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(110, -40, 62, 46, -0.1, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath(); ctx.ellipse(-110, 10, 70, 30, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(110, 10, 70, 30, 0, 0, 7); ctx.fill();
+  // 口
+  ctx.fillStyle = '#060000'; ctx.beginPath(); ctx.ellipse(0, 210, 70, 110 + u * 60, 0, 0, 7); ctx.fill();
+  ctx.restore();
+  // 初撃の白フラッシュ
+  if (u < 0.1) { ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillRect(0, 0, W, H); }
+  ctx.fillStyle = 'rgba(140,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+}
+function sceneEnd(t, u, d) {
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  // かすかに空き地
+  ctx.save(); ctx.globalAlpha = 0.18 * seg(u, 0.5, 2);
+  drawLot(t, { zoom: 1.05, fence: 1, figure: { x: 560, y: 1200, h: 230, alpha: 1 } });
+  ctx.restore();
+  const cue = TL.cues[TL.cues.length - 1];
+  const a = seg(t, cue.a - 0.2, 0.8);
+  ctx.save(); ctx.textAlign = 'center'; ctx.globalAlpha = a; ctx.fillStyle = '#e8e2d6';
+  ctx.font = `bold 96px ${MIN}`; ctx.fillText('今夜2時。', W / 2, 860);
+  ctx.font = `bold 76px ${MIN}`; ctx.fillText('窓の外は、', W / 2, 1010); ctx.fillText('見ないでください。', W / 2, 1110);
+  ctx.globalAlpha = seg(u, 3.5, 1);
+  ctx.fillStyle = '#8b867c'; ctx.font = `30px ${GOTH}`;
+  ctx.fillText('※この物語はフィクションです', W / 2, 1640);
+  ctx.fillText('ナレーション VOICEVOX:青山龍星', W / 2, 1690);
+  ctx.restore();
+}
+const SCENE_FN = { title: sceneTitle, lot: sceneLot, sign: sceneSign, ground: sceneGround, clock: sceneClock, figure: sceneFigure,
+  neighbor: sceneNeighbor, answer: sceneAnswer, approach: sceneApproach, window: sceneWindow, scare: sceneScare, end: sceneEnd };
+
+// ---------- 字幕 ----------
+function wrapLines(str, maxW) {
+  const out = [];
+  for (const para of str.split('\n')) {
+    let line = '';
+    for (const ch of para) { if (ctx.measureText(line + ch).width > maxW && line && !'、。」』?!…)'.includes(ch)) { out.push(line); line = ch; } else line += ch; }
+    out.push(line);
+  }
+  return out;
+}
+function drawSubtitle(t, sid) {
+  if (sid === 'end') return;
+  const c = TL.cues.find(c => t >= c.a - 0.15 && t <= c.b);
+  if (!c) return;
+  const a = Math.min(seg(t, c.a - 0.15, 0.2), 1 - seg(t, c.b - 0.2, 0.2));
+  ctx.save(); ctx.font = `bold 62px ${MIN}`; ctx.textAlign = 'center';
+  const lines = wrapLines(c.text, 980);
+  const lh = 88, y0 = 1500 - (lines.length - 1) * lh / 2;
+  ctx.globalAlpha = a;
+  lines.forEach((ln, i) => {
+    const y = y0 + i * lh;
+    ctx.lineJoin = 'round'; ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(0,0,0,0.92)'; ctx.strokeText(ln, W / 2, y);
+    ctx.fillStyle = '#f1ece2'; ctx.fillText(ln, W / 2, y);
+  });
+  ctx.restore();
+}
+
+// ---------- 仕上げ(色調・グレイン・走査線・グリッチ・録画風オーバーレイ) ----------
+const BUF = mk(W, H), bctx = BUF.getContext('2d');
+function glitch(t, amount) {
+  if (amount <= 0) return;
+  bctx.clearRect(0, 0, W, H); bctx.drawImage(cv, 0, 0);
+  const r = rng(Math.floor(t * 30) * 7919 + 1);
+  const n = Math.floor(3 + amount * 10);
+  for (let i = 0; i < n; i++) {
+    const y = r() * H, h = 8 + r() * 90 * amount, dx = (r() - 0.5) * 120 * amount;
+    ctx.drawImage(BUF, 0, y, W, h, dx, y, W, h);
+  }
+  // 色ずれ
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.35 * amount;
+  ctx.drawImage(BUF, 10 * amount, 0); ctx.restore();
+}
+function glitchAmount(t, sid, u, d) {
+  let g = 0;
+  // 各シーン頭の短いノイズ
+  if (u < 0.12 && sid !== 'title') g = Math.max(g, 0.5);
+  if (sid === 'clock' && u > 1.3 && u < 1.55) g = 1;
+  if (sid === 'figure' && u > 0.6 && u < 0.9) g = 0.8;
+  if (sid === 'answer') { const h = hash(Math.floor(t * 8) + 3); if (u > 1.2 && h < 0.35) g = 0.7; if (u > d - 1) g = Math.max(g, 0.6); }
+  if (sid === 'approach' && u > d * 0.48 && u < d * 0.48 + 0.3) g = 0.9;
+  if (sid === 'window' && u > d - 0.5) g = seg(u, d - 0.5, 0.5);
+  if (sid === 'scare' && u < 1.0) g = 0.8;
+  // まれな自然発生ノイズ
+  if (hash(Math.floor(t * 6) + 101) < 0.04) g = Math.max(g, 0.35);
+  return g;
+}
+function post(t, sid, u, d) {
+  glitch(t, glitchAmount(t, sid, u, d));
+  // 青緑の色かぶり
+  ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = sid === 'clock' || sid === 'scare' ? '#d9c9c6' : '#b9c8c8'; ctx.fillRect(0, 0, W, H); ctx.restore();
+  // グレイン
+  ctx.save(); ctx.globalCompositeOperation = 'overlay'; ctx.globalAlpha = 0.22;
+  ctx.drawImage(GRAIN[Math.floor(t * FPS) % GRAIN.length], 0, 0, W, H); ctx.restore();
+  // 走査線
+  ctx.fillStyle = 'rgba(0,0,0,0.13)'; for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 2);
+  // ビネット
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.72);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.8)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  // 録画風オーバーレイ(夜のシーンのみ)
+  if (!['title', 'neighbor', 'end', 'scare', 'clock'].includes(sid)) {
+    ctx.save(); ctx.font = `bold 40px ${MONO}`; ctx.fillStyle = 'rgba(235,235,225,0.75)';
+    if (Math.floor(t * 1.5) % 2) { ctx.fillStyle = 'rgba(220,30,30,0.9)'; ctx.beginPath(); ctx.arc(90, 170, 16, 0, 7); ctx.fill(); }
+    ctx.fillStyle = 'rgba(235,235,225,0.75)'; ctx.fillText('REC', 120, 184);
+    const base = sid === 'lot' || sid === 'sign' || sid === 'ground' ? 23 * 3600 + 41 * 60 : 2 * 3600 + 0 * 60 + 4;
+    const s = Math.floor(base + (t - SC[sid].start) + (sid === 'approach' ? 3600 * 24 + 60 : 0)) % 86400;
+    const hh = String(Math.floor(s / 3600)).padStart(2, '0'), mm = String(Math.floor(s / 60) % 60).padStart(2, '0'), ss = String(s % 60).padStart(2, '0');
+    ctx.textAlign = 'right'; ctx.fillText(`${hh}:${mm}:${ss}`, W - 80, 184);
+    ctx.font = `30px ${MONO}`; ctx.fillText('NIGHT', W - 80, 228);
+    ctx.restore();
+  }
+}
+
+function render(t) {
+  t = Math.min(t, DURATION - 1e-3);
+  const sc = TL.scenes.find(s => t >= s.start && t < s.end) || TL.scenes[TL.scenes.length - 1];
+  const u = t - sc.start, d = sc.end - sc.start;
+  ctx.save(); ctx.clearRect(0, 0, W, H);
+  SCENE_FN[sc.id](t, u, d);
+  ctx.restore();
+  post(t, sc.id, u, d);
+  drawSubtitle(t, sc.id);
+  // 冒頭のフェードイン
+  if (t < 0.4) { ctx.fillStyle = `rgba(0,0,0,${1 - t / 0.4})`; ctx.fillRect(0, 0, W, H); }
+}
+window.render = render;
+
+// ブラウザで開いたときのプレビュー再生
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  (function loop() { render(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); })();
+} else render(0);
+</script>
+</body>
+</html>
