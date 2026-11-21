@@ -104,10 +104,14 @@ function windowView(t, o = {}) {
   ctx.restore();
   flakes(t, 40, 0.35, 3, 0.4);
   // 窓わく(アルミサッシ)と、ガラスのくもり
-  const fr = '#2b2d31'; ctx.fillStyle = fr; ctx.fillRect(0, 0, W, 90); ctx.fillRect(0, H - 120, W, 120); ctx.fillRect(0, 0, 70, H); ctx.fillRect(W - 70, 0, 70, H); ctx.fillRect(650, 0, 34, H);
-  ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(650, 0, 6, H);
-  for (const [x0, x1] of [[70, 650], [684, W - 70]]) { const g = ctx.createLinearGradient(0, H - 600, 0, H - 120); g.addColorStop(0, 'rgba(230,235,245,0)'); g.addColorStop(1, 'rgba(230,235,245,0.55)'); ctx.fillStyle = g; ctx.fillRect(x0, H - 600, x1 - x0, 480); }   // 結露
-  const r = rngOf(4); ctx.fillStyle = 'rgba(255,255,255,0.35)'; for (let i = 0; i < 70; i++) { const x = 80 + r() * 920, y = H - 140 - r() ** 2 * 420; if (Math.abs(x - 667) < 30) continue; ctx.beginPath(); ctx.ellipse(x, y, 2 + r() * 4, 3 + r() * 5, 0, 0, 7); ctx.fill(); }
+  const fr = '#3a3d43', MX = 190;      // 引き違い窓の、重なったまん中のわく(足あとにかからないよう左寄り)
+  ctx.fillStyle = fr; ctx.fillRect(0, 0, W, 90); ctx.fillRect(0, H - 120, W, 120); ctx.fillRect(0, 0, 70, H); ctx.fillRect(W - 70, 0, 70, H); ctx.fillRect(MX, 0, 46, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(MX, 0, 5, H); ctx.fillRect(70, 86, W - 140, 4); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(MX + 41, 0, 5, H);
+  ctx.fillStyle = '#9a9ca3'; rr(MX - 6, 900, 58, 26, 8); ctx.fill(); ctx.beginPath(); ctx.arc(MX + 23, 900, 22, Math.PI, 0); ctx.fill(); ctx.fillStyle = fr; ctx.beginPath(); ctx.arc(MX + 23, 900, 12, Math.PI, 0); ctx.fill();   // クレセント錠
+  for (const [x0, x1] of [[70, MX], [MX + 46, W - 70]]) { const g = ctx.createLinearGradient(0, H - 600, 0, H - 120); g.addColorStop(0, 'rgba(230,235,245,0)'); g.addColorStop(1, 'rgba(230,235,245,0.5)'); ctx.fillStyle = g; ctx.fillRect(x0, H - 600, x1 - x0, 480); }   // 結露
+  const r = rngOf(4); ctx.fillStyle = 'rgba(255,255,255,0.35)'; for (let i = 0; i < 70; i++) { const x = 80 + r() * 920, y = H - 140 - r() ** 2 * 420; if (Math.abs(x - MX - 23) < 34) continue; ctx.beginPath(); ctx.ellipse(x, y, 2 + r() * 4, 3 + r() * 5, 0, 0, 7); ctx.fill(); }
+  for (const [x, w, d] of [[0, 120, 1], [W - 120, 120, -1]]) { const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, d > 0 ? '#2c2a30' : '#46434a'); g.addColorStop(1, d > 0 ? '#46434a' : '#2c2a30'); ctx.fillStyle = g; ctx.fillRect(x, 0, w, H);   // カーテン
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 4; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(x + k * w / 4, 0); ctx.lineTo(x + k * w / 4 + 6 * d, H); ctx.stroke(); } }
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
 }
 
