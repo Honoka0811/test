@@ -151,7 +151,8 @@ window.render = function (t) {
   $('shade').style.display = ['house', 'snow'].includes(sc.k) ? 'block' : 'none';
   $('shade').style.background = sc.k === 'snow' ? 'linear-gradient(rgba(0,0,0,.82), rgba(0,0,0,.62) 58%, rgba(0,0,0,.12) 82%)' : '';
   let pg = null; for (const x of TL.pages) if (t >= x.t) pg = x;
-  $('text').className = sc.k.startsWith('shoji') ? 'side' : '';
+  let pk = TL.scenes[0].k; if (pg) for (const x of TL.scenes) if (pg.t + 0.01 >= x.t) pk = x.k;      // a subtitle keeps the position of the scene it appeared in
+  $('text').className = pk.startsWith('shoji') ? 'side' : '';
   $('text').innerHTML = pg ? pg.lines.map(l => `<p class="${l[2]}" style="opacity:${clamp((t - pg.t - l[0]) / 0.35)}">${l[1]}</p>`).join('') : '';
   $('black').style.display = t >= TL.cut ? 'block' : 'none';
 };
