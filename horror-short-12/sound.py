@@ -100,10 +100,26 @@ def heartbeat():
         p = np.clip((t0 - a) / (HIT - a), 0, 1); g = 0.4 + 0.6 * p
         add(x, t0, thump(52, 1.0), g); add(x, t0 + 0.2, thump(44, 0.7), g); t0 += 0.95 - 0.35 * p
     return x * 0.5
-def rip(d=0.55):
-    """ガムテープを引き出して切る音"""
-    t = tt(d); x = highpass(lowpass(rng.standard_normal(len(t)).astype(np.float32), 6000), 900) * (0.6 + 0.4 * np.sign(np.sin(2 * np.pi * 70 * t))) * np.sin(np.pi * t / d) ** 0.5
-    return x.astype(np.float32)
+def tape_pull(d=0.6):
+    """ガムテープをロールから引き出す音: のりがはがれる細かいプチプチ音が、不規則な間隔で連なる"""
+    n = int(d * SR); x = np.zeros(n, np.float32); i = 0
+    while i < n - 200:
+        p = i / n; dens = 0.5 + 0.5 * np.sin(np.pi * p)                     # 引きはじめと終わりはまばら
+        tk = int(rng.integers(40, 140)); clk = rng.standard_normal(tk).astype(np.float32) * np.exp(-np.arange(tk) / (tk / 4))
+        x[i:i + tk] += clk * rng.uniform(0.4, 1.0) * dens
+        i += int(rng.integers(60, 420) / (0.4 + dens))
+    x = highpass(lowpass(x, 9000), 900)
+    x += highpass(lowpass(rng.standard_normal(n).astype(np.float32), 6000), 1500) * 0.08 * np.sin(np.pi * np.arange(n) / n)
+    return x
+def tape_tear():
+    """テープを切る、短い音"""
+    t = tt(0.09); return (highpass(lowpass(rng.standard_normal(len(t)).astype(np.float32), 7000), 1200) * np.exp(-t * 45)).astype(np.float32)
+def tape_rub(d=0.35):
+    """貼ったテープを、手でなでつける音"""
+    t = tt(d); return (lowpass(highpass(rng.standard_normal(len(t)).astype(np.float32), 400), 2200) * np.sin(np.pi * t / d) ** 1.5).astype(np.float32)
+def tape_piece():
+    x = np.zeros(int(1.6 * SR), np.float32); add(x, 0.0, tape_pull(0.6), 1.0); add(x, 0.62, tape_tear(), 0.8); add(x, 0.85, tape_rub(0.32), 0.35); add(x, 1.2, tape_rub(0.28), 0.3)
+    return x
 def slide(d=0.8):
     """引き戸がレールの上をすべる音"""
     t = tt(d); x = lowpass(rng.standard_normal(len(t)).astype(np.float32), 600) * (0.7 + 0.3 * np.sin(2 * np.pi * 23 * t)) * np.sin(np.pi * t / d) ** 0.6
@@ -147,7 +163,7 @@ def main():
     room = [reverb_ir(0.5, 1, 3500), reverb_ir(0.5, 2, 3500)]; attic = [reverb_ir(1.1, 3, 1800), reverb_ir(1.1, 4, 1800)]; hall = [reverb_ir(3.6, 5), reverb_ir(3.6, 6)]
     big = np.zeros(N, np.float32); fx = np.zeros(N, np.float32); up = np.zeros(N, np.float32)
     add(big, 0.0, taiko(0.45)); add(fx, T_FACE, whoosh(1.4), 0.12); add(big, T_FACE + 0.3, taiko(0.5))
-    add(fx, T_TAPEON + 0.3, rip(0.6), 0.25); add(fx, T_TAPEON + 1.1, rip(0.4), 0.22)
+    add(fx, T_TAPEON + 0.2, tape_piece(), 0.32); add(fx, T_TAPEON + 1.9, tape_piece(), 0.3)      # 戸にガムテープを2枚貼る
     add(big, T_POINT, taiko(0.55))
     for k, tm in enumerate(MOUTH): add(big, tm, taiko(0.35 + 0.15 * k))
     add(fx, T_MEM, whoosh(1.6), 0.1); add(fx, T_OPEN, slide(0.8), 0.35); add(big, T_HAIRF + 0.4, taiko(0.45)); add(fx, T_LIGHT, click(), 0.4); add(big, T_HATCH + 0.5, taiko(0.7))
