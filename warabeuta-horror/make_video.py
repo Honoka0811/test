@@ -13,6 +13,8 @@
   2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。村では七つまでは神さまの子。
   3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
   4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。
+              祖母はいつも最後に言った。「お姉ちゃんなんだから、ちゃんと覚えるんだよ」
+              （歌の「わたし」は歌う姉。次に埋めるのは語り手自身）
 """
 import hashlib
 import math
@@ -122,6 +124,15 @@ def tts(text, speed=1.0, pitch=0.0, intonation=1.0):
     return x / (np.max(np.abs(x)) + 1e-9)
 
 
+def grandma(text):
+    """記憶の中の祖母の声（低く・ゆっくり・遠い残響）."""
+    x = tts(text, speed=0.8, pitch=-0.13, intonation=0.7)
+    wet = fftconv(x, IR_HALL)[: len(x) + int(1.2 * SR)]
+    y = np.pad(x, (0, len(wet) - len(x))) + 0.35 * wet
+    y = smooth(y, 3)
+    return y / np.max(np.abs(y)) * 0.75
+
+
 def narrator(text):
     """静かに語る四国めたん（ほんの少し部屋の残響）."""
     x = tts(text, speed=1.0, pitch=-0.03, intonation=0.85)
@@ -175,8 +186,8 @@ class TL:
         self.subs = []
         self.mark = {}
 
-    def say(self, text, sub=None, gap=0.35):
-        sig = narrator(text)
+    def say(self, text, sub=None, gap=0.35, voice=None):
+        sig = (voice or narrator)(text)
         loud = np.where(np.abs(sig) > 0.08)[0]
         dur = loud[-1] / SR
         self.voice.append((self.t, sig))
@@ -211,9 +222,11 @@ def build_timeline():
     tl.mark["end_hum"] = tl.t
     tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=0.6)
     tl.mark["last"] = tl.t
-    tl.say("妹は、来週、七つになる。", gap=0.6)
+    tl.say("妹は、来週、七つになる。", gap=0.8)
+    tl.say("祖母は、いつも最後に、こう言った。", "祖母は、いつも最後に\nこう言った。", gap=0.5)
     tl.mark["turn"] = tl.t
-    tl.t += 1.8
+    tl.say("お姉ちゃんなんだから、ちゃんと、覚えるんだよ。", "「お姉ちゃんなんだから\nちゃんと覚えるんだよ」", gap=0.2, voice=grandma)
+    tl.t += 1.2
     tl.mark["dark"] = tl.t
     tl.t += 1.0
     tl.mark["dur"] = tl.t
