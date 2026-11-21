@@ -31,9 +31,9 @@ node capture.js      # render.html を1フレームずつ撮影 → output/video
 ./export.sh          # 映像と音声を合成し -14 LUFS に正規化 → upload/
 ```
 
-- `narrate.py` … 原稿は `SCRIPT`。飼い主 = もち子さん(ノーマル)、友達 = 小夜/SAYO。読み上げの長さからシーンの尺を自動で決めます
+- `narrate.py` … 原稿は `SCRIPT`。飼い主 = 四国めたん(ノーマル)、友達 = 小夜/SAYO。読み上げの長さからシーンの尺を自動で決めます
 - `render.html` … Canvas 2D で `render(t)` が時刻 t のフレームを決定論的に描画。ペットカメラらしさは「低解像度で描いて拡大」「行ごとの横幅変化による魚眼風の歪み」「タイムスタンプ/LIVE/IR 表示」「夜は白黒の暗視」で出しています
 - `sound.py` … マイクのノイズ、尻尾が床を叩く音、息づかい、ピアノ、操作音、通知音、衝撃音を numpy だけで合成
-- 必要なもの: Node.js + `playwright`(Chromium)、`ffmpeg`、IPAゴシック、Python 3 + `numpy` + `pyopenjtalk` + `voicevox_core`(セットアップは `../pacific-war-analysis/README.md` と同じ。音声モデルは `15.vvm` に もち子さん・小夜 が含まれます)
+- 必要なもの: Node.js + `playwright`(Chromium)、`ffmpeg`、IPAゴシック、Python 3 + `numpy` + `pyopenjtalk` + `voicevox_core`(セットアップは `../pacific-war-analysis/README.md` と同じ。音声モデルは `0.vvm`(四国めたん)と `15.vvm`(小夜))
 
-VOICEVOX の音声を公開する場合は「VOICEVOX:もち子(cv 明日葉よもぎ)」「VOICEVOX:小夜/SAYO」のクレジット表記が必要です(エンドカードと説明文に記載済み)。
+VOICEVOX の音声を公開する場合は「VOICEVOX:四国めたん」「VOICEVOX:小夜/SAYO」のクレジット表記が必要です(エンドカードと説明文に記載済み)。

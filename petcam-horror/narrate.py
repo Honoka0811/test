@@ -12,10 +12,10 @@ OUT = os.path.join(HERE, 'output')
 os.makedirs(OUT, exist_ok=True)
 SR = 48000
 
-MOCHIKO, SAYO = 20, 46   # 飼い主 = もち子さん ノーマル / 友達 = 小夜/SAYO ノーマル
+METAN, SAYO = 2, 46      # 飼い主 = 四国めたん ノーマル / 友達 = 小夜/SAYO ノーマル
 
 # シーンごとのセリフ: (シーンID, [(原稿, 字幕, 話者, 話速, 前の間), ...], シーン末の間)
-#   話者: 'me' = 飼い主(もち子さん) / 'friend' = 友達(小夜)
+#   話者: 'me' = 飼い主(四国めたん) / 'friend' = 友達(小夜)
 SCRIPT = [
     ('day1',    [('留守中のペットカメラ。うちのコタが、誰もいない所に、ずっと尻尾を振ってる。',
                   '留守中のペットカメラ\nうちのコタが\n誰もいない所に尻尾を振ってる', 'me', 1.1, 0.2)], 0.5),
@@ -54,7 +54,7 @@ for f in sorted(glob.glob(os.path.join(os.environ.get('VOICEVOX_VVMS', '/home/us
         synth.load_voice_model(m)
 
 def tts(text, who, speed):
-    style = MOCHIKO if who == 'me' else SAYO
+    style = METAN if who == 'me' else SAYO
     q = synth.create_audio_query(text, style)
     q.speed_scale = speed
     q.pitch_scale = -0.02 if who == 'me' else -0.04
