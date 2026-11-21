@@ -1,0 +1,7 @@
+{
+  "name": "gaichi-railways",
+  "private": true,
+  "description": "戦前日本の外地の鉄道網 ショート動画",
+  "scripts": { "map": "node build_map.js", "capture": "node capture.js" },
+  "devDependencies": { "topojson-client": "3.1.0", "world-atlas": "2.0.2" }
+}
