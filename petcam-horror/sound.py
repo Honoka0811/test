@@ -45,15 +45,16 @@ hiss = norm(bp_fast(rs.standard_normal(N).astype(np.float32), 2000, 9000))
 hum = np.sin(2 * np.pi * 100 * tt) * 0.4 + np.sin(2 * np.pi * 200 * tt) * 0.15     # 冷蔵庫・電源のうなり
 room = norm(lp_fast(rs.standard_normal(N).astype(np.float32), 250))
 # カメラ映像が出ている区間だけ鳴らす(寝室の場面とエンドは静か)
-t_notify = [c for c in TL['cues'] if S('tonight') <= c['a'] < E('tonight')][-1]['b'] + 0.2
-t_live = t_notify + 1.3
-on_cam = env_curve([(0, 1), (S('tonight') - 0.05, 1), (S('tonight'), 0), (t_live - 0.02, 0), (t_live, 1.4), (E('tonight') - 0.02, 1.4), (E('tonight'), 0), (TOTAL, 0)])
+t_notify = S('alert') + 0.15     # 録画を見ている最中に通知
+t_live = S('live')
+on_cam = env_curve([(0, 1), (S('line') - 0.05, 1), (S('line'), 0), (S('zoom') - 0.02, 0), (S('zoom'), 1), (E('reveal'), 1), (E('reveal') + 0.05, 0.3),
+                    (t_live - 0.02, 0.3), (t_live, 1.4), (E('live') - 0.02, 1.4), (E('live'), 0), (TOTAL, 0)])
 amb += (hiss * 0.012 + hum * 0.01 + room * 0.03) * on_cam
 
 # 尻尾が床を叩く音(映像の尻尾の振り 4.5Hz の半分くらいで)
 def thump(g=1.0):
     n, k = k_(0.08); return (np.sin(2 * np.pi * 90 * k) * np.exp(-k * 60) + rs.standard_normal(n) * np.exp(-k * 120) * 0.2).astype(np.float32) * g
-for a, b, rate in [(0.3, E('day1'), 2.25), (S('day3') + 0.2, E('day3'), 2.0), (t_live + 0.1, E('tonight') - 0.4, 1.75)]:
+for a, b, rate in [(0.3, E('day1'), 2.25), (S('day3') + 0.2, E('day3'), 2.0), (t_live + 0.1, E('live') - 0.4, 1.75)]:
     t0 = a
     while t0 < b:
         add(sfx, thump(), t0, 0.12 * (0.7 + 0.3 * rs.random())); t0 += 1 / rate + rs.random() * 0.05
@@ -78,7 +79,10 @@ mus *= env_curve([(0, 1), (E('grandma') - 0.4, 1), (E('grandma') + 0.2, 0), (TOT
 # ---------- 友達: 空気が変わる ----------
 # 「ねえ」の直前で部屋の音を少し落とし、低いうなりを入れる
 fr = next(c for c in TL['cues'] if c['kind'] == 'friend')
-n, k = k_(E('friend') - fr['a'] + 0.5)
+# チャットの受信音
+for at in [fr['a'] - 0.2, fr['a'] + 0.7, fr['a'] + 2.1]:
+    n, k = k_(0.12); add(sfx, (np.sin(2 * np.pi * 1046.5 * k) * np.exp(-k * 30)).astype(np.float32), at, 0.12)
+n, k = k_(E('line') - fr['a'] + 0.5)
 low = (np.sin(2 * np.pi * 41 * k) + 0.6 * np.sin(2 * np.pi * 43.5 * k)) * np.minimum(1, k / 0.8)
 add(amb, low.astype(np.float32), fr['a'] - 0.5, 0.18)
 
@@ -109,16 +113,11 @@ def chime():
     return out
 add(sfx, chime(), t_notify, 0.22)
 n, k = k_(0.03); add(sfx, (rs.standard_normal(n) * np.exp(-k * 200)).astype(np.float32), t_live - 0.05, 0.15)   # タップ
-add(sfx, hit(3.0, 38, 1.6), t_live + 3.3, 0.8)                                                                  # 刃物が光る
+add(sfx, hit(3.0, 38, 1.6), t_live + 4.5, 0.8)                                                                  # 刃物が光る
 # 金属がきらっと鳴る
-n, k = k_(1.2); add(sfx, sum(np.sin(2 * np.pi * f * k) * np.exp(-k * 4) for f in [2637, 3951, 5274]).astype(np.float32), t_live + 3.3, 0.05)
-n, k = k_(E('tonight') - t_live)
+n, k = k_(1.2); add(sfx, sum(np.sin(2 * np.pi * f * k) * np.exp(-k * 4) for f in [2637, 3951, 5274]).astype(np.float32), t_live + 4.5, 0.05)
+n, k = k_(E('live') - t_live)
 add(amb, ((np.sin(2 * np.pi * 43 * k) + 0.7 * np.sin(2 * np.pi * 61.7 * k)) * np.minimum(1, k / 0.5)).astype(np.float32), t_live, 0.15)
-
-# 「物音がした」: 床がきしむ音(寝室から聞こえる遠い音)
-n, k = k_(0.9)
-creak = np.sin(2 * np.pi * np.cumsum(140 + 60 * np.sin(2 * np.pi * 1.1 * k)) / SR) * (np.sin(2 * np.pi * 26 * k) > 0.2) * np.sin(np.pi * k / 0.9)
-add(sfx, lp_fast(bp_fast(creak.astype(np.float32), 150, 2500), 1200), S('tonight') + 0.15, 0.14)
 
 # ---------- ナレーション ----------
 voice = read_wav(os.path.join(OUT, 'narration.wav'))[:N]

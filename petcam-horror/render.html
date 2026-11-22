@@ -333,11 +333,43 @@ function sceneGrandma(t, u, d) {
   }
   camOSD(t, 'リビング', stampAt(13, 15, 10, 40 + u));
 }
-function sceneFriend(t, u, d) {
-  // 録画を一時停止して見返している
-  const z = 1 + 0.08 * ease(u / d);
-  main.drawImage(renderFeed(SC.day3.start + 2.0, { dog: { wag: 0.8, paw: true, happy: true }, clockA: 0.6 }, { zoom: z, cx: 540, cy: 900, pix: 1 }), 0, 0);
-  camOSD(t, 'リビング', stampAt(12, 13, 47, 5), { paused: true, seek: 0.37 });
+function bubble(x, y, w, h, mine) {
+  X.fillStyle = mine ? '#9be27a' : '#ffffff'; rr(x, y, w, h, 34); X.fill();
+}
+function sceneLine(t, u, d) {
+  // 深夜、ベッドの中。友達とのチャット画面
+  X = main; main.fillStyle = '#000'; main.fillRect(0, 0, W, H);
+  X.save();
+  X.fillStyle = '#7f95b0'; rr(60, 120, 960, 1720, 70); X.fill();                // 画面(チャットの背景)
+  X.save(); rr(60, 120, 960, 1720, 70); X.clip();
+  X.fillStyle = '#2f3a48'; X.fillRect(60, 120, 960, 210);                       // ヘッダー
+  X.fillStyle = '#fff'; X.font = `bold 40px ${'"DejaVu Sans",sans-serif'}`; X.textAlign = 'left'; X.fillText('2:07', 130, 185);
+  X.textAlign = 'center'; X.font = `bold 52px ${GOTH}`; X.fillText('ユイ', 540, 290);
+  X.font = `bold 52px ${GOTH}`; X.textAlign = 'left'; X.fillText('<', 100, 290);
+  // 昼間に自分が送った動画
+  X.fillStyle = 'rgba(0,0,0,0.25)'; X.font = `32px ${GOTH}`; X.textAlign = 'center'; X.fillText('昨日 14:20', 540, 400);
+  const thumb = renderFeed(SC.day3.start + 2.0, { dog: { wag: 0.8, paw: true, happy: true }, clockA: 0.6 });
+  X = main; X.save(); rr(470, 440, 480, 560, 30); X.clip(); X.drawImage(thumb, 0, 200, 1080, 1260, 470, 440, 480, 560); X.restore();
+  X.fillStyle = 'rgba(0,0,0,0.45)'; ell(710, 720, 56, 56); X.fill();
+  X.fillStyle = '#fff'; X.beginPath(); X.moveTo(692, 690); X.lineTo(692, 750); X.lineTo(742, 720); X.fill();
+  bubble(390, 1020, 560, 150, true);
+  X.fillStyle = '#111'; X.font = `40px ${GOTH}`; X.textAlign = 'left';
+  X.fillText('コタがおばあちゃんの場所に', 420, 1080); X.fillText('ずっと尻尾振ってるの', 420, 1135);
+  // 深夜の返信が1つずつ届く
+  const fr = TL.cues.find(c => c.kind === 'friend' && c.a >= SC.line.start);
+  const msgs = [['ねえ', fr.a - 0.2], ['送ってくれた動画', fr.a + 0.7], ['テレビ見て', fr.a + 2.1]];
+  let y = 1230;
+  X.fillStyle = 'rgba(0,0,0,0.25)'; X.font = `32px ${GOTH}`; X.textAlign = 'center';
+  if (t > msgs[0][1]) X.fillText('2:07', 540, y - 20);
+  for (const [m, at] of msgs) {
+    const a = seg(t, at, 0.15); if (a <= 0) continue;
+    X.save(); X.globalAlpha = a; X.font = `bold 46px ${GOTH}`; const w = X.measureText(m).width + 70;
+    X.fillStyle = '#dde3ea'; ell(150, y + 50, 40, 40); X.fill();
+    bubble(210, y, w, 100, false); X.fillStyle = '#111'; X.textAlign = 'left'; X.fillText(m, 245, y + 66); X.restore();
+    y += 130;
+  }
+  X.restore();
+  X.restore();
 }
 function sceneZoom(t, u, d) {
   // テレビの画面をデジタル拡大 → 明るさ補正
@@ -372,55 +404,46 @@ function sceneReveal(t, u, d) {
   X.restore();
   camOSD(t, 'リビング', stampAt(12, 13, 47, 5 + u), { paused: false, seek: 0.37 + u * 0.004 });
 }
-function sceneTonight(t, u, d) {
-  // 寝室: 暗い。スマホに通知 → タップでライブ映像(暗視)
-  X = main; main.fillStyle = '#000'; main.fillRect(0, 0, W, H);
-  const cue = TL.cues.filter(c => c.a >= SC.tonight.start && c.a < SC.tonight.end).pop();
-  const tNotify = cue.b - SC.tonight.start + 0.2;     // セリフの後に通知
-  const tLive = tNotify + 1.3;
-  if (u < tLive) {
-    // スマホのロック画面
-    X.save();
-    X.fillStyle = '#05070b'; rr(120, 200, 840, 1600, 80); X.fill();
-    X.strokeStyle = '#1b1f27'; X.lineWidth = 10; X.stroke();
-    X.fillStyle = 'rgba(255,255,255,0.85)'; X.textAlign = 'center'; X.font = `200px ${'"DejaVu Sans",sans-serif'}`; X.fillText('2:13', 540, 560);
-    X.font = `40px ${GOTH}`; X.fillText('11月14日 土曜日', 540, 380);
-    const na = seg(u, tNotify, 0.25);
-    if (na > 0) {
-      const y = lerp(560, 660, easeOut(na));
-      X.globalAlpha = na; X.fillStyle = 'rgba(60,64,72,0.95)'; rr(170, y, 740, 190, 36); X.fill();
-      X.fillStyle = '#4fc3f7'; rr(200, y + 40, 90, 90, 20); X.fill();
-      X.fillStyle = '#fff'; ell(245, y + 85, 22, 18); X.fill(); ell(228, y + 62, 8, 9); X.fill(); ell(262, y + 62, 8, 9); X.fill();
-      X.textAlign = 'left'; X.fillStyle = '#fff'; X.font = `bold 38px ${GOTH}`; X.fillText('ペットカメラ', 320, y + 72);
-      X.font = `40px ${GOTH}`; X.fillText('リビングで動きを検知しました', 320, y + 135);
-    }
-    // タップ
-    if (u > tLive - 0.4) { const ta = seg(u, tLive - 0.4, 0.2); X.globalAlpha = ta * 0.6; X.fillStyle = '#fff'; ell(560, 760, 50, 50); X.fill(); }
-    X.restore();
-    // 画面の明かりだけが顔を照らしているような周辺の暗さ
-    return;
-  }
-  const lu = u - tLive;
-  // 尻尾を振る犬 → 指でテレビの方を拡大 → 反射の中で刃物が光る
-  const zp = ease(seg(lu, 0.8, 1.4)), zp2 = ease(seg(lu, 2.5, 0.8));
+function revealFrame(t) {
+  const d = SC.reveal.end - SC.reveal.start;
+  sceneReveal(t, d - 0.01, d);
+}
+function sceneAlert(t, u, d) {
+  // 録画を見ている最中に、ライブの動体検知の通知が上から降りてくる
+  revealFrame(SC.reveal.end - 0.01);
+  X = main; X.save(); X.fillStyle = 'rgba(0,0,0,0.35)'; X.fillRect(0, 0, W, H);
+  const na = seg(u, 0.15, 0.3);
+  const y = lerp(-220, 70, easeOut(na)) + (u > 0.5 && u < 0.9 ? Math.sin(u * 70) * 3 : 0);
+  X.fillStyle = 'rgba(45,48,56,0.97)'; rr(60, y, 960, 200, 40); X.fill();
+  X.fillStyle = '#4fc3f7'; rr(95, y + 45, 110, 110, 24); X.fill();
+  X.fillStyle = '#fff'; ell(150, y + 108, 26, 22); X.fill(); ell(130, y + 80, 9, 10); X.fill(); ell(170, y + 80, 9, 10); X.fill();
+  X.textAlign = 'left'; X.font = `bold 38px ${GOTH}`; X.fillText('ペットカメラ  ・  いま', 235, y + 82);
+  X.font = `bold 46px ${GOTH}`; X.fillText('リビングで動きを検知しました', 235, y + 150);
+  // タップ
+  if (u > d - 0.35) { X.globalAlpha = seg(u, d - 0.35, 0.15) * 0.6; X.fillStyle = '#fff'; ell(560, y + 110, 55, 55); X.fill(); }
+  X.restore();
+}
+function sceneLive(t, u, d) {
+  // ライブ映像(暗視)。尻尾を振る犬 → テレビへ拡大 → 手元の包丁
+  const lu = u;
+  const zp = ease(seg(lu, 2.0, 1.3)), zp2 = ease(seg(lu, 3.7, 0.8));
   const kx = TV.x + 305 * TV.w / 480, ky = TV.y + 215 * TV.h / 290;      // 包丁の位置
   const zoom = lerp(lerp(1, 3.0, zp), 4.6, zp2);
   const cx = lerp(lerp(540, TV.x + 270 * TV.w / 480, zp), kx, zp2), cy = lerp(lerp(960, TV.y + 150 * TV.h / 290, zp), ky, zp2);
-  const look = seg(lu, 1.9, 0.3) * (1 - zp2), glint = Math.max(0, 1 - Math.abs(lu - 3.4) / 0.4);
+  const look = seg(lu, 3.2, 0.3) * (1 - zp2), glint = Math.max(0, 1 - Math.abs(lu - 4.6) / 0.4);
   main.drawImage(renderFeed(t, { night: true, dog: { wag: 1, happy: false, glow: true, wagHz: 3.5 }, refl: lerp(0.3, 0.7, zp), man: 1, stand: true, look, glint, clockA: 0.3 },
     { zoom, cx, cy, pix: lerp(1, 2.2, zp) }), 0, 0);
   if (zp > 0) { X = main; X.save(); X.globalAlpha = Math.min(1, zp * 3); X.fillStyle = 'rgba(0,0,0,0.55)'; rr(50, 170, 300, 80, 16); X.fill();
     X.fillStyle = '#fff'; X.font = `bold 40px ${GOTH}`; X.fillText(`拡大 ×${zoom.toFixed(1)}`, 80, 225); X.restore(); }
-  // 手元に寄りきったら、赤丸と「包丁」の注記
-  const ca = seg(lu, 3.3, 0.2);
+  const ca = seg(lu, 4.5, 0.2);
   if (ca > 0) {
     X = main; X.save(); X.globalAlpha = ca;
-    X.strokeStyle = '#ff3b30'; X.lineWidth = 10; X.beginPath(); X.ellipse(540 + 0.0, 980, 230, 400, 0, 0, 7); X.stroke();
+    X.strokeStyle = '#ff3b30'; X.lineWidth = 10; X.beginPath(); X.ellipse(540, 980, 230, 400, 0, 0, 7); X.stroke();
     X.fillStyle = '#ff3b30'; rr(330, 1440, 420, 120, 20); X.fill();
     X.fillStyle = '#fff'; X.font = `bold 76px ${GOTH}`; X.textAlign = 'center'; X.fillText('包丁', 540, 1527);
     X.restore();
   }
-  camOSD(t, 'リビング', stampAt(14, 2, 13, 2 + lu), { live: true, ir: true });
+  camOSD(t, 'リビング', stampAt(14, 2, 9, 31 + lu), { live: true, ir: true });
 }
 function sceneEnd(t, u, d) {
   X = main; main.fillStyle = '#000'; main.fillRect(0, 0, W, H);
@@ -430,8 +453,8 @@ function sceneEnd(t, u, d) {
   X.fillText('VOICEVOX:四国めたん / 小夜/SAYO', W / 2, 1750);
   X.restore();
 }
-const SCENE_FN = { day1: sceneDay1, day3: sceneDay3, grandma: sceneGrandma, friend: sceneFriend, zoom: sceneZoom,
-  reveal: sceneReveal, tonight: sceneTonight, end: sceneEnd };
+const SCENE_FN = { day1: sceneDay1, day3: sceneDay3, grandma: sceneGrandma, line: sceneLine, zoom: sceneZoom,
+  reveal: sceneReveal, alert: sceneAlert, live: sceneLive, end: sceneEnd };
 
 // ---------- 字幕 ----------
 function drawSubtitle(t) {
@@ -442,7 +465,8 @@ function drawSubtitle(t) {
   const pop = 1 + 0.07 * (1 - easeOut(seg(t, c.a - 0.1, 0.18)));
   const lines = c.text.split('\n');
   const size = 76, lh = size * 1.3;
-  const y0 = 1420 - (lines.length - 1) * lh / 2;
+  const inLine = c.a >= SC.line.start && c.a < SC.line.end;
+  const y0 = (inLine ? 1700 : 1420) - (lines.length - 1) * lh / 2;
   X.save(); X.globalAlpha = a; X.textAlign = 'center'; X.textBaseline = 'middle';
   X.translate(W / 2, y0); X.scale(pop, pop);
   X.font = `bold ${size}px ${GOTH}`;
@@ -457,7 +481,7 @@ function drawSubtitle(t) {
 // ---------- 仕上げ ----------
 function post(t, sid, u, d) {
   X = main;
-  main.save(); main.globalCompositeOperation = 'overlay'; main.globalAlpha = sid === 'tonight' ? 0.3 : 0.16;
+  main.save(); main.globalCompositeOperation = 'overlay'; main.globalAlpha = sid === 'live' ? 0.3 : 0.16;
   main.drawImage(GRAIN[Math.floor(t * FPS) % GRAIN.length], 0, 0, W, H); main.restore();
   const vg = main.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.72);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.6)');
