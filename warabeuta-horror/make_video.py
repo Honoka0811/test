@@ -12,7 +12,8 @@
   1. 数え歌   四国めたんが歌う。夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
   2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。村では七つまでは神さまの子。
   3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
-  4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、来週、七つになる。
+  4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、目隠しの遊びの歌だと思って、楽しそうに歌っていた。
+              妹は、来週、七つになる。
               祖母はいつも最後に言った。「お姉ちゃんなんだから、ちゃんと覚えるんだよ」
               （歌の「わたし」は歌う姉。次に埋めるのは語り手自身）
 """
@@ -201,6 +202,7 @@ def narrator(text):
 SING_TEACHER = 6000   # 歌唱用の音高モデル
 SING_STYLE = 3002     # 四国めたん（歌唱・ノーマル）
 SING_WHISPER = 3037   # 四国めたん（歌唱・ヒソヒソ）
+SING_SWEET = 3000     # 四国めたん（歌唱・あまあま）
 _SING = None
 
 
@@ -338,7 +340,9 @@ def build_timeline():
     tl.mark["end"] = tl.t
     tl.wait(0.4)
     tl.mark["end_hum"] = tl.t
-    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=1.4)
+    tl.say("昨日、祖母が、妹に、この歌を教えていた。", "昨日、祖母が妹に\nこの歌を教えていた。", gap=1.0)
+    tl.mark["sister"] = tl.t
+    tl.say("妹は、目隠しの遊びの歌だと思って、楽しそうに歌っていた。", "妹は、目隠しの遊びの歌だと思って\n楽しそうに歌っていた。", gap=1.4)
     tl.mark["last"] = tl.t
     tl.say("妹は、来週、七つになる。", gap=1.6)
     tl.say("祖母は、いつも最後に、こう言った。", "祖母は、いつも最後に\nこう言った。", gap=0.9)
@@ -418,9 +422,16 @@ def make_audio():
     # オチ：祖母が妹に歌を教える声（ヒソヒソ声で遠くに）→ 「七つになる」の直前で途切れる
     h = np.concatenate([sing(SCORE[0][0], SING_WHISPER), sing(SCORE[1][0], SING_WHISPER)])
     h = 0.45 * h + 0.55 * fftconv(h, IR_HALL)[: len(h)]
-    h = h[: int((M["last"] - M["end_hum"] + 0.1) * SR)]
-    h[-int(0.15 * SR):] *= np.linspace(1, 0, int(0.15 * SR))
+    h = h[: int((M["sister"] - M["end_hum"] + 0.3) * SR)]
+    h[-int(0.4 * SR):] *= np.linspace(1, 0, int(0.4 * SR))
     add(mus, M["end_hum"], h, 0.3)
+    # 妹が楽しそうに歌う声（少し高く、音程も正確、あまあま）→ 「七つになる」の直前で途切れる
+    kid_notes = [(ch, k + 5, e) for ch, k, e in SCORE[0][0] + SCORE[1][0]]
+    g = sing(kid_notes, SING_SWEET, eighth_f=28)
+    g = 0.6 * g + 0.4 * fftconv(g, IR_HALL)[: len(g)]
+    g = g[: int((M["last"] - M["sister"] + 0.5) * SR)]
+    g[-int(0.12 * SR):] *= np.linspace(1, 0, int(0.12 * SR))
+    add(mus, M["sister"] - 0.3, g, 0.26)
     # 振り向く：畳のきしみ → 灯りが消える
     m = int(0.5 * SR)
     tt = np.arange(m) / SR
