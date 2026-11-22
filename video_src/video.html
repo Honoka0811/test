@@ -1,0 +1,458 @@
+<!doctype html>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#eaf0f3; --surface:#ffffff; --line:#d3dee4; --fg:#1b2a33; --muted:#5a6c77;
+  --accent:#23779f; --accent-soft:#dcedf5; --metan:#c2407a;
+  --air:#e4f1f7; --tissue:#f4c3bf; --tissue-deep:#d9898a; --nucleus:#a05c7e; --cilia:#c97273;
+  --base:#f8dedb; --lung:#f7d3cf; --vessel:#d24b47; --virus:#7447bd; --wbc:#f6f2ff; --wbc-edge:#8a78b8;
+  --mucus-clear:#b9e0e6; --mucus-yellow:#dcc03c; --mucus-now:#b9e0e6;
+  --display:"Zen Maru Gothic","Noto Sans JP",sans-serif; --body:"Noto Sans JP",sans-serif;
+}
+html,body{margin:0;width:1280px;height:720px;overflow:hidden;background:var(--bg)}
+#frame{position:relative;width:1280px;height:720px}
+svg{position:absolute;inset:0}
+#sub{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:max-content;max-width:1240px;display:flex;align-items:center;gap:12px;
+  color:#fff;font-family:var(--display);font-weight:900;font-size:33px;line-height:1.3;box-sizing:border-box;text-align:center;white-space:nowrap}
+#sub #subtext{-webkit-text-stroke:9px #1b2a33;paint-order:stroke fill;letter-spacing:.02em}
+#sub #subtext b{color:#ffd84a;font-weight:900}
+#sub .who{flex:none;background:var(--metan);color:#fff;font-size:17px;border-radius:999px;padding:5px 12px;font-family:var(--display);font-weight:700;border:3px solid #fff}
+#sub[hidden]{display:none}
+.T{font-family:var(--display);font-weight:700;fill:var(--fg)}
+.B{font-family:var(--body);fill:var(--fg)}
+.M{font-family:var(--body);fill:var(--muted)}
+.lead{stroke:var(--muted);stroke-width:1.3;fill:none}
+.head{fill:var(--surface);stroke:var(--muted);stroke-width:2}
+.outline{fill:none;stroke:var(--muted);stroke-width:2;stroke-linecap:round}
+.lung{fill:var(--lung);stroke:var(--tissue-deep);stroke-width:1.5}
+.airway{stroke:var(--tissue-deep);fill:none;stroke-linecap:round;stroke-linejoin:round}
+.glow{stroke:var(--accent);fill:none;stroke-linecap:round;stroke-linejoin:round}
+.ring{stroke:var(--tissue);stroke-width:2}
+.mag{fill:none;stroke:var(--accent);stroke-width:2.5;stroke-dasharray:5 4}
+.tissue{fill:var(--tissue);stroke:var(--tissue-deep);stroke-width:1.5}
+.nucleus{fill:var(--nucleus)}
+.granule{fill:var(--mucus-clear);stroke:var(--tissue-deep);stroke-width:1}
+.cil{stroke:var(--cilia);stroke-width:2.4;fill:none;stroke-linecap:round}
+.mucus{fill:var(--mucus-now)}
+.basement{fill:var(--base)}
+.vessel{fill:var(--vessel);opacity:.28}
+.rbc{fill:var(--vessel)}
+.virus-b{fill:var(--virus)} .virus-s{stroke:var(--virus);stroke-width:2}
+.wbc{fill:var(--wbc);stroke:var(--wbc-edge);stroke-width:1.5} .wbc-n{fill:var(--wbc-edge)}
+.pill rect{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+.pill text{fill:var(--fg);font-family:var(--body);font-size:16px;font-weight:700;text-anchor:middle}
+.flow-arrow{stroke:var(--accent);stroke-width:3;fill:none;stroke-dasharray:14 10;stroke-linecap:round}
+.dot{fill:var(--mucus-clear);stroke:var(--tissue-deep);stroke-width:1}
+.blob{fill:var(--mucus-yellow);stroke:var(--tissue-deep);stroke-width:1.2}
+.burst{stroke:var(--accent);stroke-width:3;stroke-linecap:round}
+.card{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+.icon{fill:none;stroke:var(--fg);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+</style>
+<div id="frame">
+<svg id="svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <g id="virus">
+      <line class="virus-s" x1="0" y1="-10" x2="0" y2="10"/><line class="virus-s" x1="-10" y1="0" x2="10" y2="0"/>
+      <line class="virus-s" x1="-7" y1="-7" x2="7" y2="7"/><line class="virus-s" x1="-7" y1="7" x2="7" y2="-7"/>
+      <circle class="virus-b" r="6.5"/>
+    </g>
+    <g id="wbc"><circle class="wbc" r="15"/><circle class="wbc-n" cx="-5" cy="-3" r="4"/><circle class="wbc-n" cx="3" cy="-5" r="3.6"/><circle class="wbc-n" cx="4" cy="4" r="4"/></g>
+    <marker id="ah" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#23779f"/></marker>
+    <path id="drop" d="M0 -70 C30 -30 56 0 56 26 C56 58 30 80 0 80 C-30 80 -56 58 -56 26 C-56 0 -30 -30 0 -70 Z"/>
+  </defs>
+
+  <!-- top bar -->
+  <g id="topbar">
+    <text class="M" x="64" y="52" style="font-size:17px;font-weight:700;fill:var(--accent);letter-spacing:.12em">かぜ と からだ のしくみ</text>
+    <text id="stitle" class="T" x="64" y="96" style="font-size:38px"></text>
+    <g id="chap"></g>
+    <text class="M" x="1216" y="96" text-anchor="end" style="font-size:14px">VOICEVOX:四国めたん</text>
+  </g>
+
+  <g id="world">
+  <!-- stage frame for diagram scenes -->
+  <g id="stageframe"><rect x="160" y="118" width="960" height="504" rx="20" fill="var(--air)" stroke="var(--line)" stroke-width="1.5"/></g>
+
+  <!-- BODY VIEW -->
+  <g id="body" transform="translate(160 118) scale(1.2)">
+    <path class="outline" d="M380 140 L380 178 C330 186 292 200 286 242 L280 420"/>
+    <path class="outline" d="M420 140 L420 178 C470 186 508 200 514 242 L520 420"/>
+    <ellipse class="head" cx="400" cy="78" rx="58" ry="66"/>
+    <path class="outline" d="M400 58 L391 86 L409 86" style="stroke-width:1.6"/>
+    <path class="outline" d="M386 112 Q400 121 414 112" style="stroke-width:1.8"/>
+    <path class="lung" d="M388 252 C340 248 310 300 308 350 C306 392 330 410 360 404 C384 398 390 378 390 350 Z"/>
+    <path class="lung" d="M412 252 C460 248 490 300 492 350 C494 392 470 410 440 404 C416 398 410 378 410 350 Z"/>
+    <path class="airway" d="M400 98 L400 250" stroke-width="13"/>
+    <path class="airway" d="M400 250 L360 300 M400 250 L440 300" stroke-width="10"/>
+    <path class="airway" d="M360 300 L338 342 M360 300 L372 352 M440 300 L462 342 M440 300 L428 352" stroke-width="5"/>
+    <g id="rings"></g>
+    <g id="glow">
+      <path class="glow" d="M400 152 L400 250 L360 300 M400 250 L440 300" stroke-width="22" opacity=".25"/>
+      <path class="glow" d="M360 300 L338 342 M360 300 L372 352 M440 300 L462 342 M440 300 L428 352" stroke-width="12" opacity=".25"/>
+    </g>
+    <g id="noseglow"><circle cx="400" cy="80" r="22" fill="none" stroke="#23779f" stroke-width="3" opacity=".6"/></g>
+    <g id="dots"></g>
+    <g id="b-labels">
+      <text class="T" x="300" y="78" text-anchor="end" style="font-size:19px">鼻</text>
+      <text class="M" x="300" y="98" text-anchor="end" style="font-size:14px">鼻水がのどへ流れることも</text>
+      <path class="lead" d="M306 72 L386 76"/>
+      <text class="T" x="300" y="138" text-anchor="end" style="font-size:19px">のど</text>
+      <path class="lead" d="M306 132 L392 132"/>
+      <text class="T" x="300" y="208" text-anchor="end" style="font-size:19px">気管</text>
+      <path class="lead" d="M306 202 L378 202"/>
+      <text class="T" x="540" y="296" style="font-size:19px">気管支</text>
+      <path class="lead" d="M534 290 L446 290"/>
+      <text class="M" x="540" y="316" style="font-size:14px">痰の多くはここで作られる</text>
+      <text class="T" x="540" y="384" style="font-size:19px">肺</text>
+      <path class="lead" d="M534 378 L488 378"/>
+    </g>
+    <g id="mag"><circle class="mag" cx="400" cy="205" r="22"/><text class="B" x="428" y="214" style="font-size:14px;fill:var(--accent);font-weight:700">ここを拡大</text></g>
+    <g id="cough">
+      <circle id="blob" class="blob" cx="400" cy="250" r="9"/>
+      <g id="burst">
+        <line class="burst" x1="424" y1="104" x2="446" y2="94"/><line class="burst" x1="426" y1="114" x2="452" y2="114"/><line class="burst" x1="424" y1="124" x2="446" y2="134"/>
+        <text class="T" x="462" y="126" style="font-size:38px;fill:var(--accent)">ゴホッ！</text>
+      </g>
+    </g>
+    <path id="p1" d="M342 334 L360 300 L400 250 L400 112" fill="none" stroke="none"/>
+    <path id="p2" d="M458 334 L440 300 L400 250 L400 112" fill="none" stroke="none"/>
+  </g>
+
+  <!-- MICRO VIEW -->
+  <g id="micro" transform="translate(160 118) scale(1.2)">
+    <clipPath id="mclip"><rect width="800" height="420" rx="16"/></clipPath>
+    <g clip-path="url(#mclip)">
+      <text class="M" x="16" y="30" style="font-size:16px;font-weight:500">← 肺の奥</text>
+      <text class="M" x="784" y="30" text-anchor="end" style="font-size:16px;font-weight:500">のど・口 →</text>
+      <g id="lbl-flow">
+        <text class="T" x="400" y="78" text-anchor="middle" style="font-size:20px;fill:var(--accent)">粘液はのどの方へ運ばれる</text>
+        <path id="flowline" class="flow-arrow" d="M270 104 L520 104" marker-end="url(#ah)"/>
+      </g>
+      <path id="mucus" class="mucus" opacity=".88"/>
+      <text id="lbl-mucus" class="T" x="22" y="0" style="font-size:16px">粘液（痰のもと）</text>
+      <g id="cilia"></g>
+      <g id="cells"></g>
+      <rect class="basement" x="0" y="340" width="800" height="32"/>
+      <rect class="vessel" x="0" y="374" width="800" height="46"/>
+      <g id="rbcs"></g>
+      <g id="legend">
+        <use href="#virus" x="520" y="356"/><text class="B" x="536" y="361" style="font-size:14px">ウイルス</text>
+        <use href="#wbc" transform="translate(640 356) scale(.6)"/><text class="B" x="656" y="361" style="font-size:14px">白血球</text>
+      </g>
+      <g id="parts"></g>
+      <g id="lbl-cilia" class="pill">
+        <path d="M108 254 L112 226" stroke="#23779f" stroke-width="2"/>
+        <rect x="74" y="254" width="68" height="26" rx="13"/><text x="108" y="273">線毛</text>
+      </g>
+      <g id="lbl-goblet" class="pill"><rect x="164" y="300" width="72" height="26" rx="13"/><text x="200" y="319">杯細胞</text></g>
+      <g id="lbl-vessel" class="pill"><rect x="14" y="382" width="60" height="26" rx="13"/><text x="44" y="401">血管</text></g>
+    </g>
+  </g>
+
+  <!-- 0 HOOK -->
+  <g id="s0">
+    <rect width="1280" height="720" fill="#1d3a4a"/>
+    <g id="rays"></g>
+    <g id="floaters"></g>
+    <g id="hk1" transform="translate(640 250)">
+      <text class="T" text-anchor="middle" y="0" style="font-size:120px;font-weight:900;fill:#fff;stroke:#0e1d26;stroke-width:14px;paint-order:stroke fill">その痰、</text>
+    </g>
+    <g id="hk2" transform="translate(640 420)">
+      <text class="T" text-anchor="middle" y="0" style="font-size:104px;font-weight:900;fill:#ffd84a;stroke:#0e1d26;stroke-width:14px;paint-order:stroke fill">飲みこんで大丈夫？</text>
+    </g>
+    <g id="hkdrop" transform="translate(1110 200) rotate(14)"><use href="#drop" fill="#dcc03c" stroke="#0e1d26" stroke-width="6" transform="scale(.9)"/>
+      <circle cx="-16" cy="20" r="7" fill="#0e1d26"/><circle cx="18" cy="20" r="7" fill="#0e1d26"/><path d="M-12 48 Q2 38 16 48" stroke="#0e1d26" stroke-width="5" fill="none" stroke-linecap="round"/></g>
+    <g id="badge" transform="translate(640 530)"><rect x="-230" y="-30" width="460" height="60" rx="30" fill="var(--metan)" stroke="#fff" stroke-width="4"/>
+      <text x="0" y="11" text-anchor="middle" style="font-family:var(--display);font-weight:900;font-size:30px;fill:#fff">痰のひみつ ｜ 解説：四国めたん</text></g>
+  </g>
+
+  <!-- 7 COLORS -->
+  <g id="s7">
+    <g id="c1" transform="translate(340 330)"><use href="#drop" fill="#eef6f8" stroke="#9fb9c2" stroke-width="3"/>
+      <text class="T" y="160" text-anchor="middle" style="font-size:32px">透明・白</text><text class="M" y="200" text-anchor="middle" style="font-size:22px">ひき始め・アレルギー</text></g>
+    <g id="c2" transform="translate(640 330)"><g transform="translate(-22 0)"><use href="#drop" fill="#dcc03c" stroke="#a88f1e" stroke-width="3"/></g>
+      <g transform="translate(30 30) scale(.62)"><use href="#drop" fill="#9dbb47" stroke="#6f8a2a" stroke-width="4"/></g>
+      <text class="T" y="160" text-anchor="middle" style="font-size:32px">黄色・緑</text><text class="M" y="200" text-anchor="middle" style="font-size:22px">免疫が戦っているしるし</text></g>
+    <g id="c3" transform="translate(940 330)"><circle r="104" cy="10" fill="none" stroke="#d24b47" stroke-width="4" stroke-dasharray="10 8"/>
+      <use href="#drop" fill="#f1e3dc" stroke="#b9473f" stroke-width="3"/><path d="M-14 0 C-4 12 8 4 4 22 C2 34 14 40 20 30" stroke="#b9473f" stroke-width="7" fill="none" stroke-linecap="round"/>
+      <text class="T" y="160" text-anchor="middle" style="font-size:32px;fill:#b9473f">血が混じる</text><text class="M" y="200" text-anchor="middle" style="font-size:22px">注意が必要</text></g>
+  </g>
+
+  <!-- 8 SWALLOW -->
+  <g id="s8">
+   <g id="quiz">
+    <g transform="translate(640 190)"><rect x="-90" y="-34" width="180" height="60" rx="14" fill="#d24b47"/>
+      <text text-anchor="middle" y="10" style="font-family:var(--display);font-weight:900;font-size:36px;fill:#fff">クイズ</text></g>
+    <text class="T" x="640" y="290" text-anchor="middle" style="font-size:52px;font-weight:900">痰は飲みこんでも…？</text>
+    <g id="qa" transform="translate(370 430)"><rect id="qa-r" x="-180" y="-80" width="360" height="160" rx="24" fill="#e2f1f8" stroke="#23779f" stroke-width="5"/>
+      <text x="-130" y="22" text-anchor="middle" style="font-family:var(--display);font-weight:900;font-size:64px;fill:#23779f">A</text>
+      <text x="40" y="20" text-anchor="middle" class="T" style="font-size:54px;font-weight:900">大丈夫</text></g>
+    <g id="qb" transform="translate(910 430)"><rect x="-180" y="-80" width="360" height="160" rx="24" fill="#fbe4e2" stroke="#d24b47" stroke-width="5"/>
+      <text x="-130" y="22" text-anchor="middle" style="font-family:var(--display);font-weight:900;font-size:64px;fill:#d24b47">B</text>
+      <text x="40" y="20" text-anchor="middle" class="T" style="font-size:54px;font-weight:900">ダメ</text></g>
+    <g id="cdn" transform="translate(640 430)"><circle r="58" fill="#1b2a33"/><text id="cdt" y="24" text-anchor="middle" style="font-family:var(--display);font-weight:900;font-size:72px;fill:#fff">3</text></g>
+    <g id="ans" transform="translate(370 430)"><circle r="120" fill="none" stroke="#d24b47" stroke-width="16"/>
+      <g transform="translate(150 -110) rotate(12)"><rect x="-80" y="-30" width="160" height="60" rx="10" fill="#d24b47"/><text y="14" text-anchor="middle" style="font-family:var(--display);font-weight:900;font-size:40px;fill:#fff">正解！</text></g></g>
+   </g>
+   <g id="sw">
+    <g transform="translate(150 20)">
+      <path d="M300 120 L300 250 C300 270 290 280 270 290" fill="none" stroke="var(--tissue-deep)" stroke-width="34" stroke-linecap="round"/>
+      <path d="M300 120 L300 250 C300 270 290 280 270 290" fill="none" stroke="var(--tissue)" stroke-width="26" stroke-linecap="round"/>
+      <path id="stomach" d="M270 280 C180 270 150 360 190 430 C230 500 360 520 430 470 C480 435 470 380 420 380 C380 380 370 410 340 400 C300 388 330 290 270 280 Z" fill="var(--tissue)" stroke="var(--tissue-deep)" stroke-width="4"/>
+      <path d="M215 420 C240 470 340 490 400 455 C430 440 440 420 425 410 C400 420 370 430 330 425 C290 420 250 400 215 420 Z" fill="#c9d65a" opacity=".55"/>
+      <g id="bubbles"></g>
+      <g id="sw-virus"></g>
+      <text class="T" x="250" y="560" text-anchor="middle" style="font-size:22px;fill:var(--muted)">胃</text>
+    </g>
+    <g id="sw-text">
+      <text class="T" x="720" y="300" style="font-size:66px;fill:var(--accent)">どちらでも OK</text>
+      <text class="B" x="724" y="372" style="font-size:30px;font-weight:500">胃酸がウイルスの</text>
+      <text class="B" x="724" y="416" style="font-size:30px;font-weight:500">ほとんどをやっつける</text>
+      <text class="M" x="724" y="474" style="font-size:22px">健康なときも、毎日少しずつ飲みこんでいます</text>
+    </g>
+    <g id="sw-q"><text class="T" x="720" y="220" style="font-size:34px">飲みこんでも大丈夫？</text></g>
+   </g>
+  </g>
+
+  <!-- 9 SPIT -->
+  <g id="s9">
+    <text class="T" x="640" y="176" text-anchor="middle" style="font-size:38px">出せるなら、吐き出すのがおすすめ</text>
+    <g id="r1" transform="translate(300 236)"><rect x="-140" y="-26" width="280" height="52" rx="26" fill="var(--accent-soft)"/><text class="B" text-anchor="middle" y="9" style="font-size:24px;font-weight:700">のどがすっきり</text></g>
+    <g id="r2" transform="translate(640 236)"><rect x="-170" y="-26" width="340" height="52" rx="26" fill="var(--accent-soft)"/><text class="B" text-anchor="middle" y="9" style="font-size:24px;font-weight:700">色や量で体調がわかる</text></g>
+    <g id="r3" transform="translate(980 236)"><rect x="-140" y="-26" width="280" height="52" rx="26" fill="var(--accent-soft)"/><text class="B" text-anchor="middle" y="9" style="font-size:24px;font-weight:700">咳が長引きにくい</text></g>
+    <g id="st1" transform="translate(330 420)"><circle r="92" class="card"/>
+      <path class="icon" d="M-44 -30 L44 -30 L44 34 L-44 34 Z"/><path class="icon" d="M-30 -30 C-20 -52 -6 -52 0 -36 C6 -52 22 -52 30 -30"/><path class="icon" d="M-30 0 L30 0 M-30 16 L14 16" style="stroke-width:3;stroke:var(--muted)"/>
+      <text class="T" y="140" text-anchor="middle" style="font-size:28px">ティッシュに出す</text></g>
+    <g id="st2" transform="translate(640 420)"><circle r="92" class="card"/>
+      <path class="icon" d="M-34 -20 L-28 46 L28 46 L34 -20 Z"/><path id="lid" class="icon" d="M-44 -30 L44 -30 M-12 -30 L-12 -40 L12 -40 L12 -30"/><path class="icon" d="M-12 -6 L-10 32 M12 -6 L10 32" style="stroke-width:3;stroke:var(--muted)"/>
+      <text class="T" y="140" text-anchor="middle" style="font-size:28px">ふたつきのゴミ箱へ</text></g>
+    <g id="st3" transform="translate(950 420)"><circle r="92" class="card"/>
+      <path class="icon" d="M-40 -44 L10 -44 C26 -44 30 -36 30 -24 L30 -16 M-40 -52 L-40 -36"/><g id="water"></g>
+      <path class="icon" d="M-34 30 C-34 10 -10 6 0 14 C10 6 34 10 34 30 C34 48 20 56 0 56 C-20 56 -34 48 -34 30 Z" style="stroke:var(--accent)"/>
+      <text class="T" y="140" text-anchor="middle" style="font-size:28px">手を洗う</text></g>
+    <path id="ar1" d="M440 420 L520 420" stroke="var(--muted)" stroke-width="4" marker-end="url(#ah)"/>
+    <path id="ar2" d="M750 420 L830 420" stroke="var(--muted)" stroke-width="4" marker-end="url(#ah)"/>
+  </g>
+
+  <!-- 10 TIPS -->
+  <g id="s10">
+    <g id="t0" transform="translate(640 190)"><rect x="-260" y="-36" width="520" height="72" rx="36" fill="#fbe4e2"/>
+      <path d="M-220 -14 L-192 14 M-192 -14 L-220 14" stroke="#d24b47" stroke-width="6" stroke-linecap="round"/>
+      <text class="T" x="18" y="12" text-anchor="middle" style="font-size:32px;fill:#b9473f">無理に咳をしない</text></g>
+    <g id="t1" transform="translate(330 400)"><circle r="96" class="card"/>
+      <path class="icon" d="M-30 -50 L-22 50 L22 50 L30 -50"/><clipPath id="gl"><path d="M-30 -50 L-22 50 L22 50 L30 -50 Z"/></clipPath>
+      <rect id="wlevel" x="-40" y="0" width="80" height="60" fill="#8fcbe0" clip-path="url(#gl)"/>
+      <text class="T" y="150" text-anchor="middle" style="font-size:30px">水分をとる</text></g>
+    <g id="t2" transform="translate(640 400)"><circle r="96" class="card"/>
+      <rect class="icon" x="-36" y="-6" width="72" height="56" rx="14"/><circle cx="0" cy="24" r="10" class="icon" style="stroke-width:3"/>
+      <g id="steam1"></g>
+      <text class="T" y="150" text-anchor="middle" style="font-size:30px">加湿する</text></g>
+    <g id="t3" transform="translate(950 400)"><circle r="96" class="card"/>
+      <path class="icon" d="M-36 -8 L-36 34 C-36 48 -26 54 -12 54 L12 54 C26 54 36 48 36 34 L36 -8 Z"/><path class="icon" d="M36 4 C56 4 56 34 36 34"/>
+      <g id="steam2"></g>
+      <text class="T" y="150" text-anchor="middle" style="font-size:30px">温かい飲み物</text></g>
+    <text id="t4" class="M" x="640" y="604" text-anchor="middle" style="font-size:22px">痰がやわらかくなって、出しやすくなる</text>
+  </g>
+
+  <!-- 11 DOCTOR -->
+  <g id="s11">
+    <rect x="250" y="150" width="780" height="420" rx="24" class="card"/>
+    <rect x="250" y="150" width="12" height="420" fill="#d24b47"/>
+    <g id="k1" transform="translate(320 250)"><rect x="-22" y="-22" width="44" height="44" rx="8" fill="none" stroke="var(--fg)" stroke-width="3"/><path class="ck" d="M-12 0 L-3 10 L14 -12" stroke="#d24b47" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+      <text class="B" x="46" y="12" style="font-size:36px;font-weight:700">痰に血が混じる</text></g>
+    <g id="k2" transform="translate(320 340)"><rect x="-22" y="-22" width="44" height="44" rx="8" fill="none" stroke="var(--fg)" stroke-width="3"/><path class="ck" d="M-12 0 L-3 10 L14 -12" stroke="#d24b47" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+      <text class="B" x="46" y="12" style="font-size:36px;font-weight:700">高い熱・息苦しさがある</text></g>
+    <g id="k3" transform="translate(320 430)"><rect x="-22" y="-22" width="44" height="44" rx="8" fill="none" stroke="var(--fg)" stroke-width="3"/><path class="ck" d="M-12 0 L-3 10 L14 -12" stroke="#d24b47" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+      <text class="B" x="46" y="12" style="font-size:36px;font-weight:700">2〜3週間以上続く</text></g>
+    <text id="k4" class="T" x="640" y="530" text-anchor="middle" style="font-size:34px;fill:#b9473f">→ 病院で診てもらおう</text>
+  </g>
+
+  <!-- 12 END -->
+  <g id="s12">
+   <g id="sum">
+    <g id="e1" transform="translate(640 220)"><rect x="-440" y="-46" width="880" height="92" rx="20" class="card"/>
+      <text x="-400" y="12" style="font-family:var(--display);font-weight:900;font-size:30px;fill:#23779f">どこで？</text><text class="T" x="-250" y="12" style="font-size:34px">気管・気管支の粘液</text></g>
+    <g id="e2" transform="translate(640 336)"><rect x="-440" y="-46" width="880" height="92" rx="20" class="card"/>
+      <text x="-400" y="12" style="font-family:var(--display);font-weight:900;font-size:30px;fill:#23779f">役目は？</text><text class="T" x="-250" y="12" style="font-size:34px">ウイルスを捕まえて外へ出す</text></g>
+    <g id="e3" transform="translate(640 452)"><rect x="-440" y="-46" width="880" height="92" rx="20" class="card"/>
+      <text x="-400" y="12" style="font-family:var(--display);font-weight:900;font-size:30px;fill:#23779f">飲んだら？</text><text class="T" x="-250" y="12" style="font-size:34px">大丈夫。出せるなら吐き出す</text></g>
+   </g>
+   <g id="end">
+    <text class="T" x="330" y="300" text-anchor="middle" style="font-size:96px;font-weight:900">お大事に！</text>
+    <text class="B" x="330" y="380" text-anchor="middle" style="font-size:24px">ナレーション　VOICEVOX:四国めたん</text>
+    <text class="B" x="330" y="418" text-anchor="middle" style="font-size:24px">BGM・効果音　オリジナル</text>
+    <text class="M" x="330" y="480" text-anchor="middle" style="font-size:17px">一般的な説明です。気になる症状は医療機関へ相談してください。</text>
+    <rect x="700" y="150" width="500" height="281" rx="16" fill="none" stroke="#b7c7cf" stroke-width="3" stroke-dasharray="12 10"/>
+    <text class="M" x="950" y="298" text-anchor="middle" style="font-size:22px">次の動画</text>
+    <circle cx="950" cy="545" r="72" fill="none" stroke="#b7c7cf" stroke-width="3" stroke-dasharray="12 10"/>
+    <text class="M" x="950" y="553" text-anchor="middle" style="font-size:20px">登録</text>
+   </g>
+  </g>
+  </g>
+</svg>
+<div id="sub" hidden><span class="who">めたん</span><span id="subtext"></span></div>
+</div>
+<script>
+const TL=window.TL;
+const NS='http://www.w3.org/2000/svg';
+const $=id=>document.getElementById(id);
+function mk(tag,a,p){const e=document.createElementNS(NS,tag);for(const k in a)e.setAttribute(k,a[k]);if(p)p.appendChild(e);return e;}
+let seed=12345;function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}
+const ease=x=>x<=0?0:x>=1?1:x*x*(3-2*x);
+function show(id,o){const e=$(id);e.setAttribute('opacity',o.toFixed(3));e.style.display=o<=0.001?'none':'';}
+const baseTf={};
+function pop(id,o){const e=$(id);show(id,o);if(!(id in baseTf))baseTf[id]=e.getAttribute('transform')||'';e.setAttribute('transform',baseTf[id]+' translate(0 '+((1-o)*18).toFixed(1)+')');}
+
+const titles=['','痰はどこで作られる？','気道の壁を拡大すると','ウイルスが入ってくる','線毛がのどへ運ぶ','白血球が戦う','咳で外へ出す','痰の色をチェック','飲みこんでもいいの？','出せるなら吐き出そう','出しにくいときは','こんなときは病院へ',''];
+// chapter dots
+for(let i=1;i<=11;i++)mk('circle',{id:'cd'+i,cx:1216-(11-i)*22,cy:46,r:6},$('chap'));
+
+// body setup
+for(let y=160;y<=240;y+=12)mk('line',{class:'ring',x1:394,x2:406,y1:y,y2:y},$('rings'));
+const p1=$('p1'),p2=$('p2'),L1=p1.getTotalLength(),L2=p2.getTotalLength();
+const dots=[];[[p1,L1],[p2,L2]].forEach(([p,L])=>{for(let k=0;k<7;k++)dots.push({p,L,off:k/7,el:mk('circle',{class:'dot',r:4.5},$('dots'))});});
+
+// micro setup
+const cil=[],goblets=[2,6];
+for(let i=0;i<10;i++){const x0=i*80;
+  mk('rect',{class:'tissue',x:x0+2,y:240,width:76,height:100,rx:12},$('cells'));
+  if(goblets.includes(i)){mk('ellipse',{class:'granule',cx:x0+40,cy:270,rx:26,ry:22},$('cells'));
+    [[-12,-8],[2,-12],[14,-4],[-6,4],[8,8],[-16,8]].forEach(([dx,dy])=>mk('circle',{class:'granule',cx:x0+40+dx,cy:270+dy,r:5},$('cells')));
+    mk('ellipse',{class:'nucleus',cx:x0+40,cy:318,rx:13,ry:9},$('cells'));}
+  else{mk('ellipse',{class:'nucleus',cx:x0+40,cy:298,rx:14,ry:18},$('cells'));
+    for(let x=x0+9;x<=x0+71;x+=7.5)cil.push({x,el:mk('path',{class:'cil'},$('cilia'))});}}
+const rbcs=[];for(let i=0;i<9;i++)rbcs.push({x:i*95,y:386+(i%3)*11,el:mk('ellipse',{class:'rbc',rx:11,ry:5},$('rbcs'))});
+
+const SC={2:{thick:16,flow:.35,yellow:0,secrete:.03,virus:0,wbc:0,labels:['lbl-mucus','lbl-cilia','lbl-goblet']},
+ 3:{thick:36,flow:.3,yellow:0,secrete:.12,virus:.06,wbc:0,labels:['lbl-mucus','lbl-goblet','legend']},
+ 4:{thick:36,flow:1.5,yellow:0,secrete:.05,virus:.035,wbc:0,labels:['lbl-flow','lbl-cilia','legend']},
+ 5:{thick:40,flow:.8,yellow:1,secrete:.05,virus:.04,wbc:.014,labels:['lbl-vessel','legend']}};
+const cur={thick:16,flow:.35,yellow:0};let tgt=SC[2];let mphase=0,cphase=0,simT=0;const BOT=204;
+function mtop(x){return BOT-cur.thick+3*Math.sin(x*.025-mphase);}
+let parts=[];
+function addPart(type,o){const e=type==='drop'?mk('circle',{class:'mucus',r:3.5},$('parts')):mk('use',{href:type==='virus'?'#virus':'#wbc'},$('parts'));
+  const p=Object.assign({type,el:e,op:1,rot:rnd()*90,state:'move'},o);parts.push(p);return p;}
+function clearParts(types){parts=parts.filter(p=>{if(types.includes(p.type)){p.el.remove();return false;}return true;});}
+const cA=[185,224,230],cB=[220,192,60];
+let lastScene=-1;
+function enterMicro(i){
+  tgt=SC[i];
+  if(i===2){clearParts(['virus','wbc']);}
+  if(i<5)clearParts(['wbc']);
+  if(i===5){for(let k=0;k<2;k++)addPart('wbc',{x:150+k*320,y:395,state:'rise'});}
+}
+function stepMicro(dt,T,idx){
+  const k=.025*dt;cur.thick+=(tgt.thick-cur.thick)*k;cur.flow+=(tgt.flow-cur.flow)*k*1.5;cur.yellow+=(tgt.yellow-cur.yellow)*k*.5;
+  mphase+=cur.flow*dt*.05;cphase+=dt*(.1+cur.flow*.09);
+  for(const r of rbcs){r.x+=1.2*dt;if(r.x>820)r.x=-20;}
+  if(rnd()<tgt.secrete*dt){const g=goblets[rnd()<.5?0:1];addPart('drop',{x:g*80+30+rnd()*20,y:244});}
+  if(rnd()<tgt.virus*dt)addPart('virus',{x:-20+rnd()*700,y:-12,state:'fall'});
+  if(rnd()<tgt.wbc*dt&&parts.filter(p=>p.type==='wbc').length<5)addPart('wbc',{x:40+rnd()*600,y:395,state:'rise'});
+  const wbcs=parts.filter(p=>p.type==='wbc'&&p.state==='stuck');
+  parts=parts.filter(p=>{
+    if(p.type==='drop'){p.y-=.7*dt;p.x+=cur.flow*.3*dt;if(p.y<mtop(p.x)+cur.thick*.5){p.el.remove();return false;}return true;}
+    if(p.type==='virus'){
+      if(p.state==='fall'){p.y+=1.2*dt;p.x+=.35*dt;p.rot+=1.5*dt;if(p.y>=mtop(p.x)+4){p.state='stuck';p.depth=4+rnd()*Math.max(4,cur.thick-12);}}
+      else{p.x+=cur.flow*.9*dt;p.y=mtop(p.x)+Math.min(p.depth,cur.thick-5);p.rot+=.3*dt;}
+      if(!p.dying)for(const w of wbcs){if(Math.hypot(w.x-p.x,w.y-p.y)<30){p.dying=true;break;}}
+      if(p.dying)p.op-=.012*dt;
+      if(p.x>830||p.op<=0){p.el.remove();return false;}return true;}
+    if(p.type==='wbc'){
+      if(p.state==='rise'){p.y-=.5*dt;p.x+=Math.sin(T*.002+p.x)*.2;if(p.y<=mtop(p.x)+cur.thick*.5)p.state='stuck';}
+      else{p.x+=cur.flow*.9*dt;p.y=mtop(p.x)+cur.thick*.5;}
+      if(p.x>850){p.el.remove();return false;}return true;}
+    return true;});
+}
+function drawMicro(T){
+  const col=cA.map((a,i)=>Math.round(a+(cB[i]-a)*cur.yellow));document.documentElement.style.setProperty('--mucus-now','rgb('+col.join(',')+')');
+  let d='M0 '+(BOT+2);for(let x=0;x<=800;x+=20)d+=' L'+x+' '+mtop(x).toFixed(1);d+=' L800 '+(BOT+2)+' Z';$('mucus').setAttribute('d',d);
+  $('lbl-mucus').setAttribute('y',(mtop(22)+cur.thick/2+6).toFixed(1));$('lbl-mucus').style.fontSize=(cur.thick<24?14:16)+'px';
+  for(const c of cil){const a=Math.sin(cphase-c.x*.05);const b=a*12+3;c.el.setAttribute('d','M'+c.x.toFixed(1)+' 240 Q'+(c.x+b*.25).toFixed(1)+' 222 '+(c.x+b).toFixed(1)+' 203');}
+  for(const r of rbcs){r.el.setAttribute('cx',r.x.toFixed(1));r.el.setAttribute('cy',r.y);}
+  $('flowline').style.strokeDashoffset=((-T*.05)%240).toFixed(1);
+  for(const p of parts){
+    if(p.type==='drop'){p.el.setAttribute('cx',p.x.toFixed(1));p.el.setAttribute('cy',p.y.toFixed(1));}
+    else if(p.type==='virus'){p.el.setAttribute('transform','translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+') rotate('+p.rot.toFixed(0)+') scale('+(p.dying?.6+.4*p.op:1).toFixed(2)+')');p.el.setAttribute('opacity',Math.max(0,p.op).toFixed(2));}
+    else p.el.setAttribute('transform','translate('+p.x.toFixed(1)+' '+p.y.toFixed(1)+')');
+  }
+}
+// floaters for title
+const fl=[];for(let i=0;i<16;i++){const v=i%3===0;fl.push({x:rnd()*1280,y:rnd()*720,s:.6+rnd()*1.2,ph:rnd()*6,v,el:v?mk('use',{href:'#virus',opacity:.35},$('floaters')):mk('circle',{r:6+rnd()*10,fill:'var(--mucus-clear)',opacity:.55},$('floaters'))});}
+// swallow / steam / water
+const bub=[];for(let i=0;i<10;i++)bub.push({x:230+rnd()*180,ph:rnd(),el:mk('circle',{r:3+rnd()*4,fill:'#e8f0a8',stroke:'#a7b43a','stroke-width':1.5},$('bubbles'))});
+const swv=[];for(let i=0;i<4;i++)swv.push({ph:i/4,el:mk('use',{href:'#virus'},$('sw-virus'))});
+function steam(g){const a=[];for(let i=0;i<3;i++)a.push({x:-16+i*16,ph:i/3,el:mk('path',{d:'M0 0 C-8 -10 8 -20 0 -30',fill:'none',stroke:'var(--muted)','stroke-width':3,'stroke-linecap':'round'},$(g))});return a;}
+const st1=steam('steam1'),st2=steam('steam2');
+const drops=[];for(let i=0;i<3;i++)drops.push({ph:i/3,el:mk('ellipse',{rx:3,ry:5,fill:'#8fcbe0'},$('water'))});
+
+const A=id=>TL.appear[id];
+const ap=(t,id,d)=>ease((t-A(id))/(d||.35));
+const backOut=x=>{if(x<=0)return 0;if(x>=1)return 1;const c=1.9;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2);};
+function popS(id,x){const e=$(id);show(id,Math.min(1,x*2));if(!(id in baseTf))baseTf[id]=e.getAttribute('transform')||'';const s=backOut(x);e.setAttribute('transform',baseTf[id]+' scale('+(0.3+0.7*s).toFixed(3)+')');}
+const byid=TL.byid;
+// rays for hook
+for(let i=0;i<16;i++)mk('path',{d:'M0 0 L1400 -140 L1400 140 Z',fill:i%2?'#22465a':'#1d3a4a',transform:'rotate('+(i*22.5)+')'},$('rays'));
+fl.forEach(f=>{if(!f.v)f.el.setAttribute('fill','#6fb6c4');});
+titles[8]='クイズ！';titles[12]='まとめ';
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+window.renderAt=function(t){
+  let idx=TL.scenes.findIndex(s=>t>=s.start&&t<s.end);if(idx<0)idx=TL.scenes.length-1;
+  const sc=TL.scenes[idx],lt=t-sc.start;
+  if(idx!==lastScene){if(SC[idx])enterMicro(idx);lastScene=idx;}
+  if(SC[idx]){while(simT<t){stepMicro(1,simT*1000,idx);simT+=1/60;}drawMicro(t*1000);}else simT=t;
+  const fin=ease(lt/0.3);
+  const isBody=idx===1||idx===6,isMicro=!!SC[idx];
+  const ended=idx===12&&t>=A('end');
+  show('topbar',idx===0||ended?0:1);
+  $('stitle').textContent=titles[idx];
+  for(let i=1;i<=11;i++){const c=$('cd'+i);c.setAttribute('fill',i===idx?'#23779f':i<idx?'#9cc6da':'#d3dee4');}
+  show('stageframe',isBody||isMicro?1:0);
+  show('body',isBody?fin:0);show('micro',isMicro?fin:0);
+  ['s0','s7','s8','s9','s10','s11','s12'].forEach(id=>show(id,id==='s'+idx?fin:0));
+  const T=t*1000;
+  // camera: slide-in + slow push-in
+  if(idx===0)$('world').setAttribute('transform','');
+  else{const dx=(1-ease(lt/.35))*70,z=1+Math.min(lt,14)*0.003;
+    $('world').setAttribute('transform','translate('+dx.toFixed(1)+' 0) translate(640 370) scale('+z.toFixed(4)+') translate(-640 -370)');}
+  if(isBody){
+    show('glow',idx===1?1:0);show('mag',idx===1&&t>byid.w3.start?1:0);show('dots',idx===1?1:0);show('cough',idx===6?1:0);show('b-labels',idx===1?1:.35);
+    show('noseglow',(t>byid.w2.start&&t<byid.w2.end+.3)?1:0);
+    if(idx===1){$('glow').setAttribute('opacity',(.55+.45*Math.sin(T*.003)).toFixed(3));
+      dots.forEach(d=>{const u=(d.off+T*.00005)%1;const pt=d.p.getPointAtLength(d.L*u);d.el.setAttribute('cx',pt.x);d.el.setAttribute('cy',pt.y);d.el.setAttribute('opacity',u>.92?(1-u)/.08:1);});}
+    if(idx===6){const c=((lt+0.6)%3.2)/3.2;const blob=$('blob'),burst=$('burst');
+      if(c<.62){const e=ease(c/.62);const pt=p1.getPointAtLength(L1*e);blob.setAttribute('cx',pt.x);blob.setAttribute('cy',pt.y);blob.setAttribute('r',8+e*3);blob.setAttribute('opacity',1);burst.setAttribute('opacity',0);}
+      else{const e=(c-.62)/.38;blob.setAttribute('cx',400+e*40);blob.setAttribute('cy',112-e*6);blob.setAttribute('r',11+e*8);blob.setAttribute('opacity',Math.max(0,1-e*1.3));burst.setAttribute('opacity',e<.75?1:(1-e)/.25);
+        const sh=e<.3?Math.sin(e*80)*3:0;burst.setAttribute('transform','translate('+sh.toFixed(1)+' 0)');}}
+  }
+  if(isMicro){['lbl-mucus','lbl-cilia','lbl-goblet','lbl-vessel','lbl-flow','legend'].forEach(id=>show(id,SC[idx].labels.includes(id)?ease(lt/0.6):0));}
+  if(idx===0){
+    $('rays').setAttribute('transform','translate(640 360) rotate('+(T*.006).toFixed(2)+')');
+    fl.forEach(f=>{const x=(f.x+T*.02*f.s)%1340-30,y=f.y+Math.sin(T*.001*f.s+f.ph)*14;f.el.setAttribute(f.v?'transform':'cx',f.v?'translate('+x.toFixed(1)+' '+y.toFixed(1)+')':x.toFixed(1));if(!f.v)f.el.setAttribute('cy',y.toFixed(1));});
+    popS('hk1',ease((t-0.05)/.3));popS('hk2',ease((t-A('hk2'))/.3));popS('badge',ease((t-A('badge'))/.3));
+    $('hkdrop').setAttribute('transform','translate(1110 '+(200+Math.sin(T*.004)*10).toFixed(1)+') rotate('+(14+Math.sin(T*.003)*8).toFixed(1)+')');}
+  if(idx===7){popS('c1',ap(t,'c1'));popS('c2',ap(t,'c2'));popS('c3',ap(t,'c3'));}
+  if(idx===8){
+    const sw=ease((t-A('sw'))/.4);show('quiz',1-sw);show('sw',sw);
+    popS('qa',ap(t,'qa'));popS('qb',ap(t,'qb'));
+    const cdv=t-TL.cd;show('cdn',cdv>=0&&cdv<3?1:0);if(cdv>=0&&cdv<3){$('cdt').textContent=String(3-Math.floor(cdv));const f=cdv%1;$('cdn').setAttribute('transform','translate(640 430) scale('+(1.25-0.25*ease(f/.25)).toFixed(3)+')');}
+    popS('ans',ap(t,'ans',.3));$('qb').setAttribute('opacity',t>A('ans')?(1-0.6*ap(t,'ans')).toFixed(2):Math.min(1,ap(t,'qb')*2).toFixed(2));
+    show('sw-text',ap(t,'sw',.5));show('sw-q',sw);
+    bub.forEach(b=>{const u=(b.ph+T*.0004)%1;b.el.setAttribute('cx',b.x+Math.sin(u*9)*5);b.el.setAttribute('cy',(470-u*60).toFixed(1));b.el.setAttribute('opacity',(1-u).toFixed(2));});
+    swv.forEach(v=>{const u=(v.ph+T*.00035)%1;let x,y,o=1;if(u<.5){x=300;y=110+u/.5*170;}else{const e=(u-.5)/.5;x=300-e*40;y=280+e*130;o=1-e;}
+      v.el.setAttribute('transform','translate('+x.toFixed(1)+' '+y.toFixed(1)+') rotate('+(u*360).toFixed(0)+') scale('+(1-Math.max(0,u-.5)).toFixed(2)+')');v.el.setAttribute('opacity',o.toFixed(2));});}
+  if(idx===9){popS('r1',ap(t,'r1'));popS('r2',ap(t,'r2'));popS('r3',ap(t,'r3'));
+    popS('st1',ap(t,'st1'));show('ar1',ap(t,'st2'));popS('st2',ap(t,'st2'));show('ar2',ap(t,'st3'));popS('st3',ap(t,'st3'));
+    $('lid').setAttribute('transform','rotate('+(Math.sin(T*.006)*6).toFixed(1)+' 0 -30)');
+    drops.forEach(d=>{const u=(d.ph+T*.0015)%1;d.el.setAttribute('cx',24);d.el.setAttribute('cy',(-10+u*30).toFixed(1));d.el.setAttribute('opacity',(1-u).toFixed(2));});}
+  if(idx===10){popS('t0',ap(t,'t0'));popS('t1',ap(t,'t1'));popS('t2',ap(t,'t2'));popS('t3',ap(t,'t3'));show('t4',ap(t,'t3',.6));
+    $('wlevel').setAttribute('y',(46-ease((t-A('t1'))/2)*70).toFixed(1));
+    [[st1,-14],[st2,-12]].forEach(([a,y0])=>a.forEach(s=>{const u=(s.ph+T*.0008)%1;s.el.setAttribute('transform','translate('+s.x+' '+(y0-u*30).toFixed(1)+')');s.el.setAttribute('opacity',(Math.sin(u*Math.PI)).toFixed(2));}));}
+  if(idx===11){['k1','k2','k3'].forEach(id=>{pop(id,ap(t,id));const ck=$(id).querySelector('.ck');ck.style.strokeDasharray='1';ck.style.strokeDashoffset=(1-ease((t-A(id)-.15)/.3)).toFixed(3);});
+    popS('k4',ap(t,'k4'));}
+  if(idx===12){const en=ease((t-A('end'))/.4);show('sum',1-en);show('end',en);popS('e1',ap(t,'e1'));popS('e2',ap(t,'e2'));popS('e3',ap(t,'e3'));}
+  // subtitles
+  const l=TL.lines.find(l=>t>=l.start-.1&&t<l.end+.25);
+  const sub=$('sub');if(l){sub.hidden=false;const h=esc(l.sub).replace(/【/g,'<b>').replace(/】/g,'</b>');if($('subtext').innerHTML!==h)$('subtext').innerHTML=h;}else sub.hidden=true;
+};
+</script>
