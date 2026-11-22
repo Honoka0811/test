@@ -109,9 +109,9 @@ def chime():
     return out
 add(sfx, chime(), t_notify, 0.22)
 n, k = k_(0.03); add(sfx, (rs.standard_normal(n) * np.exp(-k * 200)).astype(np.float32), t_live - 0.05, 0.15)   # タップ
-add(sfx, hit(3.0, 38, 1.6), t_live + 2.75, 0.75)                                                                  # 刃物が光る
+add(sfx, hit(3.0, 38, 1.6), t_live + 3.3, 0.8)                                                                  # 刃物が光る
 # 金属がきらっと鳴る
-n, k = k_(1.2); add(sfx, sum(np.sin(2 * np.pi * f * k) * np.exp(-k * 4) for f in [2637, 3951, 5274]).astype(np.float32), t_live + 2.75, 0.04)
+n, k = k_(1.2); add(sfx, sum(np.sin(2 * np.pi * f * k) * np.exp(-k * 4) for f in [2637, 3951, 5274]).astype(np.float32), t_live + 3.3, 0.05)
 n, k = k_(E('tonight') - t_live)
 add(amb, ((np.sin(2 * np.pi * 43 * k) + 0.7 * np.sin(2 * np.pi * 61.7 * k)) * np.minimum(1, k / 0.5)).astype(np.float32), t_live, 0.15)
 
