@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""【意味がわかると怖い】祖母の数え歌 — ショート動画生成スクリプト (v3).
+"""祖母の数え歌 — ショート動画生成スクリプト (v3).
 
 縦型 1080x1920 / 30fps / 60秒未満。ナレーションは VOICEVOX:四国めたん、
 映像・音楽・効果音もすべてプログラムで生成する。
@@ -457,7 +457,6 @@ def font(path, size):
 
 
 F_SUB = font(GOTHIC, 56)
-F_TAG = font(GOTHIC, 40)
 F_CREDIT = font(GOTHIC, 32)
 F_TITLE = font(MINCHO, 76)
 F_LYRIC = font(MINCHO, 72)
@@ -702,12 +701,9 @@ def film(arr, t, sepia=1.0, dust=True):
 def overlay_text(img, t):
     d = ImageDraw.Draw(img)
     if t < M["dark"]:
-        tag = "【意味がわかると怖い】"
-        bb = d.textbbox((0, 0), tag, font=F_TAG)
-        d.text(((W - (bb[2] - bb[0])) / 2, 150), tag, font=F_TAG, fill=(230, 60, 50), stroke_width=4, stroke_fill=(0, 0, 0))
         ttl = "祖母の数え歌"
         bb = d.textbbox((0, 0), ttl, font=F_TITLE)
-        d.text(((W - (bb[2] - bb[0])) / 2, 205), ttl, font=F_TITLE, fill=(245, 240, 230), stroke_width=5, stroke_fill=(0, 0, 0))
+        d.text(((W - (bb[2] - bb[0])) / 2, 180), ttl, font=F_TITLE, fill=(245, 240, 230), stroke_width=5, stroke_fill=(0, 0, 0))
     bb = d.textbbox((0, 0), CREDIT, font=F_CREDIT)
     d.text((W - (bb[2] - bb[0]) - 40, H - 330), CREDIT, font=F_CREDIT, fill=(200, 190, 175), stroke_width=3, stroke_fill=(0, 0, 0))
     for st, en, text in TLN.subs:

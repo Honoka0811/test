@@ -1,4 +1,4 @@
-# 【意味がわかると怖い】祖母の数え歌
+# 祖母の数え歌
 
 - `kazoeuta_horror.mp4` … 縦型 1080x1920 / 30fps / 約129秒（YouTube Shorts・TikTok・リール向け）
 - `make_video.py` … 映像も音声もすべてプログラムで生成するスクリプト（`python3 make_video.py`）
