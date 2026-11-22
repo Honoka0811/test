@@ -103,16 +103,41 @@ function windowView(t, o = {}) {
   ctx.fillStyle = 'rgba(80,90,110,0.5)'; ctx.fillRect(-300, 1742, W + 600, 12);
   ctx.restore();
   flakes(t, 40, 0.35, 3, 0.4);
-  // 窓わく(アルミサッシ)と、ガラスのくもり
-  const fr = '#3a3d43', MX = 190;      // 引き違い窓の、重なったまん中のわく(足あとにかからないよう左寄り)
-  ctx.fillStyle = fr; ctx.fillRect(0, 0, W, 90); ctx.fillRect(0, H - 120, W, 120); ctx.fillRect(0, 0, 70, H); ctx.fillRect(W - 70, 0, 70, H); ctx.fillRect(MX, 0, 46, H);
-  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(MX, 0, 5, H); ctx.fillRect(70, 86, W - 140, 4); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(MX + 41, 0, 5, H);
-  ctx.fillStyle = '#9a9ca3'; rr(MX - 6, 900, 58, 26, 8); ctx.fill(); ctx.beginPath(); ctx.arc(MX + 23, 900, 22, Math.PI, 0); ctx.fill(); ctx.fillStyle = fr; ctx.beginPath(); ctx.arc(MX + 23, 900, 12, Math.PI, 0); ctx.fill();   // クレセント錠
-  for (const [x0, x1] of [[70, MX], [MX + 46, W - 70]]) { const g = ctx.createLinearGradient(0, H - 600, 0, H - 120); g.addColorStop(0, 'rgba(230,235,245,0)'); g.addColorStop(1, 'rgba(230,235,245,0.5)'); ctx.fillStyle = g; ctx.fillRect(x0, H - 600, x1 - x0, 480); }   // 結露
-  const r = rngOf(4); ctx.fillStyle = 'rgba(255,255,255,0.35)'; for (let i = 0; i < 70; i++) { const x = 80 + r() * 920, y = H - 140 - r() ** 2 * 420; if (Math.abs(x - MX - 23) < 34) continue; ctx.beginPath(); ctx.ellipse(x, y, 2 + r() * 4, 3 + r() * 5, 0, 0, 7); ctx.fill(); }
-  for (const [x, w, d] of [[0, 120, 1], [W - 120, 120, -1]]) { const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, d > 0 ? '#2c2a30' : '#46434a'); g.addColorStop(1, d > 0 ? '#46434a' : '#2c2a30'); ctx.fillStyle = g; ctx.fillRect(x, 0, w, H);   // カーテン
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 4; for (let k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(x + k * w / 4, 0); ctx.lineTo(x + k * w / 4 + 6 * d, H); ctx.stroke(); } }
-  ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, W, H);
+  windowFrame(t);
+}
+
+// 部屋の中から見た、アルミの引き違い窓(左のガラス越しに外を見る。2枚の重なりは右寄り)
+function windowFrame(t) {
+  const OL = 70, OT = 170, OR = W + 60, OB = 1690, MX = 860;     // 窓の開口と、2枚のガラス戸が重なる位置
+  // 壁(開口のまわり)
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(OL, OT, OR - OL, OB - OT); ctx.fillStyle = '#4d463d'; ctx.fill('evenodd'); ctx.restore();
+  // ガラス: 映りこみと、下の結露
+  ctx.save(); ctx.beginPath(); ctx.rect(OL + 46, OT + 46, OR - OL - 92, OB - OT - 92); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.05)'; for (const [x, w] of [[180, 90], [330, 30], [620, 140]]) { ctx.beginPath(); ctx.moveTo(x, OT); ctx.lineTo(x + w, OT); ctx.lineTo(x + w - 260, OB); ctx.lineTo(x - 260, OB); ctx.closePath(); ctx.fill(); }
+  const cg = ctx.createLinearGradient(0, OB - 420, 0, OB - 46); cg.addColorStop(0, 'rgba(225,232,242,0)'); cg.addColorStop(1, 'rgba(225,232,242,0.5)'); ctx.fillStyle = cg; ctx.fillRect(OL, OB - 420, OR - OL, 380);
+  const r = rngOf(4); ctx.fillStyle = 'rgba(255,255,255,0.38)'; for (let i = 0; i < 80; i++) { const x = OL + 50 + r() * (OR - OL - 100), y = OB - 60 - r() ** 2 * 380; if (Math.abs(x - MX) < 50) continue; ctx.beginPath(); ctx.ellipse(x, y, 2 + r() * 4, 3 + r() * 5, 0, 0, 7); ctx.fill(); }   // 水滴
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 3; for (let i = 0; i < 6; i++) { const x = OL + 80 + r() * 700, y0 = OB - 260 - r() * 120, y1 = y0 + (t * 25 * (0.5 + r()) % 200); ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x + 2, Math.min(y1, OB - 50)); ctx.stroke(); }   // 流れる水滴
+  ctx.restore();
+  // アルミサッシ(銀色): 外わく → 奥の戸(右) → 手前の戸(左)
+  const alu = (x, y, w, h, vert) => { const g = vert ? ctx.createLinearGradient(x, 0, x + w, 0) : ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, '#c9ccd1'); g.addColorStop(0.45, '#9da1a8'); g.addColorStop(1, '#6e737b'); ctx.fillStyle = g; ctx.fillRect(x, y, w, h); };
+  alu(OL, OT, OR - OL, 30, false); alu(OL, OB - 34, OR - OL, 34, false); alu(OL, OT, 30, OB - OT, true);
+  alu(MX - 6, OT + 30, 30, OB - OT - 64, true); alu(MX + 40, OT + 30, 500, 26, false);                                   // 奥の戸の、重なる側のたてわく
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(MX - 30, OT + 30, 24, OB - OT - 64);                                 // 手前の戸の影
+  alu(MX - 40, OT + 30, 36, OB - OT - 64, true); alu(OL + 30, OT + 30, MX - OL - 70, 22, false); alu(OL + 30, OB - 62, MX - OL - 70, 28, false); alu(OL + 30, OT + 30, 18, OB - OT - 64, true);   // 手前の戸のわく
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(MX - 38, OT + 30, 3, OB - OT - 64);
+  // クレセント錠
+  ctx.save(); ctx.translate(MX - 22, 980); ctx.fillStyle = '#d8dade'; rr(-16, -40, 32, 80, 8); ctx.fill(); ctx.strokeStyle = '#8b9098'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = '#e6e8ec'; ctx.beginPath(); ctx.arc(14, 0, 24, -Math.PI / 2, Math.PI / 2); ctx.lineTo(14, 12); ctx.arc(14, 0, 12, Math.PI / 2, -Math.PI / 2, true); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#8b9098'; ctx.stroke();
+  ctx.fillStyle = '#b8bcc3'; ctx.beginPath(); ctx.arc(0, -22, 8, 0, 7); ctx.fill(); ctx.restore();
+  // 木の窓枠(額縁)と、手前に出ている窓台
+  const wd = (x, y, w, h) => { const g = ctx.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, '#9b7a55'); g.addColorStop(1, '#6e5338'); ctx.fillStyle = g; ctx.fillRect(x, y, w, h); };
+  wd(OL - 40, OT - 40, OR - OL + 80, 40); wd(OL - 40, OT - 40, 40, OB - OT + 40);
+  ctx.fillStyle = '#a4825c'; ctx.beginPath(); ctx.moveTo(OL - 60, OB); ctx.lineTo(W + 60, OB); ctx.lineTo(W + 100, OB + 110); ctx.lineTo(OL - 110, OB + 110); ctx.closePath(); ctx.fill();   // 窓台の上面
+  ctx.fillStyle = '#5e4630'; ctx.fillRect(OL - 110, OB + 110, W + 300, 26); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(OL - 60, OB, W + 120, 4);
+  // カーテンレールと、左に寄せたカーテン
+  ctx.fillStyle = '#d9d6cf'; ctx.fillRect(0, OT - 90, W, 22); for (let x = 20; x < W; x += 70) { ctx.fillStyle = '#bcb8af'; ctx.fillRect(x, OT - 70, 6, 14); }
+  const cw = 150; for (let i = 0; i < 6; i++) { const x = i * cw / 6 - 10, g = ctx.createLinearGradient(x, 0, x + cw / 6, 0); g.addColorStop(0, '#3a3438'); g.addColorStop(0.5, '#5a5157'); g.addColorStop(1, '#2e292c'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, OT - 70); ctx.lineTo(x + cw / 6 + 2, OT - 70); ctx.lineTo(x + cw / 6 + 8 + Math.sin(i) * 6, H); ctx.lineTo(x + 4, H); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, W, H);
 }
 
 // ---- 家の中(玄関の鍵 / 誰もいない部屋) ----
