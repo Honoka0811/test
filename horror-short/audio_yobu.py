@@ -94,8 +94,7 @@ put(don(0.9), TL["reveal"], 0.7)                                         # he ha
 
 for kt in TL["knock3"]: put(knock(), kt, 0.8, pan=-0.3)                 # tonight: three times
 heartbeat(TL["knock3"][-1] + 1.2, TL["lastText"], 0.3, 0.9)
-t = seg(TL["poke"], TL["hole"]); put(fade(bp(noise(len(t)), 1500, 6000) * (0.4 + 0.6 * t / t[-1]), 0.05, 0.01), TL["poke"], 0.12, pan=-0.3)
-x = seg(0, 0.12); put(bp(noise(len(x)), 1200, 8000) * np.exp(-x / 0.02), TL["hole"], 0.7, pan=-0.3)    # the paper gives
+put(creak(1.6, 26), TL["lastText"] + 0.3, 0.25, pan=-0.3)                # palms settle on the paper; it does not tear
 put(don(), TL["lastText"], 0.7)
 kt = TL["lastText"] + 0.5; iv = 0.5; g = 0.5                             # ...and it keeps calling
 while kt < TL["cut"]:

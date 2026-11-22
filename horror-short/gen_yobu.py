@@ -25,8 +25,8 @@ SCRIPT = [  # (scene, key, lines[(text, class)])
  ("black",  None,     [("あんたの父ちゃんは、", ""), ("今夜、まだ帰っとらんね。", "")]),
  ("shoji3", "call3",  [("今夜は、三度呼んだ。", ""), ("あんたの父ちゃんの声じゃ。", R)]),
  ("shoji3", None,     [("月は、出とらん。", ""), ("なのに、影が映っとる。", R)]),
- ("shoji3", "poke",   []),
- ("shoji3", "last",   [("ええか。", ""), ("返事を、したらいかんよ。", R)]),
+ ("shoji3", None,     [("返事をせんかぎり、", ""), ("あれは入ってこれん。", R)]),
+ ("shoji3", "last",   [("じゃから、ええか。", ""), ("返事を、したらいかんよ。", R)]),
 ]
 pages, scenes, cue = [], [], {}
 t = 0.0
@@ -48,7 +48,6 @@ tl = {"fps": 30, "end": round(t + 0.6, 2), "cut": round(t, 2), "scene": "scene_y
       "stretch": [round(cue["stretch"][0] + 0.3, 2), cue["stretch"][1]],
       "reveal": cue["reveal"][0],
       "knock3": [round(cue["call3"][0] + 0.2 + k * 0.75, 2) for k in range(3)],
-      "poke": round(cue["poke"][0] + 0.3, 2), "hole": round(cue["poke"][0] + 0.7, 2), "eye": round(cue["poke"][0] + 1.7, 2),
       "lastText": cue["last"][0]}
 json.dump(tl, open(os.path.join(HERE, "yobu.json"), "w"), ensure_ascii=False, indent=1)
 print("end", tl["end"], [(s["k"], s["t"]) for s in scenes])

@@ -74,6 +74,13 @@ function shadowNow(g, h, o) {            // tonight it wears the shape of someon
   g.beginPath(); g.moveTo(cx - 21 * u, top + 26 * u); g.quadraticCurveTo(cx, top + 18 * u, cx + 21 * u, top + 26 * u); g.lineTo(cx + 18 * u, foot - 40 * u); g.lineTo(cx - 18 * u, foot - 40 * u); g.closePath(); g.fill();
   for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(cx + sd * 20 * u, top + 26 * u); g.lineTo(cx + sd * 27 * u, top + 30 * u); g.lineTo(cx + sd * 25 * u, foot - 34 * u); g.lineTo(cx + sd * 18 * u, foot - 36 * u); g.fill(); }
   g.fillRect(cx - 4 * u, top + 16 * u, 8 * u, 8 * u); g.beginPath(); g.ellipse(cx, top + 9 * u, 8.5 * u, 10 * u, 0, 0, 7); g.fill();
+  const a = o.arm || 0;
+  if (a > 0) for (const sd of [-1, 1]) {                                   // both palms laid flat against the paper
+    const sx = cx + sd * 21 * u, sy = top + 28 * u, ex = cx + sd * (30 + 6 * a) * u, ey = sy + (22 - 10 * a) * u, hx = cx + sd * (27 + 5 * a) * u, hy = sy + 24 * u - 33 * u * a;
+    g.lineWidth = 7 * u; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(sx, sy + 4 * u); g.lineTo(ex, ey); g.lineTo(hx, hy); g.stroke();
+    g.beginPath(); g.ellipse(hx, hy - 4 * u, 5.5 * u, 6.5 * u, 0, 0, 7); g.fill();
+    g.lineWidth = 2.4 * u; for (let k = 0; k < 5; k++) { const an = -Math.PI / 2 + sd * (k - 2) * 0.3 + sd * 0.1, L = (9 + (k === 2 ? 2 : 0)) * u * a; g.beginPath(); g.moveTo(hx, hy - 7 * u); g.lineTo(hx + Math.cos(an) * L, hy - 7 * u + Math.sin(an) * L); g.stroke(); }
+  }
   return { cx: cx + 3.5 * u, eyeY: top + 8 * u };
 }
 function shadowMan(g, h, o) {            // a man in a sedge hat and straw cape, as a shadow on paper
@@ -149,11 +156,9 @@ window.render = function (t) {
   else if (sc.k === 'shoji1') { zoom(1 + 0.07 * p, 210, 560); shoji(g, t, { alpha: 0.85 * smooth((t - TL.shadowIn) / 1.6) }); }
   else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560); const st = smooth((t - TL.stretch[0]) / (TL.stretch[1] - TL.stretch[0]));
     shoji(g, t, { alpha: 0.88, stretch: st, arm: smooth((t - TL.stretch[0] - 0.3) / 1.6), reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.5) }); }
-  else if (sc.k === 'shoji3' && t < TL.cut) {
-    const blinkT = t - (TL.eye + 2.7), open = t < TL.eye ? 0 : Math.min(smooth((t - TL.eye) / 0.25), (blinkT > 0 && blinkT < 0.24) ? Math.abs(blinkT - 0.12) / 0.12 : 1);
-    const dx = t < TL.eye + 0.8 ? -3.4 * smooth((t - TL.eye - 0.3) / 0.2) : t < TL.eye + 1.6 ? -3.4 + 6.8 * smooth((t - TL.eye - 0.8) / 0.2) : 3.4 - 3.4 * smooth((t - TL.eye - 1.6) / 0.15);
-    const z = 1.25 + 0.75 * ease((t - TL.hole) / 3.2);
-    zoom(z, 222, 372); shoji(g, t, { alpha: 0.92, h: 400, now: true, hole: clamp((t - TL.poke) / (TL.hole - TL.poke)), eye: t >= TL.eye ? { dx, open } : null });
+  else if (sc.k === 'shoji3' && t < TL.cut) {           // it never comes through the paper. it only waits, closer and closer.
+    const near = smooth((t - TL.lastText + 1.5) / (TL.cut - TL.lastText + 1.5));
+    zoom(1.2 + 0.2 * p, 215, 470); shoji(g, t, { alpha: 0.9 + 0.06 * near, h: 372 + 26 * near, now: true, arm: smooth((t - TL.lastText) / 2.2) });
   }
   const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3'].includes(sc.k);
   $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;
