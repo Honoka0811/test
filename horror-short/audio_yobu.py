@@ -58,47 +58,48 @@ def heartbeat(t0, t1, g0, g1):
         g = g0 + (g1 - g0) * (hb - t0) / (t1 - t0)
         put(don(0.5), hb, g * 0.9); put(don(0.4), hb + iv * 0.27, g * 0.62); hb += iv; iv = max(0.55, iv * 0.95)
 
-SC = [(s["k"], s["t"]) for s in TL["scenes"]]
-_wo = [a for a, b in TL.get("warp", [[0, 0], [1e9, 1e9]])]; _wn = [b for a, b in TL.get("warp", [[0, 0], [1e9, 1e9]])]
-def W(t): return float(np.interp(t, _wo, _wn))      # the cue sheet was re-timed for reading speed; literals below are in the old timing
+SC = [(s["k"], s["t"]) for s in TL["scenes"]] + [("end", TL["cut"])]
 D3, A3, D4, Eb4, G4, A4, Bb4 = 146.8, 220.0, 293.7, 311.1, 392.0, 440.0, 466.2
-
 put(don(), 0.1, 0.6)                                                    # hook
-wind(W(3.0), W(9.5), 0.16); wind(W(3.0), W(9.5), 0.05, 900, 3500, 0.23)             # outside, in the snow
-for tt, f in [(3.4, D4), (4.3, Eb4), (5.4, D4), (6.7, A3), (7.6, Bb4), (8.4, A4)]: put(pluck(f), W(tt), 0.7, pan=rng.uniform(-.2, .2))
+seen = {}
+for (k, t0), (_, t1) in zip(SC[:-1], SC[1:]):
+    n = seen.get(k, 0); seen[k] = n + 1
+    if k == "house":
+        wind(t0, t1 + 0.3, 0.16); wind(t0, t1 + 0.3, 0.05, 900, 3500, 0.23)
+        for i, f in enumerate((D4, Eb4, D4, A3, Bb4, A4, D4)):
+            if t0 + 0.4 + i * 1.35 < t1 - 0.5: put(pluck(f), t0 + 0.4 + i * 1.35, 0.7, pan=rng.uniform(-.2, .2))
+    elif k.startswith("shoji"):
+        hearth(t0, t1, 0.22 if k != "shoji3" else 0.16); wind(t0, t1, 0.05)
+    elif k == "snow":
+        wind(t0, t1, 0.07)
+        for i, f in enumerate(((A4, G4, Eb4, D3), (D3, Eb4, D3, A3, Eb4, D3))[min(n, 1)]):
+            if t0 + 0.5 + i * 2.2 < t1 - 0.5: put(pluck(f), t0 + 0.5 + i * 2.2, 0.6)
+    elif k == "black":
+        put(pluck(A3), t0 + 0.3, 0.5); put(pluck(D3), t0 + 2.4, 0.5)
+ends = {k: t1 for (k, t0), (_, t1) in zip(SC[:-1], SC[1:])}
 
-hearth(W(9.2), W(22.0), 0.22); wind(W(9.2), W(22.0), 0.05)                           # first night, indoors
-put(knock(), TL["knock1"], 0.8, pan=-0.3)
-heartbeat(W(13.4), W(21.6), 0.25, 0.7)
-put(pluck(D3), W(19.5), 0.6)
+put(knock(), TL["knock1"], 0.8, pan=-0.3)                               # first night: once
+heartbeat(TL["knock1"] + 2.2, ends["shoji1"] - 0.4, 0.25, 0.7)
 
-wind(W(22.0), W(32.4), 0.07)                                                   # morning
-for tt, f in [(22.5, A4), (23.6, G4), (25.6, Eb4), (27.2, D3), (30.9, D3)]: put(pluck(f), W(tt), 0.6)
-put(don(0.8), W(25.5), 0.6); put(don(0.9), W(28.8), 0.7)
-
-hearth(W(32.4), W(48.8), 0.22); wind(W(32.4), W(48.8), 0.06)                         # second night: it has learned
-for kt in TL["knock2"]: put(knock(), kt, 0.8, pan=-0.3)
-heartbeat(W(36.2), W(45.2), 0.3, 0.9)
-put(creak(0.9, 30), TL["arm"][0] + 0.1, 0.3, pan=0.5)                    # mother shifts her weight
+for kt in TL["knock2"]: put(knock(), kt, 0.8, pan=-0.3)                 # second night: twice
 S0, S1 = TL["stretch"]
+heartbeat(TL["knock2"][0] + 2.4, S0, 0.3, 0.9)
+put(creak(0.9, 30), TL["arm"][0] + 0.1, 0.3, pan=0.5)                    # mother shifts her weight
 put(creak(S1 - S0, 34), S0, 0.6, pan=-0.3); put(creak(S1 - S0 - 0.4, 51), S0 + 0.4, 0.5, pan=-0.2)
 t = seg(S0, S1); k = t / t[-1]
 put(fade(bp(noise(len(t)), 40, 160) * k ** 1.5 * 3 + (np.sin(2 * np.pi * 40 * t) + np.sin(2 * np.pi * 42.7 * t)) * k * 0.5, 0.2, 0.004), S0, 0.6)
 put(don(), S0, 0.6)
 
-B0 = [x["t"] for x in TL["scenes"] if x["k"] == "black"][0]
-put(pluck(A3), B0 + 0.3, 0.5); put(pluck(D3), B0 + 4.9, 0.5); put(pluck(Eb4), B0 + 6.9, 0.4)                     # grandmother's warning, nearly silent
+put(don(0.9), TL["reveal"], 0.7)                                         # he had been dead since the first night
 
-S3 = [x["t"] for x in TL["scenes"] if x["k"] == "shoji3"][0]
-hearth(S3, TL["cut"], 0.16); wind(S3, TL["cut"], 0.05)
-for kt in TL["knock3"]: put(knock(), kt, 0.8, pan=-0.3)                 # tonight it calls three times
-heartbeat(TL["knock3"][-1] + 1.0, TL["lastText"], 0.3, 0.9)                                            # tonight
+for kt in TL["knock3"]: put(knock(), kt, 0.8, pan=-0.3)                 # tonight: three times
+heartbeat(TL["knock3"][-1] + 1.2, TL["lastText"], 0.3, 0.9)
 t = seg(TL["poke"], TL["hole"]); put(fade(bp(noise(len(t)), 1500, 6000) * (0.4 + 0.6 * t / t[-1]), 0.05, 0.01), TL["poke"], 0.12, pan=-0.3)
 x = seg(0, 0.12); put(bp(noise(len(x)), 1200, 8000) * np.exp(-x / 0.02), TL["hole"], 0.7, pan=-0.3)    # the paper gives
 put(don(), TL["lastText"], 0.7)
-kt = TL["lastText"] + 0.5; iv = 0.42; g = 0.5                            # ...and now it calls as many times as it likes
+kt = TL["lastText"] + 0.5; iv = 0.5; g = 0.5                             # ...and it keeps calling
 while kt < TL["cut"]:
-    put(knock(1.2), kt, g, pan=-0.3); kt += iv; iv = max(0.11, iv * 0.86); g = min(1.0, g * 1.07)
+    put(knock(1.2), kt, g, pan=-0.3); kt += iv; iv = max(0.11, iv * 0.88); g = min(1.0, g * 1.06)
 
 mix[int(TL["cut"] * SR):] = 0
 mix /= np.abs(mix).max() / 1.4

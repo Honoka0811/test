@@ -68,6 +68,14 @@ function house(g, t) {                   // a farmhouse under snow, no moon
   snowfall(g, t, 90, '#dfe6f5', 46);
 }
 const SH = { x0: 50, x1: 370, y0: 300, y1: 740, cx: 210, foot: 736 };
+function shadowNow(g, h, o) {            // tonight it wears the shape of someone still expected home
+  const u = h / 100, cx = SH.cx, foot = SH.foot, top = foot - h;
+  g.beginPath(); g.rect(cx - 13 * u, foot - 44 * u, 10 * u, 44 * u); g.rect(cx + 3 * u, foot - 44 * u, 10 * u, 44 * u); g.fill();
+  g.beginPath(); g.moveTo(cx - 21 * u, top + 26 * u); g.quadraticCurveTo(cx, top + 18 * u, cx + 21 * u, top + 26 * u); g.lineTo(cx + 18 * u, foot - 40 * u); g.lineTo(cx - 18 * u, foot - 40 * u); g.closePath(); g.fill();
+  for (const sd of [-1, 1]) { g.beginPath(); g.moveTo(cx + sd * 20 * u, top + 26 * u); g.lineTo(cx + sd * 27 * u, top + 30 * u); g.lineTo(cx + sd * 25 * u, foot - 34 * u); g.lineTo(cx + sd * 18 * u, foot - 36 * u); g.fill(); }
+  g.fillRect(cx - 4 * u, top + 16 * u, 8 * u, 8 * u); g.beginPath(); g.ellipse(cx, top + 9 * u, 8.5 * u, 10 * u, 0, 0, 7); g.fill();
+  return { cx: cx + 3.5 * u, eyeY: top + 8 * u };
+}
 function shadowMan(g, h, o) {            // a man in a sedge hat and straw cape, as a shadow on paper
   const u = h / 100, st = o.stretch || 0, cx = SH.cx + (o.lean || 0) * 20, foot = SH.foot, H = h * (1 + 0.5 * st), top = foot - H;
   g.beginPath();                                                           // legs
@@ -93,7 +101,7 @@ function shoji(g, t, o) {
   g.fillStyle = '#12100f'; g.fillRect(-60, 868, 660, 4);
   const pg = g.createLinearGradient(0, SH.y0, 0, SH.y1); pg.addColorStop(0, '#4c5670'); pg.addColorStop(1, '#3a4258'); g.fillStyle = pg; g.fillRect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0);
   let info = null;
-  if (o.alpha > 0) { g.save(); g.beginPath(); g.rect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0); g.clip(); g.filter = 'blur(2.6px)'; g.globalAlpha = o.alpha; g.fillStyle = '#08080e'; g.strokeStyle = '#08080e'; info = shadowMan(g, o.h || 300, o); g.restore(); g.filter = 'none'; g.globalAlpha = 1; }
+  if (o.alpha > 0) { g.save(); g.beginPath(); g.rect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0); g.clip(); g.filter = 'blur(2.6px)'; g.globalAlpha = o.alpha; g.fillStyle = '#08080e'; g.strokeStyle = '#08080e'; info = o.now ? shadowNow(g, o.h || 300, o) : shadowMan(g, o.h || 300, o); g.restore(); g.filter = 'none'; g.globalAlpha = 1; }
   g.fillStyle = '#0c0a09';                                                  // lattice + frame + lower board
   for (let i = 1; i < 6; i++) g.fillRect(SH.x0 + i * (SH.x1 - SH.x0) / 6 - 1.5, SH.y0, 3, SH.y1 - SH.y0);
   for (let j = 1; j < 6; j++) g.fillRect(SH.x0, SH.y0 + j * (SH.y1 - SH.y0) / 6 - 1.5, SH.x1 - SH.x0, 3);
@@ -145,7 +153,7 @@ window.render = function (t) {
     const blinkT = t - (TL.eye + 2.7), open = t < TL.eye ? 0 : Math.min(smooth((t - TL.eye) / 0.25), (blinkT > 0 && blinkT < 0.24) ? Math.abs(blinkT - 0.12) / 0.12 : 1);
     const dx = t < TL.eye + 0.8 ? -3.4 * smooth((t - TL.eye - 0.3) / 0.2) : t < TL.eye + 1.6 ? -3.4 + 6.8 * smooth((t - TL.eye - 0.8) / 0.2) : 3.4 - 3.4 * smooth((t - TL.eye - 1.6) / 0.15);
     const z = 1.25 + 0.75 * ease((t - TL.hole) / 3.2);
-    zoom(z, 222, 410); shoji(g, t, { alpha: 0.92, h: 430, lean: 0, hole: clamp((t - TL.poke) / (TL.hole - TL.poke)), eye: t >= TL.eye ? { dx, open } : null });
+    zoom(z, 222, 372); shoji(g, t, { alpha: 0.92, h: 400, now: true, hole: clamp((t - TL.poke) / (TL.hole - TL.poke)), eye: t >= TL.eye ? { dx, open } : null });
   }
   const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3'].includes(sc.k);
   $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;
