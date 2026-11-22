@@ -191,8 +191,11 @@ function tenScene(t, o) {    // 昼の寝室。おまわりさんが懐中電灯
     ctx.restore(); }
   ctx.fillStyle = '#b9ae92'; ctx.fillRect(160 + 380 * op, 140, 380, 300); ctx.strokeStyle = '#7a6d55'; ctx.lineWidth = 6; ctx.strokeRect(160 + 380 * op, 140, 380, 300); ctx.strokeRect(540, 140, 380, 300);
   ctx.restore();
+  const tg = ctx.createLinearGradient(0, 1600, 0, 2400); tg.addColorStop(0, '#9a9468'); tg.addColorStop(1, '#6c6745'); ctx.fillStyle = tg; ctx.fillRect(-400, 1600, W + 800, 900); ctx.strokeStyle = 'rgba(50,45,25,0.5)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-400, 1900); ctx.lineTo(W + 400, 1900); ctx.moveTo(540, 1600); ctx.lineTo(540, 2400); ctx.stroke();   // 畳
+  ctx.fillStyle = '#d9d2bd'; ctx.fillRect(-380, 200, 440, 1380); ctx.strokeStyle = '#6a5a44'; ctx.lineWidth = 6; for (let i = 1; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-380 + i * 110, 200); ctx.lineTo(-380 + i * 110, 1580); ctx.stroke(); } for (let i = 1; i < 8; i++) { ctx.beginPath(); ctx.moveTo(-380, 200 + i * 172); ctx.lineTo(60, 200 + i * 172); ctx.stroke(); }   // 窓の障子
   ctx.fillStyle = '#d6cdb4'; ctx.fillRect(160, 470, 380, 1130); ctx.fillRect(540, 470, 380, 1130); ctx.strokeStyle = '#7a6d55'; ctx.lineWidth = 6; ctx.strokeRect(160, 470, 380, 1130); ctx.strokeRect(540, 470, 380, 1130);   // 下の押し入れのふすま
   ctx.restore();
+  if (o.day) { const lg = ctx.createLinearGradient(0, 0, W, 0); lg.addColorStop(0, 'rgba(255,250,235,0.12)'); lg.addColorStop(1, 'rgba(0,0,0,0.3)'); ctx.fillStyle = lg; ctx.fillRect(0, 0, W, H); return; }   // 引っ越しの日の、明るい寝室
   ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);                                   // カーテンを閉めた、昼でも暗い部屋
   const bx = 330 + 60 * o.open, by = 520; ctx.save(); ctx.globalCompositeOperation = 'lighter'; const g = ctx.createRadialGradient(bx, by, 10, bx, by, 330); g.addColorStop(0, 'rgba(255,240,200,0.55)'); g.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(1000, 1700); ctx.lineTo(bx - 320, by - 260); ctx.lineTo(bx + 320, by + 220); ctx.closePath(); ctx.fill(); ctx.restore();   // 懐中電灯の光
   ctx.fillStyle = '#121824'; ctx.beginPath(); ctx.moveTo(W + 20, 1500); ctx.lineTo(900, 1640); ctx.lineTo(880, 1720); ctx.lineTo(W + 20, 1700); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#2a2a2e'; ctx.save(); ctx.translate(890, 1660); ctx.rotate(-0.95); ctx.fillRect(-20, -90, 40, 120); ctx.restore();   // おまわりさんの腕と懐中電灯
@@ -270,7 +273,8 @@ function groundView(t, o) {
   snowGround(ctx, HZ, 2300);
   if (!o.toHouse) { ctx.fillStyle = 'rgba(120,130,150,0.5)'; ctx.fillRect(-400, HZ + 6, W + 800, 30); ctx.fillStyle = '#7d756a'; for (let x = -200; x < W + 200; x += 70) { if (x > 400 && x < 680) continue; ctx.fillRect(x, HZ + 30, 16, 80); } }
   // 足あと: 手前(下)から奥(上)へ
-  for (let i = 14; i >= 0; i--) { const [x, y, s] = gPrint(i); holes(ctx, [[x, y, s]], o.old ? 0.35 : 1); }
+  if (!o.noPrints) for (let i = 14; i >= 0; i--) { const [x, y, s] = gPrint(i); holes(ctx, [[x, y, s]], o.old ? 0.35 : 1); }
+  if (o.extra) o.extra(ctx);
   ctx.restore();
 }
 function gPrint(i) { const z = 1.1 + i * 0.7; return [540 + (Math.sin(i * 0.5) * 90 + (i % 2 ? 1 : -1) * 70) / z * 2.2, 720 + 1250 / z, 3.2 / z]; }
@@ -372,8 +376,23 @@ function render(t) {
   let grain = 0.1, dark = 0.25;
   const fadeIn = (a, d = 0.35) => { const k = 1 - prog(t, a, a + d); if (k > 0) { ctx.fillStyle = `rgba(0,0,0,${k})`; ctx.fillRect(0, 0, W, H); } };
   if (t < EV.hit) {
-    if (t >= EV.hand && t < LN.l2.start - 0.2) {     // 不動産屋の担当者が「これで全部です」と鍵を3本わたす
-      const a0 = LN.agent.start - 0.4, pl = ease(prog(t, a0, a0 + 1.0)), back = ease(prog(t, LN.l1c.start, LN.l1c.start + 1.0)); handScene(t, { z: lerp(1.0, 1.1, prog(t, EV.hand, LN.l2.start)), place: pl, hand: pl * (1 - back) + (t < a0 ? 0 : 0) }); fadeIn(EV.hand, 0.3); dark = 0.15; }
+    if (t >= EV.hand && t < LN.l1d.start - 0.2) { handScene(t, { z: 1.0, place: 0, hand: 0 }); fadeIn(EV.hand, 0.3); dark = 0.15; }   // 不動産屋の机
+    else if (t >= LN.l1d.start - 0.2 && t < LN.room.start - 0.2) {     // 引っ越しの日、担当者が雪かきを手伝ってくれる(うしろ姿)
+      const ph = (t - LN.l1d.start) / 0.9 * Math.PI * 2;
+      groundView(t, { z: 1.0, cx: 540, cy: 900, toHouse: true, noPrints: true, extra: c => {
+        const sc = 0.5 - 0.5 * Math.cos(ph), bx = 690, by = 1040, lean = -0.22 * sc;     // すくう → 持ち上げて放る、をくり返す
+        c.save(); c.translate(bx, by); c.rotate(lean); figure(c, 0, 0, 1.15, 0, { col: '#1a1f2b' });
+        const hx = -38, hy = -150 + sc * 10, blx = -150 - sc * 40, bly = 10 - sc * 110;
+        c.strokeStyle = '#1a1f2b'; c.lineWidth = 12; c.lineCap = 'round'; c.beginPath(); c.moveTo(-28, -232); c.lineTo(hx, hy); c.moveTo(28, -232); c.lineTo(hx + 18, hy + 26); c.stroke();   // 柄をにぎる両腕
+        c.strokeStyle = '#3a3026'; c.lineWidth = 8; c.beginPath(); c.moveTo(hx + 10, hy - 20); c.lineTo(blx, bly); c.stroke();                                                          // スコップの柄
+        c.fillStyle = '#8a8f98'; c.save(); c.translate(blx, bly); c.rotate(-0.3 - sc * 0.6); c.fillRect(-32, -8, 64, 34); if (sc < 0.7) { c.fillStyle = '#eef2f8'; c.fillRect(-30, -16, 60, 12); } c.restore(); c.restore();   // 雪をのせたスコップ
+        if (sc > 0.75) { const r = rngOf(Math.floor(ph / 6.28)); c.fillStyle = 'rgba(245,248,255,0.9)'; for (let i = 0; i < 14; i++) { c.beginPath(); c.arc(bx - 170 - r() * 120, by - 60 - r() * 90 * sc, 4 + r() * 8, 0, 7); c.fill(); } }   // 放った雪
+        c.fillStyle = '#eef2f8'; c.beginPath(); c.ellipse(bx - 260, by + 20, 120, 40, 0, Math.PI, 0); c.fill(); } });   // 雪の山
+      fadeIn(LN.l1d.start - 0.2, 0.3); dark = 0.15; }
+    else if (t >= LN.room.start - 0.2 && t < LN.agent.start - 0.6) {     // 「寝室は、二階のこの部屋がいいですよ」(押し入れと天袋のある和室)
+      const k = ease(prog(t, LN.room.start, LN.agent.start - 0.6)); tenScene(t, { z: lerp(0.72, 0.95, k), cx: lerp(440, 540, k), cy: lerp(1050, 760, k), open: 0, day: true }); fadeIn(LN.room.start - 0.2, 0.3); dark = 0.15; }
+    else if (t >= LN.agent.start - 0.6 && t < LN.l2.start - 0.2) {     // 不動産屋の担当者が「これで全部です」と鍵を3本わたす
+      const a0 = LN.agent.start - 0.4, pl = ease(prog(t, a0, a0 + 1.0)), back = ease(prog(t, LN.l1c.start, LN.l1c.start + 1.0)); handScene(t, { z: lerp(1.0, 1.1, prog(t, LN.agent.start - 0.6, LN.l2.start)), place: pl, hand: pl * (1 - back) }); fadeIn(LN.agent.start - 0.6, 0.3); dark = 0.15; }
     else if (t >= EV.memo && t < EV.memo + 2.4) {     // あの声は…鍵を渡した、あの人
       handScene(t, { z: 1.25, place: 1, hand: 1 }); ctx.save(); ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H); ctx.restore(); fadeIn(EV.memo, 0.15);
       ring(540 + (740 - 540) * 1.25, 960 + (880 - 960) * 1.25, 150, ease(prog(t, EV.memo + 0.5, EV.memo + 1.1))); dark = 0.3; }

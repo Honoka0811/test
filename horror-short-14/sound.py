@@ -92,6 +92,11 @@ def slidedoor(d=1.8):
     x = lowpass(highpass(noise(len(t)), 150), 1500) * (0.4 + 0.6 * r ** 3) + np.sin(2 * np.pi * 95 * t) * 0.15 * r
     rattle = highpass(noise(len(t)), 2500) * (r > 0.92) * 0.6                       # すりガラスがかたかた鳴る
     return ((x + rattle) * np.sin(np.pi * np.clip(t / d, 0, 1)) ** 0.6).astype(np.float32)
+def shovel():
+    """スコップで雪をすくう音: ざくっ と差しこんで、ざっ と放る"""
+    t = tt(0.6); x = lowpass(highpass(noise(len(t)), 300), 2500) * np.exp(-((t - 0.08) / 0.05) ** 2) * 1.2
+    x += lowpass(highpass(noise(len(t)), 500), 4000) * np.exp(-((t - 0.42) / 0.07) ** 2) * 0.6
+    return x.astype(np.float32)
 def tap():
     t = tt(0.04); return (highpass(noise(len(t)), 1500) * np.exp(-t * 150) * 0.6).astype(np.float32)
 def creak(d=1.0, f0=140):
@@ -156,6 +161,7 @@ def main():
     for k in range(3): add(fx, T_PHONE + 0.8 + k * 0.28, tap(), 0.5)             # 電話の画面を押す
     add(fx, T_OPEN, slidedoor(2.2), 0.55); add(big, T_OPEN + 0.2, taiko(0.6))
     add(fx, L['agent']['start'] + 0.55, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
+    for k in range(4): add(fx, L['l1d']['start'] + 0.1 + k * 0.9, shovel(), 0.35)   # 雪かき
     add(big, T_MEMO + 0.1, taiko(0.8))
     add(fx, T_TEN + 0.3, click(1800), 0.3)                                            # 懐中電灯
     add(fx, T_OPEN_TEN, slidedoor(0.7)[:int(0.7 * SR)], 0.3); add(big, T_PHOTOS, taiko(0.8)); add(big, T_POV + 0.4, taiko(0.6))
