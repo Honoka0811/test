@@ -86,9 +86,13 @@ t = seg(S0, S1); k = t / t[-1]
 put(fade(bp(noise(len(t)), 40, 160) * k ** 1.5 * 3 + (np.sin(2 * np.pi * 40 * t) + np.sin(2 * np.pi * 42.7 * t)) * k * 0.5, 0.2, 0.004), S0, 0.6)
 put(don(), S0, 0.6)
 
-put(pluck(A3), W(49.2), 0.5); put(pluck(D3), W(50.6), 0.5)                     # grandmother's warning, nearly silent
+B0 = [x["t"] for x in TL["scenes"] if x["k"] == "black"][0]
+put(pluck(A3), B0 + 0.3, 0.5); put(pluck(D3), B0 + 4.9, 0.5); put(pluck(Eb4), B0 + 6.9, 0.4)                     # grandmother's warning, nearly silent
 
-hearth(W(52.4), TL["cut"], 0.16)                                            # tonight
+S3 = [x["t"] for x in TL["scenes"] if x["k"] == "shoji3"][0]
+hearth(S3, TL["cut"], 0.16); wind(S3, TL["cut"], 0.05)
+for kt in TL["knock3"]: put(knock(), kt, 0.8, pan=-0.3)                 # tonight it calls three times
+heartbeat(TL["knock3"][-1] + 1.0, TL["lastText"], 0.3, 0.9)                                            # tonight
 t = seg(TL["poke"], TL["hole"]); put(fade(bp(noise(len(t)), 1500, 6000) * (0.4 + 0.6 * t / t[-1]), 0.05, 0.01), TL["poke"], 0.12, pan=-0.3)
 x = seg(0, 0.12); put(bp(noise(len(x)), 1200, 8000) * np.exp(-x / 0.02), TL["hole"], 0.7, pan=-0.3)    # the paper gives
 put(don(), TL["lastText"], 0.7)
