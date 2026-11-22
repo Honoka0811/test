@@ -73,10 +73,10 @@ MELODY = [   # 各行：数え言葉 / 二語目 / 三語目 の音高（1モー
     [[D4, D4, Eb4], [G4, G4, G4, A4, G4, Eb4, Eb4], [D4, Eb4, D4, Eb4, D4]],
 ]
 FPS_SING = 93.75
-EIGHTH_F = 22                       # 8分音符 = 22フレーム（約0.23秒）
+EIGHTH_F = 36                       # 8分音符 = 36フレーム（約0.38秒）：子守歌のゆっくりさ
 EIGHTH = EIGHTH_F / FPS_SING
 # 行ごとの8分音符の長さ（だんだん遅くなる：テープが伸びていくように）
-LINE_EIGHTH_F = [EIGHTH_F + round(1.5 * i) for i in range(7)]
+LINE_EIGHTH_F = [EIGHTH_F + round(2.5 * i) for i in range(7)]
 
 
 def kata(text):
@@ -797,7 +797,7 @@ def main():
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav_path),
-           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "8M", "-bufsize", "16M", "-tune", "grain",
+           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "5M", "-bufsize", "10M", "-tune", "grain",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(OUT)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     total = int(DUR * FPS)
