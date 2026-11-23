@@ -8,9 +8,11 @@ python3 audio.py                 # output/mix.wav, timeline.json, subtitles_ja.s
 node capture.js                  # output/video_silent.mp4
 node capture.js --thumb          # output/thumbnail.png
 
+# 粒子ノイズで中間ファイルは重い(約270MB)ので、配布用は crf 25 で再エンコード(約33MB)
 OUT=output/gozen2ji_knock.mp4
 ffmpeg -y -hide_banner -loglevel error -i output/video_silent.mp4 -i output/mix.wav \
-  -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -ar 48000 -ac 2 -shortest -movflags +faststart "$OUT"
+  -map 0:v -map 1:a -c:v libx264 -crf 25 -preset slow -pix_fmt yuv420p -maxrate 12M -bufsize 24M \
+  -c:a aac -b:a 192k -ar 48000 -ac 2 -shortest -movflags +faststart "$OUT"
 ffmpeg -y -hide_banner -loglevel error -i output/thumbnail.png -q:v 2 output/thumbnail.jpg
 
 echo "wrote $OUT"

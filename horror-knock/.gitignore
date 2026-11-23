@@ -8,3 +8,4 @@ output/mix.wav
 output/narration.wav
 fonts/*.otf
 __pycache__/
+output/thumbnail.png
