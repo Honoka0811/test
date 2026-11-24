@@ -76,6 +76,7 @@ window.setTimeline = function (tl) {
   A.engawa = makeEngawa(R);
   A.closetRoom = makeClosetRoom(R); A.closetIn = makeClosetInside(R);
   A.butsuma = makeButsuma(R);
+  A.diary = makeDiary(R); A.diaryBg = makeDiaryBg(R);
   A.oshiireRoom = makeOshiireRoom(R); A.fusuma = makeFusumaPanel(R, 408, 1186);
   A.rouka = makeRouka(R);
   A.shojiPaper = makeShojiPaper(R); A.shojiFrame = makeShojiFrame(R);
@@ -400,7 +401,8 @@ function makeButsuma(R) {
   g.beginPath(); g.ellipse(540, 600, 48, 60, 0, 0, 7); g.fill(); g.beginPath(); g.ellipse(540, 690, 70, 70, 0, 0, 7); g.fill();
   g.globalAlpha = 0.35; g.beginPath(); g.ellipse(540, 620, 110, 150, 0, 0, 7); g.fill(); g.globalAlpha = 1;
   for (const y of [780, 900]) { g.fillStyle = 'rgba(190,150,70,0.7)'; g.fillRect(300, y, 480, 10); }
-  for (const x of [450, 610]) { g.fillStyle = '#060505'; g.fillRect(x, 800, 44, 100); g.fillStyle = 'rgba(190,150,70,0.8)'; g.fillRect(x, 792, 44, 10); }
+  g.fillStyle = '#060505'; g.fillRect(450, 800, 44, 100); g.fillStyle = 'rgba(190,150,70,0.8)'; g.fillRect(450, 792, 44, 10);
+  g.fillStyle = '#060505'; g.fillRect(604, 840, 28, 60); g.fillStyle = 'rgba(190,150,70,0.8)'; g.fillRect(604, 834, 28, 7);   // 小さな位牌
   g.fillStyle = '#20150d'; g.fillRect(200, 1120, 680, 110); g.fillStyle = '#3a2717'; g.fillRect(200, 1120, 680, 12);   // 経机
   for (const x of [280, 800]) {                                                  // 白い菊
     g.fillStyle = '#2b2a28'; g.fillRect(x - 22, 1020, 44, 100);
@@ -546,6 +548,57 @@ function drawHole(g, t, pokeT, eye, smile, R) {
     }
   }
   g.restore();
+}
+
+
+// ---------- おばあちゃんの日記(縦書きの手書き)
+const PAGE_W = 560, PAGE_H = 800, BOOK_Y = 420;
+function makeDiaryPage(R, cols, o = {}) {
+  const c = mk(PAGE_W, PAGE_H), g = c.getContext('2d');
+  let gr = g.createLinearGradient(0, 0, PAGE_W, PAGE_H); gr.addColorStop(0, '#e6dbbf'); gr.addColorStop(1, '#d2c29c');
+  g.fillStyle = gr; g.fillRect(0, 0, PAGE_W, PAGE_H);
+  stains(g, R, 0, 0, PAGE_W, PAGE_H, 10, 'rgba(120,85,40,0.14)', 30, 160);
+  gr = g.createRadialGradient(PAGE_W / 2, PAGE_H / 2, 200, PAGE_W / 2, PAGE_H / 2, 540); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(90,60,20,0.38)');
+  g.fillStyle = gr; g.fillRect(0, 0, PAGE_W, PAGE_H);
+  g.strokeStyle = 'rgba(80,100,130,0.22)'; g.lineWidth = 1.5;
+  for (let x = PAGE_W - 40; x > 20; x -= 46) { g.beginPath(); g.moveTo(x, 50); g.lineTo(x, PAGE_H - 50); g.stroke(); }
+  const size = o.size || 34, ink = o.ink || [30, 40, 70], sh = o.shaky || 0;
+  let x = PAGE_W - 63;
+  for (const col of cols) {
+    let y = 82;
+    for (const ch of col) {
+      const sz = size * (1 + (R() - 0.5) * 0.08 * (1 + sh * 3));
+      g.save(); g.translate(x + (R() - 0.5) * (2 + sh * 8), y + (R() - 0.5) * (2 + sh * 6)); g.rotate((R() - 0.5) * (0.1 + sh * 0.35));
+      g.font = `500 ${sz}px ${SERIF}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = `rgba(${ink[0]},${ink[1]},${ink[2]},${0.72 + R() * 0.22})`; g.fillText(ch, 0, 0); g.restore();
+      y += size * (1.08 + sh * 0.15 * R());
+      if (y > PAGE_H - 60) break;
+    }
+    x -= 46 * (o.colStep || 1);
+  }
+  return c;
+}
+function makeDiary(R) {
+  const P = (cols, o = {}) => makeDiaryPage(R, cols, o), S = [];
+  S.push([P(['八月十五日', '押入れから声がする', 'もういいかいと', '私は答えた', 'まあだだよ']),
+          P(['昭和三十一年八月十四日', '妹が押入れに隠れたまま', '見つからなかった', '夜になって見つけたとき', 'あの子はもう', '冷たくなっていた', '私が鬼だったのに'])]);
+  const mada = n => Array.from({ length: n }, () => 'まあだだよまあだだよまあだだよまあだだよ');
+  for (const [dr, dl, ink, sh] of [['昭和三十二年八月', '昭和四十年八月', [40, 48, 80], 0.0], ['昭和五十八年八月', '平成五年八月', [70, 55, 40], 0.15],
+                                    ['平成十八年八月', '平成二十九年八月', [60, 60, 64], 0.35], ['令和三年八月', '令和八年八月', [50, 50, 55], 0.6]])
+    S.push([P([dl, ...mada(9)], { ink, shaky: sh }), P([dr, ...mada(9)], { ink, shaky: sh })]);
+  S.push([P([]), P(['令和八年十一月', '私が死んだら', 'あの子は', '次の相手を', '探しに行く'], { size: 52, colStep: 1.55, shaky: 0.85, ink: [40, 40, 45] })]);
+  return S;
+}
+function makeDiaryBg(R) {
+  const P = 140, c = mk(W + 2 * P, H + 2 * P), g = c.getContext('2d');
+  g.translate(P, P);
+  g.fillStyle = '#5c5235'; g.fillRect(-P, -P, W + 2 * P, H + 2 * P);
+  g.strokeStyle = 'rgba(30,26,12,0.25)'; g.lineWidth = 2;                      // 畳の目
+  for (let y = -P; y < H + P; y += 7) { g.beginPath(); g.moveTo(-P, y + Math.sin(y) * 1.5); g.lineTo(W + P, y); g.stroke(); }
+  g.fillStyle = '#1e1a10'; g.fillRect(-P, 1560, W + 2 * P, 40); g.fillRect(820, -P, 40, H + 2 * P);   // 畳のへり
+  const gr = g.createRadialGradient(380, 600, 80, 500, 900, 1300); gr.addColorStop(0, 'rgba(255,200,120,0.25)'); gr.addColorStop(0.5, 'rgba(0,0,0,0.35)'); gr.addColorStop(1, 'rgba(0,0,0,0.92)');
+  g.fillStyle = gr; g.fillRect(-P, -P, W + 2 * P, H + 2 * P);
+  return { c, P };
 }
 
 // ---------- ジャンプスケア: 呪いの日本人形のような女の子(陶器のひび割れ、黒い人形の目、耳まで裂けた赤い口)
@@ -719,7 +772,8 @@ const SCENES = {
   },
 
   butsuma(u, d, t, fx) {
-    camFill(1.03 + 0.07 * smooth(0, d, u), 540, 900);
+    const zi = smooth(d - 2.6, d - 0.3, u);
+    camFill(lerp(1.03 + 0.07 * smooth(0, d, u), 1.7, zi), lerp(540, 618, zi), lerp(900, 870, zi));
     ctx.drawImage(A.butsuma, 0, 0);
     for (const [x, i] of [[360, 0], [720, 1]]) {
       const fl = 0.85 + 0.15 * vnoise(t * 9, 20 + i), sw = (vnoise(t * 4, 30 + i) - 0.5) * 6;
@@ -737,6 +791,38 @@ const SCENES = {
     }
     ctx.restore();
     fx.vig = 0.85; fx.grain = 0.12; fx.flick = 0.06;
+  },
+
+  diary(u, d, t, fx) {
+    const fl = A.hits.flips, dl = TL.marks.diary_left;
+    const k1 = smooth(dl - 0.3, dl + 0.9, t), kf = smooth(fl[0] - 0.3, fl[0] + 0.3, t), kz = smooth(fl[4] + 0.4, fl[4] + 1.8, t);
+    let s = 1.18, fxw = lerp(830, 270, k1);
+    s = lerp(s, 0.98, kf); fxw = lerp(fxw, 540, kf);
+    s = lerp(s, 1.3, kz); fxw = lerp(fxw, 830, kz);
+    const open = smooth(0, 0.6, u);
+    const [dx, dy] = shake(t, 2.5, 16);
+    cam(s, fxw, 820, 540, 800, dx, dy);
+    ctx.drawImage(A.diaryBg.c, -A.diaryBg.P, -A.diaryBg.P);
+    ctx.save(); ctx.filter = 'blur(16px)'; ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(-10, BOOK_Y + 30, 1150, PAGE_H + 20); ctx.restore();
+    ctx.fillStyle = '#3a2216'; roundRect(ctx, -34, BOOK_Y - 14, 1148, PAGE_H + 28, 14); ctx.fill();          // 表紙
+    const L = (pg, a = 1) => { ctx.globalAlpha = a; ctx.drawImage(pg, -20, BOOK_Y); ctx.globalAlpha = 1; };
+    const Rt = pg => ctx.drawImage(pg, 540, BOOK_Y);
+    let idx = 0, turning = null;
+    for (let i = 0; i < fl.length; i++) { const k = (t - fl[i]) / 0.32; if (k >= 1) idx = i + 1; else if (k >= 0) turning = [i, k]; }
+    if (!turning) { L(A.diary[idx][0]); Rt(A.diary[idx][1]); }
+    else {                                                // ページをめくる
+      const [i, k] = turning, old = A.diary[i], nw = A.diary[i + 1];
+      L(old[0]); Rt(nw[1]);
+      if (k < 0.5) { const w = PAGE_W * (1 - 2 * k); ctx.drawImage(old[1], 540, BOOK_Y, w, PAGE_H); ctx.fillStyle = rgba(0, 0, 0, 0.5 * k); ctx.fillRect(540, BOOK_Y, w, PAGE_H); }
+      else { const w = PAGE_W * (2 * k - 1); ctx.drawImage(nw[0], 540 - w, BOOK_Y, w, PAGE_H); ctx.fillStyle = rgba(0, 0, 0, 0.5 * (1 - k)); ctx.fillRect(540 - w, BOOK_Y, w, PAGE_H); }
+    }
+    let gr = ctx.createLinearGradient(500, 0, 580, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, 'rgba(40,20,5,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr; ctx.fillRect(500, BOOK_Y, 80, PAGE_H);
+    if (open < 1) { ctx.fillStyle = rgba(0, 0, 0, 1 - open); ctx.fillRect(-200, -200, W + 400, H + 400); }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    gr = ctx.createRadialGradient(400, 600, 100, 540, 900, 1100); gr.addColorStop(0, 'rgba(255,190,110,0.10)'); gr.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+    fx.vig = 0.85; fx.grain = 0.13; fx.flick = 0.04;
   },
 
   oshiire(u, d, t, fx) {

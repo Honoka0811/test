@@ -22,12 +22,12 @@ SR = 48000
 FPS = 30
 VOICE_LUFS = -16.5      # ナレーションのラウドネス(全体はスケア等で少し上がる)
 VREF = -18.0            # ミックス内でのナレーション短期音量(dBFS)。以下はこれに対する相対 dB
-VOICE_REL = {'N': 0.0, 'Q': -0.5, 'H': -1.0, 'G': -2.0, 'C': -0.5, 'CF': -1.5, 'K': -5.0, 'K2': -4.0, 'K3': -0.5, 'M': -0.5, 'HM': -1.0}
+VOICE_REL = {'N': 0.0, 'Q': -0.5, 'QD': -0.5, 'H': -1.0, 'G': -2.0, 'C': -0.5, 'CF': -1.5, 'K': -5.0, 'K2': -4.0, 'K3': -0.5, 'M': -0.5, 'HM': -1.0}
 BYPASS = ('G', 'K', 'K2', 'K3', 'M')   # 囁き・子どもの声などはピークリミッタを通さない
 PROCESSED = ('G', 'C', 'CF', 'K', 'K2', 'K3', 'M')
 SFX_REL = {'knock_wood': -1.0, 'knock_soft': -7.0, 'knock_glass': -3.5, 'knock_door': 0.5, 'title_hit': 2.0,
            'knock_slide': -0.5, 'coin': -4.0, 'chalk': -9.0, 'chalk_snap': -6.0, 'chime': -11.0, 'crow': -15.0,
-           'higurashi': -10.0, 'furin': -12.0, 'rin': -3.0, 'steps': -9.0, 'poke': -3.0,
+           'higurashi': -10.0, 'furin': -12.0, 'rin': -3.0, 'steps': -9.0, 'poke': -3.0, 'page': -8.0, 'flips': -8.0, 'chorus': -9.0,
            'dread_hit': -1.0, 'thunder': 0.0, 'heartbeat': -7.0, 'riser': 1.0, 'scare': 8.5}
 BED_REL = {'drone': -13.0, 'high': -30.0, 'room': -24.0, 'wind': -31.0, 'hum': -27.0, 'tinnitus': -34.0}
 
@@ -36,6 +36,7 @@ BED_REL = {'drone': -13.0, 'high': -30.0, 'room': -24.0, 'wind': -31.0, 'hum': -
 VOICES = {
     'N': dict(style=2, speed=1.12, pitch=-0.02, inton=0.85, pause=1.15),   # 語り
     'Q': dict(style=4, speed=0.9, pitch=-0.07, inton=0.8, pause=1.4),     # おばあちゃんの言いつけ(セクシーを低く、ゆっくり)
+    'QD': dict(style=4, speed=1.02, pitch=-0.07, inton=0.8, pause=1.1),   # おばあちゃんの日記
     'H': dict(style=37, speed=1.0, pitch=0.0, inton=1.0, pause=1.25),     # ヒソヒソ
     # ここから下は歌唱(楽譜 → 歌の先生 波音リツ(6000) が音程を作り、四国めたんの声で歌う)。notes = (歌詞, MIDI音高, 秒)
     'G': dict(sing=3037, notes=[('み', 72, 0.42), ('つ', 69, 0.14), ('け', 69, 0.16), ('た', 69, 0.55)]),   # ヒソヒソ「みーつけた」
@@ -43,6 +44,7 @@ VOICES = {
     'M': dict(sing=3002, notes=[('も', 67, 0.5), ('い', 64, 0.5), ('よ', 67, 0.75)]),                     # ノーマル「もーいーよ」
     'HM': dict(sing=3037, notes=[('ま', 67, 0.45), ('だ', 64, 0.22), ('だ', 64, 0.22), ('よ', 64, 0.6)]), # ヒソヒソ「まーだだよ」
     'Q': dict(style=4, speed=0.9, pitch=-0.07, inton=0.8, pause=1.4),     # おばあちゃんの言いつけ(セクシーを低く、ゆっくり)
+    'QD': dict(style=4, speed=1.02, pitch=-0.07, inton=0.8, pause=1.1),   # おばあちゃんの日記
     'H': dict(style=37, speed=1.0, pitch=0.0, inton=1.0, pause=1.25),     # ヒソヒソ
     'G': dict(style=36, speed=0.95, pitch=0.0, inton=0.9, pause=1.5,     # ささやき「みいつけた」(節をつけて)
               melody=[(0, 0.13), (0, 0.34), (0, 0.06), (0, 0.17), (0, 0.5)], base=5.9),
@@ -88,7 +90,20 @@ TIMELINE = [
     ('scene', 'butsuma'),
     ('sfx', 'rin', 0.4),
     ('say', 'N', 'それから二十年。おばあちゃんのお葬式で、あの家に帰りました。'),
-    ('gap', 0.45),
+    ('gap', 0.6),
+    ('scene', 'diary'),
+    ('sfx', 'page', 0.25),
+    ('say', 'N', '遺品の中に、日記がありました。'),
+    ('gap', 0.4),
+    ('say', 'QD', '昭和三十一年、夏。妹が押入れに隠れたまま、見つからなかった。', '「昭和三十一年、夏。妹が押入れに隠れたまま、見つからなかった」'),
+    ('gap', 0.3),
+    ('mark', 'diary_left'),
+    ('say', 'QD', '見つけたとき、あの子は、もう冷たくなっていた。', '「見つけたとき、あの子は、もう冷たくなっていた」'),
+    ('gap', 0.35),
+    ('mark', 'flip'),
+    ('sfx', 'flips', 2.0, {'hits': [0.0, 0.4, 0.8, 1.2, 1.6]}),
+    ('say', 'QD', '私が死んだら、あの子は、次の相手を探しに行く。', '「私が死んだら、あの子は、次の相手を探しに行く」'),
+    ('gap', 0.55),
     ('scene', 'oshiire'),
     ('gap', 0.3),
     ('say', 'N', 'その夜。押入れの中から、声がしたんです。'),
@@ -499,6 +514,26 @@ def poke():
     return reverb(tear + bp(crackle, 1500, 7000) + thump, 0.5, 0.15, seed=41)
 
 
+def page_flip(big=False):
+    """紙をめくる音(古いノート)"""
+    t = T(0.35)
+    env = np.minimum(1, t / (0.03 if big else 0.015)) * np.exp(-t / (0.12 if big else 0.07))
+    x = bp(rng.standard_normal(len(t)), 900, 7000) * env * (1 + 0.6 * lp(rng.standard_normal(len(t)), 30, 1) * 8)
+    crinkle = (rng.random(len(t)) < 0.01) * rng.standard_normal(len(t)) * env * 2
+    return reverb(x + bp(crinkle, 2000, 8000), 0.5, 0.15, seed=51)
+
+def madadayo_chorus(times):
+    """何十年分の「まあだだよ」の囁き: 少しずつ低く(=年老いて)重なっていく"""
+    base = speak('HM', 'まあだだよ')
+    n = int((times[-1] - times[0] + 2.5) * SR); out = np.zeros((2, n))
+    for i, t0 in enumerate(times):
+        y = signal.resample_poly(base, 100 + 4 * i, 100)        # だんだん低く・遅く
+        y = lp(y, 5000 - 500 * i) * (0.55 + 0.1 * i)
+        j = int((t0 - times[0]) * SR); m = min(len(y), n - j)
+        out[:, j:j + m] += stereo(y[:m], (-0.6, 0.5, -0.2, 0.65, 0.0)[i % 5])
+    return reverb(out, 1.8, 0.45, damp=3500, seed=52)
+
+
 def build_timeline():
     t = 0.0; scenes = []; lines = []; sfx = []; marks = {}; voice_clips = []
     for ev in TIMELINE:
@@ -622,6 +657,11 @@ def main():
         elif nm == 'higurashi':
             x = higurashi(sc['title']['start'] - t + 1.2); place(t, x, SFX_REL[nm])
             for k, ft in enumerate((1.3, 4.6)): place(t + ft, furin(), SFX_REL['furin'] - 3 * k)
+        elif nm == 'page':
+            place(t, page_flip(True), SFX_REL[nm])
+        elif nm == 'flips':
+            for i, h in enumerate(e['hits']): place(h, page_flip(), SFX_REL[nm] + 0.5 * i)
+            place(e['hits'][0] - 0.05, madadayo_chorus(e['hits']), SFX_REL['chorus'])
         elif nm == 'steps':
             for i, h in enumerate(e['hits']): place(h, step(i), SFX_REL[nm] + 0.6 * i)
         elif nm == 'coin':
@@ -672,7 +712,7 @@ def main():
 
     BED = {   # drone, high, roomtone, insects(wind), clock(hum), tinnitus
         'engawa': (0.3, 0.0, 0.5, 0, 0, 0), 'title': (1.0, 0.0, 0.5, 0, 0, 0), 'closet': (0.45, 0.25, 0.6, 0, 0, 0),
-        'butsuma': (0.45, 0.2, 0.7, 0.8, 1.0, 0), 'oshiire': (0.55, 0.25, 0.7, 0.7, 1.0, 0), 'rouka': (0.7, 0.3, 0.6, 0.6, 0.8, 0),
+        'butsuma': (0.45, 0.2, 0.7, 0.8, 1.0, 0), 'diary': (0.55, 0.3, 0.6, 0.6, 0.9, 0), 'oshiire': (0.55, 0.25, 0.7, 0.7, 1.0, 0), 'rouka': (0.7, 0.3, 0.6, 0.6, 0.8, 0),
         'shoji': (0.6, 0.35, 0.5, 0.0, 0.5, 0.7),          # 虫が鳴きやむ
         'black': (0, 0, 0.12, 0, 0, 0), 'scare': (0, 0, 0, 0, 0, 0), 'outro': (0.35, 0.1, 0.4, 0.5, 0, 0),
     }
