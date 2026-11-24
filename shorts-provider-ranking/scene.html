@@ -34,7 +34,7 @@ html,body{width:1080px;height:1920px;overflow:hidden;background:#0b0820}
 <div id="badge" class="abs">CV<br>めたん</div>
 <div id="cap" class="abs"></div>
 <div id="progress"></div>
-<div id="credit" class="abs">VOICEVOX:四国めたん</div>
+<div id="credit" class="abs">VOICEVOX:四国めたん</div><div id="note" class="abs" style="top:1470px;left:0;right:0;text-align:center;font-family:RndB;font-size:28px;color:#ffffffaa">※評価は目安です。速度・料金はエリアや時期で変わります</div>
 <canvas id="fx" class="layer" width="1080" height="1920"></canvas>
 <script>
 const TL = window.TL; // 注入される
@@ -112,13 +112,13 @@ function flash(t, t0, dur=0.25){ const p = (t-t0)/dur; if (p<0||p>1) return; fx.
 const RANKS = {
   r5:{n:5, name:'楽天ひかり<br>enひかり など', size:96, color:'#3dd6ff', chips:[['安さ重視','#00a6d6'],['IPv6対応','#7b5cff']], bars:[['速さ',0.68],['安さ',0.95],['安定',0.75]], who:'セット割がない人'},
   r4:{n:4, name:'ソフトバンク光', size:110, color:'#c0c0c0', chips:[['IPv6高速','#7b5cff'],['セット割','#ff3d7f']], bars:[['速さ',0.75],['安さ',0.72],['安定',0.82]], who:'ソフトバンク / ワイモバ'},
-  r3:{n:3, name:'ドコモ光', size:150, color:'#cd7f32', chips:[['エリア広い','#00b36b'],['ルーター無料','#ff8a00']], bars:[['速さ',0.78],['安さ',0.72],['安定',0.85]], who:'ドコモ / ahamo'},
+  r3:{n:3, name:'ドコモ光', size:150, color:'#cd7f32', chips:[['エリア広い','#00b36b'],['ドコモ割','#ff8a00']], bars:[['速さ',0.78],['安さ',0.72],['安定',0.85]], who:'ドコモ / ahamo'},
   r2:{n:2, name:'auひかり', size:150, color:'#d8d8e8', chips:[['独自回線','#ff6a00'],['夜も速い','#7b5cff']], bars:[['速さ',0.9],['安さ',0.75],['安定',0.9]], who:'au / UQモバイル'},
   r1:{n:1, name:'NURO光', size:165, color:'#ffd23f', chips:[['実測トップ級','#ff3d7f'],['10Gプランあり','#7b5cff']], bars:[['速さ',1.0],['安さ',0.78],['安定',0.92]], who:'ゲーマー・速さ最優先'},
 };
 function rankCard(id, t){
   const R = RANKS[id], s = S[id], lt = t - s.start, gold = R.n===1;
-  const out = clamp((t - (s.start + s.dur + 0.15))/0.25);
+  const out = R.n===1 ? 0 : clamp((t - (s.start + s.dur + 0.15))/0.25);
   const sc = eBack(lt/0.45) * (1 - out*0.3), x = out*-1200;
   let h = `<div class="card abs" style="transform:translateX(${x}px) scale(${sc});${gold?'background:linear-gradient(160deg,#fff8d6,#ffe27a);box-shadow:0 30px 0 #0006,0 0 140px #ffd23fcc':''}">`;
   // ランクバッジ
@@ -146,7 +146,7 @@ window.render = function(t){
   const st = document.getElementById('stage'); fx.clearRect(0,0,1080,1920);
   let mood = 'hype', html = '', shake = 0;
   const showTitle = t >= S.r5.start - 0.3 && t < S.tips.start - 0.2;
-  document.getElementById('title').style.opacity = showTitle ? 1 : 0;
+  document.getElementById('title').style.opacity = showTitle ? 1 : 0; document.getElementById('note').style.opacity = (t>=S.r5.start && t<S.tips.start-0.2 && !(t>=S.drum.start-0.1 && t<S.r1.start)) ? 1 : 0;
   document.getElementById('title').style.transform = `scale(${showTitle?eBack((t-S.r5.start+0.3)/0.4):0})`;
 
   if (t < S.intro.start - 0.1){
@@ -210,7 +210,7 @@ window.render = function(t){
     // ---- コツ3つ ----
     mood = 'cool'; const s = S.tips, lt = t - s.start;
     html += `<div class="abs c dela stroke" style="top:300px;font-size:110px;color:#fff;transform:scale(${eBack(lt/0.4)})">選ぶコツは<span style="color:#ffe03f;font-size:150px">3つ</span></div>`;
-    const items = [['📍','使えるエリアか確認'],['📱','スマホとのセット割'],['⚡','IPv6（IPoE）対応']];
+    const items = [['📍','使えるエリアか確認'],['📱','スマホとのセット割'],['⚡','IPv6対応か']];
     items.forEach((it,i)=>{ const p = eBack((lt - (1.6+i*1.6)*s.dur/6.2)/0.4);
       html += `<div class="abs" style="left:80px;right:80px;top:${560+i*210}px;height:170px;border-radius:30px;background:#fff;display:flex;align-items:center;gap:30px;padding:0 40px;box-shadow:0 12px 0 #0007;transform:translateX(${(1-p)*-1200}px)">
         <span style="font-size:90px">${it[0]}</span><span class="dela" style="font-size:66px;color:#1b1340">${it[1]}</span><span style="margin-left:auto;font-size:80px;color:#00c46a;transform:scale(${eBack((lt - (1.6+i*1.6)*s.dur/6.2 - 0.4)/0.3)})">✔</span></div>`; });
@@ -219,7 +219,7 @@ window.render = function(t){
     mood = 'hype'; const lt = t - S.cta.start;
     const pulse = 1 + 0.05*Math.sin(t*10);
     html += `<div class="abs c" style="top:330px;font-size:240px;transform:scale(${eBack(lt/0.4)}) rotate(${Math.sin(t*4)*6}deg)">🔖</div>
-      <div class="abs c dela stroke" style="top:640px;font-size:130px;color:#fff;line-height:1.2;transform:scale(${eBack((lt-0.2)/0.4)})"><span style="color:#ffe03f">保存</span>して<br>あとで見返してね</div>
+      <div class="abs c dela stroke" style="top:640px;font-size:130px;color:#fff;line-height:1.2;transform:scale(${eBack((lt-0.2)/0.4)})"><span style="color:#ffe03f">保存</span>して<br><span style="font-size:110px">あとで見返してね</span></div>
       <div class="abs c" style="top:1010px;transform:scale(${eBack((lt-1.4)/0.4)*pulse})"><span class="dela" style="display:inline-block;background:#ff3d5a;color:#fff;font-size:90px;padding:20px 80px;border-radius:80px;box-shadow:0 12px 0 #8a0020">＋ フォロー</span></div>`;
     confetti(t, S.cta.start, 60, false);
   }
