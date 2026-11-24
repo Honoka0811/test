@@ -68,6 +68,17 @@ function house(g, t) {                   // a farmhouse under snow, no moon
   snowfall(g, t, 90, '#dfe6f5', 46);
 }
 const SH = { x0: 50, x1: 370, y0: 300, y1: 740, cx: 210, foot: 736 };
+function shadowGranny(g, h, o, t) {     // an old woman kneeling on the far side of the paper, telling a story
+  const u = h / 100, cx = SH.cx - 10 * u, foot = SH.foot, nod = o.nod ? Math.sin(t * 2.3) * 1.1 + Math.sin(t * 5.1) * 0.4 : 0;
+  g.beginPath(); g.moveTo(cx - 36 * u, foot); g.quadraticCurveTo(cx - 40 * u, foot - 28 * u, cx - 24 * u, foot - 44 * u);
+  g.quadraticCurveTo(cx - 4 * u, foot - 64 * u, cx + 16 * u, foot - 54 * u); g.quadraticCurveTo(cx + 30 * u, foot - 34 * u, cx + 36 * u, foot); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(cx + 14 * u, foot - 40 * u); g.quadraticCurveTo(cx + 30 * u, foot - 30 * u, cx + 26 * u, foot - 18 * u); g.lineTo(cx + 18 * u, foot - 16 * u); g.closePath(); g.fill();   // hands in the lap
+  const hx = cx + 20 * u, hy = foot - 60 * u + nod * u;
+  g.beginPath(); g.moveTo(cx + 8 * u, foot - 56 * u); g.lineTo(hx - 2 * u, hy + 4 * u); g.lineTo(hx + 4 * u, hy + 8 * u); g.lineTo(cx + 18 * u, foot - 50 * u); g.fill();
+  g.beginPath(); g.ellipse(hx, hy, 8.5 * u, 9.8 * u, 0.25, 0, 7); g.fill();
+  g.beginPath(); g.arc(hx - 7 * u, hy - 8 * u, 4.6 * u, 0, 7); g.fill();          // hair in a bun
+  return { cx: hx, eyeY: hy };
+}
 function shadowNow(g, h, o) {            // tonight it wears the shape of someone still expected home
   const u = h / 100, cx = SH.cx, foot = SH.foot, top = foot - h;
   g.beginPath(); g.rect(cx - 13 * u, foot - 44 * u, 10 * u, 44 * u); g.rect(cx + 3 * u, foot - 44 * u, 10 * u, 44 * u); g.fill();
@@ -106,9 +117,13 @@ function shoji(g, t, o) {
   g.fillStyle = '#070606'; g.fillRect(-60, -60, 660, 1080);
   const eg = g.createRadialGradient(470, 930, 10, 470, 930, 330); eg.addColorStop(0, `rgba(255,120,40,${0.4 + 0.06 * Math.sin(t * 9) + 0.04 * Math.sin(t * 23)})`); eg.addColorStop(1, 'rgba(255,120,40,0)'); g.fillStyle = eg; g.fillRect(100, 600, 500, 400);
   g.fillStyle = '#12100f'; g.fillRect(-60, 868, 660, 4);
-  const pg = g.createLinearGradient(0, SH.y0, 0, SH.y1); pg.addColorStop(0, '#4c5670'); pg.addColorStop(1, '#3a4258'); g.fillStyle = pg; g.fillRect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0);
+  const W = o.warm === undefined ? -1 : o.warm, mixc = (a, b) => `rgb(${a.map((v, i) => Math.round(b[i] + (v - b[i]) * W)).join(',')})`;
+  const pg = g.createLinearGradient(0, SH.y0, 0, SH.y1);
+  if (W < 0) { pg.addColorStop(0, '#4c5670'); pg.addColorStop(1, '#3a4258'); }
+  else { pg.addColorStop(0, mixc([150, 112, 70], [52, 58, 78])); pg.addColorStop(1, mixc([104, 76, 48], [40, 45, 62])); }
+  g.fillStyle = pg; g.fillRect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0);
   let info = null;
-  if (o.alpha > 0) { g.save(); g.beginPath(); g.rect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0); g.clip(); g.filter = 'blur(2.6px)'; g.globalAlpha = o.alpha; g.fillStyle = '#08080e'; g.strokeStyle = '#08080e'; info = o.now ? shadowNow(g, o.h || 300, o) : shadowMan(g, o.h || 300, o); g.restore(); g.filter = 'none'; g.globalAlpha = 1; }
+  if (o.alpha > 0) { g.save(); g.beginPath(); g.rect(SH.x0, SH.y0, SH.x1 - SH.x0, SH.y1 - SH.y0); g.clip(); g.filter = 'blur(2.6px)'; g.globalAlpha = o.alpha; g.fillStyle = '#08080e'; g.strokeStyle = '#08080e'; info = o.granny ? shadowGranny(g, o.h || 300, o, t) : o.now ? shadowNow(g, o.h || 300, o) : shadowMan(g, o.h || 300, o); g.restore(); g.filter = 'none'; g.globalAlpha = 1; }
   g.fillStyle = '#0c0a09';                                                  // lattice + frame + lower board
   for (let i = 1; i < 6; i++) g.fillRect(SH.x0 + i * (SH.x1 - SH.x0) / 6 - 1.5, SH.y0, 3, SH.y1 - SH.y0);
   for (let j = 1; j < 6; j++) g.fillRect(SH.x0, SH.y0 + j * (SH.y1 - SH.y0) / 6 - 1.5, SH.x1 - SH.x0, 3);
@@ -157,11 +172,15 @@ window.render = function (t) {
   else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560);              // the shape never changes. it just slides, without walking, to where her hand is.
     const gl = smooth((t - TL.glide[0]) / (TL.glide[1] - TL.glide[0]));
     shoji(g, t, { alpha: 0.88, dx: 112 * gl, reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.16) }); }
+  else if (sc.k === 'shojiRoom' && t < TL.cut) {         // grandmother's shadow, lit by her lamp. then the lamp goes out. the shadow does not.
+    const off = smooth((t - TL.lampOff) / 0.35);
+    zoom(1.08 + 0.06 * p, 200, 600); shoji(g, t, { alpha: 0.9, granny: true, warm: 1 - off, nod: t < TL.lampOff });
+  }
   else if (sc.k === 'shoji3' && t < TL.cut) {           // it never comes through the paper. it only waits, closer and closer.
     const near = smooth((t - TL.lastText + 1.5) / (TL.cut - TL.lastText + 1.5));
     zoom(1.2 + 0.2 * p, 215, 470); shoji(g, t, { alpha: 0.92, h: 380, now: true, arm: smooth((t - TL.lastText) / 2.2) });
   }
-  const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3'].includes(sc.k);
+  const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3', 'shojiRoom'].includes(sc.k);
   $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;
   $('shade').style.display = ['house', 'snow'].includes(sc.k) ? 'block' : 'none';
   $('shade').style.background = sc.k === 'snow' ? 'linear-gradient(rgba(0,0,0,.82), rgba(0,0,0,.62) 58%, rgba(0,0,0,.12) 82%)' : '';

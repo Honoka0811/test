@@ -60,45 +60,43 @@ def heartbeat(t0, t1, g0, g1):
 
 SC = [(s["k"], s["t"]) for s in TL["scenes"]] + [("end", TL["cut"])]
 D3, A3, D4, Eb4, G4, A4, Bb4 = 146.8, 220.0, 293.7, 311.1, 392.0, 440.0, 466.2
-put(don(), 0.1, 0.6)                                                    # hook
-seen = {}
+DUCK = []                                                                # (from, to, level): when it speaks, the world goes quiet
+put(don(), 0.1, 0.6); put(pluck(D3), 2.0, 0.6)                          # hook
 for (k, t0), (_, t1) in zip(SC[:-1], SC[1:]):
-    n = seen.get(k, 0); seen[k] = n + 1
     if k == "house":
         wind(t0, t1 + 0.3, 0.16); wind(t0, t1 + 0.3, 0.05, 900, 3500, 0.23)
-        for i, f in enumerate((D4, Eb4, D4, A3, Bb4, A4, D4)):
-            if t0 + 0.4 + i * 1.35 < t1 - 0.5: put(pluck(f), t0 + 0.4 + i * 1.35, 0.7, pan=rng.uniform(-.2, .2))
-    elif k.startswith("shoji"):
-        hearth(t0, t1, 0.22 if k != "shoji3" else 0.16); wind(t0, t1, 0.05)
+        for i, f in enumerate((D4, Eb4, D4, A3)):
+            if t0 + 0.4 + i * 1.3 < t1 - 0.4: put(pluck(f), t0 + 0.4 + i * 1.3, 0.7, pan=rng.uniform(-.2, .2))
+    elif k == "shoji1":
+        hearth(t0, t1, 0.22); wind(t0, t1, 0.06)
     elif k == "snow":
         wind(t0, t1, 0.07)
-        for i, f in enumerate(((A4, G4, Eb4, D3), (D3, Eb4, D3, A3, Eb4, D3))[min(n, 1)]):
-            if t0 + 0.5 + i * 2.2 < t1 - 0.5: put(pluck(f), t0 + 0.5 + i * 2.2, 0.6)
+        for i, f in enumerate((A4, G4, Eb4, D3, Eb4, D3)):
+            if t0 + 0.5 + i * 2.0 < t1 - 0.5: put(pluck(f), t0 + 0.5 + i * 2.0, 0.6)
     elif k == "black":
-        put(pluck(A3), t0 + 0.3, 0.5); put(pluck(D3), t0 + 2.4, 0.5)
+        put(pluck(A3), t0 + 0.3, 0.5); put(pluck(D3), t0 + 3.2, 0.5)
+    elif k == "shojiRoom":
+        hearth(t0, t1, 0.16); wind(t0, t1, 0.04)
+        t = seg(t0, TL["lampOff"]); put(fade(bp(noise(len(t)), 120, 500) * 0.4, 0.5, 0.05), t0, 0.15, pan=-0.35)    # her lamp, faintly
 ends = {k: t1 for (k, t0), (_, t1) in zip(SC[:-1], SC[1:])}
 
-put(knock(), TL["knock1"], 0.8, pan=-0.3)                               # first night: once
-heartbeat(TL["knock1"] + 2.2, ends["shoji1"] - 0.4, 0.25, 0.7)
+c0, c1 = TL["call1"]                                                     # 'moshi' - once
+DUCK.append((c0 - 0.15, c0 + 2.0, 0.04))
+heartbeat(c0 + 2.6, ends["shoji1"] - 0.3, 0.25, 0.75)
+put(don(0.9), TL["reveal"] + 2.1, 0.6)                                   # dead since the first night
+put(don(), TL["taken"], 0.75)                                            # he answered it
 
-for kt in TL["knock2"]: put(knock(), kt, 0.8, pan=-0.3)                 # second night: twice
-G0, G1 = TL["glide"]
-heartbeat(TL["knock2"][0] + 2.4, G0 - 0.6, 0.3, 0.9)
-put(creak(0.9, 30), TL["arm"][0] + 0.1, 0.3, pan=0.5)                    # mother shifts her weight
-a0, a1 = int((G0 - 0.5) * SR), int((TL["arm"][1]) * SR)                   # the room goes dead while it slides
-ramp = int(0.4 * SR); mix[a0:a0 + ramp] *= np.linspace(1, 0.08, ramp)[:, None]; mix[a0 + ramp:a1] *= 0.08
-t = seg(G0, G1); put(fade(bp(noise(len(t)), 200, 1100) * np.sin(np.pi * t / t[-1]) ** 0.7, 0.3, 0.2), G0, 0.12, pan=-0.2)   # paper whispering as it passes
-put(don(), TL["arm"][1], 0.7)                                             # her hand comes away
+L = TL["lampOff"]                                                        # 'now go to sleep' - she blows out the lamp
+x = seg(0, 0.55); put(bp(noise(len(x)), 300, 3000) * np.sin(np.pi * x / x[-1]) ** 1.5, L - 0.35, 0.35, pan=-0.3)
+DUCK.append((L + 0.1, TL["cut"], 0.015))                                 # and then there is nothing at all
+x = seg(0, 3.0)
 
-put(don(0.9), TL["reveal"], 0.7)                                         # he had been dead since the first night
-
-for kt in TL["knock3"]: put(knock(), kt, 0.8, pan=-0.3)                 # tonight: three times
-heartbeat(TL["knock3"][-1] + 1.2, TL["lastText"], 0.3, 0.9)
-put(creak(1.6, 26), TL["lastText"] + 0.3, 0.25, pan=-0.3)                # palms settle on the paper; it does not tear
-put(don(), TL["lastText"], 0.7)
-kt = TL["lastText"] + 0.5; iv = 0.5; g = 0.5                             # ...and it keeps calling
-while kt < TL["cut"]:
-    put(knock(1.2), kt, g, pan=-0.3); kt += iv; iv = max(0.11, iv * 0.88); g = min(1.0, g * 1.06)
+for a0, a1, lv in DUCK:
+    i0, i1, r = int(a0 * SR), int(a1 * SR), int(0.12 * SR)
+    env = np.full(i1 - i0, lv); env[:r] = np.linspace(1, lv, r)
+    if a1 < TL["cut"] - 0.1: env[-r:] = np.linspace(lv, 1, r)
+    mix[i0:i1] *= env[:, None]
+put(don(0.7), TL["tell"], 0.5); put(don(), TL["dead"], 0.8); put(np.sin(2 * np.pi * 34 * x) * np.exp(-x / 1.0), TL["dead"], 0.8)   # these land inside the silence
 
 mix[int(TL["cut"] * SR):] = 0
 mix /= np.abs(mix).max() / 1.4

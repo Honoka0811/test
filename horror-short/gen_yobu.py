@@ -3,31 +3,24 @@ import json, os
 HERE = os.path.dirname(os.path.abspath(__file__))
 R = "red"
 SCRIPT = [  # (scene, key, lines[(text, class)])
- ("hook",   None,     [("夜、名前を呼ばれても、", ""), ("一度目で返事をしたらいかん。", "")]),
- ("house",  None,     [("人は、二度呼ぶ。", ""), ("山のもんは、一度しか呼ばん。", R)]),
- ("house",  None,     [("七つの冬。", ""), ("父ちゃんが山から戻らん晩。", "")]),
- ("shoji1", None,     [("戸の外で、声がした。", "")]),
- ("shoji1", "call1",  [("『キヨ』", "red big")]),
- ("shoji1", None,     [("障子に、", ""), ("父ちゃんの影が映っとった。", "")]),
- ("shoji1", None,     [("けど、一度しか呼ばん。", ""), ("母ちゃんは、わたしの口をふさいだ。", "")]),
- ("shoji1", None,     [("影は、朝まで動かんかった。", "")]),
- ("snow",   None,     [("朝。雪の上に、", ""), ("足あとは、ひとつも無かった。", R)]),
- ("shoji2", None,     [("次の晩。", "")]),
- ("shoji2", "call2",  [("『キヨ。キヨ』", "red big")]),
- ("shoji2", None,     [("二度、呼ばれた。", ""), ("二度呼ぶのは、人のはずじゃ。", "")]),
- ("shoji2", "reach",  [("『父ちゃんが帰った』", ""), ("母ちゃんが、戸に手をかけた。", "")]),
- ("shoji2", None,     [("『月も出とらんのに、", ""), ("なんで影が映っとるん』", "")]),
- ("shoji2", "glide",  [("影が、音もなく、", ""), ("母ちゃんの手の前まで来た。", R)]),
- ("shoji2", "back",   [("母ちゃんは、手を引っこめた。", ""), ("戸は、朝まで開けんかった。", "")]),
- ("snow",   None,     [("三日後、", ""), ("父ちゃんは山で見つかった。", "")]),
- ("snow",   "reveal", [("最初の晩には、もう", ""), ("死んどったそうじゃ。", R)]),
- ("snow",   None,     [("あれは、人のまねを覚える。", ""), ("帰りを待っとる人の姿で来る。", R)]),
- ("black",  None,     [("あれから七十年。", ""), ("あれは、いまも来る。", "")]),
- ("black",  None,     [("あんたの父ちゃんは、", ""), ("今夜、まだ帰っとらんね。", "")]),
- ("shoji3", "call3",  [("今夜は、三度呼んだ。", ""), ("あんたの父ちゃんの声じゃ。", R)]),
- ("shoji3", None,     [("月は、出とらん。", ""), ("なのに、影が映っとる。", R)]),
- ("shoji3", None,     [("返事をせんかぎり、", ""), ("あれは入ってこれん。", R)]),
- ("shoji3", "last",   [("じゃから、ええか。", ""), ("返事を、したらいかんよ。", R)]),
+ ("hook",      None,     [("電話で『もしもし』と", ""), ("二度言うのは、なんでか知っとるか。", "")]),
+ ("hook",      None,     [("一度しか言えんもんが、", ""), ("おるからじゃ。", R)]),
+ ("house",     None,     [("ばあちゃんが七つの冬。", ""), ("父ちゃんが、山から戻らん晩。", "")]),
+ ("shoji1",    None,     [("戸の外で、声がした。", "")]),
+ ("shoji1",    "call1",  [("『もし』", "red big")]),
+ ("shoji1",    None,     [("月も出とらんのに、", ""), ("障子に、父ちゃんの影が映っとった。", R)]),
+ ("shoji1",    None,     [("一度しか、呼ばん。", ""), ("母ちゃんは、わたしの口をふさいだ。", "")]),
+ ("snow",      None,     [("朝。雪の上に、", ""), ("足あとは、無かった。", "")]),
+ ("snow",      "reveal", [("三日後、父ちゃんは山で見つかった。", ""), ("最初の晩には、もう死んどった。", "")]),
+ ("snow",      "taken",  [("山で、あれに", ""), ("返事をしてしもうたんじゃろう。", R)]),
+ ("black",     None,     [("あれは、人のまねを覚える。", ""), ("声も、しゃべり方も。", "")]),
+ ("black",     None,     [("何十年、かけてでも。", R)]),
+ ("shojiRoom", "room",   [("じゃから、ええか。", ""), ("『もしもし』と二度呼ばれたら、", ""), ("それは人じゃ。返事してええ。", "")]),
+ ("shojiRoom", "lamp",   [("ほら、もう寝んさい。", "")]),
+ ("shojiRoom", "quiet",  []),
+ ("shojiRoom", "call2",  [("『もしもし』", "mid")]),
+ ("shojiRoom", "tell",   [("灯りは消えとるのに、", ""), ("影が映っとる。", R)]),
+ ("shojiRoom", "dead",   [("ばあちゃんは、", ""), ("先月、死んだ。", R)]),
 ]
 pages, scenes, cue = [], [], {}
 t = 0.0
@@ -35,20 +28,15 @@ for i, (sc, key, lines) in enumerate(SCRIPT):
     if not scenes or scenes[-1]["k"] != sc: scenes.append({"t": round(t, 2), "k": sc})
     dts = [0.2 if i == 0 else (0.1 if key in ("call1", "call2") else 0.0)]
     for j in range(1, len(lines)): dts.append(round(dts[-1] + max(0.7, len(lines[j - 1][0]) / 6.5), 2))   # next line arrives as you finish the last
-    dur = max(2.6, dts[-1] + 1.3 + len(lines[-1][0]) / 5.0) if lines else 3.4
-    if key == "call3": dur += 1.6            # three knocks first
-    if key == "call3": dts = [round(d + 1.9, 2) for d in dts]
+    dur = max(2.6, dts[-1] + 1.3 + len(lines[-1][0]) / 5.0) if lines else 3.2
+    if key == "dead": dur += 1.4             # let it sit before the cut
     pages.append({"t": round(t, 2), "lines": [[d, tx, cl] for d, (tx, cl) in zip(dts, lines)]})
     if key: cue[key] = (round(t, 2), round(t + dur, 2))
     t += dur
 tl = {"fps": 30, "end": round(t + 0.6, 2), "cut": round(t, 2), "scene": "scene_yobu.html", "audio": "audio_yobu.py",
       "vf": "noise=c0s=10:c0f=t,format=yuv420p", "scenes": scenes, "pages": pages,
-      "knock1": cue["call1"][0] + 0.1, "shadowIn": round(cue["call1"][0] + 0.4, 2),
-      "knock2": [round(cue["call2"][0] + 0.1, 2), round(cue["call2"][0] + 0.85, 2)],
-      "arm": [round(cue["reach"][0] + 1.6, 2), round(cue["back"][0] + 0.15, 2)],
-      "glide": [round(cue["glide"][0] + 0.4, 2), round(cue["glide"][0] + 3.0, 2)],
-      "reveal": cue["reveal"][0],
-      "knock3": [round(cue["call3"][0] + 0.2 + k * 0.75, 2) for k in range(3)],
-      "lastText": cue["last"][0]}
+      "call1": cue["call1"], "shadowIn": round(cue["call1"][0] + 0.5, 2),
+      "reveal": cue["reveal"][0], "taken": cue["taken"][0], "room": cue["room"][0],
+      "lampOff": round(cue["lamp"][0] + 2.5, 2), "call2": cue["call2"], "tell": cue["tell"][0], "dead": cue["dead"][0]}
 json.dump(tl, open(os.path.join(HERE, "yobu.json"), "w"), ensure_ascii=False, indent=1)
 print("end", tl["end"], [(s["k"], s["t"]) for s in scenes])
