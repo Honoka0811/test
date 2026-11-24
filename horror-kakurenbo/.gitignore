@@ -1,0 +1,11 @@
+output/voice_cache/
+output/stills/
+output/contact.png
+output/_tmp.wav
+output/build.log
+output/video_silent.mp4
+output/mix.wav
+output/narration.wav
+fonts/*.otf
+__pycache__/
+output/thumbnail.png
