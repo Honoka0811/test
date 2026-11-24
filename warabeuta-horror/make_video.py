@@ -86,6 +86,11 @@ def kata(text):
     return k.replace("ヲ", "オ")      # 歌唱APIは「ヲ」を受け付けないので同じ音の「オ」に
 
 
+# 最後の行「ななつ　たったひとりで　かえりみち」だけ7モーラの語があるので、
+# 「たったひとりで」を16分音符に詰めて、他の行と同じ16拍（2小節）に収める
+LAST_RHYTHM = [1, 1, 2, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1, 1, 4]
+
+
 def build_score():
     lines = []
     for li, (lyric, mel) in enumerate(zip(LYRICS, MELODY)):
@@ -99,10 +104,15 @@ def build_score():
                 if wi == 0 and mi == len(w) - 1:
                     e = 2
                 if wi == 2 and mi == len(w) - 1:
-                    e = 5 if last else 3
+                    e = 3
                 notes.append((kata(ch), k, e))
-        rest = 3 if last else 1
-        lines.append((notes, sum(n[2] for n in notes) + rest))
+        if last:
+            assert len(notes) == len(LAST_RHYTHM)
+            notes = [(ch, k, e) for (ch, k, _), e in zip(notes, LAST_RHYTHM)]
+        body = sum(n[2] for n in notes)
+        assert body == 16 if last else body == 15, (li, body)
+        rest = 2 if last else 1        # 最後は長い音のあとに少し余韻
+        lines.append((notes, body + rest))
     return lines
 
 
@@ -233,7 +243,7 @@ def sing(notes, style=SING_STYLE, eighth_f=EIGHTH_F, flat=0.0, wobble=0.0, sag=0
     path = BUILD / f"sing_{key}.wav"
     if not path.exists():
         syn = _singer()
-        sc = [Note(LEAD_F, "")] + [Note(e * eighth_f, ch, k) for ch, k, e in notes] + [Note(30, "")]
+        sc = [Note(LEAD_F, "")] + [Note(round(e * eighth_f), ch, k) for ch, k, e in notes] + [Note(30, "")]
         q = syn.create_sing_frame_audio_query(Score(sc), SING_TEACHER)
         f0 = np.array(q.f0, dtype=np.float64)
         n = len(f0)
