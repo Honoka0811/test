@@ -54,13 +54,15 @@ T_BACK = L['l12']['start'] - 0.2                     # 次の朝、家へ戻る
 T_SEE = L['l13']['start'] - 0.2                      # また足あと
 T_TOE2 = L['l14']['start'] + 0.3                     # つま先は家を向いている
 T_PHONE = L['l15']['start'] - 0.1                    # 外から電話しようとする
-T_OPEN = at('l15', 0.62)                             # 玄関の引き戸が、内側から開く
-HIT = L['l16']['end'] + 0.4
+T_STEP = L['l15b']['start'] + 0.85                   # すぐうしろで、雪を踏む音
+HIT = L['now']['end'] + 0.25                          # ふり返る
+T_EXP = L['l16']['start'] - 0.3                      # うしろ向きに歩いた足あと(図)
+T_END = L['l18']['end'] + 0.5                        # 最後の文字
 T_HAND = L['l1b']['start'] - 0.2                     # 不動産屋の担当者が、鍵を3本わたす
-T_MEMO = L['l16']['start'] - 0.1                     # あの声は…
+T_MEMO = L['l18']['start'] - 0.1                     # あの声は…
 STEPS_OUT = [T_KEY + 1.45 + k * 0.5 for k in range(3)]          # 鍵をかけて、雪の上を歩いていく
 STEPS_ME = [at('l12', 0.62) + k * 0.55 for k in range(9)]       # 次の朝、私が家まで歩く
-EV = dict(ten=T_TEN, openTen=T_OPEN_TEN, photos=T_PHOTOS, pov=T_POV, hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, open=T_OPEN, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
+EV = dict(ten=T_TEN, openTen=T_OPEN_TEN, photos=T_PHOTOS, pov=T_POV, hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, step=T_STEP, exp=T_EXP, end=T_END, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
 
 def noise(n, seed=None): return (np.random.default_rng(seed).standard_normal(n) if seed is not None else rng.standard_normal(n)).astype(np.float32)
 def wind():
@@ -159,7 +161,8 @@ def main():
     for s in STEPS_ME: add(fx, s, crunch(0.7))
     add(big, T_SEE + 0.3, taiko(0.5)); add(big, T_TOE2 + 0.3, taiko(0.8))
     for k in range(3): add(fx, T_PHONE + 0.8 + k * 0.28, tap(), 0.5)             # 電話の画面を押す
-    add(fx, T_OPEN, slidedoor(2.2), 0.55); add(big, T_OPEN + 0.2, taiko(0.6))
+    for k in range(2): add(fx, T_STEP + k * 0.75, crunch(1.6))                      # すぐうしろの足音(近い)
+    add(big, T_STEP + 0.05, taiko(0.5))
     add(fx, L['agent']['start'] + 0.55, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
     for k in range(4): add(fx, L['l1d']['start'] + 0.1 + k * 0.9, shovel(), 0.35)   # 雪かき
     add(big, T_MEMO + 0.1, taiko(0.8))
@@ -170,7 +173,7 @@ def main():
     for l in TL['lines']:
         if l['id'] == 'now': add(last, l['start'], segs['now'])                 # 不動産屋の担当者の声(剣崎雌雄)
         else: add(nar, l['start'], segs[l['id']])
-    last = lowpass(last, 5000) * 0.9                                                  # 家の中から聞こえる声
+    last = lowpass(last, 7000) * 1.15                                                 # 耳もとで、ささやくように近い声
     hop = SR // 20; rms = np.sqrt(np.mean(nar[:N // hop * hop].reshape(-1, hop) ** 2, axis=1)); e = np.zeros_like(rms)
     for i, x in enumerate(rms): e[i] = max(x, (e[i - 1] if i else 0) * 0.9)
     e = np.pad(np.repeat(e, hop), (0, N - len(e) * hop)); duck = 1 - 0.5 * np.clip(e / 0.08, 0, 1)
@@ -179,9 +182,9 @@ def main():
     outside = np.clip(ramp(0, 0.1) - ramp(T_LOCK - 0.3, T_LOCK) + ramp(T_COP - 0.3, T_COP) - ramp(T_MAP - 0.3, T_MAP) + ramp(T_NIGHT - 0.3, T_NIGHT) * 0.7 - ramp(T_KEY + 1.6, T_KEY + 2.0) * 0.7 + ramp(T_BACK - 0.3, T_BACK) - ramp(HIT, HIT + 0.05), 0, 1)
     wd = wind() * (0.08 * outside + 0.015); bedm = drone() * ramp(0, 0.6, 0.35, 1) + strings(); hb = heartbeat(); out = []
     for ch in range(2):
-        music = bedm * (1 - ramp(HIT, HIT + 0.1) * 0.75)
+        music = bedm * (1 - ramp(HIT, HIT + 0.1) * 0.6) * (1 - ramp(L['now']['start'] - 0.2, L['now']['start']) * 0.7 + ramp(HIT - 0.05, HIT) * 0.7)   # ささやきの間は、音楽をぐっと下げる
         sfx = big + conv(big, hallr[ch]) * 0.25 + hb + wd * (1.0 if ch == 0 else 0.85) + fx + conv(fx, snow[ch]) * 0.3
-        voice = nar + conv(nar, room[ch]) * 0.03 + last * (0.9 if ch == 0 else 0.8) + conv(last, house[ch]) * 0.35
+        voice = nar + conv(nar, room[ch]) * 0.03 + last * (1.0 if ch == 0 else 0.7) + conv(last, room[ch]) * 0.06
         out.append(music * duck + sfx + voice)
     y = np.stack(out, axis=1); y[-int(0.08 * SR):] *= np.linspace(1, 0, int(0.08 * SR))[:, None]
     y = np.tanh(y / 0.9) * 0.9; print('peak', float(np.max(np.abs(y))), 'dur', DUR)
