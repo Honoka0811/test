@@ -1,72 +1,82 @@
 {
  "wakayama": {
   "file": "photos/wakayama.jpg",
-  "title": "Bariuma wakayama ramen 20240508.jpg",
+  "title": "Masayoshi ramen 20240422.jpg",
   "artist": "Sakumata",
   "license": "CC0",
-  "source": "https://commons.wikimedia.org/wiki/File:Bariuma_wakayama_ramen_20240508.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:Masayoshi_ramen_20240422.jpg",
+  "place": "中華そば専門店 正善（和歌山市直川）"
  },
  "hakodate": {
   "file": "photos/hakodate.jpg",
   "title": "函館ラーメン「醐りょう」の塩ラーメン - 1.jpg",
   "artist": "KKPCW（Kyu3）",
   "license": "CC BY-SA 4.0",
-  "source": "https://commons.wikimedia.org/wiki/File:%E5%87%BD%E9%A4%A8%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%E3%80%8C%E9%86%90%E3%82%8A%E3%82%87%E3%81%86%E3%80%8D%E3%81%AE%E5%A1%A9%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3_-_1.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:%E5%87%BD%E9%A4%A8%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%E3%80%8C%E9%86%90%E3%82%8A%E3%82%87%E3%81%86%E3%80%8D%E3%81%AE%E5%A1%A9%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3_-_1.jpg",
+  "place": "函館ラーメン 醐りょう（名古屋駅店）"
  },
  "asahikawa": {
   "file": "photos/asahikawa.jpg",
   "title": "旭川ラーメン老舗.jpeg",
   "artist": "Acrolein",
   "license": "Public domain",
-  "source": "https://commons.wikimedia.org/wiki/File:%E6%97%AD%E5%B7%9D%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%E8%80%81%E8%88%97.jpeg"
+  "source": "https://commons.wikimedia.org/wiki/File:%E6%97%AD%E5%B7%9D%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%E8%80%81%E8%88%97.jpeg",
+  "place": "蜂屋（旭川市）"
  },
  "kumamoto": {
   "file": "photos/kumamoto.jpg",
   "title": "Kumamoro-ramen.jpg",
   "artist": "皇翔",
   "license": "CC0",
-  "source": "https://commons.wikimedia.org/wiki/File:Kumamoro-ramen.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:Kumamoro-ramen.jpg",
+  "place": "熊本県内（2011年）"
  },
  "tokushima": {
   "file": "photos/tokushima.jpg",
   "title": "徳島ラーメン 東大 (48414226811).jpg",
   "artist": "Kanesue",
   "license": "CC BY 2.0",
-  "source": "https://commons.wikimedia.org/wiki/File:%E5%BE%B3%E5%B3%B6%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3_%E6%9D%B1%E5%A4%A7_(48414226811).jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:%E5%BE%B3%E5%B3%B6%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3_%E6%9D%B1%E5%A4%A7_(48414226811).jpg",
+  "place": "東大 京都店"
  },
  "onomichi": {
   "file": "photos/onomichi.jpg",
   "title": "Onomichi ramen by Ozchin in Onomichi.jpg",
   "artist": "Ozchin from Onomichi, Hiroshima",
   "license": "CC BY-SA 2.0",
-  "source": "https://commons.wikimedia.org/wiki/File:Onomichi_ramen_by_Ozchin_in_Onomichi.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:Onomichi_ramen_by_Ozchin_in_Onomichi.jpg",
+  "place": "つたふじ（尾道市）"
  },
  "iekei": {
   "file": "photos/iekei.jpg",
   "title": "ラーメン 横浜家系ラーメン田中 2024年5月28日の東京 202405282202 IMG 9558.jpg",
   "artist": "ウィ貴公子",
   "license": "CC BY-SA 4.0",
-  "source": "https://commons.wikimedia.org/wiki/File:%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3_%E6%A8%AA%E6%B5%9C%E5%AE%B6%E7%B3%BB%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%E7%94%B0%E4%B8%AD_2024%E5%B9%B45%E6%9C%8828%E6%97%A5%E3%81%AE%E6%9D%B1%E4%BA%AC_202405282202_IMG_9558.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3_%E6%A8%AA%E6%B5%9C%E5%AE%B6%E7%B3%BB%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%E7%94%B0%E4%B8%AD_2024%E5%B9%B45%E6%9C%8828%E6%97%A5%E3%81%AE%E6%9D%B1%E4%BA%AC_202405282202_IMG_9558.jpg",
+  "place": "横浜家系ラーメン田中（東京）"
  },
  "kitakata": {
   "file": "photos/kitakata.jpg",
   "title": "喜多方ラーメン（坂内食堂）20221227-P1009271.jpg",
   "artist": "くろふね",
   "license": "CC BY 4.0",
-  "source": "https://commons.wikimedia.org/wiki/File:%E5%96%9C%E5%A4%9A%E6%96%B9%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%EF%BC%88%E5%9D%82%E5%86%85%E9%A3%9F%E5%A0%82%EF%BC%8920221227-P1009271.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:%E5%96%9C%E5%A4%9A%E6%96%B9%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%EF%BC%88%E5%9D%82%E5%86%85%E9%A3%9F%E5%A0%82%EF%BC%8920221227-P1009271.jpg",
+  "place": "坂内食堂（喜多方市）"
  },
  "sapporo": {
   "file": "photos/sapporo.jpg",
   "title": "Miso ramen of Aji-no-tokedai.jpg",
   "artist": "毒島みるく",
   "license": "CC0",
-  "source": "https://commons.wikimedia.org/wiki/File:Miso_ramen_of_Aji-no-tokedai.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:Miso_ramen_of_Aji-no-tokedai.jpg",
+  "place": "味の時計台"
  },
  "hakata": {
   "file": "photos/hakata.jpg",
-  "title": "ラーメン（博多一双）.jpg",
-  "artist": "くろふね",
+  "title": "Hakata Ippudo Ramen 20180622.jpg",
+  "artist": "そらみみ",
   "license": "CC BY-SA 4.0",
-  "source": "https://commons.wikimedia.org/wiki/File:%E3%83%A9%E3%83%BC%E3%83%A1%E3%83%B3%EF%BC%88%E5%8D%9A%E5%A4%9A%E4%B8%80%E5%8F%8C%EF%BC%89.jpg"
+  "source": "https://commons.wikimedia.org/wiki/File:Hakata_Ippudo_Ramen_20180622.jpg",
+  "place": "博多一風堂 大名本店（福岡市中央区）"
  }
 }

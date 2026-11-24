@@ -62,7 +62,7 @@ const CREDITS = window.CREDITS || {};
 const DURS = window.DURS || {};
 
 const RANKS = [
-  { n: 10, key: "wakayama", name: "和歌山ラーメン",   pref: "和歌山県",      tags: ["豚骨醤油", "早寿司と一緒に"], bg: ["#8c2f1e", "#3d130b"] },
+  { n: 10, key: "wakayama", name: "和歌山ラーメン",   pref: "和歌山県",      tags: ["豚骨醤油", "早寿司と一緒に"], bg: ["#8c2f1e", "#3d130b"], zoom: { s: 1.45, origin: "22% 85%" } },
   { n: 9,  key: "hakodate", name: "函館塩ラーメン",   pref: "北海道",        tags: ["透き通る塩スープ", "ストレート麺"], bg: ["#1e6f8c", "#0b2c3d"] },
   { n: 8,  key: "asahikawa",name: "旭川醤油ラーメン", pref: "北海道",        tags: ["魚介×豚骨", "ラードで熱々"], bg: ["#2d4f8a", "#111f3a"] },
   { n: 7,  key: "kumamoto", name: "熊本ラーメン",     pref: "熊本県",        tags: ["豚骨", "香ばしいマー油"], bg: ["#5a3a8a", "#22143d"] },
@@ -127,7 +127,7 @@ RANKS.forEach(r => {
   addScene("r" + r.n, `
     ${medal}
     <div class="abs rank stroke" data-a="0" data-pop="1"><span class="num" style="color:${color}">${r.n}</span><span class="i" style="color:${color}">位</span></div>
-    <div class="photo" data-a="0.1" data-photo="1"><img src="photos/${r.key}.jpg"></div>
+    <div class="photo" data-a="0.1" data-photo="1" data-zoom="${r.zoom ? r.zoom.s : 1}"><img src="photos/${r.key}.jpg" style="transform-origin:${r.zoom ? r.zoom.origin : "50% 50%"}"></div>
     <div class="abs name stroke" data-a="0.3" style="font-size:${r.name.length > 7 ? 112 : 124}px">${r.name}</div>
     <div class="abs region" data-a="0.45"><span>📍 ${r.pref}</span></div>
     <div class="abs chips">${r.tags.map((t, k) => `<div class="chip" data-a="${0.6 + k * 0.12}">${t}</div>`).join("")}</div>
@@ -193,7 +193,7 @@ window.render = function (t) {
     } else if (el.dataset.photo) {
       el.style.opacity = clamp(p * 1.5);
       el.style.transform = `translateY(${(1 - ease(p)) * 120}px) rotate(${(1 - ease(p)) * -6 - 1.2}deg) scale(${0.85 + 0.15 * back(p)})`;
-      el.querySelector("img").style.transform = `scale(${1.02 + 0.10 * (lt / s.dur)})`;   // slow Ken Burns zoom
+      el.querySelector("img").style.transform = `scale(${parseFloat(el.dataset.zoom) * (1.02 + 0.10 * (lt / s.dur))})`;   // slow Ken Burns zoom
     } else {
       el.style.opacity = clamp(p);
       el.style.transform = `translateY(${(1 - ease(p)) * 80}px)`;
