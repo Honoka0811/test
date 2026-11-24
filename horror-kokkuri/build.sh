@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 「午前2時のノック」を一式ビルドする: 音声 → 映像 → サムネイル → 合成
+# 「七つ目」を一式ビルドする: 音声 → 映像 → サムネイル → 合成
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p output
@@ -8,8 +8,8 @@ python3 audio.py                 # output/mix.wav, timeline.json, subtitles_ja.s
 node capture.js                  # output/video_silent.mp4
 node capture.js --thumb          # output/thumbnail.png
 
-# 粒子ノイズで中間ファイルは重い(約270MB)ので、配布用は crf 25 で再エンコード(約33MB)
-OUT=output/gozen2ji_knock.mp4
+# 粒子ノイズで中間ファイルは重いので、配布用は crf 25 で再エンコードする
+OUT=output/nanatsume.mp4
 ffmpeg -y -hide_banner -loglevel error -i output/video_silent.mp4 -i output/mix.wav \
   -map 0:v -map 1:a -c:v libx264 -crf 25 -preset slow -pix_fmt yuv420p -maxrate 12M -bufsize 24M \
   -c:a aac -b:a 192k -ar 48000 -ac 2 -shortest -movflags +faststart "$OUT"
