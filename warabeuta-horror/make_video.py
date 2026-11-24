@@ -12,6 +12,7 @@
   1. 数え歌   四国めたんが歌う。夕暮れのあぜ道を歩く二人の子ども（歌詞どおりに一人になって帰ってくる）
   2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。村では七つまでは神さまの子。村の子どもなら誰でも知っている歌。
   3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
+  3.5 解読   この歌は遊び歌じゃない。姉が妹を井戸まで連れていく手順。1行ずつあぜ道の場面で説明
   4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、目隠しの遊びの歌だと思って、楽しそうに歌っていた。
               妹は、来週、七つになる。
               祖母はいつも最後に言った。「お姉ちゃんなんだから、ちゃんと覚えるんだよ」
@@ -318,6 +319,15 @@ class TL:
         self.t += s
 
 
+DECODE = [('ひとつ。笑って、手をつなぐ。怖がらせないように。', 'ひとつ。笑って、手をつなぐ。\n怖がらせないように。'),
+    ('ふたつ。大人に見られない、あぜ道を通って。', 'ふたつ。大人に見られない\nあぜ道を通って。'),
+    ('みっつ。誰とも話さず、二人きりで。', 'みっつ。誰とも話さず\n二人きりで。'),
+    ('よっつ。崖の下の、井戸のそばまで。', 'よっつ。崖の下の\n井戸のそばまで。'),
+    ('いつつ。妹が泣いても、振り返らない。', 'いつつ。妹が泣いても\n振り返らない。'),
+    ('むっつ。目隠しの遊びだと言って、蓋をする。', 'むっつ。目隠しの遊びだと言って\n蓋をする。'),
+    ('ななつ。そして、姉は、ひとりで帰る。', 'ななつ。そして姉は\nひとりで帰る。')]
+
+
 def build_timeline():
     tl = TL()
     tl.wait(0.2)
@@ -338,6 +348,15 @@ def build_timeline():
     tl.t += CIRCLE * len(LYRICS) + 0.8
     tl.mark["reveal"] = tl.t
     tl.t += 4.0
+    # 解読：歌は「手順」だった。あぜ道の場面を1行ずつ振り返る
+    tl.mark["decode"] = tl.t
+    tl.say("この歌は、遊び歌なんかじゃなかった。", "この歌は\n遊び歌なんかじゃなかった。", gap=0.4)
+    tl.say("姉が、妹を、井戸まで連れていくための、手順だった。", "姉が妹を\n井戸まで連れていくための\n手順だった。", gap=0.8)
+    for i, (text, sub) in enumerate(DECODE):
+        tl.mark[f"beat{i}"] = tl.t
+        tl.say(text, sub, gap=0.7)
+    tl.mark["beat_end"] = tl.t
+    tl.say("大人たちは、それを、神隠しと呼んだ。", "大人たちは、それを\n神隠しと呼んだ。", gap=1.5)
     tl.mark["end"] = tl.t
     tl.wait(0.4)
     tl.mark["end_hum"] = tl.t
@@ -419,6 +438,8 @@ def make_audio():
     hit = np.sin(2 * np.pi * (34 + 50 * np.exp(-tt * 9)) * tt) * np.exp(-tt * 1.5)
     clu = sum(pluck(BASE * r, 3.0, 0.12) for r in (1.0, 16 / 15, 3 / 2 * 16 / 15))
     add(mus, M["reveal"], hit * 0.7 + clu)
+    for i in range(len(DECODE)):                          # 解読：1行ごとに低い琴の音
+        add(mus, M[f"beat{i}"], pluck(BASE / 2 * (1 - 0.02 * i), 2.0, 0.2))
 
     # オチ：祖母が妹に歌を教える声（ヒソヒソ声で遠くに）→ 「七つになる」の直前で途切れる
     h = np.concatenate([sing(SCORE[0][0], SING_WHISPER), sing(SCORE[1][0], SING_WHISPER)])
@@ -537,10 +558,10 @@ def path_point(u):
     return x, y, 2.3 / (1 + u * 6.5)
 
 
-def paddy_frame(t):
+def paddy_frame(t, st=None, lyric_col=(245, 236, 220)):
     img = PADDY.copy()
     d = ImageDraw.Draw(img)
-    st = t - M["song"]
+    st = t - M["song"] if st is None else st
     li, lt = song_pos(st)
     if li <= 3:
         u = (li + lt) / 4 * 0.86
@@ -561,7 +582,8 @@ def paddy_frame(t):
     if len(kids) == 2 and li <= 3:               # 手をつなぐ
         x, y, s = path_point(kids[0][0])
         d.line([(x - 22 * s, y - 120 * s), (x + 22 * s, y - 115 * s)], fill=(14, 10, 8), width=max(2, int(9 * s)))
-    vtext(d, W - 130, 360, LYRICS[max(0, li)], F_LYRIC, (245, 236, 220))
+    if lyric_col is not None:
+        vtext(d, W - 130, 360, LYRICS[max(0, li)], F_LYRIC, lyric_col)
     return img
 
 
@@ -764,7 +786,7 @@ def paper_frame(t):
 
 def render_frame(fi):
     t = fi / FPS
-    sepia, dust = 0.85, True
+    sepia, dust, tint = 0.85, True, False
     if t < M["song"]:                                     # 0. つかみ：祖母の部屋
         img = zoom_crop(room_frame(lamp=0.25 + 0.75 * ease(t / 1.2)), 1.08 - 0.06 * t / M["song"])
     elif t < M["photo"]:                                  # 1. 数え歌
@@ -772,9 +794,21 @@ def render_frame(fi):
     elif t < M["paper"]:                                  # 2. 写真
         p = (t - M["photo"]) / (M["paper"] - M["photo"])
         img = zoom_crop(PHOTO, 1.0 + 0.55 * ease(p), 560, 900 - 60 * p)
-    elif t < M["end"]:                                    # 3. 紙
+    elif t < M["decode"]:                                 # 3. 紙
         sepia = 0.35
         img = paper_frame(t)
+    elif t < M["end"]:                                    # 3.5 解読：あぜ道を1行ずつ振り返る
+        sepia, tint = 0.6, True
+        if t < M["beat0"]:
+            st = 0.05
+        else:
+            i = max(k for k in range(len(DECODE)) if t >= M[f"beat{k}"])
+            nxt = M[f"beat{i + 1}"] if i + 1 < len(DECODE) else M["beat_end"]
+            frac = min(1.0, (t - M[f"beat{i}"]) / (nxt - M[f"beat{i}"]))
+            st = LINE_START[i] + LINE_DUR[i] * (0.1 + 0.8 * frac) if i < len(DECODE) - 1 or t < M["beat_end"] else SONG_LEN - 0.01
+        img = zoom_crop(paddy_frame(t, st=st, lyric_col=None), 1.25, W / 2 + 40, 1250)
+        li, _ = song_pos(st)
+        vtext(ImageDraw.Draw(img), W - 130, 360, LYRICS[max(0, li)], F_LYRIC, (240, 70, 60))
     elif t < M["dark"]:                                   # 4. オチ：祖母と妹
         turn = ease((t - M["turn"]) / 1.4) if t >= M["turn"] else 0.0
         eyes = ease((t - M["turn"] - 0.9) / 0.8) if t >= M["turn"] else 0.0
@@ -786,6 +820,8 @@ def render_frame(fi):
         dust = False
     overlay_text(img, t)
     arr = film(np.asarray(img).astype(np.float32), t, sepia, dust)
+    if tint:                                              # 解読パートは赤みがかった色に
+        arr = arr * np.array([1.12, 0.78, 0.72], np.float32)
     if M["reveal"] <= t < M["reveal"] + 0.12:             # 種明かしの瞬間に一瞬白く
         arr = arr * 0.4 + 150
     return np.clip(arr, 0, 255).astype(np.uint8)
@@ -805,7 +841,7 @@ def main():
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav_path),
-           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "5M", "-bufsize", "10M", "-tune", "grain",
+           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "4M", "-bufsize", "8M", "-tune", "grain",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(OUT)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     total = int(DUR * FPS)
