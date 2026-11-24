@@ -84,7 +84,7 @@ function shadowNow(g, h, o) {            // tonight it wears the shape of someon
   return { cx: cx + 3.5 * u, eyeY: top + 8 * u };
 }
 function shadowMan(g, h, o) {            // a man in a sedge hat and straw cape, as a shadow on paper
-  const u = h / 100, st = o.stretch || 0, cx = SH.cx + (o.lean || 0) * 20, foot = SH.foot, H = h * (1 + 0.5 * st), top = foot - H;
+  const u = h / 100, st = o.stretch || 0, cx = SH.cx + (o.dx || 0) + (o.lean || 0) * 20, foot = SH.foot, H = h * (1 + 0.5 * st), top = foot - H;
   g.beginPath();                                                           // legs
   g.rect(cx - 12 * u, foot - 40 * u, 8 * u, 40 * u); g.rect(cx + 4 * u, foot - 40 * u, 8 * u, 40 * u); g.fill();
   const sy = top + 24 * u + 20 * u * st, by = foot - 36 * u;               // straw cape with a ragged hem
@@ -154,11 +154,12 @@ window.render = function (t) {
   if (sc.k === 'house') { zoom(1 + 0.08 * p, 300, 680); house(g, t); }
   else if (sc.k === 'snow') { zoom(1 + 0.06 * p, 270, 700); snow(g, t); }
   else if (sc.k === 'shoji1') { zoom(1 + 0.07 * p, 210, 560); shoji(g, t, { alpha: 0.85 * smooth((t - TL.shadowIn) / 1.6) }); }
-  else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560); const st = smooth((t - TL.stretch[0]) / (TL.stretch[1] - TL.stretch[0]));
-    shoji(g, t, { alpha: 0.88, stretch: st, arm: smooth((t - TL.stretch[0] - 0.3) / 1.6), reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.5) }); }
+  else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560);              // the shape never changes. it just slides, without walking, to where her hand is.
+    const gl = smooth((t - TL.glide[0]) / (TL.glide[1] - TL.glide[0]));
+    shoji(g, t, { alpha: 0.88, dx: 112 * gl, reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.16) }); }
   else if (sc.k === 'shoji3' && t < TL.cut) {           // it never comes through the paper. it only waits, closer and closer.
     const near = smooth((t - TL.lastText + 1.5) / (TL.cut - TL.lastText + 1.5));
-    zoom(1.2 + 0.2 * p, 215, 470); shoji(g, t, { alpha: 0.9 + 0.06 * near, h: 372 + 26 * near, now: true, arm: smooth((t - TL.lastText) / 2.2) });
+    zoom(1.2 + 0.2 * p, 215, 470); shoji(g, t, { alpha: 0.92, h: 380, now: true, arm: smooth((t - TL.lastText) / 2.2) });
   }
   const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3'].includes(sc.k);
   $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;

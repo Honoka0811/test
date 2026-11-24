@@ -82,13 +82,13 @@ put(knock(), TL["knock1"], 0.8, pan=-0.3)                               # first 
 heartbeat(TL["knock1"] + 2.2, ends["shoji1"] - 0.4, 0.25, 0.7)
 
 for kt in TL["knock2"]: put(knock(), kt, 0.8, pan=-0.3)                 # second night: twice
-S0, S1 = TL["stretch"]
-heartbeat(TL["knock2"][0] + 2.4, S0, 0.3, 0.9)
+G0, G1 = TL["glide"]
+heartbeat(TL["knock2"][0] + 2.4, G0 - 0.6, 0.3, 0.9)
 put(creak(0.9, 30), TL["arm"][0] + 0.1, 0.3, pan=0.5)                    # mother shifts her weight
-put(creak(S1 - S0, 34), S0, 0.6, pan=-0.3); put(creak(S1 - S0 - 0.4, 51), S0 + 0.4, 0.5, pan=-0.2)
-t = seg(S0, S1); k = t / t[-1]
-put(fade(bp(noise(len(t)), 40, 160) * k ** 1.5 * 3 + (np.sin(2 * np.pi * 40 * t) + np.sin(2 * np.pi * 42.7 * t)) * k * 0.5, 0.2, 0.004), S0, 0.6)
-put(don(), S0, 0.6)
+a0, a1 = int((G0 - 0.5) * SR), int((TL["arm"][1]) * SR)                   # the room goes dead while it slides
+ramp = int(0.4 * SR); mix[a0:a0 + ramp] *= np.linspace(1, 0.08, ramp)[:, None]; mix[a0 + ramp:a1] *= 0.08
+t = seg(G0, G1); put(fade(bp(noise(len(t)), 200, 1100) * np.sin(np.pi * t / t[-1]) ** 0.7, 0.3, 0.2), G0, 0.12, pan=-0.2)   # paper whispering as it passes
+put(don(), TL["arm"][1], 0.7)                                             # her hand comes away
 
 put(don(0.9), TL["reveal"], 0.7)                                         # he had been dead since the first night
 
