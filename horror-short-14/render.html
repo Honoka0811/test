@@ -185,18 +185,38 @@ function handScene(t, o) {
 }
 
 // ---- 寝室の押し入れと、天袋の中 ----
-function sleeper(c, x, y, s, br) {     // 布団で寝ている私(上から。顔は向こうを向いて髪だけ見える)
+function sleeper(c, x, y, s, br, t = 0) {     // 布団で寝ている私(上から。横向きで少し丸まり、顔は向こうを向いている)。br: 呼吸(-1〜1)
   c.save(); c.translate(x, y); c.scale(s, s);
-  c.fillStyle = '#d9d4c8'; c.fillRect(-120, -260, 240, 520); c.fillStyle = '#eeeae2'; rr(-70, -240, 140, 70, 18); c.fill();   // 敷き布団と枕
-  c.fillStyle = '#16120f'; c.beginPath(); c.ellipse(-8, -205, 44, 36, 0.2, 0, 7); c.fill(); for (let i = 0; i < 9; i++) { c.strokeStyle = '#16120f'; c.lineWidth = 3; c.beginPath(); c.moveTo(-30 + i * 7, -195); c.quadraticCurveTo(-60 + i * 9, -150, -40 + i * 12, -128); c.stroke(); }   // 枕に広がる髪
-  c.fillStyle = '#8a95ad'; c.beginPath(); c.moveTo(-126, -150 - br * 4); c.quadraticCurveTo(0, -175 - br * 8, 126, -150 - br * 4); c.lineTo(126, 262); c.lineTo(-126, 262); c.closePath(); c.fill();   // 掛け布団(息をするたびに少し上下する)
-  c.strokeStyle = 'rgba(40,50,70,0.4)'; c.lineWidth = 3; for (const yy of [-40, 70, 170]) { c.beginPath(); c.moveTo(-120, yy); c.quadraticCurveTo(0, yy + 20, 120, yy); c.stroke(); }
+  const sd = c.createRadialGradient(6, 20, 60, 6, 20, 300); sd.addColorStop(0, 'rgba(0,0,0,0.35)'); sd.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = sd; c.fillRect(-200, -320, 420, 640);   // 布団の影
+  const sk = c.createLinearGradient(-130, 0, 130, 0); sk.addColorStop(0, '#d8d2c4'); sk.addColorStop(1, '#c4bdae'); c.fillStyle = sk; rr(-130, -270, 260, 540, 16); c.fill();   // 敷き布団
+  c.strokeStyle = 'rgba(120,110,95,0.25)'; c.lineWidth = 2; for (const yy of [-90, 90]) { c.beginPath(); c.moveTo(-126, yy); c.lineTo(126, yy); c.stroke(); }
+  const pg = c.createRadialGradient(-10, -218, 10, -10, -212, 90); pg.addColorStop(0, '#cfc9bd'); pg.addColorStop(0.5, '#ece8df'); pg.addColorStop(1, '#d9d4c9'); c.fillStyle = pg; rr(-88, -258, 176, 84, 34); c.fill();   // 枕(頭のところがくぼむ)
+  // 髪: 枕に広がる。顔は向こう向きで、首すじが少し見える
+  const hg = c.createRadialGradient(-26, -226, 4, -14, -214, 70); hg.addColorStop(0, '#3a2c24'); hg.addColorStop(0.35, '#1c1511'); hg.addColorStop(1, '#0f0b09'); c.fillStyle = hg;
+  c.beginPath(); c.moveTo(-50, -222); c.bezierCurveTo(-52, -252, -10, -262, 18, -240); c.bezierCurveTo(30, -228, 26, -206, 14, -196);    // 頭のうしろ
+  c.bezierCurveTo(30, -196, 62, -210, 82, -232); c.bezierCurveTo(70, -204, 44, -186, 20, -182);                                       // 枕の上に流れる長い髪
+  c.bezierCurveTo(4, -180, -20, -184, -36, -194); c.bezierCurveTo(-52, -204, -50, -214, -50, -222); c.closePath(); c.fill();
+  c.strokeStyle = 'rgba(70,52,40,0.45)'; c.lineWidth = 1.4; c.lineCap = 'round'; for (let i = 0; i < 9; i++) { c.beginPath(); c.moveTo(-34 + i * 5, -238 + i * 2); c.bezierCurveTo(-10 + i * 4, -244 + i * 3, 20 + i * 4, -226 + i * 2, 40 + i * 4, -214 + i * 1.5); c.stroke(); }   // 毛の流れ(同じ向き)
+  c.fillStyle = '#c9b29c'; c.beginPath(); c.ellipse(14, -186, 13, 9, 0.5, 0, 7); c.fill();                                          // 首すじ
+  // 掛け布団: 肩・腰・曲げたひざのふくらみ。息をするたびに肩と脇腹が上下する
+  const b = br * 3.5, kg = c.createLinearGradient(-140, 0, 150, 0); kg.addColorStop(0, '#7f8aa3'); kg.addColorStop(0.55, '#97a2ba'); kg.addColorStop(1, '#6c7790'); c.fillStyle = kg;
+  c.beginPath(); c.moveTo(-136, -176); c.quadraticCurveTo(-40, -196 - b, 40, -184 - b); c.bezierCurveTo(96 + b, -176, 118 + b, -130, 112 + b, -78);   // 肩
+  c.bezierCurveTo(104, -30, 86, -6, 96, 30); c.bezierCurveTo(112, 74, 138, 104, 132, 150);                                                            // 腰
+  c.bezierCurveTo(128, 196, 92, 214, 84, 252); c.lineTo(138, 270); c.lineTo(-138, 270); c.lineTo(-140, -150); c.closePath(); c.fill();               // 曲げたひざ、足もと
+  c.save(); c.clip(); c.fillStyle = 'rgba(235,225,235,0.18)'; for (let i = 0; i < 70; i++) { const px = -130 + (i * 53 % 260), py = -170 + (i * 97 % 440); c.beginPath(); c.arc(px, py, 3, 0, 7); c.fill(); }   // 小花柄
+  c.strokeStyle = 'rgba(30,38,58,0.35)'; c.lineWidth = 5; for (const [x0, y0, x1, y1, x2, y2] of [[-120, -60, -30, -40, 60, -70], [-110, 60, -10, 80, 90, 40], [-90, 170, 0, 160, 80, 200], [30, -150, 60, -110, 50, -60]]) { c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo(x1, y1, x2, y2); c.stroke(); }   // しわ
+  const hl = c.createLinearGradient(40, -180, 130, 0); hl.addColorStop(0, 'rgba(255,255,255,0.12)'); hl.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = hl; c.fillRect(0, -200, 150, 260); c.restore();
+  c.fillStyle = '#e4e0d8'; c.beginPath(); c.moveTo(-136, -176); c.quadraticCurveTo(-40, -196 - b, 40, -184 - b); c.quadraticCurveTo(-40, -168 - b, -136, -160); c.closePath(); c.fill();   // えりの白いカバー
+  // 布団から出した腕と手(枕のそば)。ときどき指が少し動く
+  const tw = Math.max(0, Math.sin(t * 0.7) - 0.92) * 12;
+  c.fillStyle = '#5b5f73'; c.beginPath(); c.moveTo(-60, -170 - b); c.quadraticCurveTo(-96, -176, -104, -152); c.lineTo(-90, -142); c.quadraticCurveTo(-80, -160, -52, -158); c.closePath(); c.fill();   // パジャマの袖
+  c.fillStyle = '#cdb6a0'; c.beginPath(); c.ellipse(-104, -146, 14, 10, 0.7, 0, 7); c.fill(); c.strokeStyle = '#c3ab95'; c.lineWidth = 4.5; for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-108 - i * 2, -140 + i * 3); c.quadraticCurveTo(-120 - i * 2, -132 + i * 4 + tw * (i === 1 ? 1 : 0), -116 - i * 3, -122 + i * 4); c.stroke(); }   // 力の抜けた指
   c.restore();
 }
 function sleepPhoto(i) {   // 寝ている私の写真(1枚ずつ、日付と時刻が入っている)
   const o = document.createElement('canvas'); o.width = 300; o.height = 380; const c = o.getContext('2d');
   c.fillStyle = '#f2efe8'; c.fillRect(0, 0, 300, 380); c.fillStyle = '#1b1d26'; c.fillRect(14, 14, 272, 300);
-  c.save(); c.beginPath(); c.rect(14, 14, 272, 300); c.clip(); c.fillStyle = '#8c8a6c'; c.fillRect(14, 14, 272, 300); c.strokeStyle = 'rgba(40,40,30,0.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(14, 120); c.lineTo(286, 120); c.moveTo(150, 14); c.lineTo(150, 120); c.stroke(); sleeper(c, 150 + (i % 3 - 1) * 14, 180, 0.42 + (i % 2) * 0.04, 0); const fg = c.createRadialGradient(150, 160, 40, 150, 160, 220); fg.addColorStop(0, 'rgba(255,255,255,0.12)'); fg.addColorStop(1, 'rgba(0,0,0,0.45)'); c.fillStyle = fg; c.fillRect(14, 14, 272, 300); c.restore();   // フラッシュで撮った、畳の上の寝姿   // 上から(天袋から)撮った寝姿
+  c.save(); c.beginPath(); c.rect(14, 14, 272, 300); c.clip(); c.fillStyle = '#8c8a6c'; c.fillRect(14, 14, 272, 300); c.strokeStyle = 'rgba(40,40,30,0.5)'; c.lineWidth = 3; c.beginPath(); c.moveTo(14, 120); c.lineTo(286, 120); c.moveTo(150, 14); c.lineTo(150, 120); c.stroke(); c.save(); c.translate(150, 170); c.rotate((i % 3 - 1) * 0.08); sleeper(c, (i % 3 - 1) * 10, 0, 0.44 + (i % 2) * 0.04, 0, i); c.restore(); const fg = c.createRadialGradient(150, 160, 40, 150, 160, 220); fg.addColorStop(0, 'rgba(255,255,255,0.12)'); fg.addColorStop(1, 'rgba(0,0,0,0.45)'); c.fillStyle = fg; c.fillRect(14, 14, 272, 300); c.restore();   // フラッシュで撮った、畳の上の寝姿   // 上から(天袋から)撮った寝姿
   const d = 1 + i, h = [2, 3, 1, 4, 2, 3][i % 6], m = (i * 17) % 60;
   c.font = '700 26px "DejaVu Sans Mono", monospace'; c.fillStyle = '#ff9a3c'; c.textAlign = 'right'; c.fillText(`'26 12 ${String(d).padStart(2, '0')}  ${h}:${String(m).padStart(2, '0')}`, 278, 300);   // 日付と時刻
   return o;
@@ -237,9 +257,9 @@ function photosScene(t) {    // 天袋の毛布の上に、寝ている私の写
 }
 function povScene(t) {       // 天袋のすき間から見下ろす、夜の寝室(寝ている私)
   ctx.fillStyle = '#20232e'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = '#5a5a4a'; ctx.fillRect(0, 0, W, H); ctx.fillStyle = 'rgba(15,18,30,0.75)'; ctx.fillRect(0, 0, W, H);   // 畳(夜)
-  sleeper(ctx, 560, 1100, 2.1, Math.sin(t * 1.6));
+  sleeper(ctx, 560, 1120, 2.3, Math.sin(t * 1.35), t);
   ctx.fillStyle = 'rgba(10,12,22,0.45)'; ctx.fillRect(0, 0, W, H);
-  const gap = lerp(170, 400, ease(prog(t, EV.pov + 0.5, EV.back - 1.0))), gx = 560;           // すき間が、少しずつ広がる
+  const gap = lerp(330, 560, ease(prog(t, EV.pov + 0.5, EV.back - 1.0))), gx = 560;           // すき間が、少しずつ広がる
   ctx.fillStyle = '#020203'; ctx.fillRect(0, 0, gx - gap / 2, H); ctx.fillRect(gx + gap / 2, 0, W, H);
   ctx.fillStyle = 'rgba(120,110,90,0.35)'; ctx.fillRect(gx - gap / 2 - 8, 0, 8, H); ctx.fillRect(gx + gap / 2, 0, 8, H);   // 戸のふち
 }
