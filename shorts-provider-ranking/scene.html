@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<style>
+@font-face{font-family:Dela;src:url(fonts/DelaGothicOne-Regular.ttf)}
+@font-face{font-family:Rnd;src:url(fonts/MPLUSRounded1c-Black.ttf)}
+@font-face{font-family:RndB;src:url(fonts/MPLUSRounded1c-ExtraBold.ttf)}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1080px;height:1920px;overflow:hidden;background:#0b0820}
+#bg{position:absolute;inset:0}
+.layer{position:absolute;inset:0}
+.abs{position:absolute}
+.c{left:0;right:0;text-align:center}
+.dela{font-family:Dela}
+.rnd{font-family:Rnd}
+.stroke{paint-order:stroke fill;-webkit-text-stroke:14px #111}
+#progress{position:absolute;top:0;left:0;height:14px;background:linear-gradient(90deg,#ff3d7f,#ffd23f);box-shadow:0 0 20px #ff3d7f}
+#title{top:150px;font-family:Dela;font-size:60px;color:#fff}
+#title span{background:linear-gradient(90deg,#ff3d7f,#7b5cff);padding:10px 34px;border-radius:60px;box-shadow:0 8px 0 #0006}
+#cap{top:1340px;left:30px;right:30px;white-space:nowrap;text-align:center;font-family:Rnd;font-size:66px;line-height:1.3;color:#fff;-webkit-text-stroke:16px #000;paint-order:stroke fill}
+#cap b{color:#ffe03f}
+#credit{bottom:40px;left:40px;font-family:RndB;font-size:30px;color:#fff9}
+#badge{top:40px;left:40px;width:110px;height:110px;font-size:26px!important;border-radius:50%;background:linear-gradient(135deg,#ff6fb1,#b13cff);border:6px solid #fff;color:#fff;font-family:Rnd;font-size:30px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.1;box-shadow:0 8px 0 #0007}
+.card{left:70px;right:70px;top:380px;height:820px;border-radius:50px;background:linear-gradient(160deg,#ffffff,#e9e4ff);box-shadow:0 30px 0 #0006,0 0 80px #7b5cff88;overflow:hidden}
+.rankbadge{font-family:Dela;color:#fff;text-align:center}
+.name{font-family:Dela;color:#1b1340;text-align:center;left:0;right:0}
+.chip{display:inline-block;font-family:Rnd;font-size:44px;padding:10px 30px;border-radius:50px;margin:10px;color:#fff}
+.bar{height:34px;border-radius:20px;background:#d9d3f5;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:20px}
+.lbl{font-family:Rnd;font-size:40px;color:#1b1340}
+</style></head><body>
+<canvas id="bg" width="1080" height="1920"></canvas>
+<div id="stage" class="layer"></div>
+<div id="title" class="abs c"><span>快適ネット回線 TOP5</span></div>
+<div id="badge" class="abs">CV<br>めたん</div>
+<div id="cap" class="abs"></div>
+<div id="progress"></div>
+<div id="credit" class="abs">VOICEVOX:四国めたん</div>
+<canvas id="fx" class="layer" width="1080" height="1920"></canvas>
+<script>
+const TL = window.TL; // 注入される
+const S = {}; TL.scenes.forEach(s => S[s.id] = s);
+const clamp = (x, a=0, b=1) => Math.max(a, Math.min(b, x));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const eOut = t => 1 - Math.pow(1 - clamp(t), 3);
+const eBack = t => { t = clamp(t); const c=1.9; return 1 + (c+1)*Math.pow(t-1,3) + c*Math.pow(t-1,2); };
+const eIn = t => Math.pow(clamp(t),3);
+function rnd(seed){ let x = Math.sin(seed*999.13)*43758.5453; return x - Math.floor(x); }
+
+// ---------- 字幕（シーンごとに区切りを時間按分） ----------
+const CAPS = {
+  hook1:["ちょっと！","夜になると<b>ネットが遅い</b>…","なんて思ってない？"],
+  hook2:["それ、<b>回線選び</b>で","損してるかも！"],
+  intro:["快適にネットができる光回線","<b>ランキング</b>で紹介するわ！"],
+  r5:["第5位 <b>楽天ひかり</b>","<b>enひかり</b>など","安さ重視ならコレ","<b>IPv6対応</b>で夜も安定よ"],
+  r4:["第4位 <b>ソフトバンク光</b>","ソフトバンク・ワイモバ派は","<b>セット割</b>でお得ね"],
+  r3:["第3位 <b>ドコモ光</b>","対応エリアが広くて","ドコモ・ahamo派におすすめ"],
+  r2:["第2位 <b>auひかり</b>","独自回線だから","夜でも<b>速度が落ちにくい</b>の"],
+  drum:["そして栄えある第1位は…"],
+  r1:["<b>NURO光</b>！","実際の速度はトップクラス","ゲームするなら<b>これ一択</b>よ！"],
+  tips:["選ぶコツは<b>3つ</b>","①使えるエリアか ②セット割","③<b>IPv6対応</b>か"],
+  cta:["<b>保存</b>して参考にしてね","<b>フォロー</b>もよろしくね！"],
+};
+function caption(t){
+  for (const s of TL.scenes){
+    if (t >= s.start - 0.05 && t < s.start + s.dur + 0.25){
+      const parts = CAPS[s.id]; const lens = parts.map(p=>p.replace(/<[^>]+>/g,'').length);
+      const tot = lens.reduce((a,b)=>a+b,0); let acc = 0; const p = clamp((t - s.start)/s.dur)*tot;
+      for (let i=0;i<parts.length;i++){ acc += lens[i]; if (p <= acc || i==parts.length-1) return [parts[i], s.id+i]; }
+    }
+  }
+  return ["",""];
+}
+
+// ---------- 背景 ----------
+const bg = document.getElementById('bg').getContext('2d');
+function drawBG(t, mood){
+  const g = bg.createLinearGradient(0,0,1080,1920);
+  const pal = {night:['#1a0b3d','#05030f'], hype:['#3a0d6b','#0b0820'], gold:['#5a3300','#140800'], dark:['#000','#0a0010'], cool:['#0d2a5c','#070818']}[mood];
+  g.addColorStop(0,pal[0]); g.addColorStop(1,pal[1]);
+  bg.fillStyle = g; bg.fillRect(0,0,1080,1920);
+  // 放射状のサンバースト
+  if (mood!=='dark'){
+    bg.save(); bg.translate(540,760); bg.rotate(t*0.15);
+    for (let i=0;i<24;i++){ bg.rotate(Math.PI*2/24); bg.fillStyle = i%2? 'rgba(255,255,255,0.035)':'rgba(255,255,255,0)';
+      bg.beginPath(); bg.moveTo(0,0); bg.lineTo(2000,-130); bg.lineTo(2000,130); bg.fill(); }
+    bg.restore();
+  }
+  // スピード線
+  bg.strokeStyle = mood==='gold' ? 'rgba(255,210,80,0.25)' : 'rgba(140,180,255,0.18)'; bg.lineWidth = 4;
+  for (let i=0;i<40;i++){
+    const y = rnd(i)*1920, sp = 600+rnd(i+7)*1400, len = 100+rnd(i+3)*300;
+    const x = ((rnd(i+11)*2400 + t*sp) % 2400) - 600;
+    bg.beginPath(); bg.moveTo(x,y); bg.lineTo(x+len,y); bg.stroke();
+  }
+}
+
+// ---------- パーティクル ----------
+const fx = document.getElementById('fx').getContext('2d');
+function confetti(t, t0, n, gold){
+  const dt = t - t0; if (dt < 0 || dt > 6) return;
+  const cols = gold ? ['#ffd23f','#fff3b0','#ff9f1c','#fff'] : ['#ff3d7f','#ffd23f','#3dd6ff','#7b5cff','#7dff8a'];
+  for (let i=0;i<n;i++){
+    const a = rnd(i+t0)*Math.PI*2, v = 700+rnd(i*3+t0)*1300;
+    const x = 540 + Math.cos(a)*v*dt*0.7, y = 700 + Math.sin(a)*v*dt*0.6 - 0 + 700*dt*dt;
+    fx.save(); fx.translate(x,y); fx.rotate(dt*8*rnd(i+1)+i);
+    fx.globalAlpha = clamp(1.5 - dt/3); fx.fillStyle = cols[i%cols.length]; fx.fillRect(-12,-6,24,12); fx.restore();
+  }
+}
+function flash(t, t0, dur=0.25){ const p = (t-t0)/dur; if (p<0||p>1) return; fx.fillStyle = `rgba(255,255,255,${0.85*(1-p)})`; fx.fillRect(0,0,1080,1920); }
+
+// ---------- ランク情報 ----------
+const RANKS = {
+  r5:{n:5, name:'楽天ひかり<br>enひかり など', size:96, color:'#3dd6ff', chips:[['安さ重視','#00a6d6'],['IPv6対応','#7b5cff']], bars:[['速さ',0.68],['安さ',0.95],['安定',0.75]], who:'セット割がない人'},
+  r4:{n:4, name:'ソフトバンク光', size:110, color:'#c0c0c0', chips:[['IPv6高速','#7b5cff'],['セット割','#ff3d7f']], bars:[['速さ',0.75],['安さ',0.72],['安定',0.82]], who:'ソフトバンク / ワイモバ'},
+  r3:{n:3, name:'ドコモ光', size:150, color:'#cd7f32', chips:[['エリア広い','#00b36b'],['ルーター無料','#ff8a00']], bars:[['速さ',0.78],['安さ',0.72],['安定',0.85]], who:'ドコモ / ahamo'},
+  r2:{n:2, name:'auひかり', size:150, color:'#d8d8e8', chips:[['独自回線','#ff6a00'],['夜も速い','#7b5cff']], bars:[['速さ',0.9],['安さ',0.75],['安定',0.9]], who:'au / UQモバイル'},
+  r1:{n:1, name:'NURO光', size:165, color:'#ffd23f', chips:[['実測トップ級','#ff3d7f'],['10Gプランあり','#7b5cff']], bars:[['速さ',1.0],['安さ',0.78],['安定',0.92]], who:'ゲーマー・速さ最優先'},
+};
+function rankCard(id, t){
+  const R = RANKS[id], s = S[id], lt = t - s.start, gold = R.n===1;
+  const out = clamp((t - (s.start + s.dur + 0.15))/0.25);
+  const sc = eBack(lt/0.45) * (1 - out*0.3), x = out*-1200;
+  let h = `<div class="card abs" style="transform:translateX(${x}px) scale(${sc});${gold?'background:linear-gradient(160deg,#fff8d6,#ffe27a);box-shadow:0 30px 0 #0006,0 0 140px #ffd23fcc':''}">`;
+  // ランクバッジ
+  const bs = eBack((lt-0.05)/0.4);
+  h += `<div class="abs rankbadge" style="top:40px;left:0;right:0;transform:scale(${bs}) rotate(${(1-bs)*-20}deg)">
+     <span style="display:inline-block;background:${R.color};border:8px solid #1b1340;border-radius:40px;padding:6px 50px;font-size:${gold?130:110}px;color:#1b1340;box-shadow:0 10px 0 #1b1340">${gold?'👑 ':''}第${R.n}位</span></div>`;
+  // 名前
+  const ns = eOut((lt-0.25)/0.35);
+  h += `<div class="abs name" style="top:${gold?260:250}px;font-size:${R.size}px;line-height:1.15;opacity:${ns};transform:translateY(${(1-ns)*60}px) scale(${gold?1+0.04*Math.sin(t*6):1})">${R.name}</div>`;
+  // チップ
+  h += `<div class="abs c" style="top:${R.name.includes('<br>')?500:480}px">`;
+  R.chips.forEach((c,i)=>{ const p = eBack((lt-0.8-i*0.25)/0.35); h += `<span class="chip" style="background:${c[1]};transform:scale(${p})">${c[0]}</span>`; });
+  h += `</div>`;
+  // バー
+  R.bars.forEach((b,i)=>{ const p = eOut((lt-1.3-i*0.2)/0.6);
+    h += `<div class="abs" style="left:80px;right:80px;top:${610+i*62}px;display:flex;align-items:center;gap:24px;opacity:${clamp(p*3)}"><span class="lbl" style="width:90px">${b[0]}</span><div class="bar" style="flex:1"><i style="width:${b[1]*p*100}%;background:linear-gradient(90deg,#ff3d7f,${b[1]>=0.9?'#ffd23f':'#7b5cff'})"></i></div></div>`; });
+  h += `</div>`;
+  // 「こんな人に」
+  const wp = eOut((lt-2.0)/0.4);
+  h += `<div class="abs c rnd" style="top:1225px;font-size:46px;color:#fff;opacity:${wp*(1-out)};transform:translateY(${(1-wp)*30}px)">こんな人に → <span style="color:#ffe03f">${R.who}</span></div>`;
+  return h;
+}
+
+window.render = function(t){
+  const st = document.getElementById('stage'); fx.clearRect(0,0,1080,1920);
+  let mood = 'hype', html = '', shake = 0;
+  const showTitle = t >= S.r5.start - 0.3 && t < S.tips.start - 0.2;
+  document.getElementById('title').style.opacity = showTitle ? 1 : 0;
+  document.getElementById('title').style.transform = `scale(${showTitle?eBack((t-S.r5.start+0.3)/0.4):0})`;
+
+  if (t < S.intro.start - 0.1){
+    // ---- フック ----
+    mood = 'night';
+    const lt = t;
+    const p1 = eBack(lt/0.35);
+    shake = lt < 0.4 ? 18*(1-lt/0.4) : 0;
+    html += `<div class="abs c dela stroke" style="top:330px;font-size:120px;color:#fff;transform:scale(${p1}) rotate(-4deg)">夜になると</div>`;
+    const p2 = eBack((lt-0.5)/0.35);
+    html += `<div class="abs c dela stroke" style="top:490px;font-size:150px;color:#ff3d5a;transform:scale(${p2}) rotate(3deg)">ネット遅い…</div>`;
+    // ロード中UI
+    const p3 = eOut((lt-1.0)/0.4);
+    const pct = Math.min(87, Math.floor(clamp((lt-1.0)/1.6)*87));
+    html += `<div class="abs" style="left:150px;right:150px;top:760px;opacity:${p3}">
+      <div style="display:flex;justify-content:center;margin-bottom:30px"><div style="width:160px;height:160px;border-radius:50%;border:18px solid #ffffff33;border-top-color:#fff;transform:rotate(${t*400}deg)"></div></div>
+      <div class="bar" style="height:44px;background:#ffffff22"><i style="width:${pct}%;background:#ff3d5a"></i></div>
+      <div class="rnd" style="color:#fff;text-align:center;font-size:48px;margin-top:16px">読み込み中… ${pct}%</div></div>`;
+    if (t >= S.hook2.start - 0.05){
+      const lt2 = t - S.hook2.start; const q = eBack(lt2/0.35);
+      shake = Math.max(shake, lt2 < 0.3 ? 14*(1-lt2/0.3) : 0);
+      html += `<div class="abs c" style="top:0;bottom:0;background:rgba(10,5,30,${0.85*clamp(lt2/0.15)})"></div>
+        <div class="abs c" style="top:500px;font-size:200px;transform:scale(${q})">⚠️</div>
+        <div class="abs c dela stroke" style="top:760px;font-size:110px;color:#fff;line-height:1.25;transform:scale(${q})">その回線<br><span style="color:#ffe03f;font-size:150px">損してるかも</span></div>`;
+    }
+  } else if (t < S.r5.start - 0.15){
+    // ---- イントロ ----
+    const lt = t - S.intro.start; mood = 'hype';
+    const a = eBack(lt/0.4), b = eBack((lt-0.35)/0.4), c = eBack((lt-0.7)/0.45);
+    flash(t, S.intro.start - 0.1);
+    html += `<div class="abs c dela stroke" style="top:420px;font-size:100px;color:#fff;transform:scale(${a})">快適に使える</div>
+      <div class="abs c dela stroke" style="top:560px;font-size:150px;color:#3dd6ff;transform:scale(${b})">光回線</div>
+      <div class="abs c dela" style="top:770px;transform:scale(${c}) rotate(-3deg)"><span style="display:inline-block;background:linear-gradient(90deg,#ff3d7f,#ffd23f);color:#1b1340;font-size:140px;padding:10px 60px;border-radius:30px;box-shadow:0 14px 0 #0008">ランキング</span></div>
+      <div class="abs c dela stroke" style="top:1010px;font-size:180px;color:#ffe03f;transform:scale(${eBack((lt-1.1)/0.4)})">TOP5</div>`;
+  } else if (t < S.drum.start - 0.1){
+    // ---- 5位〜2位 ----
+    for (const id of ['r5','r4','r3','r2']){
+      const s = S[id];
+      if (t >= s.start - 0.15 && t < s.start + s.dur + 0.4){ html += rankCard(id, t); flash(t, s.start, 0.18); shake = Math.max(shake, t-s.start < 0.25 && t>=s.start ? 10*(1-(t-s.start)/0.25) : 0); }
+    }
+    mood = t > S.r2.start - 0.15 ? 'cool' : 'hype';
+    confetti(t, S.r2.start, 40, false);
+  } else if (t < S.r1.start){
+    // ---- ドラムロール ----
+    mood = 'dark'; const lt = t - S.drum.start; const dur = S.r1.start - S.drum.start;
+    const p = clamp(lt/dur); const sh = 4 + 20*p;
+    // スポットライト
+    bg.save(); const gx = 540 + Math.sin(t*5)*260*(1-p);
+    const rg = bg.createRadialGradient(gx,760,10,gx,760,500); rg.addColorStop(0,'rgba(255,230,150,0.35)'); rg.addColorStop(1,'rgba(0,0,0,0)');
+    bg.fillStyle = rg; bg.fillRect(0,0,1080,1920); bg.restore();
+    html += `<div class="abs c dela stroke" style="top:300px;font-size:110px;color:#fff;opacity:${eOut(lt/0.3)}">栄えある</div>
+      <div class="abs c dela stroke" style="top:440px;font-size:170px;color:#ffd23f;transform:scale(${eBack((lt-0.3)/0.4)})">第1位は</div>
+      <div class="abs" style="left:190px;right:190px;top:720px;height:420px;border-radius:40px;background:#1b1340;border:10px solid #ffd23f;display:flex;align-items:center;justify-content:center;transform:translate(${(rnd(Math.floor(t*30))-0.5)*sh}px,${(rnd(Math.floor(t*30)+5)-0.5)*sh}px) scale(${0.9+0.15*p})">
+        <span class="dela" style="font-size:240px;color:#ffd23f">？？？</span></div>`;
+  } else if (t < S.tips.start - 0.1){
+    // ---- 1位 ----
+    mood = 'gold'; html += rankCard('r1', t);
+    flash(t, S.r1.start, 0.4); confetti(t, S.r1.start, 160, true); confetti(t, S.r1.start+1.2, 80, false);
+    const lt = t - S.r1.start; shake = lt < 0.5 ? 26*(1-lt/0.5) : 0;
+  } else if (t < S.cta.start - 0.1){
+    // ---- コツ3つ ----
+    mood = 'cool'; const s = S.tips, lt = t - s.start;
+    html += `<div class="abs c dela stroke" style="top:300px;font-size:110px;color:#fff;transform:scale(${eBack(lt/0.4)})">選ぶコツは<span style="color:#ffe03f;font-size:150px">3つ</span></div>`;
+    const items = [['📍','使えるエリアか確認'],['📱','スマホとのセット割'],['⚡','IPv6（IPoE）対応']];
+    items.forEach((it,i)=>{ const p = eBack((lt - (1.6+i*1.6)*s.dur/6.2)/0.4);
+      html += `<div class="abs" style="left:80px;right:80px;top:${560+i*210}px;height:170px;border-radius:30px;background:#fff;display:flex;align-items:center;gap:30px;padding:0 40px;box-shadow:0 12px 0 #0007;transform:translateX(${(1-p)*-1200}px)">
+        <span style="font-size:90px">${it[0]}</span><span class="dela" style="font-size:66px;color:#1b1340">${it[1]}</span><span style="margin-left:auto;font-size:80px;color:#00c46a;transform:scale(${eBack((lt - (1.6+i*1.6)*s.dur/6.2 - 0.4)/0.3)})">✔</span></div>`; });
+  } else {
+    // ---- CTA ----
+    mood = 'hype'; const lt = t - S.cta.start;
+    const pulse = 1 + 0.05*Math.sin(t*10);
+    html += `<div class="abs c" style="top:330px;font-size:240px;transform:scale(${eBack(lt/0.4)}) rotate(${Math.sin(t*4)*6}deg)">🔖</div>
+      <div class="abs c dela stroke" style="top:640px;font-size:130px;color:#fff;line-height:1.2;transform:scale(${eBack((lt-0.2)/0.4)})"><span style="color:#ffe03f">保存</span>して<br>あとで見返してね</div>
+      <div class="abs c" style="top:1010px;transform:scale(${eBack((lt-1.4)/0.4)*pulse})"><span class="dela" style="display:inline-block;background:#ff3d5a;color:#fff;font-size:90px;padding:20px 80px;border-radius:80px;box-shadow:0 12px 0 #8a0020">＋ フォロー</span></div>`;
+    confetti(t, S.cta.start, 60, false);
+  }
+  drawBG(t, mood);
+  st.innerHTML = html;
+  const sx = (rnd(Math.floor(t*60))-0.5)*2*shake, sy = (rnd(Math.floor(t*60)+3)-0.5)*2*shake;
+  st.style.transform = `translate(${sx}px,${sy}px)`;
+  const [cap] = caption(t); const capEl = document.getElementById('cap');
+  if (capEl.innerHTML !== cap){ capEl.innerHTML = cap; const L = cap.replace(/<[^>]+>/g,'').length; capEl.style.fontSize = Math.min(70, Math.floor(980/Math.max(L,1)))+'px'; }
+  document.getElementById('progress').style.width = (t/TL.total*100)+'%';
+  document.getElementById('badge').style.transform = `scale(${1 + (cap ? 0.06*Math.abs(Math.sin(t*14)) : 0)})`;
+};
+</script></body></html>
