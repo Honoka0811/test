@@ -57,7 +57,7 @@ LYRICS = [
     "よっつ　がけした　いどのそば",
     "いつつ　うしろで　ないてても",
     "むっつ　めかくし　ふたをして",
-    "ななつ　たったひとりで　かえりみち",
+    "ななつ　ただいま　ひとりきり",
 ]
 HIDDEN = "".join(l.split("　")[1][0] for l in LYRICS)
 assert HIDDEN == "わたしがうめた", HIDDEN
@@ -72,7 +72,7 @@ MELODY = [   # 各行：数え言葉 / 二語目 / 三語目 の音高（1モー
     [[G4, G4, A4], [Bb4, A4, G4, A4], [A4, G4, Eb4, Eb4, D4]],
     [[A4, A4, G4], [A4, Bb4, A4, G4], [A4, G4, Eb4, D4, D4]],
     [[A4, Bb4, D5], [D5, Bb4, A4, G4], [A4, G4, Eb4, Eb4, D4]],
-    [[D4, D4, Eb4], [G4, G4, G4, A4, G4, Eb4, Eb4], [D4, Eb4, D4, Eb4, D4]],
+    [[D4, D4, Eb4], [G4, A4, G4, Eb4], [D4, Eb4, D4, Eb4, D4]],
 ]
 FPS_SING = 93.75
 EIGHTH_F = 36                       # 8分音符 = 36フレーム（約0.38秒）：子守歌のゆっくりさ
@@ -84,11 +84,6 @@ LINE_EIGHTH_F = [EIGHTH_F + round(2.5 * i) for i in range(7)]
 def kata(text):
     k = "".join(chr(ord(c) + 0x60) if "ぁ" <= c <= "ゖ" else c for c in text)
     return k.replace("ヲ", "オ")      # 歌唱APIは「ヲ」を受け付けないので同じ音の「オ」に
-
-
-# 最後の行「ななつ　たったひとりで　かえりみち」だけ7モーラの語があるので、
-# 「たったひとりで」を16分音符に詰めて、他の行と同じ16拍（2小節）に収める
-LAST_RHYTHM = [1, 1, 2, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 1, 1, 1, 1, 4]
 
 
 def build_score():
@@ -106,9 +101,9 @@ def build_score():
                 if wi == 2 and mi == len(w) - 1:
                     e = 3
                 notes.append((kata(ch), k, e))
-        if last:
-            assert len(notes) == len(LAST_RHYTHM)
-            notes = [(ch, k, e) for (ch, k, _), e in zip(notes, LAST_RHYTHM)]
+        if last:                       # 最後の音は長く伸ばして終わる（2小節ちょうど）
+            ch, k, _ = notes[-1]
+            notes[-1] = (ch, k, 4)
         body = sum(n[2] for n in notes)
         assert body == 16 if last else body == 15, (li, body)
         rest = 2 if last else 1        # 最後は長い音のあとに少し余韻
@@ -335,7 +330,7 @@ DECODE = [('ひとつ。笑って、手をつなぐ。怖がらせないよう�
     ('よっつ。崖の下の、井戸のそばまで。', 'よっつ。崖の下の\n井戸のそばまで。'),
     ('いつつ。妹が泣いても、振り返らない。', 'いつつ。妹が泣いても\n振り返らない。'),
     ('むっつ。目隠しの遊びだと言って、蓋をする。', 'むっつ。目隠しの遊びだと言って\n蓋をする。'),
-    ('ななつ。そして、姉は、ひとりで帰る。', 'ななつ。そして姉は\nひとりで帰る。')]
+    ('ななつ。ただいま、と、姉は、ひとりで帰る。', 'ななつ。「ただいま」と\n姉はひとりで帰る。')]
 
 
 def build_timeline():
