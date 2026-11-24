@@ -1,0 +1,38 @@
+# 全国駅弁ランキングTOP10 ショート動画 クレジット
+
+投稿時は以下を動画の説明欄に記載してください。
+
+```
+ナレーション：VOICEVOX:四国めたん
+
+写真：Wikimedia Commons より（各ライセンスに基づき使用）
+10位 あなごめし … くろふね / CC BY-SA 4.0
+9位 ひっぱりだこ飯 … veroyama / CC BY 2.0
+7位 かにめし … くろふね / CC BY 4.0
+6位 鶏めし … Yamaguchi Yoshiaki / CC BY-SA 2.0
+5位 ますのすし … Sougenma / CC BY-SA 4.0
+4位 シウマイ弁当 … Qurren / CC BY-SA 3.0
+3位 いかめし … Gpx-evo / CC BY-SA 4.0
+2位 峠の釜めし … Tatsuo Yamashita / CC BY 2.0
+1位 牛肉どまん中 … くろふね / CC BY-SA 4.0
+※8位はフリー素材の写真が見つからなかったためイラストで紹介しています。
+※順位は知名度・駅弁大会の実績をもとにした目安です。
+```
+
+## 写真の出典（Wikimedia Commons ファイル名）
+
+| 順位 | ファイル | 作者 | ライセンス |
+|---|---|---|---|
+| 10 | File:あなごめし（宮島口駅）.jpg | くろふね | CC BY-SA 4.0 |
+| 9 | File:Hippari-dako meshi by veroyama in Kobe Meriken Park, Hyogo.jpg | veroyama | CC BY 2.0 |
+| 7 | File:長万部駅かにめし20211024-P1250759.jpg | くろふね | CC BY 4.0 |
+| 6 | File:Tori Meshi of Ōdate.jpg | Yamaguchi Yoshiaki | CC BY-SA 2.0 |
+| 5 | File:笹ごと切ったます寿し.JPG | Sougenma | CC BY-SA 4.0 |
+| 4 | File:Kiyoken Shumai Bento 2017-08.jpg | Qurren | CC BY-SA 3.0 |
+| 3 | File:Mori-ikameshi.JPG | Gpx-evo | CC BY-SA 4.0 |
+| 2 | File:Tōge no Kamameshi 02.jpg | Tatsuo Yamashita | CC BY 2.0 |
+| 1 | File:牛肉どまん中・みそ（米沢駅）.jpg | くろふね | CC BY-SA 4.0 |
+
+各ファイルのページ：`https://commons.wikimedia.org/wiki/<ファイル名>`
+
+写真はトリミング・拡大の加工をしています。CC BY-SA の写真を含むため、この動画自体も CC BY-SA の条件（同じライセンスでの共有）がかかる可能性があります。
