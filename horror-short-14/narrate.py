@@ -9,7 +9,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SR = 48000
 # 四国めたんのスタイル: 2=ノーマル 36=ささやき
 STYLES = {'n': 2, 'a': 21}        # 2=四国めたん ノーマル / 21=剣崎雌雄 ノーマル(4.vvm)
-PARAMS = {'n': dict(speed=1.2, pitch=-0.03, into=0.9, vol=1.0),
+PARAMS = {'n': dict(speed=1.3, pitch=-0.03, into=0.9, vol=1.0),
           'a': dict(speed=0.9, pitch=-0.02, into=0.75, vol=1.0)}      # 不動産屋の担当者(落ち着いた、低い男の声)
 START = 0.4
 

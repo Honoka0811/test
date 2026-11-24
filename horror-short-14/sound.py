@@ -42,7 +42,7 @@ T_COP = L['l5']['start'] - 0.2                       # 外で、おまわりさ�
 T_TOE = L['l6']['start'] + 0.2                       # 足あとのアップ: つま先は道路を向いている
 T_MAP = L['l7']['start'] - 0.2                       # 上から見た図
 T_FLIP = at('l7', 0.55)                              # 矢印が逆になる: 出ていった
-T_NIGHT = L['l9']['start'] - 0.2                     # ゆうべの家(雪が降っている)
+T_NIGHT = L['l10']['start'] - 0.2                     # ゆうべの家(雪が降っている)
 T_SIL = at('l10', 0.22)                              # 暗い1階の窓に、人影
 T_OUT = at('l10', 0.6)                               # 玄関から出ていく
 T_KEY = L['l11']['start'] - 0.3                      # 外から合いかぎで鍵をかける
@@ -51,18 +51,20 @@ T_OPEN_TEN = at('l11b', 0.75)
 T_PHOTOS = L['l11c']['start'] + 1.0                  # 寝ている私の写真
 T_POV = L['l11d']['start'] - 0.2                     # 天袋のすき間から見た、寝ている私
 T_BACK = L['l12']['start'] - 0.2                     # 次の朝、家へ戻る
-T_SEE = L['l13']['start'] - 0.2                      # また足あと
-T_TOE2 = L['l14']['start'] + 0.3                     # つま先は家を向いている
+T_SEE = L['l14']['start'] - 0.2                      # また足あと
+T_TOE2 = at('l14', 0.5)                               # つま先は家を向いている
 T_PHONE = L['l15']['start'] - 0.1                    # 外から電話しようとする
 T_STEP = L['l15b']['start'] + 0.85                   # すぐうしろで、雪を踏む音
-HIT = L['now']['end'] + 0.25                          # ふり返る
+T_DARK = L['now']['end'] + 0.25                       # 電話の画面が消えて、黒いガラスに肩ごしの顔が映る
+T_GRAB = T_DARK + 1.7                                # 黒い手袋の手が、肩をつかむ
+HIT = T_GRAB + 0.8                                   # ふり返る
 T_EXP = L['l16']['start'] - 0.3                      # うしろ向きに歩いた足あと(図)
 T_END = L['l18']['end'] + 0.5                        # 最後の文字
 T_HAND = L['l1b']['start'] - 0.2                     # 不動産屋の担当者が、鍵を3本わたす
 T_MEMO = L['l18']['start'] - 0.1                     # あの声は…
 STEPS_OUT = [T_KEY + 1.45 + k * 0.5 for k in range(3)]          # 鍵をかけて、雪の上を歩いていく
 STEPS_ME = [at('l12', 0.62) + k * 0.55 for k in range(9)]       # 次の朝、私が家まで歩く
-EV = dict(ten=T_TEN, openTen=T_OPEN_TEN, photos=T_PHOTOS, pov=T_POV, hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, step=T_STEP, exp=T_EXP, end=T_END, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
+EV = dict(ten=T_TEN, openTen=T_OPEN_TEN, photos=T_PHOTOS, pov=T_POV, hand=T_HAND, memo=T_MEMO, lock=T_LOCK, room=T_ROOM, cop=T_COP, toe=T_TOE, map=T_MAP, flip=T_FLIP, night=T_NIGHT, sil=T_SIL, out=T_OUT, key=T_KEY, back=T_BACK, see=T_SEE, toe2=T_TOE2, phone=T_PHONE, dark=T_DARK, grab=T_GRAB, step=T_STEP, exp=T_EXP, end=T_END, hit=HIT, stepsOut=STEPS_OUT, stepsMe=STEPS_ME)
 
 def noise(n, seed=None): return (np.random.default_rng(seed).standard_normal(n) if seed is not None else rng.standard_normal(n)).astype(np.float32)
 def wind():
@@ -163,8 +165,10 @@ def main():
     for k in range(3): add(fx, T_PHONE + 0.8 + k * 0.28, tap(), 0.5)             # 電話の画面を押す
     for k in range(2): add(fx, T_STEP + k * 0.75, crunch(1.6))                      # すぐうしろの足音(近い)
     add(big, T_STEP + 0.05, taiko(0.5))
+    add(fx, T_DARK, click(3200), 0.15)                                                 # 画面が消える
+    t = tt(1.6); add(fx, T_DARK + 0.45, (np.sin(2 * np.pi * 1760 * t + 3 * np.sin(2 * np.pi * 5 * t)) * np.sin(np.pi * t / 1.6) * 0.12).astype(np.float32))   # 細く高い音(顔が映る)
+    t = tt(0.35); add(fx, T_GRAB, (lowpass(highpass(noise(len(t)), 300), 3000) * np.exp(-t * 12)).astype(np.float32), 0.9); add(big, T_GRAB, taiko(0.7))   # 肩をつかむ(コートの布がつぶれる音)
     add(fx, L['agent']['start'] + 0.55, keys()[:int(0.6 * SR)], 0.35)                              # 机に置かれる鍵束
-    for k in range(4): add(fx, L['l1d']['start'] + 0.1 + k * 0.9, shovel(), 0.35)   # 雪かき
     add(big, T_MEMO + 0.1, taiko(0.8))
     add(fx, T_TEN + 0.3, click(1800), 0.3)                                            # 懐中電灯
     add(fx, T_OPEN_TEN, slidedoor(0.7)[:int(0.7 * SR)], 0.3); add(big, T_PHOTOS, taiko(0.8)); add(big, T_POV + 0.4, taiko(0.6))

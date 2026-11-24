@@ -13,5 +13,5 @@ ffmpeg -y -hide_banner -loglevel error -i output/silent.mp4 -i output/mix.wav \
   -ar 48000 -ac 2 -c:a aac -b:a 192k -shortest -movflags +faststart output/yuki_no_ashiato.mp4
 # AAC にしたあとのピークも上限を超えないよう、もう一度だけリミッターをかける
 ffmpeg -y -hide_banner -loglevel error -i output/yuki_no_ashiato.mp4 -c:v copy -af "volume=-1.8dB,alimiter=limit=0.7:attack=0.5:release=40:level=false" -ar 48000 -c:a aac -b:a 192k -movflags +faststart output/tmp.mp4 && mv output/tmp.mp4 output/yuki_no_ashiato.mp4
-ffmpeg -y -loglevel error -ss 122.5 -i output/yuki_no_ashiato.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
+ffmpeg -y -loglevel error -ss 90.3 -i output/yuki_no_ashiato.mp4 -frames:v 1 -q:v 2 output/thumbnail.jpg
 echo "wrote output/yuki_no_ashiato.mp4"
