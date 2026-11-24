@@ -1,6 +1,6 @@
 # 祖母の数え歌
 
-- `kazoeuta_horror.mp4` … 縦型 1080x1920 / 30fps / 約200秒（YouTube Shorts・TikTok・リール向け）
+- `kazoeuta_horror.mp4` … 縦型 1080x1920 / 30fps / 約206秒（YouTube Shorts・TikTok・リール向け）
 - `make_video.py` … 映像も音声もすべてプログラムで生成するスクリプト（`python3 make_video.py`）
   - 必要: ffmpeg / numpy / Pillow / IPAフォント / voicevox_core 0.17（歌唱APIが必要）
 - ナレーション・歌: **VOICEVOX:四国めたん**（読み上げ：ノーマル／歌唱：ノーマル・ヒソヒソ）。動画内と投稿の説明欄にクレジット表記が必要です。
