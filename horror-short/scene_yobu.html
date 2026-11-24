@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
@@ -13,6 +15,7 @@
   #vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 55%, rgba(0,0,0,0) 45%, rgba(0,0,0,.8) 100%); }
   #text { position: absolute; top: 120px; right: 0; left: 0; height: 560px; display: flex; flex-direction: row-reverse; justify-content: center; gap: 22px; }
   #text.side { justify-content: flex-start; padding-right: 30px; top: 150px; }
+  #text.phone { top: 500px; height: 330px; }
   #text p { writing-mode: vertical-rl; font-size: 37px; font-weight: 900; letter-spacing: .1em; line-height: 1.2; text-shadow: 0 0 10px #000, 0 0 22px #000, 2px 2px 0 #000; white-space: nowrap; }
   #text p.red { color: #e3231c; }
   #text p.big { font-size: 58px; }
@@ -40,6 +43,7 @@ window.init = async function (tl) {
   TL = tl;
   await document.fonts.ready;
   await document.fonts.load('900 30px "Noto Serif JP"', TL.pages.map(p => p.lines.map(l => l[1]).join('')).join(''));
+  for (const w of ['400', '700']) await document.fonts.load(`${w} 30px "Noto Sans JP"`, 'ばあちゃん携帯着信中通話応答拒否消音スピーカーキーパッド0123456789:');
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   render(0);
 };
@@ -149,6 +153,29 @@ function shoji(g, t, o) {
   }
   return o;
 }
+function phone(g, t) {                  // tonight: a call from someone who died last month
+  const f = Math.round(t * 30), ans = t >= TL.answer, buzz = !ans && ((t - TL.ring) % 1.6) < 1.0;
+  const jx = buzz ? (rnd(f) - .5) * 4 : 0, jy = buzz ? (rnd(f + 3) - .5) * 3 : 0;
+  g.save(); g.translate(jx, jy);
+  const bg = g.createLinearGradient(0, 0, 0, 960); bg.addColorStop(0, '#15181d'); bg.addColorStop(1, '#07080a'); g.fillStyle = bg; g.fillRect(-60, -60, 660, 1080);
+  const S = '"Noto Sans JP", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#d6dadf'; g.font = `700 17px ${S}`; g.textAlign = 'left'; g.fillText('2:13', 34, 58); g.textAlign = 'right'; g.fillText('4G', 470, 58);
+  g.strokeStyle = '#d6dadf'; g.lineWidth = 1.6; g.strokeRect(480, 50, 26, 13); g.fillStyle = '#e5484d'; g.fillRect(482, 52, 4, 9); g.textAlign = 'center';
+  if (!ans) for (let i = 0; i < 2; i++) { const q = ((t - TL.ring) * 0.7 + i * 0.5) % 1; g.strokeStyle = `rgba(200,205,212,${0.35 * (1 - q)})`; g.lineWidth = 2; g.beginPath(); g.arc(270, 270, 70 + 60 * q, 0, 7); g.stroke(); }
+  g.fillStyle = '#3a3f47'; g.beginPath(); g.arc(270, 270, 66, 0, 7); g.fill();
+  g.fillStyle = '#e8eaed'; g.font = `700 56px ${S}`; g.fillText('ば', 270, 274);
+  g.font = `700 44px ${S}`; g.fillText('ばあちゃん', 270, 392);
+  g.fillStyle = '#9aa1ab'; g.font = `400 24px ${S}`;
+  if (!ans) g.fillText('携帯 ・ 着信中', 270, 444);
+  else { const s = Math.floor(t - TL.answer); g.fillText(`00:${String(s).padStart(2, '0')}`, 270, 444); }
+  if (!ans) {
+    for (const [x, c, lab] of [[146, '#e5484d', '拒否'], [394, '#30a46c', '応答']]) { const pu = c === '#30a46c' ? 1 + 0.06 * Math.sin(t * 6) : 1;
+      g.fillStyle = c; g.beginPath(); g.arc(x, 860, 42 * pu, 0, 7); g.fill(); g.fillStyle = '#9aa1ab'; g.font = `400 18px ${S}`; g.fillText(lab, x, 924); }
+  } else {
+    g.fillStyle = '#e5484d'; g.beginPath(); g.arc(270, 870, 42, 0, 7); g.fill();
+  }
+  g.restore();
+}
 function snow(g, t) {                    // morning, looking out through the open door
   const gr = g.createLinearGradient(0, 0, 0, 960); gr.addColorStop(0, '#7f8ba3'); gr.addColorStop(0.45, '#b9c2d2'); gr.addColorStop(1, '#b9c2d2'); g.fillStyle = gr; g.fillRect(-60, -60, 660, 1080);
   ridge(g, 3.1, 470, 110, '#7b879f'); ridge(g, 6.4, 520, 60, '#66728b');
@@ -172,6 +199,7 @@ window.render = function (t) {
   else if (sc.k === 'shoji2') { zoom(1 + 0.07 * p, 210, 560);              // the shape never changes. it just slides, without walking, to where her hand is.
     const gl = smooth((t - TL.glide[0]) / (TL.glide[1] - TL.glide[0]));
     shoji(g, t, { alpha: 0.88, dx: 112 * gl, reach: t < TL.arm[1] ? clamp((t - TL.arm[0]) / 1.4) : 1 - clamp((t - TL.arm[1]) / 0.16) }); }
+  else if (sc.k === 'phone' && t < TL.cut) { phone(g, t); }
   else if (sc.k === 'shojiRoom' && t < TL.cut) {         // grandmother's shadow, lit by her lamp. then the lamp goes out. the shadow does not.
     const off = smooth((t - TL.lampOff) / 0.35);
     zoom(1.08 + 0.06 * p, 200, 600); shoji(g, t, { alpha: 0.9, granny: true, warm: 1 - off, nod: t < TL.lampOff });
@@ -180,13 +208,13 @@ window.render = function (t) {
     const near = smooth((t - TL.lastText + 1.5) / (TL.cut - TL.lastText + 1.5));
     zoom(1.2 + 0.2 * p, 215, 470); shoji(g, t, { alpha: 0.92, h: 380, now: true, arm: smooth((t - TL.lastText) / 2.2) });
   }
-  const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3', 'shojiRoom'].includes(sc.k);
+  const pic = ['house', 'snow', 'shoji1', 'shoji2', 'shoji3', 'shojiRoom', 'phone'].includes(sc.k);
   $('fade').style.opacity = pic ? clamp(Math.max(1 - (t - sc.t) / 0.45, sc.k === 'shoji3' ? 0 : 1 - (t1 - t) / 0.3, 0)) : 0;
   $('shade').style.display = ['house', 'snow'].includes(sc.k) ? 'block' : 'none';
   $('shade').style.background = sc.k === 'snow' ? 'linear-gradient(rgba(0,0,0,.82), rgba(0,0,0,.62) 58%, rgba(0,0,0,.12) 82%)' : '';
   let pg = null; for (const x of TL.pages) if (t >= x.t) pg = x;
   let pk = TL.scenes[0].k; if (pg) for (const x of TL.scenes) if (pg.t + 0.01 >= x.t) pk = x.k;      // a subtitle keeps the position of the scene it appeared in
-  $('text').className = pk.startsWith('shoji') ? 'side' : '';
+  $('text').className = pk.startsWith('shoji') ? 'side' : pk === 'phone' ? 'phone' : '';
   $('text').innerHTML = pg ? pg.lines.map(l => `<p class="${l[2]}" style="opacity:${clamp((t - pg.t - l[0]) / 0.35)}">${l[1]}</p>`).join('') : '';
   $('black').style.display = t >= TL.cut ? 'block' : 'none';
 };

@@ -75,9 +75,8 @@ for (k, t0), (_, t1) in zip(SC[:-1], SC[1:]):
             if t0 + 0.5 + i * 2.0 < t1 - 0.5: put(pluck(f), t0 + 0.5 + i * 2.0, 0.6)
     elif k == "black":
         put(pluck(A3), t0 + 0.3, 0.5); put(pluck(D3), t0 + 3.2, 0.5)
-    elif k == "shojiRoom":
-        hearth(t0, t1, 0.16); wind(t0, t1, 0.04)
-        t = seg(t0, TL["lampOff"]); put(fade(bp(noise(len(t)), 120, 500) * 0.4, 0.5, 0.05), t0, 0.15, pan=-0.35)    # her lamp, faintly
+    elif k == "phone":
+        t = seg(t0, t1); put(fade(bp(noise(len(t)), 60, 260) * 0.5, 0.3, 0.05), t0, 0.05)        # a quiet room at night
 ends = {k: t1 for (k, t0), (_, t1) in zip(SC[:-1], SC[1:])}
 
 c0, c1 = TL["call1"]                                                     # 'moshi' - once
@@ -86,17 +85,23 @@ heartbeat(c0 + 2.6, ends["shoji1"] - 0.3, 0.25, 0.75)
 put(don(0.9), TL["reveal"] + 2.1, 0.6)                                   # dead since the first night
 put(don(), TL["taken"], 0.75)                                            # he answered it
 
-L = TL["lampOff"]                                                        # 'now go to sleep' - she blows out the lamp
-x = seg(0, 0.55); put(bp(noise(len(x)), 300, 3000) * np.sin(np.pi * x / x[-1]) ** 1.5, L - 0.35, 0.35, pan=-0.3)
-DUCK.append((L + 0.1, TL["cut"], 0.015))                                 # and then there is nothing at all
+put(don(0.8), TL["rule"], 0.5)
+R0, AN = TL["ring"], TL["answer"]                                        # the phone vibrating on the floor
+tt = R0 + 0.3
+while tt < AN - 0.2:
+    d = min(1.0, AN - 0.2 - tt); x = seg(0, d)
+    v = (bp(noise(len(x)), 90, 420) * 0.8 + bp(np.sign(np.sin(2 * np.pi * 152 * x)), 120, 900) * 0.25) * (0.6 + 0.4 * (np.sin(2 * np.pi * 37 * x) > 0))
+    put(fade(v, 0.02, 0.04), tt, 0.45); tt += 1.6
+x = seg(0, 0.06); put(bp(noise(len(x)), 800, 5000) * np.exp(-x / 0.01), AN, 0.3)         # tap to answer
+t = seg(AN, TL["cut"]); put(fade(bp(noise(len(t)), 300, 3400) * 0.5, 0.05, 0.02), AN, 0.06)  # an open line, hissing
+DUCK.append((TL["call2"][0] - 0.1, TL["cut"], 0.12))                     # after 'moshi', nothing but the line
 x = seg(0, 3.0)
-
 for a0, a1, lv in DUCK:
     i0, i1, r = int(a0 * SR), int(a1 * SR), int(0.12 * SR)
     env = np.full(i1 - i0, lv); env[:r] = np.linspace(1, lv, r)
     if a1 < TL["cut"] - 0.1: env[-r:] = np.linspace(lv, 1, r)
     mix[i0:i1] *= env[:, None]
-put(don(0.7), TL["tell"], 0.5); put(don(), TL["dead"], 0.8); put(np.sin(2 * np.pi * 34 * x) * np.exp(-x / 1.0), TL["dead"], 0.8)   # these land inside the silence
+put(don(), TL["dead"], 0.8); put(np.sin(2 * np.pi * 34 * x) * np.exp(-x / 1.0), TL["dead"], 0.8)   # lands inside the silence
 
 mix[int(TL["cut"] * SR):] = 0
 mix /= np.abs(mix).max() / 1.4
