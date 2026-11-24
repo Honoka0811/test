@@ -13,6 +13,7 @@
   2. 写真     祖母には妹がいた。七つのとき、井戸の近くでいなくなった。村では七つまでは神さまの子。村の子どもなら誰でも知っている歌。
   3. 紙       祖母の部屋で見つけた歌詞。数字の下の一文字だけ赤丸 → 「わたしがうめた」
   3.5 解読   この歌は遊び歌じゃない。姉が妹を井戸まで連れていく手順。1行ずつあぜ道の場面で説明
+  3.6 教材   紙も赤丸も祖母が子どもの頃のもの。姉に役目をわからせる教材。見つけたのは偶然じゃない
   4. オチ     昨日、祖母が妹にこの歌を教えていた。妹は、目隠しの遊びの歌だと思って、楽しそうに歌っていた。
               妹は、来週、七つになる。
               祖母はいつも最後に言った。「お姉ちゃんなんだから、ちゃんと覚えるんだよ」
@@ -352,7 +353,9 @@ def build_timeline():
     tl.mark["circles"] = tl.t
     tl.t += CIRCLE * len(LYRICS) + 0.8
     tl.mark["reveal"] = tl.t
-    tl.t += 4.0
+    tl.t += 2.5
+    tl.say("紙も、赤い丸も、祖母が、子どもの頃のものだった。", "紙も、赤い丸も\n祖母が子どもの頃のものだった。", gap=0.4)
+    tl.say("祖母に、この歌を教えた誰かが、つけた印だ。", "祖母にこの歌を教えた誰かが\nつけた印だ。", gap=1.0)
     # 解読：歌は「手順」だった。あぜ道の場面を1行ずつ振り返る
     tl.mark["decode"] = tl.t
     tl.say("この歌は、遊び歌なんかじゃなかった。", "この歌は\n遊び歌なんかじゃなかった。", gap=0.4)
@@ -361,7 +364,12 @@ def build_timeline():
         tl.mark[f"beat{i}"] = tl.t
         tl.say(text, sub, gap=0.7)
     tl.mark["beat_end"] = tl.t
-    tl.say("大人たちは、それを、神隠しと呼んだ。", "大人たちは、それを\n神隠しと呼んだ。", gap=1.5)
+    tl.say("大人たちは、それを、神隠しと呼んだ。", "大人たちは、それを\n神隠しと呼んだ。", gap=1.0)
+    # 教材：赤丸の紙は、姉に役目をわからせるためのもの
+    tl.mark["kyozai"] = tl.t
+    tl.say("この紙は、姉に、自分の役目を、わからせるための、教材だった。", "この紙は、姉に\n自分の役目をわからせるための\n教材だった。", gap=0.6)
+    tl.say("歌を覚えた姉は、いつか、この紙を見せられる。", "歌を覚えた姉は\nいつか、この紙を見せられる。", gap=0.9)
+    tl.say("私が、この紙を見つけたのは、偶然じゃなかった。", "私がこの紙を見つけたのは\n偶然じゃなかった。", gap=1.6)
     tl.mark["end"] = tl.t
     tl.wait(0.4)
     tl.mark["end_hum"] = tl.t
@@ -761,6 +769,15 @@ def zoom_crop(img, z, cx=W / 2, cy=H / 2):
 
 
 # ================================================================ フレーム
+def paper_circled():
+    """赤丸が全部ついた紙（教材として見せられる紙）."""
+    img = PAPER.copy()
+    d = ImageDraw.Draw(img)
+    for x, y, _ in TARGETS:
+        d.arc([x - 52, y - 50, x + 52, y + 52], 0, 360, fill=(150, 34, 28), width=7)
+    return img
+
+
 def paper_frame(t):
     img = PAPER.copy()
     d = ImageDraw.Draw(img)
@@ -802,7 +819,7 @@ def render_frame(fi):
     elif t < M["decode"]:                                 # 3. 紙
         sepia = 0.35
         img = paper_frame(t)
-    elif t < M["end"]:                                    # 3.5 解読：あぜ道を1行ずつ振り返る
+    elif t < M["kyozai"]:                                 # 3.5 解読：あぜ道を1行ずつ振り返る
         sepia, tint = 0.6, True
         if t < M["beat0"]:
             st = 0.05
@@ -814,6 +831,10 @@ def render_frame(fi):
         img = zoom_crop(paddy_frame(t, st=st, lyric_col=None), 1.25, W / 2 + 40, 1250)
         li, _ = song_pos(st)
         vtext(ImageDraw.Draw(img), W - 130, 360, LYRICS[max(0, li)], F_LYRIC, (240, 70, 60))
+    elif t < M["end"]:                                    # 3.6 教材：赤丸の紙をもう一度
+        sepia = 0.35
+        p = (t - M["kyozai"]) / (M["end"] - M["kyozai"])
+        img = zoom_crop(paper_circled(), 1.0 + 0.18 * ease(p), W / 2, TARGETS[0][1])
     elif t < M["dark"]:                                   # 4. オチ：祖母と妹
         turn = ease((t - M["turn"]) / 1.4) if t >= M["turn"] else 0.0
         eyes = ease((t - M["turn"] - 0.9) / 0.8) if t >= M["turn"] else 0.0
@@ -846,7 +867,7 @@ def main():
     cmd = ["ffmpeg", "-y", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-r", str(FPS), "-i", "-",
            "-i", str(wav_path),
-           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "4M", "-bufsize", "8M", "-tune", "grain",
+           "-c:v", "libx264", "-preset", "medium", "-crf", "23", "-maxrate", "3.5M", "-bufsize", "7M", "-tune", "grain",
            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(OUT)]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     total = int(DUR * FPS)
