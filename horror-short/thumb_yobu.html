@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/700.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-sans-jp/900.css">
+<link rel="stylesheet" href="node_modules/@fontsource/noto-serif-jp/900.css">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 540px; height: 960px; background: #000; overflow: hidden; }
+  body { font-family: "Noto Sans JP", sans-serif; color: #e8eaed; }
+  #s { position: relative; width: 540px; height: 960px; overflow: hidden; background: linear-gradient(#15181d, #07080a); }
+  .bar { position: absolute; left: 34px; right: 34px; top: 46px; display: flex; justify-content: space-between; font-size: 17px; font-weight: 700; color: #d6dadf; }
+  .ui { position: absolute; left: 0; right: 0; top: 0; bottom: 0; }
+  .ring { position: absolute; left: 50%; top: 520px; border-radius: 50%; border: 2px solid rgba(200,205,212,.25); transform: translate(-50%,-50%); }
+  .av { position: absolute; left: 50%; top: 520px; width: 150px; height: 150px; margin: -75px; border-radius: 50%; background: #3a3f47; display: flex; align-items: center; justify-content: center; font-size: 72px; font-weight: 700; }
+  .name { position: absolute; left: 0; right: 0; top: 618px; text-align: center; font-size: 52px; font-weight: 700; }
+  .sub { position: absolute; left: 0; right: 0; top: 694px; text-align: center; font-size: 24px; color: #9aa1ab; }
+  .btn { position: absolute; top: 820px; width: 92px; height: 92px; border-radius: 50%; }
+  .btn.no { left: 100px; background: #e5484d; } .btn.ok { right: 100px; background: #30a46c; box-shadow: 0 0 30px rgba(48,164,108,.5); }
+  .head { position: absolute; left: 0; right: 0; top: 104px; text-align: center; }
+  .head .a { font-size: 44px; font-weight: 900; letter-spacing: .02em; line-height: 1.25; text-shadow: 0 4px 0 #000, 0 0 24px #000; }
+  .head .b { margin-top: 6px; font-family: "Noto Serif JP", serif; font-size: 132px; font-weight: 900; line-height: 1; color: #e3231c; letter-spacing: .06em; text-shadow: 0 6px 0 #000, 0 0 40px rgba(0,0,0,.9); }
+  .moshi { position: absolute; right: 30px; top: 420px; writing-mode: vertical-rl; font-family: "Noto Serif JP", serif; font-size: 50px; font-weight: 900; color: #e3231c; text-shadow: 0 0 18px #000, 3px 3px 0 #000; }
+  .vig { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 58%, rgba(0,0,0,0) 40%, rgba(0,0,0,.75) 100%); }
+  .grain { position: absolute; inset: 0; opacity: .08; background-image: repeating-radial-gradient(circle at 17% 32%, #fff 0 1px, transparent 1px 3px); mix-blend-mode: overlay; }
+</style>
+</head>
+<body>
+<div id="s">
+  <div class="bar"><span>2:13</span><span>4G ▯</span></div>
+  <div class="ring" style="width:250px;height:250px"></div>
+  <div class="ring" style="width:330px;height:330px;opacity:.5"></div>
+  <div class="av">ば</div>
+  <div class="name">ばあちゃん</div>
+  <div class="sub">携帯 ・ 着信中</div>
+  <div class="btn no"></div><div class="btn ok"></div>
+  <div class="vig"></div>
+  <div class="head"><div class="a">先月死んだ<br>ばあちゃんから</div><div class="b">着信</div></div>
+  <div class="moshi">『もし』</div>
+</div>
+</body>
+</html>
