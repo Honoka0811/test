@@ -5,151 +5,186 @@
 <title>ご当地ラーメン TOP10</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&display=block">
 <style>
+  /* YouTube Shorts covers roughly the bottom 420px (title/channel) and a ~150px column on the right
+     (like/comment buttons) — all important content stays above y≈1480 and left of x≈930. */
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 1080px; height: 1920px; overflow: hidden; background: #1a0f0a; }
   body { font-family: "M PLUS Rounded 1c", "IPAGothic", sans-serif; color: #fff; }
   #stage { position: absolute; inset: 0; overflow: hidden; }
   #bg { position: absolute; inset: 0; }
-  .rays { position: absolute; left: 50%; top: 50%; width: 3200px; height: 3200px; margin: -1600px 0 0 -1600px;
+  .rays { position: absolute; left: 50%; top: 40%; width: 3200px; height: 3200px; margin: -1600px 0 0 -1600px;
           background: repeating-conic-gradient(rgba(255,255,255,.07) 0 7.5deg, transparent 7.5deg 15deg); }
+  #world { position: absolute; inset: 0; will-change: transform; }
   .scene { position: absolute; inset: 0; opacity: 0; }
   .abs { position: absolute; left: 0; right: 0; text-align: center; will-change: transform, opacity; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 20; }
 
-  #header { position: absolute; top: 80px; left: 60px; right: 60px; display: flex; align-items: center; gap: 20px; z-index: 5; }
-  #header .tag { background: #e8382f; color: #fff; font-weight: 900; font-size: 38px; padding: 8px 24px; border-radius: 16px; }
-  #header .ttl { font-weight: 800; font-size: 42px; text-shadow: 0 3px 0 rgba(0,0,0,.4); }
-  #progress { position: absolute; top: 44px; left: 60px; right: 60px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.2); z-index: 5; }
+  #progress { position: absolute; top: 40px; left: 50px; right: 50px; height: 12px; border-radius: 6px; background: rgba(255,255,255,.22); z-index: 5; }
   #progress i { display: block; height: 100%; width: 0; border-radius: 6px; background: #ffd23f; }
+  #header { position: absolute; top: 72px; left: 50px; right: 50px; display: flex; align-items: center; gap: 18px; z-index: 5; }
+  #header .tag { background: #e8382f; color: #fff; font-weight: 900; font-size: 36px; padding: 6px 22px; border-radius: 14px; }
+  #header .ttl { font-weight: 800; font-size: 40px; text-shadow: 0 3px 0 rgba(0,0,0,.4); }
 
   .stroke { -webkit-text-stroke: 14px #2a160c; paint-order: stroke fill; }
-  .rank { top: 170px; font-weight: 900; line-height: 1; }
-  .rank .num { font-size: 250px; letter-spacing: -8px; }
-  .rank .i { font-size: 100px; margin-left: 6px; }
-  .medal { position: absolute; left: 50%; top: 110px; width: 420px; height: 420px; margin-left: -210px; border-radius: 50%; }
+  .rank { top: 140px; font-weight: 900; line-height: 1; }
+  .rank .num { font-size: 230px; letter-spacing: -8px; }
+  .rank .i { font-size: 96px; margin-left: 6px; }
+  .medal { position: absolute; left: 50%; top: 90px; width: 420px; height: 420px; margin-left: -210px; border-radius: 50%; }
 
-  .photo { position: absolute; left: 70px; top: 455px; width: 940px; height: 705px; border: 14px solid #fff; border-radius: 28px;
+  .photo { position: absolute; left: 80px; top: 395px; width: 840px; height: 630px; border: 12px solid #fff; border-radius: 26px;
            overflow: hidden; box-shadow: 0 24px 50px rgba(0,0,0,.55); background: #000; will-change: transform, opacity; }
-  .photo img { width: 100%; height: 100%; object-fit: cover; display: block; will-change: transform; }
+  .photo img { width: 100%; height: 100%; object-fit: cover; display: block; will-change: transform, filter; }
+  .photo .cr { position: absolute; left: 0; right: 0; bottom: 0; padding: 30px 18px 10px; font-size: 21px; font-weight: 500; line-height: 1.35;
+               color: rgba(255,255,255,.92); background: linear-gradient(transparent, rgba(0,0,0,.7)); text-align: left; }
+  .photo .q { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 260px; font-weight: 900;
+              color: #ffd23f; -webkit-text-stroke: 14px #2a160c; paint-order: stroke fill; }
 
-  .name { top: 1205px; font-weight: 900; font-size: 124px; }
-  .region { top: 1370px; font-weight: 800; font-size: 54px; }
-  .region span { display: inline-block; background: rgba(0,0,0,.45); padding: 8px 34px; border-radius: 50px; }
-  .chips { top: 1490px; display: flex; flex-wrap: wrap; justify-content: center; gap: 22px; padding: 0 60px; }
-  .chip { font-weight: 800; font-size: 50px; background: #fff; color: #2a160c; padding: 14px 32px; border-radius: 20px; box-shadow: 0 8px 0 rgba(0,0,0,.3); }
-  .credit { position: absolute; left: 40px; right: 40px; bottom: 34px; text-align: center; font-size: 26px; font-weight: 500;
-            color: rgba(255,255,255,.75); line-height: 1.4; }
+  .name { top: 1055px; font-weight: 900; font-size: 112px; }
+  .chips { top: 1205px; display: flex; flex-wrap: wrap; justify-content: center; gap: 18px; padding: 0 60px; }
+  .chip { font-weight: 800; font-size: 44px; background: #fff; color: #2a160c; padding: 10px 26px; border-radius: 18px; box-shadow: 0 7px 0 rgba(0,0,0,.3); }
+  .chip.pref { background: #e8382f; color: #fff; }
+
+  #caption { position: absolute; left: 40px; right: 150px; top: 1335px; height: 130px; display: flex; align-items: center; justify-content: center; z-index: 6; }
+  #caption span { display: inline-block; font-weight: 900; color: #fff; line-height: 1.2; text-align: center;
+                  -webkit-text-stroke: 12px #000; paint-order: stroke fill; will-change: transform, opacity; }
+  #caption span em { font-style: normal; color: #ffd23f; }
 
   .big { font-weight: 900; line-height: 1.12; }
-  .sub { font-weight: 800; }
-  .three { display: flex; justify-content: center; gap: 26px; }
-  .three div { width: 300px; border-radius: 28px; background: #fff; color: #2a160c; font-weight: 900; font-size: 58px;
-               box-shadow: 0 12px 0 rgba(0,0,0,.35); overflow: hidden; padding-bottom: 20px; }
-  .three img { width: 100%; height: 230px; object-fit: cover; display: block; margin-bottom: 14px; }
-  .three small { display: block; font-size: 34px; font-weight: 800; color: #8a5a3c; margin-top: 4px; }
+  .montage { position: absolute; inset: 0; }
+  .montage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+  .montage::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.25) 45%, rgba(0,0,0,.75)); }
+  .recap { position: absolute; left: 60px; right: 60px; top: 230px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .recap div { position: relative; aspect-ratio: 1; border-radius: 16px; overflow: hidden; border: 5px solid #fff; will-change: transform, opacity; }
+  .recap img { width: 100%; height: 100%; object-fit: cover; }
+  .recap b { position: absolute; left: 6px; top: 2px; font-size: 44px; font-weight: 900; -webkit-text-stroke: 8px #2a160c; paint-order: stroke fill; }
+  .recap small { position: absolute; left: 0; right: 0; bottom: 0; font-size: 22px; font-weight: 800; background: rgba(0,0,0,.6); text-align: center; padding: 3px 0; }
+  .confetti { position: absolute; width: 22px; height: 34px; border-radius: 4px; will-change: transform; }
 </style>
 </head>
 <body>
 <div id="stage">
   <div id="bg"><div class="rays" id="rays"></div></div>
+  <div id="world"><div id="scenes"></div></div>
   <div id="progress"><i id="bar"></i></div>
   <div id="header"><div class="tag">TOP10</div><div class="ttl">全国ご当地ラーメン</div></div>
-  <div id="scenes"></div>
+  <div id="caption"><span id="captext"></span></div>
+  <div id="flash"></div>
 </div>
 
 <script>
-// window.CREDITS (photos/credits.json) and window.DURS (audio/durations.json) are injected by render.js.
+// window.CREDITS (photos/credits.json), window.DURS (audio/durations.json) and window.CAPS (audio/captions.json)
+// are injected by render.js.
 const CREDITS = window.CREDITS || {};
 const DURS = window.DURS || {};
+const CAPS = window.CAPS || {};
 
 const RANKS = [
-  { n: 10, key: "wakayama", name: "和歌山ラーメン",   pref: "和歌山県",      tags: ["豚骨醤油", "早寿司と一緒に"], bg: ["#8c2f1e", "#3d130b"], zoom: { s: 1.45, origin: "22% 85%" } },
-  { n: 9,  key: "hakodate", name: "函館塩ラーメン",   pref: "北海道",        tags: ["透き通る塩スープ", "ストレート麺"], bg: ["#1e6f8c", "#0b2c3d"], zoom: { s: 1.3, origin: "15% 60%" } },
-  { n: 8,  key: "asahikawa",name: "旭川醤油ラーメン", pref: "北海道",        tags: ["魚介×豚骨", "ラードで熱々"], bg: ["#2d4f8a", "#111f3a"] },
-  { n: 7,  key: "kumamoto", name: "熊本ラーメン",     pref: "熊本県",        tags: ["豚骨", "香ばしいマー油"], bg: ["#5a3a8a", "#22143d"] },
-  { n: 6,  key: "tokushima",name: "徳島ラーメン",     pref: "徳島県",        tags: ["甘辛豚バラ", "生卵トッピング"], bg: ["#2f7a4a", "#0f3320"] },
-  { n: 5,  key: "onomichi", name: "尾道ラーメン",     pref: "広島県",        tags: ["魚介醤油", "背脂ミンチ"], bg: ["#1f6e78", "#0a2e33"] },
-  { n: 4,  key: "iekei",    name: "家系ラーメン",     pref: "神奈川県 横浜", tags: ["豚骨醤油×鶏油", "太麺"], bg: ["#a3361f", "#43150b"] },
-  { n: 3,  key: "kitakata", name: "喜多方ラーメン",   pref: "福島県",        tags: ["あっさり醤油", "平打ち縮れ麺", "朝ラー"], bg: ["#9a5b1e", "#3f230a"], medal: "#cd7f32" },
-  { n: 2,  key: "sapporo",  name: "札幌味噌ラーメン", pref: "北海道",        tags: ["濃厚味噌", "縮れ麺", "炒め野菜"], bg: ["#b0681a", "#46280a"], medal: "#c0c7d0" },
-  { n: 1,  key: "hakata",   name: "博多ラーメン",     pref: "福岡県",        tags: ["濃厚豚骨", "極細麺", "替え玉"], bg: ["#c8102e", "#4a0610"], medal: "#ffcf3f" },
+  { n: 10, key: "wakayama", name: "和歌山ラーメン",   pref: "和歌山",  tags: ["豚骨醤油", "早寿司"], bg: ["#8c2f1e", "#3d130b"], zoom: { s: 1.45, origin: "22% 85%" } },
+  { n: 9,  key: "hakodate", name: "函館塩ラーメン",   pref: "北海道",  tags: ["透き通る塩", "ストレート麺"], bg: ["#1e6f8c", "#0b2c3d"], zoom: { s: 1.3, origin: "15% 60%" } },
+  { n: 8,  key: "asahikawa",name: "旭川醤油ラーメン", pref: "北海道",  tags: ["魚介×豚骨", "ラードで熱々"], bg: ["#2d4f8a", "#111f3a"] },
+  { n: 7,  key: "kumamoto", name: "熊本ラーメン",     pref: "熊本",    tags: ["豚骨", "マー油"], bg: ["#5a3a8a", "#22143d"] },
+  { n: 6,  key: "tokushima",name: "徳島ラーメン",     pref: "徳島",    tags: ["甘辛豚バラ", "生卵"], bg: ["#2f7a4a", "#0f3320"] },
+  { n: 5,  key: "onomichi", name: "尾道ラーメン",     pref: "広島",    tags: ["魚介醤油", "背脂"], bg: ["#1f6e78", "#0a2e33"] },
+  { n: 4,  key: "iekei",    name: "家系ラーメン",     pref: "横浜",    tags: ["豚骨醤油", "太麺"], bg: ["#a3361f", "#43150b"] },
+  { n: 3,  key: "kitakata", name: "喜多方ラーメン",   pref: "福島",    tags: ["あっさり醤油", "朝ラー"], bg: ["#9a5b1e", "#3f230a"], medal: "#cd7f32" },
+  { n: 2,  key: "sapporo",  name: "札幌味噌ラーメン", pref: "北海道",  tags: ["濃厚味噌", "炒め野菜"], bg: ["#b0681a", "#46280a"], medal: "#c0c7d0" },
+  { n: 1,  key: "hakata",   name: "博多ラーメン",     pref: "福岡",    tags: ["濃厚豚骨", "極細麺", "替え玉"], bg: ["#c8102e", "#4a0610"], medal: "#ffcf3f" },
 ];
-
-// ---------- simple SVG bowl for the intro ----------
-const bowlSVG = `
-  <svg viewBox="0 0 1080 560" width="1080" height="560">
-    <g class="steam" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="16" stroke-linecap="round">
-      <path d="M420 150 q-30 -40 0 -80 q30 -40 0 -80"/><path d="M540 140 q-30 -40 0 -80 q30 -40 0 -80"/><path d="M660 150 q-30 -40 0 -80 q30 -40 0 -80"/>
-    </g>
-    <ellipse cx="540" cy="290" rx="370" ry="100" fill="#2a160c"/>
-    <path d="M170 290 Q190 520 540 530 Q890 520 910 290 Z" fill="#d7262d"/>
-    <path d="M200 360 Q540 410 880 360" stroke="#fff" stroke-width="10" fill="none" stroke-dasharray="26 18" opacity=".8"/>
-    <ellipse cx="540" cy="288" rx="345" ry="86" fill="#b9733d"/>
-    <g stroke="#f6d36b" stroke-width="12" fill="none" stroke-linecap="round"><path d="M300 300 q25 -18 50 0 t50 0 t50 0 t50 0"/><path d="M320 330 q25 -18 50 0 t50 0 t50 0 t50 0"/><path d="M560 340 q25 -18 50 0 t50 0 t50 0"/></g>
-    <ellipse cx="420" cy="262" rx="90" ry="44" fill="#c47a4a" stroke="#7a3f1d" stroke-width="10"/>
-    <ellipse cx="640" cy="300" rx="70" ry="52" fill="#fffaf0"/><ellipse cx="640" cy="300" rx="38" ry="28" fill="#f5a623"/>
-    <rect x="720" y="196" width="120" height="150" rx="6" fill="#16301e" transform="rotate(12 780 270)"/>
-    <ellipse cx="530" cy="232" rx="54" ry="26" fill="#fff"/><path d="M500 232 q15 -14 30 0 t30 0" stroke="#e84a7f" stroke-width="7" fill="none"/>
-  </svg>`;
 
 function creditText(key) {
   const c = CREDITS[key];
-  if (!c) return "";
-  return `${c.place ? c.place + "<br>" : ""}Photo: ${c.artist} / ${c.license} / Wikimedia Commons`;
+  return c ? `${c.place ? c.place + "<br>" : ""}Photo: ${c.artist} / ${c.license} / Wikimedia Commons` : "";
 }
 
 // ---------- timeline (scene length follows narration) ----------
-const LEAD = 0.25, TAIL = 0.45;
-const durOf = (k, min) => Math.max(min, (DURS[k] || min) + LEAD + TAIL);
+const LEAD = 0.12, TAIL = 0.28, ROLL = 0.9;
+const D = k => DURS[k] || 3;
 const scenesEl = document.getElementById("scenes");
 const scenes = [];
+const SFX = [];          // {name, at} — mixed in by render.js
+const VOICE = [];        // {key, at}
+const CAPLINES = [];     // {t0, t1, text}
 let cursor = 0;
 
-function addScene(key, html, dur, bg) {
+function addScene(key, html, dur, bg, extra = {}) {
   const el = document.createElement("div");
   el.className = "scene";
   el.innerHTML = html;
   scenesEl.appendChild(el);
-  scenes.push({ key, el, start: cursor, dur, bg });
+  const s = Object.assign({ key, el, start: cursor, dur, bg }, extra);
+  scenes.push(s);
   cursor += dur;
+  return s;
+}
+function voice(key, at, captions = true) {
+  VOICE.push({ key, at });
+  if (captions) (CAPS[key] || []).forEach(c => CAPLINES.push({ t0: at + c.t0, t1: at + c.t1, text: c.text }));
 }
 
-addScene("intro", `
-  <div class="abs sub" data-a="0.05" style="top:470px;font-size:70px;color:#ffd23f">食べ歩き保存版！</div>
-  <div class="abs big stroke" data-a="0.2" style="top:590px;font-size:150px">全国<br>ご当地ラーメン</div>
-  <div class="abs big stroke" data-a="0.5" data-pop="1" style="top:990px;font-size:200px;color:#ffd23f">TOP10</div>
-  <div class="abs" data-a="0.8" style="top:1240px">${bowlSVG}</div>
-  <div class="credit">ナレーション　VOICEVOX:四国めたん</div>
-`, durOf("intro", 3), ["#e8382f", "#5a0d08"]);
+// --- hook: rapid photo montage + question ---
+{
+  const imgs = RANKS.map(r => `<img src="photos/${r.key}.jpg">`).join("");
+  const s = addScene("hook", `
+    <div class="montage">${imgs}</div>
+    <div class="abs big stroke" data-a="0" data-pop="1" style="top:340px;font-size:108px">日本一うまい</div>
+    <div class="abs big stroke" data-a="0.12" data-pop="1" style="top:480px;font-size:100px">ご当地ラーメンは<span style="color:#ffd23f">？</span></div>
+    <div class="abs" data-a="0.9" data-pop="1" style="top:760px"><span style="display:inline-block;background:#e8382f;font-weight:900;font-size:110px;padding:6px 50px;border-radius:30px;box-shadow:0 12px 0 rgba(0,0,0,.4)">TOP10</span></div>
+  `, LEAD + D("hook") + TAIL, ["#e8382f", "#5a0d08"], { montage: true });
+  voice("hook", s.start + LEAD, false);
+  SFX.push({ name: "pop", at: s.start }, { name: "pop", at: s.start + 0.9 });
+}
 
+// --- ranks ---
 RANKS.forEach(r => {
   const color = r.medal || "#ffffff";
-  const medal = r.medal ? `<div class="medal" data-a="0" style="background:radial-gradient(circle, ${r.medal}99 0%, ${r.medal}00 70%)"></div>` : "";
-  addScene("r" + r.n, `
+  const medal = r.medal ? `<div class="medal" data-a="0" style="background:radial-gradient(circle, ${r.medal}aa 0%, ${r.medal}00 70%)"></div>` : "";
+  const isOne = r.n === 1;
+  const key = isOne ? "r1" : "r" + r.n;
+  const dur = isOne ? LEAD + D("r1a") + ROLL + D("r1b") + TAIL : LEAD + D(key) + TAIL;
+  const reveal = isOne ? LEAD + D("r1a") + ROLL : 0;
+  const z = r.zoom || { s: 1, origin: "50% 50%" };
+  const s = addScene(key, `
     ${medal}
-    <div class="abs rank stroke" data-a="0" data-pop="1"><span class="num" style="color:${color}">${r.n}</span><span class="i" style="color:${color}">位</span></div>
-    <div class="photo" data-a="0.1" data-photo="1" data-zoom="${r.zoom ? r.zoom.s : 1}"><img src="photos/${r.key}.jpg" style="transform-origin:${r.zoom ? r.zoom.origin : "50% 50%"}"></div>
-    <div class="abs name stroke" data-a="0.3" style="font-size:${r.name.length > 7 ? 112 : 124}px">${r.name}</div>
-    <div class="abs region" data-a="0.45"><span>📍 ${r.pref}</span></div>
-    <div class="abs chips">${r.tags.map((t, k) => `<div class="chip" data-a="${0.6 + k * 0.12}">${t}</div>`).join("")}</div>
-    <div class="credit">${creditText(r.key)}</div>
-  `, durOf("r" + r.n, 3), r.bg);
+    <div class="abs rank stroke" data-a="0" data-pop="1" data-shake="1"><span class="num" style="color:${color}">${r.n}</span><span class="i" style="color:${color}">位</span></div>
+    <div class="photo" data-a="0.08" data-photo="1" data-zoom="${z.s}">
+      <img src="photos/${r.key}.jpg" style="transform-origin:${z.origin}">
+      <div class="cr">${creditText(r.key)}</div>
+      ${isOne ? '<div class="q">？</div>' : ""}
+    </div>
+    <div class="abs name stroke" data-a="${isOne ? reveal : 0.22}" ${isOne ? 'data-pop="1"' : ""} style="font-size:${r.name.length > 7 ? 100 : 112}px">${r.name}</div>
+    <div class="abs chips">${[`<div class="chip pref" data-a="${(isOne ? reveal : 0) + 0.35}">📍${r.pref}</div>`]
+      .concat(r.tags.map((t, k) => `<div class="chip" data-a="${(isOne ? reveal : 0) + 0.45 + k * 0.1}">${t}</div>`)).join("")}</div>
+    ${isOne ? Array.from({ length: 36 }, (_, i) => `<div class="confetti" data-i="${i}"></div>`).join("") : ""}
+  `, dur, r.bg, { reveal, rank: r.n });
+  if (isOne) {
+    voice("r1a", s.start + LEAD);
+    voice("r1b", s.start + reveal);
+    SFX.push({ name: "drumroll", at: s.start + LEAD + D("r1a") - 0.3 }, { name: "reveal", at: s.start + reveal });
+  } else {
+    voice(key, s.start + LEAD);
+  }
+  SFX.push({ name: "whoosh", at: Math.max(0, s.start - 0.12) }, { name: "pop", at: s.start + 0.16 });
 });
 
-addScene("outro", `
-  <div class="abs sub" data-a="0.05" style="top:300px;font-size:70px;color:#ffd23f">ちなみに…</div>
-  <div class="abs big stroke" data-a="0.2" style="top:410px;font-size:140px">日本三大<br>ラーメン</div>
-  <div class="abs three" data-a="0.6" style="top:790px">
-    <div><img src="photos/sapporo.jpg">札幌<small>味噌</small></div>
-    <div><img src="photos/hakata.jpg">博多<small>豚骨</small></div>
-    <div><img src="photos/kitakata.jpg">喜多方<small>醤油</small></div>
-  </div>
-  <div class="abs sub" data-a="3.2" style="top:1280px;font-size:66px;line-height:1.5">あなたの推しは<br>何位だった？🍜</div>
-  <div class="abs sub" data-a="4.6" data-pop="1" style="top:1540px"><span style="display:inline-block;background:#ffd23f;color:#2a160c;font-size:60px;padding:22px 56px;border-radius:60px;box-shadow:0 10px 0 rgba(0,0,0,.35)">コメントで教えてね</span></div>
-  <div class="credit">ナレーション　VOICEVOX:四国めたん<br>写真　Wikimedia Commons（撮影者・ライセンスは各シーンに表記）</div>
-`, durOf("outro", 4) + 0.6, ["#2a160c", "#0d0603"]);
+// --- outro: recap grid + CTA ---
+{
+  const grid = RANKS.slice().reverse().map((r, i) =>
+    `<div data-a="${0.05 + i * 0.05}" data-pop="1"><img src="photos/${r.key}.jpg"><b style="color:${r.medal || "#fff"}">${r.n}</b><small>${r.name.replace("ラーメン", "")}</small></div>`).join("");
+  const s = addScene("outro", `
+    <div class="recap">${grid}</div>
+    <div class="abs big stroke" data-a="0.15" style="top:690px;font-size:108px">あなたの推しは<br>何位だった<span style="color:#ffd23f">？</span></div>
+    <div class="abs" data-a="1.1" data-pop="1" style="top:1000px"><span style="display:inline-block;background:#ffd23f;color:#2a160c;font-weight:900;font-size:62px;padding:20px 50px;border-radius:60px;box-shadow:0 10px 0 rgba(0,0,0,.35)">💬 コメントで教えてね</span></div>
+    <div class="abs" data-a="1.4" style="top:1150px;font-size:28px;font-weight:500;color:rgba(255,255,255,.8)">ナレーション VOICEVOX:四国めたん ／ 写真 Wikimedia Commons</div>
+  `, LEAD + D("outro") + 0.9, ["#2a160c", "#0d0603"]);
+  voice("outro", s.start + LEAD, false);
+  SFX.push({ name: "whoosh", at: s.start - 0.12 }, { name: "ding", at: s.start + 1.1 });
+}
 
 const TOTAL = cursor;
-const RANK_END = scenes[scenes.length - 1].start;
+const RANK_START = scenes[1].start, RANK_END = scenes[scenes.length - 1].start;
+window.TOTAL = TOTAL;
+window.VOICE = VOICE;
+window.SFX = SFX;
 
 // ---------- render ----------
 const clamp = x => Math.min(Math.max(x, 0), 1);
@@ -157,15 +192,19 @@ const ease = x => 1 - Math.pow(1 - clamp(x), 3);
 const back = x => { x = clamp(x); const c = 1.9; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
 const mix = (a, b, k) => { const p = s => s.match(/\w\w/g).map(h => parseInt(h, 16)); const A = p(a), B = p(b);
   return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * k).toString(16).padStart(2, "0")).join(""); };
+const hash = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 
-window.TOTAL = TOTAL;
-// narration start time (seconds) of each scene, keyed like the audio files
-window.NARRATION = scenes.map(s => ({ key: s.key, at: s.start + LEAD }));
+function shakeAt(lt, t0, amp = 22, dur = 0.28) {
+  const p = (lt - t0) / dur;
+  if (p < 0 || p > 1) return [0, 0];
+  const a = amp * (1 - p);
+  return [Math.sin(lt * 90) * a, Math.cos(lt * 77) * a * 0.7];
+}
 
 window.render = function (t) {
   document.getElementById("bar").style.width = (clamp(t / TOTAL) * 100) + "%";
-  document.getElementById("rays").style.transform = `rotate(${t * 12}deg)`;
-  document.getElementById("header").style.opacity = (t >= scenes[1].start && t < RANK_END) ? 1 : 0;
+  document.getElementById("rays").style.transform = `rotate(${t * 14}deg)`;
+  document.getElementById("header").style.opacity = (t >= RANK_START && t < RANK_END) ? 1 : 0;
 
   let cur = scenes.findIndex(s => t >= s.start && t < s.start + s.dur);
   if (cur < 0) cur = scenes.length - 1;
@@ -173,36 +212,82 @@ window.render = function (t) {
   const lt = t - s.start;
 
   const prev = scenes[cur - 1];
-  const k = prev ? ease(lt / 0.3) : 1;
+  const k = prev ? ease(lt / 0.25) : 1;
   const c0 = prev ? mix(prev.bg[0], s.bg[0], k) : s.bg[0];
   const c1 = prev ? mix(prev.bg[1], s.bg[1], k) : s.bg[1];
-  document.getElementById("bg").style.background = `radial-gradient(circle at 50% 40%, ${c0} 0%, ${c1} 75%)`;
-
+  document.getElementById("bg").style.background = `radial-gradient(circle at 50% 35%, ${c0} 0%, ${c1} 75%)`;
   scenes.forEach((sc, i) => { sc.el.style.opacity = i === cur ? 1 : 0; });
 
+  // flash on every cut, bigger on the #1 reveal
+  let flash = cur > 0 ? Math.max(0, 0.55 - lt / 0.12 * 0.55) : 0;
+  if (s.reveal) flash = Math.max(flash, clamp(1 - (lt - s.reveal) / 0.25) * (lt >= s.reveal ? 0.9 : 0));
+  document.getElementById("flash").style.opacity = flash;
+
+  // camera shake when the rank number lands, and on the #1 reveal
+  let [sx, sy] = s.rank ? shakeAt(lt, 0.22) : [0, 0];
+  if (s.reveal) { const [a, b] = shakeAt(lt, s.reveal, 34, 0.45); sx += a; sy += b; }
   const isLast = cur === scenes.length - 1;
-  const out = isLast ? 0 : ease((lt - (s.dur - 0.22)) / 0.22);
-  s.el.style.transform = `translateX(${-out * 1080}px)`;
+  const out = isLast ? 0 : ease((lt - (s.dur - 0.16)) / 0.16);
+  document.getElementById("world").style.transform = `translate(${sx - out * 1080}px, ${sy}px)`;
+
+  // hook montage: hard cuts every 0.16 s with a slight zoom
+  if (s.montage) {
+    const imgs = s.el.querySelectorAll(".montage img");
+    const idx = Math.floor(lt / 0.16) % imgs.length;
+    imgs.forEach((im, i) => { im.style.opacity = i === idx ? 1 : 0; im.style.transform = `scale(${1.15 - 0.1 * ((lt / 0.16) % 1)})`; });
+  }
 
   s.el.querySelectorAll("[data-a]").forEach(el => {
     const a = parseFloat(el.dataset.a);
-    const p = (lt - a) / 0.35;
+    const p = (lt - a) / 0.3;
     if (el.dataset.pop) {
-      el.style.opacity = clamp(p * 2);
-      el.style.transform = `scale(${1.8 - 0.8 * back(p)})`;
+      el.style.opacity = clamp(p * 3);
+      el.style.transform = `scale(${2.2 - 1.2 * back(p)})`;
     } else if (el.dataset.photo) {
-      el.style.opacity = clamp(p * 1.5);
-      el.style.transform = `translateY(${(1 - ease(p)) * 120}px) rotate(${(1 - ease(p)) * -6 - 1.2}deg) scale(${0.85 + 0.15 * back(p)})`;
-      el.querySelector("img").style.transform = `scale(${parseFloat(el.dataset.zoom) * (1.02 + 0.10 * (lt / s.dur))})`;   // slow Ken Burns zoom
+      el.style.opacity = clamp(p * 2);
+      el.style.transform = `translateY(${(1 - ease(p)) * 140}px) rotate(${(1 - ease(p)) * -8 - 1.2}deg) scale(${0.8 + 0.2 * back(p)})`;
+      const img = el.querySelector("img");
+      img.style.transform = `scale(${parseFloat(el.dataset.zoom) * (1.03 + 0.12 * (lt / s.dur))})`;
+      if (s.reveal) {
+        const r = clamp((lt - s.reveal) / 0.2);
+        img.style.filter = `blur(${(1 - r) * 40}px) brightness(${0.55 + 0.45 * r})`;
+        const q = el.querySelector(".q");
+        q.style.opacity = 1 - r;
+        q.style.transform = `scale(${1 + 0.06 * Math.sin(lt * 12)})`;
+        el.querySelector(".cr").style.opacity = r;   // don't spoil the answer via the credit line
+      }
     } else {
-      el.style.opacity = clamp(p);
-      el.style.transform = `translateY(${(1 - ease(p)) * 80}px)`;
+      el.style.opacity = clamp(p * 1.5);
+      el.style.transform = `translateY(${(1 - ease(p)) * 70}px)`;
     }
   });
-  s.el.querySelectorAll(".steam path").forEach((p, i) => {
-    p.style.transform = `translate(${Math.sin(t * 3 + i * 1.3) * 10}px, ${-((t * 40 + i * 25) % 40)}px)`;
-    p.style.opacity = 0.4 + 0.4 * Math.sin(t * 4 + i);
+
+  // confetti burst on the #1 reveal (deterministic)
+  s.el.querySelectorAll(".confetti").forEach(el => {
+    const i = +el.dataset.i, ct = lt - s.reveal;
+    if (ct < 0) { el.style.opacity = 0; return; }
+    const ang = hash(i) * Math.PI * 2, sp = 900 + hash(i + 50) * 900;
+    const x = 540 + Math.cos(ang) * sp * ct, y = 700 + Math.sin(ang) * sp * ct * 0.8 + 1400 * ct * ct;
+    el.style.opacity = clamp(2 - ct);
+    el.style.background = ["#ffd23f", "#e8382f", "#ffffff", "#3fc1ff", "#7be36b"][i % 5];
+    el.style.transform = `translate(${x}px, ${y}px) rotate(${ct * 720 * (hash(i + 9) - 0.5)}deg)`;
   });
+
+  // captions (burned-in, synced to narration)
+  const cap = CAPLINES.find(c => t >= c.t0 && t < c.t1 + 0.08);
+  const ct = document.getElementById("captext");
+  if (cap) {
+    if (ct.dataset.text !== cap.text) {
+      ct.dataset.text = cap.text;
+      ct.innerHTML = cap.text.replace(/(第\d+位|TOP3)/g, "<em>$1</em>");
+      ct.style.fontSize = Math.min(64, Math.floor(860 / Math.max(cap.text.length, 1))) + "px";
+    }
+    const p = clamp((t - cap.t0) / 0.1);
+    ct.style.opacity = 1;
+    ct.style.transform = `scale(${0.85 + 0.15 * back(p)})`;
+  } else {
+    ct.style.opacity = 0;
+  }
 };
 render(0);
 </script>
