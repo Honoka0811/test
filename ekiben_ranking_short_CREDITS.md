@@ -24,7 +24,7 @@
 | 順位 | ファイル | 作者 | ライセンス |
 |---|---|---|---|
 | 10 | File:あなごめし（宮島口駅）.jpg | くろふね | CC BY-SA 4.0 |
-| 9 | File:Hippari-dako meshi by veroyama in Kobe Meriken Park, Hyogo.jpg | veroyama | CC BY 2.0 |
+| 9 | File:Hippari-dako meshi crock by veroyama in Kobe Meriken Park, Hyogo.jpg（器）<br>File:Hippari-dako meshi by veroyama in Kobe Meriken Park, Hyogo.jpg（中身） | veroyama | CC BY 2.0 |
 | 8 | File:Tochikuken kashiwameshi003.jpg | 舌先現象になります | CC BY 4.0 |
 | 7 | File:長万部駅かにめし20211024-P1250759.jpg | くろふね | CC BY 4.0 |
 | 6 | File:Tori Meshi of Ōdate.jpg | Yamaguchi Yoshiaki | CC BY-SA 2.0 |
