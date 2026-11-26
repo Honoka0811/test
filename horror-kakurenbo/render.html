@@ -1060,6 +1060,19 @@ function post(t, fx) {
   if (hash(fi * 3.1) > 0.93) { ctx.fillStyle = 'rgba(220,220,220,0.08)'; ctx.fillRect(hash(fi) * W, 0, 2, H); }
 }
 
+// 柱時計が時を打つたびに、右上に時刻を縦書きで出す
+const HOUR_OF = { oshiire: '午前一時', rouka: '午前二時', shoji: '午前三時' };
+function drawTimeCard(t, sc) {
+  const label = HOUR_OF[sc.name]; if (!label) return;
+  const h = hits('strike').find(x => x >= sc.start - 0.01 && x < sc.end); if (h === undefined) return;
+  const a = smooth(h, h + 0.5, t) * (1 - smooth(h + 3.4, h + 4.2, t)); if (a <= 0) return;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = `700 54px ${SERIF}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 14; ctx.fillStyle = rgba(225, 218, 205, 0.88 * a);
+  let y = 200; for (const ch of label) { ctx.fillText(ch, 960, y); y += 62; }
+  ctx.restore();
+}
+
 window.render = function (t) {
   const sc = sceneAt(t);
   const u = t - sc.start, d = sc.end - sc.start;
@@ -1069,6 +1082,7 @@ window.render = function (t) {
   SCENES[sc.name](u, d, t, fx);
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.shadowBlur = 0;
   post(t, fx);
+  drawTimeCard(t, sc);
   drawCaptions(t);
 };
 

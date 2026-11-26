@@ -27,7 +27,7 @@ BYPASS = ('G', 'K', 'K2', 'K3', 'M')   # 囁き・子どもの声などはピー
 PROCESSED = ('G', 'C', 'CF', 'K', 'K2', 'K3', 'M')
 SFX_REL = {'knock_wood': -1.0, 'knock_soft': -7.0, 'knock_glass': -3.5, 'knock_door': 0.5, 'title_hit': 2.0,
            'knock_slide': -0.5, 'coin': -4.0, 'chalk': -9.0, 'chalk_snap': -6.0, 'chime': -11.0, 'crow': -15.0,
-           'higurashi': -10.0, 'furin': -12.0, 'rin': -3.0, 'steps': -9.0, 'poke': -3.0, 'page': -8.0, 'flips': -8.0, 'chorus': -9.0,
+           'higurashi': -10.0, 'furin': -12.0, 'rin': -3.0, 'steps': -9.0, 'poke': -3.0, 'page': -8.0, 'flips': -8.0, 'chorus': -9.0, 'strike': -6.0,
            'dread_hit': -1.0, 'thunder': 0.0, 'heartbeat': -7.0, 'riser': 1.0, 'scare': 8.5}
 BED_REL = {'drone': -13.0, 'high': -30.0, 'room': -24.0, 'wind': -31.0, 'hum': -27.0, 'tinnitus': -34.0}
 
@@ -105,23 +105,24 @@ TIMELINE = [
     ('say', 'QD', '私が死んだら、あの子は、次の相手を探しに行く。', '「私が死んだら、あの子は、次の相手を探しに行く」'),
     ('gap', 0.55),
     ('scene', 'oshiire'),
-    ('gap', 0.3),
-    ('say', 'N', 'その夜。押入れの中から、声がしたんです。'),
+    ('sfx', 'strike', 1.3, {'hits': [0.15]}),                 # 柱時計が一つ = 午前一時
+    ('say', 'N', 'お葬式の夜。押入れの中から、声がしたんです。'),
     ('gap', 0.5),
     ('say', 'K2', 'もういいかい', '「もういいかい」'),
     ('gap', 0.45),
     ('say', 'HM', 'まあだだよ', '「まあだだよ」'),
     ('gap', 0.5),
     ('scene', 'rouka'),
+    ('sfx', 'strike', 1.75, {'hits': [0.1, 1.05]}),           # 二つ = 午前二時
     ('sfx', 'steps', 0.0, {'hits': [0.2, 0.75, 1.3, 1.85, 2.4, 2.95, 3.5, 4.05, 4.6]}),
-    ('gap', 0.2),
-    ('say', 'N', '声は、毎晩、近づいてきました。押入れから、廊下へ。'),
+    ('gap', 0.1),
+    ('say', 'N', '答えるたびに、声は近づいてきました。押入れから、廊下へ。'),
     ('gap', 0.3),
     ('say', 'N', '廊下から、障子の向こうへ。'),
     ('gap', 0.35),
     ('scene', 'shoji'),
-    ('gap', 0.4),
-    ('say', 'N', 'そして、今夜。'),
+    ('sfx', 'strike', 2.75, {'hits': [0.15, 1.05, 1.95]}),    # 三つ = 午前三時
+    ('say', 'N', 'そして、午前三時。'),
     ('gap', 0.5),
     ('say', 'K3', 'もういいかい', '「もういいかい」'),
     ('gap', 0.3),
@@ -534,6 +535,16 @@ def madadayo_chorus(times):
     return reverb(out, 1.8, 0.45, damp=3500, seed=52)
 
 
+def clock_strike():
+    """柱時計が時を打つ音(ボーン)。渦巻き状の鐘の、うなりのある長い余韻"""
+    t = T(3.2); y = np.zeros(len(t))
+    for r, a, d in ((1.0, 1.0, 2.2), (2.32, 0.45, 1.3), (3.91, 0.25, 0.7), (5.43, 0.12, 0.4)):
+        f = 318 * r
+        y += a * (np.sin(2 * np.pi * f * t) + 0.7 * np.sin(2 * np.pi * (f + 1.1 * r) * t)) * np.exp(-t / d)
+    hit = lp(rng.standard_normal(len(t)), 3000) * np.exp(-t / 0.006) * 0.5
+    return reverb((y + hit) * np.minimum(1, t / 0.002), 1.3, 0.3, damp=3500, seed=53)
+
+
 def build_timeline():
     t = 0.0; scenes = []; lines = []; sfx = []; marks = {}; voice_clips = []
     for ev in TIMELINE:
@@ -662,6 +673,8 @@ def main():
         elif nm == 'flips':
             for i, h in enumerate(e['hits']): place(h, page_flip(), SFX_REL[nm] + 0.5 * i)
             place(e['hits'][0] - 0.05, madadayo_chorus(e['hits']), SFX_REL['chorus'])
+        elif nm == 'strike':
+            for h in e['hits']: place(h, clock_strike(), SFX_REL[nm])
         elif nm == 'steps':
             for i, h in enumerate(e['hits']): place(h, step(i), SFX_REL[nm] + 0.6 * i)
         elif nm == 'coin':
