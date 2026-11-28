@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>バイトランキング</title>
+<style>
+@font-face { font-family: 'Dela'; src: url(fonts/DelaGothicOne-Regular.ttf); }
+@font-face { font-family: 'Maru'; src: url(fonts/MPLUSRounded1c-ExtraBold.ttf); font-weight: 800; }
+@font-face { font-family: 'Maru'; src: url(fonts/MPLUSRounded1c-Black.ttf); font-weight: 900; }
+html, body { margin: 0; background: #111; }
+canvas { display: block; }
+body.preview canvas { height: 100vh; width: auto; margin: 0 auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
+<script>
+// =====================================================================
+// やってみたくなるバイトランキング TOP5 — render(t) が時刻 t 秒のフレームを決定論的に描く
+// タイミングは voice.py が書き出す timeline.js(ナレーションの実測長)に従う
+// =====================================================================
+const W = 1080, H = 1920;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const TL = window.TIMELINE;
+window.FPS = TL.fps;
+window.DURATION = TL.duration;
+const SC = {};
+TL.scenes.forEach(s => (SC[s.id] = s));
+const ORDER = TL.scenes.map(s => s.id);
+
+// BGM と同じテンポ(audio.py と一致させる)。第1位の発表で曲を頭から鳴らし直す
+const BPM = 128, BEAT = 60 / BPM;
+
+// ---------------------------------------------------------------- data
+const THEMES = {
+  intro: { g: ['#FFE45C', '#FF8F1F'], ray: 'rgba(255,255,255,0.32)', acc: '#FF3D7F', light: '#FFF4CC', dark: '#5A2100', seed: 1 },
+  r5:    { g: ['#FF5D7A', '#6B12B8'], ray: 'rgba(255,230,140,0.16)', acc: '#E0245E', light: '#FFE4EC', dark: '#3D0A45', seed: 2, star: '#4CC9F0' },
+  r4:    { g: ['#FFC98A', '#B0611E'], ray: 'rgba(255,255,255,0.22)', acc: '#B5541C', light: '#FFF0DE', dark: '#4E2408', seed: 3, star: '#7AE582' },
+  r3:    { g: ['#FF2E93', '#3A0CA3'], ray: 'rgba(255,255,255,0.13)', acc: '#D1006B', light: '#FFE0F0', dark: '#250857', seed: 4, star: '#E9A23B' },
+  r2:    { g: ['#5CE1FF', '#FF7AC6'], ray: 'rgba(255,255,255,0.30)', acc: '#0087C2', light: '#DDF6FF', dark: '#063A63', seed: 5, star: '#D9DEE4' },
+  drum:  { g: ['#1E1442', '#05030D'], ray: 'rgba(255,215,0,0.05)', acc: '#FFD23F', light: '#3A2C6E', dark: '#05030D', seed: 6 },
+  r1:    { g: ['#00E3C6', '#0067D1'], ray: 'rgba(255,238,130,0.34)', acc: '#FF7A00', light: '#DFFCF6', dark: '#03365A', seed: 7, star: '#FFD60A' },
+  outro: { g: ['#FF9AA2', '#9D7BEA'], ray: 'rgba(255,255,255,0.24)', acc: '#FF3D7F', light: '#FFE6EE', dark: '#3E1A5E', seed: 8 },
+};
+
+const JOBS = {
+  r5: { rank: 5, name: '映画館スタッフ', icon: '1f3ac', tag: '映画好きの天国！', meters: [4, 2, 5],
+        perks: [['1f39f', '映画が{無料}で観られる劇場も'], ['1f37f', '{ポップコーン}の香りに包まれる'], ['1f39e', '{新作情報}をいち早くキャッチ']] },
+  r4: { rank: 4, name: 'カフェスタッフ', icon: '2615', tag: 'おしゃれ × スキルUP', meters: [4, 2, 4],
+        perks: [['2728', '{ラテアート}の腕が上がる'], ['1f370', '{ドリンク割引}のお店も多い'], ['1f60d', '{おしゃれ}な空間で働ける']] },
+  r3: { rank: 3, name: 'イベント・ライブスタッフ', icon: '1f3a4', tag: '非日常を裏側から体感！', meters: [5, 3, 3],
+        perks: [['1f4c5', '{1日だけ}の単発もOK'], ['1f525', 'フェスの{熱気}を裏側から'], ['1f4b4', '{日払い}の求人も']] },
+  r2: { rank: 2, name: 'テーマパークスタッフ', icon: '1f3a2', tag: '毎日がお祭り！', meters: [5, 3, 4],
+        perks: [['1f389', '毎日が{お祭り気分}'], ['1f60a', 'ゲストの{笑顔}を一番近くで'], ['1f3ab', '{パーク利用特典}がある所も']] },
+  r1: { rank: 1, name: 'リゾートバイト', icon: '1f3dd', tag: '観光地のホテル・旅館で住み込み', meters: [5, 5, 5],
+        perks: [['1f3e0', '{寮費・光熱費 無料}の求人多数'], ['1f35a', '{食事付き}で生活費が浮く'], ['2668', '休日は{温泉・海・スキー}'], ['1f91d', '{全国}から仲間ができる']] },
+};
+const METER_LABELS = ['楽しさ', '稼げる', '特典'];
+const SPEAKERS = { Z: { name: 'ずんだもん', col: '#4FB33A' }, M: { name: '四国めたん', col: '#E8528C' } };
+const MEDAL = { 1: ['#FFE97A', '#F5A300'], 2: ['#FFFFFF', '#A9B2BC'], 3: ['#FFD3A1', '#C0702A'], 4: ['#B8F7C4', '#2FB457'], 5: ['#B9ECFF', '#2E9BD6'] };
+
+// ---------------------------------------------------------------- assets
+const ICON_IDS = ['1f3ac', '1f37f', '1f39f', '1f39e', '2615', '1f370', '2728', '1f60d', '1f3a4', '1f4c5', '1f525', '1f4b4',
+  '1f3a2', '1f389', '1f60a', '1f3ab', '1f3dd', '1f3e0', '1f35a', '2668', '1f91d', '1f451', '2b50', '1f4ac', '1f38a',
+  '1f914', '1f4b0', '2753', '1f941', '1f3c6', '1f31f', '1f3b5', '1f929', '1f446'];
+const IMG = {};
+window.ready = Promise.all([
+  ...ICON_IDS.map(id => new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = res; im.onerror = () => rej(new Error('icon ' + id));
+    im.src = 'icons/' + id + '.svg';
+    IMG[id] = im;
+  })),
+  document.fonts.load('400 100px Dela', 'あ'),
+  document.fonts.load('900 100px Maru', 'あ'),
+  document.fonts.load('800 100px Maru', 'あ'),
+]);
+
+// ---------------------------------------------------------------- helpers
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, t0, d) => clamp((t - t0) / d);
+const eOut = x => 1 - Math.pow(1 - x, 3);
+const eIn = x => x * x * x;
+const eInOut = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const eBack = (x, s = 1.9) => (x <= 0 ? 0 : 1 + (s + 1) * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2));
+const eElastic = x => (x <= 0 ? 0 : x >= 1 ? 1 : Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * (2 * Math.PI) / 3) + 1);
+function rnd(i) { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+const pop = (t, t0, d = 0.35) => (t < t0 ? 0 : eBack(prog(t, t0, d)));
+
+function withT(x, y, s, r, fn) {
+  ctx.save(); ctx.translate(x, y); if (r) ctx.rotate(r); if (s !== 1) ctx.scale(s, s); fn(); ctx.restore();
+}
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function icon(id, x, y, size, alpha = 1) {
+  const im = IMG[id]; if (!im) return;
+  ctx.save(); ctx.globalAlpha *= alpha; ctx.drawImage(im, x - size / 2, y - size / 2, size, size); ctx.restore();
+}
+function setFont(size, fam = 'Dela', w = 400) { ctx.font = `${w} ${size}px ${fam}`; }
+function fit(s, size, maxW, fam = 'Dela', w = 400) {
+  let sz = size; setFont(sz, fam, w);
+  while (maxW && ctx.measureText(s).width > maxW && sz > 12) { sz -= 2; setFont(sz, fam, w); }
+  return sz;
+}
+// 縁取り+影つきのポップな文字
+function popText(s, x, y, size, o = {}) {
+  const fam = o.fam || 'Dela', w = o.w || (fam === 'Dela' ? 400 : 900);
+  const sz = fit(s, size, o.maxW || 0, fam, w);
+  ctx.textAlign = o.align || 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+  const lw = o.lw ?? Math.round(sz * 0.16), olw = o.olw ?? 0;
+  if (o.shadow !== null) {
+    ctx.fillStyle = ctx.strokeStyle = o.shadow || 'rgba(0,0,0,0.30)';
+    ctx.lineWidth = Math.max(lw, olw); const d = o.sdy ?? Math.round(sz * 0.07);
+    ctx.strokeText(s, x, y + d); ctx.fillText(s, x, y + d);
+  }
+  if (o.outer) { ctx.strokeStyle = o.outer; ctx.lineWidth = olw; ctx.strokeText(s, x, y); }
+  if (o.stroke !== null) { ctx.strokeStyle = o.stroke || '#222'; ctx.lineWidth = lw; ctx.strokeText(s, x, y); }
+  ctx.fillStyle = o.fill || '#fff'; ctx.fillText(s, x, y);
+  return sz;
+}
+function starPath(cx, cy, R, r, n = 5, rot = -Math.PI / 2) {
+  ctx.beginPath();
+  for (let i = 0; i < 2 * n; i++) { const a = rot + (i * Math.PI) / n, q = i % 2 ? r : R; ctx.lineTo(cx + Math.cos(a) * q, cy + Math.sin(a) * q); }
+  ctx.closePath();
+}
+function sparkle(x, y, r, a = 1, col = '#fff') {
+  if (r <= 0 || a <= 0) return;
+  ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = col; starPath(x, y, r, r * 0.22, 4, 0); ctx.fill(); ctx.restore();
+}
+function shakeAt(t, t0, d, amp) {
+  if (t < t0 || t > t0 + d) return [0, 0];
+  const k = Math.pow(1 - (t - t0) / d, 2) * amp;
+  return [Math.sin(t * 91) * k, Math.cos(t * 73) * k];
+}
+function beatPulse(t) {
+  if (t >= SC.drum.t0 && t < SC.r1.t0) return 0;
+  const base = t >= SC.r1.t0 ? SC.r1.t0 : 0;
+  const ph = (((t - base) % BEAT) + BEAT) % BEAT;
+  return Math.exp(-ph * 9);
+}
+// {強調} 記法のテキストを描く
+function richText(src, x, y, size, maxW, col, hl) {
+  const segs = []; src.replace(/\{([^}]*)\}|([^{]+)/g, (_, a, b) => segs.push(a !== undefined ? [a, true] : [b, false]));
+  const plain = segs.map(s => s[0]).join('');
+  const sz = fit(plain, size, maxW, 'Maru', 900);
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  let cx = x;
+  for (const [s, h] of segs) {
+    const w = ctx.measureText(s).width;
+    if (h) { ctx.fillStyle = hl + '33'; rr(cx - 4, y + sz * 0.05, w + 8, sz * 0.42, 6); ctx.fill(); }
+    ctx.fillStyle = h ? hl : col; ctx.fillText(s, cx, y);
+    cx += w;
+  }
+}
+// 日本語の折り返し: 句読点の行頭禁止 + 「、」「！」や助詞の後ろで割れるよう点数づけ
+const kind = c => /[ぁ-ゟ]/.test(c) ? 'h' : /[゠-ヿ]/.test(c) ? 'k' : /[一-鿿]/.test(c) ? 'j' : /[A-Za-z0-9]/.test(c) ? 'a' : 'p';
+function bestSplit(text, maxW) {
+  const NG = '、。！？…」）ー・ぁぃぅぇぉっゃゅょァィゥェォッャュョ!?';
+  let best = null;
+  for (let i = 1; i < text.length; i++) {
+    if (NG.includes(text[i])) continue;
+    const a = text.slice(0, i), b = text.slice(i);
+    const wa = ctx.measureText(a).width, wb = ctx.measureText(b).width;
+    if (wa > maxW || wb > maxW) continue;
+    const p = kind(text[i - 1]), c = kind(text[i]);
+    const strong = '、！？…'.includes(text[i - 1]);
+    let score = Math.abs(wa - wb);
+    if (strong) score -= maxW * 0.6;
+    else if (p === 'h' && c !== 'h') score -= maxW * 0.22;   // 助詞の後ろ → 単語の頭
+    else if (p !== 'h' && c === 'h') score += maxW * 0.18;   // 単語と送り仮名・助詞の間
+    else if (p === c && p !== 'h') score += maxW * 0.35;     // カタカナ語・漢語の途中
+    if (best === null || score < best.score) best = { score, lines: [a, b], strong };
+  }
+  return best;
+}
+function wrapJa(text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return [text];
+  const b = bestSplit(text, maxW);
+  if (b) return b.lines;
+  const out = []; let cur = '';
+  for (const ch of text) {
+    if (ctx.measureText(cur + ch).width > maxW && !'、。！？…'.includes(ch)) { out.push(cur); cur = ch; } else cur += ch;
+  }
+  out.push(cur); return out;
+}
+
+// ---------------------------------------------------------------- background
+function drawBG(th, t, cx = 540, cy = 400, o = {}) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, th.g[0]); g.addColorStop(1, th.g[1]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 回転するサンバースト
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * (o.raySpeed || 0.12)); ctx.fillStyle = th.ray;
+  const n = 18;
+  for (let i = 0; i < n; i++) {
+    const a = (i * 2 * Math.PI) / n;
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * 2600, Math.sin(a) * 2600);
+    ctx.lineTo(Math.cos(a + Math.PI / n) * 2600, Math.sin(a + Math.PI / n) * 2600);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 760);
+  rg.addColorStop(0, o.glow || 'rgba(255,255,255,0.38)'); rg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  // ハーフトーン
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  for (let y = 1180, row = 0; y < H + 20; y += 34, row++) {
+    const r = ((y - 1180) / 740) * 8;
+    for (let x = (row % 2) * 17; x < W + 20; x += 34) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+  }
+  // 浮かぶ図形
+  for (let i = 0; i < 16; i++) {
+    const s = th.seed * 100 + i;
+    const x = rnd(s * 1.3) * W + Math.sin(t * 0.8 + i) * 24;
+    const sp = 50 + rnd(s * 2.7) * 70;
+    const y = H + 80 - ((t * sp + rnd(s * 3.9) * (H + 160)) % (H + 160));
+    const sz = 12 + rnd(s * 5.1) * 26, k = i % 4;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * (rnd(s) - 0.5) * 2);
+    ctx.globalAlpha = 0.28; ctx.fillStyle = ctx.strokeStyle = '#fff'; ctx.lineWidth = 5;
+    if (k === 0) { ctx.beginPath(); ctx.arc(0, 0, sz * 0.6, 0, 7); ctx.fill(); }
+    else if (k === 1) { ctx.beginPath(); ctx.arc(0, 0, sz * 0.7, 0, 7); ctx.stroke(); }
+    else if (k === 2) { starPath(0, 0, sz, sz * 0.45); ctx.fill(); }
+    else { ctx.beginPath(); ctx.moveTo(0, -sz * 0.7); ctx.lineTo(sz * 0.65, sz * 0.5); ctx.lineTo(-sz * 0.65, sz * 0.5); ctx.closePath(); ctx.stroke(); }
+    ctx.restore();
+  }
+  // テーマのアイコンをうっすら漂わせる
+  if (o.icons) {
+    o.icons.forEach((id, i) => {
+      const s = th.seed * 50 + i * 3;
+      const x = 90 + rnd(s * 1.7) * 900;
+      const y = H + 120 - ((t * (36 + rnd(s) * 30) + rnd(s * 4.3) * (H + 240)) % (H + 240));
+      withT(x, y, 1, Math.sin(t * 1.1 + i) * 0.3, () => icon(id, 0, 0, 90 + rnd(s * 9) * 50, 0.16));
+    });
+  }
+}
+function confettiRain(t, seed, n, cols, alpha = 1, gold = false) {
+  for (let i = 0; i < n; i++) {
+    const s = seed * 1000 + i;
+    const sp = 170 + rnd(s * 1.9) * 230;
+    const x = rnd(s * 1.1) * W + Math.sin(t * 2.1 + i) * 34;
+    const y = -60 + ((t * sp + rnd(s * 2.3) * (H + 120)) % (H + 120));
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * (rnd(s * 3.7) - 0.5) * 9 + i);
+    ctx.scale(Math.cos(t * 6 + i), 1); ctx.globalAlpha = alpha;
+    ctx.fillStyle = gold ? (i % 3 ? '#FFD60A' : '#FFF3B0') : cols[i % cols.length];
+    ctx.fillRect(-8, -13, 16, 26); ctx.restore();
+  }
+}
+// 放射状に飛び散る紙吹雪(重力つき)
+function burst(t, t0, cx, cy, n, seed, cols, power = 1500, life = 1.7) {
+  const dt = t - t0; if (dt < 0 || dt > life) return;
+  for (let i = 0; i < n; i++) {
+    const s = seed * 977 + i;
+    const a = rnd(s) * Math.PI * 2, v = power * (0.35 + 0.65 * rnd(s * 2.1));
+    const drag = Math.exp(-dt * 1.6);
+    const x = cx + Math.cos(a) * v * (1 - drag) / 1.6;
+    const y = cy + Math.sin(a) * v * (1 - drag) / 1.6 + 700 * dt * dt;
+    const al = 1 - clamp((dt - life * 0.6) / (life * 0.4));
+    ctx.save(); ctx.translate(x, y); ctx.rotate(dt * (rnd(s * 3) - 0.5) * 16); ctx.scale(Math.cos(dt * 9 + i), 1);
+    ctx.globalAlpha = al; ctx.fillStyle = cols[i % cols.length];
+    if (i % 5 === 0) { starPath(0, 0, 16, 7); ctx.fill(); } else ctx.fillRect(-9, -14, 18, 28);
+    ctx.restore();
+  }
+}
+function speedLines(t, t0, cx, cy, d = 0.45, col = 'rgba(255,255,255,0.8)') {
+  const p = prog(t, t0, d); if (t < t0 || p >= 1) return;
+  ctx.save(); ctx.strokeStyle = col; ctx.lineCap = 'round';
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2 + rnd(i) * 0.2;
+    const r0 = 170 + eOut(p) * 380, r1 = r0 + 60 + rnd(i * 3) * 140 * (1 - p);
+    ctx.globalAlpha = 1 - p; ctx.lineWidth = 9 * (1 - p) + 2;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- shared UI
+function drawHeader(t, cur, th) {
+  withT(540, 156, 1, 0, () => {
+    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 18; ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#fff'; rr(-450, -38, 900, 76, 38); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    setFont(40, 'Maru', 900); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const a = 'やってみたくなる', b = 'バイトランキング';
+    const wa = ctx.measureText(a).width, wb = ctx.measureText(b).width, x0 = -(wa + wb) / 2;
+    ctx.fillStyle = '#333'; ctx.fillText(a, x0, 2);
+    ctx.fillStyle = th.acc; ctx.fillText(b, x0 + wa, 2);
+  });
+  // 進行チップ 5→1
+  for (let i = 0; i < 5; i++) {
+    const r = 5 - i, x = 540 + (i - 2) * 64, y = 232;
+    const isCur = r === cur, done = cur && r > cur;
+    const s = isCur ? 1.18 + 0.08 * beatPulse(t) : 1;
+    withT(x, y, s, 0, () => {
+      ctx.beginPath(); ctx.arc(0, 0, 25, 0, 7);
+      ctx.fillStyle = isCur ? th.acc : done ? '#fff' : 'rgba(255,255,255,0.28)'; ctx.fill();
+      ctx.lineWidth = 4; ctx.strokeStyle = isCur ? '#fff' : 'rgba(255,255,255,0.9)'; ctx.stroke();
+      setFont(28, 'Dela'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = isCur ? '#fff' : done ? th.acc : '#fff';
+      ctx.fillText(String(r), 0, 2);
+    });
+  }
+}
+function drawFootnote(a = 1) {
+  ctx.save(); ctx.globalAlpha = a; setFont(25, 'Maru', 800); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round'; ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  const s = '※特典・待遇は求人や店舗によって異なります';
+  ctx.strokeText(s, 500, 1592); ctx.fillStyle = '#fff'; ctx.fillText(s, 500, 1592); ctx.restore();
+}
+function curLine(t) {
+  let L = null;
+  for (let i = 0; i < TL.lines.length; i++) {
+    const l = TL.lines[i], nx = TL.lines[i + 1];
+    const end = Math.min(l.t1 + 0.4, nx ? nx.t0 - 0.03 : 1e9);
+    if (t >= l.t0 - 0.06 && t < end) L = l;
+  }
+  return L;
+}
+function drawSubtitle(t) {
+  const L = curLine(t); if (!L) return;
+  const sp = SPEAKERS[L.spk];
+  const s = lerp(0.82, 1, eBack(prog(t, L.t0 - 0.06, 0.2)));
+  const bx = 60, by = 1386, bw = 880;
+  let size = 50, lines;
+  setFont(size, 'Maru', 900);
+  if (ctx.measureText(L.text).width <= bw - 60) lines = [L.text];
+  else {
+    for (const sz of [50, 46, 43]) {
+      setFont(sz, 'Maru', 900);
+      const b = bestSplit(L.text, bw - 56);
+      if (b && (b.strong || sz === 43)) { size = sz; lines = b.lines; break; }
+    }
+    if (!lines) { size = 50; setFont(size, 'Maru', 900); lines = wrapJa(L.text, bw - 56); }
+  }
+  setFont(size, 'Maru', 900);
+  const bh = 56 + lines.length * size * 1.3;
+  withT(bx + bw / 2, by + bh / 2, s, 0, () => {
+    ctx.translate(-bw / 2, -bh / 2);
+    ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 8;
+    ctx.fillStyle = '#fff'; rr(0, 0, bw, bh, 38); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineWidth = 8; ctx.strokeStyle = sp.col; rr(0, 0, bw, bh, 38); ctx.stroke();
+    // 名札
+    setFont(28, 'Maru', 900); const nw = ctx.measureText(sp.name).width + 40;
+    ctx.fillStyle = sp.col; rr(26, -26, nw, 50, 25); ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(sp.name, 26 + nw / 2, 0);
+    // 本文
+    setFont(size, 'Maru', 900); ctx.fillStyle = '#222';
+    lines.forEach((ln, i) => ctx.fillText(ln, bw / 2, 32 + size * 0.68 + i * size * 1.3));
+  });
+}
+
+// ---------------------------------------------------------------- scenes
+function drawIntro(t) {
+  const th = THEMES.intro, s = SC.intro, m = s.marks;
+  drawBG(th, t, 540, 760, { raySpeed: 0.2, icons: ['2b50', '1f31f', '1f38a'] });
+  confettiRain(t, 11, 34, ['#FF3D7F', '#3A86FF', '#FFFFFF', '#8338EC', '#06D6A0']);
+  const bp = beatPulse(t);
+  // 上のタグ
+  withT(540, 330, pop(t, 0.05, 0.3), -0.05 + Math.sin(t * 3) * 0.015, () => {
+    ctx.fillStyle = '#E0245E'; rr(-330, -48, 660, 96, 20); ctx.fill();
+    ctx.lineWidth = 7; ctx.strokeStyle = '#fff'; ctx.stroke();
+    popText('楽しすぎて時間を忘れる!?', 0, 2, 50, { fam: 'Maru', fill: '#fff', stroke: null, shadow: null });
+  });
+  // タイトル
+  withT(540, 505, pop(t, 0.0, 0.32) * (1 + bp * 0.02), -0.02, () =>
+    popText('やってみたくなる', 0, 0, 112, { fill: '#fff', stroke: '#4A1A00', lw: 22, maxW: 960, sdy: 12 }));
+  withT(540, 735, pop(t, 0.1, 0.36) * (1 + bp * 0.04), 0.03 * Math.sin(t * 2), () => {
+    const gr = ctx.createLinearGradient(0, -110, 0, 110); gr.addColorStop(0, '#FF7AB0'); gr.addColorStop(1, '#E0004D');
+    popText('バイト', 0, 0, 250, { fill: gr, stroke: '#fff', lw: 30, outer: '#4A1A00', olw: 52, sdy: 16 });
+  });
+  withT(540, 950, pop(t, 0.2, 0.36) * (1 + bp * 0.02), -0.015, () => {
+    const gr = ctx.createLinearGradient(0, -80, 0, 80); gr.addColorStop(0, '#5B6CFF'); gr.addColorStop(1, '#2A1A9E');
+    popText('ランキング', 0, 0, 170, { fill: gr, stroke: '#fff', lw: 24, outer: '#4A1A00', olw: 44, sdy: 14, maxW: 960 });
+  });
+  // 周りを跳ねる5つの職種アイコン(チラ見せ)
+  const around = [['1f3ac', 150, 600], ['2615', 935, 610], ['1f3a4', 120, 1110], ['1f3a2', 960, 1105], ['1f3dd', 540, 1235]];
+  around.slice(0, 4).forEach(([id, x, y], i) => {
+    const sc = pop(t, 0.35 + i * 0.08, 0.4);
+    withT(x, y + Math.sin(t * 3 + i * 1.7) * 14, sc, Math.sin(t * 2 + i) * 0.15, () => {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(0, 0, 78, 0, 7); ctx.fill();
+      icon(id, 0, 0, 104);
+    });
+  });
+  // TOP5 メダル
+  const tt = 0.55, tv = m.top5 ?? 3;
+  const ts = pop(t, tt, 0.4) * (1 + 0.18 * Math.exp(-Math.max(0, t - tv) * 6) * (t >= tv ? 1 : 0));
+  if (ts > 0) {
+    withT(540, 1185, ts * (1 + bp * 0.05), Math.sin(t * 2.5) * 0.05, () => {
+      ctx.save(); ctx.rotate(t * 0.6); ctx.fillStyle = '#FFD60A'; starPath(0, 0, 165, 128, 16); ctx.fill();
+      ctx.lineWidth = 8; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.restore();
+      const gr = ctx.createLinearGradient(0, -110, 0, 110); gr.addColorStop(0, '#FFF6B0'); gr.addColorStop(1, '#F59E00');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, 118, 0, 7); ctx.fill();
+      ctx.lineWidth = 8; ctx.strokeStyle = '#B86E00'; ctx.stroke();
+      popText('TOP', 0, -52, 58, { fill: '#B3261E', stroke: '#fff', lw: 12, shadow: null });
+      popText('5', 0, 30, 150, { fill: '#E0245E', stroke: '#fff', lw: 20, sdy: 8 });
+    });
+    speedLines(t, tt, 540, 1185, 0.5);
+    speedLines(t, tv, 540, 1185, 0.5);
+    burst(t, tt, 540, 1185, 40, 22, ['#FFD60A', '#fff', '#FF3D7F'], 1300);
+    burst(t, tv, 540, 1185, 60, 21, ['#FFD60A', '#FF3D7F', '#3A86FF', '#fff', '#06D6A0'], 1700);
+    for (let i = 0; i < 6; i++) {
+      const a = i * 1.05 + t, r = 190 + Math.sin(t * 3 + i) * 20;
+      sparkle(540 + Math.cos(a) * r, 1185 + Math.sin(a) * r * 0.8, 22 * (0.6 + 0.4 * Math.sin(t * 8 + i)), ts);
+    }
+  }
+}
+
+function drawBadge(J, th, t, tb) {
+  const p = prog(t, tb, 0.24);
+  if (t < tb) return;
+  const s = lerp(2.8, 1, eOut(p)) * (1 + 0.04 * beatPulse(t));
+  const cy = 402;
+  ctx.save(); ctx.globalAlpha = clamp(p * 3);
+  withT(540, cy, s, Math.sin(t * 2.2) * 0.03, () => {
+    // 星形のバッジ
+    ctx.save(); ctx.rotate(t * 0.5);
+    const [c0, c1] = MEDAL[J.rank];
+    const gr = ctx.createRadialGradient(0, -40, 10, 0, 0, 160); gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+    ctx.fillStyle = gr; starPath(0, 0, 132, 104, 16); ctx.fill();
+    ctx.lineWidth = 9; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.restore();
+    // 第◯位
+    setFont(210, 'Dela'); const nw = ctx.measureText(String(J.rank)).width;
+    popText(String(J.rank), 0, 8, 210, { fill: '#fff', stroke: th.dark, lw: 26, sdy: 12 });
+    popText('第', -nw / 2 - 62, 40, 86, { fill: '#fff', stroke: th.dark, lw: 16 });
+    popText('位', nw / 2 + 62, 40, 86, { fill: '#fff', stroke: th.dark, lw: 16 });
+  });
+  ctx.restore();
+  speedLines(t, tb, 540, cy, 0.45);
+  // バッジの周りでキラキラ
+  for (let i = 0; i < 5; i++) {
+    const a = i * 1.26 + t * 0.9, r = 205 + Math.sin(t * 2 + i) * 18;
+    sparkle(540 + Math.cos(a) * r * 1.35, cy + Math.sin(a) * r * 0.55, 20 * (0.5 + 0.5 * Math.sin(t * 7 + i * 2)), 0.9);
+  }
+}
+
+function drawMeters(J, th, t, tm, cy) {
+  const cols = [270, 540, 810];
+  J.meters.forEach((v, ci) => {
+    const x = cols[ci];
+    const lp = pop(t, tm + ci * 0.12, 0.3);
+    if (lp <= 0) return;
+    withT(x, cy - 34, lp, 0, () => {
+      ctx.fillStyle = th.acc; rr(-78, -21, 156, 42, 21); ctx.fill();
+      setFont(27, 'Maru', 900); ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(METER_LABELS[ci], 0, 1);
+    });
+    for (let k = 0; k < 5; k++) {
+      const sx = x + (k - 2) * 46, sy = cy + 22;
+      const on = k < v;
+      const st = tm + 0.15 + ci * 0.12 + k * 0.06;
+      const sc = on ? pop(t, st, 0.3) : clamp((t - tm) / 0.2);
+      if (!on) { ctx.fillStyle = '#E3E3EA'; starPath(sx, sy, 21, 9.5); ctx.fill(); continue; }
+      ctx.fillStyle = '#E3E3EA'; starPath(sx, sy, 21, 9.5); ctx.fill();
+      withT(sx, sy, sc, 0, () => {
+        ctx.fillStyle = '#FFC300'; starPath(0, 0, 23, 10.5); ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = '#E08E00'; ctx.stroke();
+      });
+    }
+  });
+}
+
+function drawCard(J, th, t, s, m) {
+  const tc = s.t0 + 0.04;
+  const p = eBack(prog(t, tc, 0.5), 1.4);
+  const yOff = (1 - p) * 1100;
+  const x = 70, y = 492 + yOff, w = 940, h = 500;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 34; ctx.shadowOffsetY = 14;
+  ctx.fillStyle = '#fff'; rr(x, y, w, h, 46); ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 8; ctx.strokeStyle = th.acc; rr(x + 10, y + 10, w - 20, h - 20, 38); ctx.stroke();
+  // 第1位はクラッシュ(シーン頭)と同時に名前を出す
+  const tn = J.rank === 1 ? s.t0 + 0.02 : (m.name ?? s.t0 + 0.7);
+  if (t < tn) {
+    // 発表前は「？」が揺れる
+    const wob = Math.sin(t * 18) * 0.08;
+    withT(540, y + 205, 1 + Math.sin(t * 12) * 0.04, wob, () =>
+      popText('？', 0, 0, 230, { fill: '#D9D9E3', stroke: '#fff', lw: 10, shadow: 'rgba(0,0,0,0.08)' }));
+  } else {
+    const ip = pop(t, tn, 0.45);
+    withT(540, y + 120 + Math.sin(t * 3) * 8, ip, Math.sin(t * 2.4) * 0.06, () => icon(J.icon, 0, 0, 176));
+    // 名前(マーカー線つき)
+    const np = pop(t, tn + 0.05, 0.35);
+    withT(540, y + 268, np, 0, () => {
+      const sz = fit(J.name, 88, 860, 'Dela');
+      const nw = ctx.measureText(J.name).width;
+      const mw = nw * eOut(prog(t, tn + 0.15, 0.35));
+      ctx.fillStyle = '#FFE45C'; rr(-nw / 2 - 10, sz * 0.05, mw + 20, sz * 0.42, 10); ctx.fill();
+      popText(J.name, 0, 0, sz, { fill: '#222', stroke: null, shadow: null });
+      // キラッと光る帯
+      const sh = prog(t, tn + 0.4, 0.6);
+      if (sh > 0 && sh < 1) {
+        sparkle(-nw / 2 + nw * sh, -sz * 0.35, 30 * Math.sin(sh * Math.PI), 1, '#FFD60A');
+      }
+    });
+    // タグライン
+    const tt = m.what ?? tn + 0.35;
+    const tp = pop(t, tt, 0.3);
+    if (tp > 0) withT(540, y + 342, tp, 0, () =>
+      popText(J.tag, 0, 0, 38, { fam: 'Maru', fill: th.acc, stroke: null, shadow: null, maxW: 860 }));
+  }
+  if (m.meters !== undefined) drawMeters(J, th, t, m.meters, y + 432);
+  ctx.restore();
+}
+
+function drawPerks(J, th, t, m) {
+  const n = J.perks.length;
+  const ph = n > 3 ? 78 : 88, gap = n > 3 ? 10 : 16, y0 = 1014;
+  J.perks.forEach(([id, text], i) => {
+    const y = y0 + i * (ph + gap);
+    const tp = m['p' + i];
+    // 空きスロット
+    ctx.save(); ctx.setLineDash([14, 12]); ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    rr(70, y, 880, ph, ph / 2); ctx.stroke(); ctx.restore();
+    if (tp === undefined || t < tp) return;
+    const p = eBack(prog(t, tp, 0.38), 1.6);
+    const dx = (1 - p) * 700;
+    ctx.save(); ctx.globalAlpha = clamp(prog(t, tp, 0.12));
+    ctx.translate(dx, 0);
+    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#fff'; rr(70, y, 880, ph, ph / 2); ctx.fill(); ctx.shadowColor = 'transparent';
+    ctx.fillStyle = th.light; ctx.beginPath(); ctx.arc(70 + ph / 2, y + ph / 2, ph / 2 - 7, 0, 7); ctx.fill();
+    withT(70 + ph / 2, y + ph / 2, 1 + 0.25 * (1 - prog(t, tp + 0.1, 0.3)), 0, () => icon(id, 0, 0, ph - 30));
+    richText(text, 70 + ph + 16, y + ph / 2 + 2, n > 3 ? 40 : 43, 880 - ph - 46, '#222', th.acc);
+    ctx.restore();
+    // 出現時のキラッ
+    sparkle(930, y + 10, 24 * Math.sin(Math.PI * prog(t, tp + 0.15, 0.4)), 1, '#FFE45C');
+  });
+}
+
+function drawRank(id, t) {
+  const s = SC[id], J = JOBS[id], th = THEMES[id], m = s.marks;
+  const tb = s.t0 + 0.08;
+  const isTop = J.rank === 1;
+  drawBG(th, t, 540, 395, { raySpeed: isTop ? 0.35 : 0.14, icons: [J.icon, ...J.perks.map(p => p[0])], glow: isTop ? 'rgba(255,250,200,0.55)' : undefined });
+  if (id === 'r3') stageLights(t, 0.5);
+  if (isTop) confettiRain(t, 77, 30, [], 0.9, true);
+  const [sx, sy] = shakeAt(t, tb, 0.35, 26);
+  const [nx, ny] = m.name !== undefined ? shakeAt(t, m.name, 0.22, 10) : [0, 0];
+  ctx.save(); ctx.translate(sx + nx, sy + ny);
+  drawHeader(t, J.rank, th);
+  if (isTop) {
+    withT(285, 318 + Math.sin(t * 3) * 8, pop(t, s.t0 + 0.3, 0.4), -0.35, () => icon('1f451', 0, 0, 118));
+    withT(800, 318 + Math.sin(t * 3 + 1) * 8, pop(t, s.t0 + 0.4, 0.4), 0.3, () => icon('1f3c6', 0, 0, 104));
+  }
+  drawBadge(J, th, t, tb);
+  drawCard(J, th, t, s, m);
+  drawPerks(J, th, t, m);
+  if (m.money !== undefined) moneyStamp(t, m.money);
+  ctx.restore();
+  // 名前発表の紙吹雪
+  if (m.name !== undefined) burst(t, isTop ? s.t0 + 0.02 : m.name, 540, 640, isTop ? 90 : 46, J.rank * 13, isTop ? ['#FFD60A', '#FFF3B0', '#FF7A00', '#fff'] : ['#FFD60A', '#fff', th.acc, th.g[0]], isTop ? 2100 : 1500);
+  drawFootnote(clamp(prog(t, s.t0 + 0.5, 0.4)));
+  // 白フラッシュ
+  const fa = (1 - prog(t, tb, 0.22)) * (t >= tb ? 0.55 : 0);
+  if (fa > 0) { ctx.fillStyle = `rgba(255,255,255,${fa})`; ctx.fillRect(0, 0, W, H); }
+}
+
+function moneyStamp(t, tm) {
+  if (t < tm) return;
+  const p = prog(t, tm, 0.25);
+  const s = lerp(2.4, 1, eOut(p));
+  withT(855, 585, s, -0.22, () => {
+    ctx.globalAlpha = clamp(p * 3);
+    ctx.fillStyle = '#E0245E'; ctx.beginPath(); ctx.arc(0, 0, 112, 0, 7); ctx.fill();
+    ctx.lineWidth = 8; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.setLineDash([10, 8]); ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 94, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    popText('貯金', 0, -30, 58, { fill: '#fff', stroke: null, shadow: null });
+    popText('ザクザク', 0, 36, 44, { fill: '#FFE45C', stroke: null, shadow: null });
+  });
+  for (let i = 0; i < 4; i++) {
+    const dt = t - tm - i * 0.12; if (dt < 0 || dt > 1.2) continue;
+    withT(855 + (i - 1.5) * 60, 585 - 40 - dt * 260 + 300 * dt * dt * 0.3, 1, dt * 3, () => icon('1f4b0', 0, 0, 70, 1 - dt / 1.2));
+  }
+}
+
+function stageLights(t, a) {
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const beams = [[180, '#FF4FD8'], [540, '#4FD1FF'], [900, '#FFE14F']];
+  beams.forEach(([x, col], i) => {
+    const ang = Math.sin(t * 1.3 + i * 2) * 0.45;
+    ctx.save(); ctx.translate(x, -40); ctx.rotate(ang);
+    const g = ctx.createLinearGradient(0, 0, 0, 1700); g.addColorStop(0, col + 'AA'); g.addColorStop(1, col + '00');
+    ctx.globalAlpha = a; ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-26, 0); ctx.lineTo(26, 0); ctx.lineTo(260, 1700); ctx.lineTo(-260, 1700); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+function drawDrum(t) {
+  const s = SC.drum, th = THEMES.drum, d = s.t1 - s.t0, k = prog(t, s.t0, d);
+  drawBG(th, t, 540, 640, { raySpeed: 0.5, glow: 'rgba(255,210,60,0.18)' });
+  // スポットライト
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  [[160, 0], [920, 2]].forEach(([x, ph]) => {
+    const ang = Math.sin(t * 2.6 + ph) * 0.5;
+    ctx.save(); ctx.translate(x, -60); ctx.rotate(ang - (x < 540 ? 0.35 : -0.35));
+    const g = ctx.createLinearGradient(0, 0, 0, 1900); g.addColorStop(0, 'rgba(255,240,180,0.55)'); g.addColorStop(1, 'rgba(255,240,180,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(20, 0); ctx.lineTo(330, 1900); ctx.lineTo(-330, 1900); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  });
+  ctx.restore();
+  drawHeader(t, 1, th);
+  const amp = 2 + 22 * eIn(k);
+  const [sx, sy] = [Math.sin(t * 87) * amp, Math.cos(t * 71) * amp];
+  // 第1位(光る)
+  withT(540, 420, pop(t, s.t0 + 0.1, 0.4) * (1 + 0.05 * Math.sin(t * 10)), 0, () => {
+    ctx.shadowColor = '#FFD60A'; ctx.shadowBlur = 40 + 30 * Math.sin(t * 8);
+    const gr = ctx.createLinearGradient(0, -90, 0, 90); gr.addColorStop(0, '#FFF6B0'); gr.addColorStop(1, '#F5A300');
+    popText('第1位', 0, 0, 200, { fill: gr, stroke: '#5A3A00', lw: 24, shadow: null });
+    ctx.shadowColor = 'transparent';
+  });
+  // 謎のカード
+  withT(540 + sx, 860 + sy, pop(t, s.t0 + 0.2, 0.45), Math.sin(t * 20) * 0.02 * (1 + 4 * k), () => {
+    ctx.shadowColor = 'rgba(255,214,10,0.6)'; ctx.shadowBlur = 50;
+    ctx.fillStyle = '#2C1F63'; rr(-390, -300, 780, 600, 50); ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineWidth = 10; ctx.strokeStyle = '#FFD60A'; rr(-390, -300, 780, 600, 50); ctx.stroke();
+    popText('？', 0, -20, 360, { fill: '#FFD60A', stroke: '#fff', lw: 14, shadow: 'rgba(0,0,0,0.4)' });
+  });
+  // ドラム
+  [[170, 1180], [910, 1180]].forEach(([x, y], i) => {
+    const hit = Math.abs(Math.sin(t * (14 + 16 * k) + i * 1.5));
+    withT(x, y - hit * 22, 1, (i ? 1 : -1) * 0.15, () => icon('1f941', 0, 0, 170));
+  });
+  // 白く飛ぶ直前
+  const wa = prog(t, s.t1 - 0.18, 0.18);
+  if (wa > 0) { ctx.fillStyle = `rgba(255,255,255,${wa})`; ctx.fillRect(0, 0, W, H); }
+}
+
+function drawOutro(t) {
+  const s = SC.outro, th = THEMES.outro, m = s.marks;
+  drawBG(th, t, 540, 600, { raySpeed: 0.15, icons: ['1f3ac', '2615', '1f3a4', '1f3a2', '1f3dd'] });
+  confettiRain(t, 33, 30, ['#FFD60A', '#FFFFFF', '#3A86FF', '#06D6A0', '#FF3D7F']);
+  const bp = beatPulse(t);
+  withT(540, 170, pop(t, s.t0 + 0.05, 0.35) * (1 + bp * 0.03), -0.02, () =>
+    popText('ランキングまとめ', 0, 0, 92, { fill: '#fff', stroke: th.dark, lw: 18, maxW: 940 }));
+  const order = ['r1', 'r2', 'r3', 'r4', 'r5'];
+  order.forEach((id, i) => {
+    const J = JOBS[id], y = 290 + i * 134;
+    const tp = s.t0 + 0.15 + (4 - i) * 0.09;
+    const p = eBack(prog(t, tp, 0.4), 1.5);
+    if (t < tp) return;
+    ctx.save(); ctx.translate((1 - p) * -900, 0);
+    const top = J.rank === 1;
+    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 6;
+    ctx.fillStyle = top ? '#FFF6C9' : '#fff'; rr(70, y, 940, 116, 32); ctx.fill(); ctx.shadowColor = 'transparent';
+    if (top) { ctx.lineWidth = 7; ctx.strokeStyle = '#F5A300'; rr(70, y, 940, 116, 32); ctx.stroke(); }
+    const [c0, c1] = MEDAL[J.rank];
+    const gr = ctx.createRadialGradient(150, y + 40, 6, 150, y + 58, 52); gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(150, y + 58, 44, 0, 7); ctx.fill();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#fff'; ctx.stroke();
+    popText(String(J.rank), 150, y + 60, 54, { fill: '#fff', stroke: '#333', lw: 10, shadow: null });
+    withT(258, y + 58, 1 + (top ? 0.06 * bp : 0), Math.sin(t * 2 + i) * 0.08, () => icon(J.icon, 0, 0, 82));
+    ctx.textAlign = 'left';
+    const sz = fit(J.name, 54, 640, 'Dela');
+    ctx.textBaseline = 'middle'; ctx.fillStyle = '#222'; ctx.fillText(J.name, 318, y + 60);
+    if (top) withT(965, y + 18, 1, 0.35, () => icon('1f451', 0, 0, 70));
+    ctx.restore();
+  });
+  // コメント誘導
+  const tc = m.cta ?? s.t0 + 2;
+  const cp = pop(t, tc, 0.45);
+  if (cp > 0) {
+    withT(510, 1110 + Math.sin(t * 4) * 6, cp * (1 + bp * 0.035), -0.03, () => {
+      ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 10;
+      ctx.fillStyle = '#FF3D7F'; rr(-420, -110, 840, 200, 60); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-180, 80); ctx.lineTo(-250, 150); ctx.lineTo(-90, 86); ctx.closePath(); ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.lineWidth = 8; ctx.strokeStyle = '#fff'; rr(-420, -110, 840, 200, 60); ctx.stroke();
+      icon('1f4ac', -330, -14, 110);
+      popText('コメントで', 60, -48, 60, { fill: '#fff', stroke: null, shadow: 'rgba(0,0,0,0.18)', sdy: 4 });
+      popText('教えてね！', 60, 30, 78, { fill: '#FFE45C', stroke: null, shadow: 'rgba(0,0,0,0.2)', sdy: 5 });
+    });
+    withT(510, 1288, pop(t, tc + 0.25, 0.35), 0, () =>
+      popText('どれが一番やってみたい？', 0, 0, 46, { fam: 'Maru', fill: '#fff', stroke: th.dark, lw: 10, shadow: null }));
+    burst(t, tc, 510, 1110, 50, 99, ['#FFD60A', '#fff', '#3A86FF', '#06D6A0'], 1500);
+  }
+  ctx.save(); setFont(24, 'Maru', 800); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.globalAlpha = clamp(prog(t, s.t0 + 0.6, 0.5)) * 0.95; ctx.lineJoin = 'round'; ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  const cr = 'ナレーション VOICEVOX:ずんだもん / VOICEVOX:四国めたん';
+  ctx.strokeText(cr, 500, 1596); ctx.fillStyle = '#fff'; ctx.fillText(cr, 500, 1596); ctx.restore();
+}
+
+// ---------------------------------------------------------------- transitions
+function stripes(t, T, cols) {
+  const D = 0.5, p = (t - (T - D / 2)) / D;
+  if (p <= 0 || p >= 1) return;
+  const n = 6, st = 0.03, win = 0.5 - (n - 1) * st;
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.rotate(-0.32);
+  const bh = 2700 / n;
+  for (let k = 0; k < n; k++) {
+    const a = eInOut(clamp((p - k * st) / win)), b = eInOut(clamp((p - 0.5 - k * st) / win));
+    const off = 2600 * (1 - a) - 2600 * b;
+    ctx.fillStyle = cols[k % cols.length];
+    ctx.fillRect(-1350 + off, -1350 + k * bh, 2700, bh + 2);
+  }
+  ctx.restore();
+}
+function drawTransitions(t) {
+  for (let i = 1; i < ORDER.length; i++) {
+    const id = ORDER[i], T = SC[id].t0, th = THEMES[id];
+    if (Math.abs(t - T) > 0.4) continue;
+    if (id === 'drum') {
+      const a = t < T ? prog(t, T - 0.3, 0.3) : 1 - prog(t, T, 0.35);
+      ctx.fillStyle = `rgba(0,0,0,${a})`; ctx.fillRect(0, 0, W, H);
+    } else if (id === 'r1') {
+      const a = t >= T ? 1 - prog(t, T, 0.6) : 0;
+      if (a > 0) { ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillRect(0, 0, W, H); }
+    } else {
+      stripes(t, T, [th.g[0], '#fff', th.acc, th.g[1], '#FFE45C', th.dark]);
+    }
+  }
+}
+
+// ---------------------------------------------------------------- main
+function sceneAt(t) {
+  let id = ORDER[0];
+  for (const k of ORDER) if (t >= SC[k].t0) id = k;
+  return id;
+}
+function render(t, opt = {}) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  const id = sceneAt(t);
+  if (id === 'intro') drawIntro(t);
+  else if (id === 'drum') drawDrum(t);
+  else if (id === 'outro') drawOutro(t);
+  else drawRank(id, t);
+  if (!opt.noSub) drawSubtitle(t);
+  drawTransitions(t);
+  ctx.restore();
+}
+window.render = render;
+
+// ブラウザで直接開いたときはプレビュー再生(?t=秒 で静止画)
+window.ready.then(() => {
+  if (navigator.webdriver) return;
+  document.body.classList.add('preview');
+  const q = new URLSearchParams(location.search);
+  if (q.has('t')) { render(parseFloat(q.get('t'))); return; }
+  const st = performance.now();
+  (function loop() { render(((performance.now() - st) / 1000) % DURATION); requestAnimationFrame(loop); })();
+});
+</script>
+</body>
+</html>
