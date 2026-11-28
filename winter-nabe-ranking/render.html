@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>冬に食べたいお鍋ランキング</title>
+<link rel="stylesheet" href="node_modules/@fontsource/dela-gothic-one/400.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/800.css">
+<link rel="stylesheet" href="node_modules/@fontsource/m-plus-rounded-1c/900.css">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; height: 100vh; margin: 0 auto; }
+</style>
+<script src="build/timeline.js"></script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// 時刻 t 秒のフレームを決定論的に描く(render(t))。capture.js が 1 フレームずつ撮影する。
+// ブラウザで直接開くとプレビュー再生(?t=12.3 でその時刻に固定)。
+const W = 1080, H = 1920;
+const TL = window.TIMELINE;
+window.FPS = TL.fps; window.DURATION = TL.total;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FD = '"Dela Gothic One"', FR = '"M PLUS Rounded 1c"';
+
+// ---------- 数学ユーティリティ ----------
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const P = (t, a, d) => clamp((t - a) / d);
+const eOutCubic = t => 1 - Math.pow(1 - t, 3);
+const eInCubic = t => t * t * t;
+const eInOut = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const eOutBack = (t, s = 1.9) => 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+const eOutElastic = t => t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - .75) * 2 * Math.PI / 3) + 1;
+const eOutBounce = t => { const n = 7.5625, d = 2.75;
+  if (t < 1 / d) return n * t * t; if (t < 2 / d) return n * (t -= 1.5 / d) * t + .75;
+  if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + .9375; return n * (t -= 2.625 / d) * t + .984375; };
+const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const popIn = (t, at, d = .38, s = 2.2) => t < at ? 0 : eOutBack(P(t, at, d), s);
+const TAU = Math.PI * 2;
+
+// ---------- 描画ヘルパ ----------
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function ell(x, y, rx, ry) { ctx.beginPath(); ctx.ellipse(x, y, Math.max(.01, rx), Math.max(.01, ry), 0, 0, TAU); }
+function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, Math.max(.01, r), 0, TAU); }
+function grad(x0, y0, x1, y1, stops) { const g = ctx.createLinearGradient(x0, y0, x1, y1); stops.forEach((c, i) => g.addColorStop(i / (stops.length - 1), c)); return g; }
+function rgrad(x, y, r0, r1, stops) { const g = ctx.createRadialGradient(x, y, r0, x, y, r1); stops.forEach(([o, c]) => g.addColorStop(o, c)); return g; }
+function starPath(cx, cy, r1, r2, n = 5, rot = -Math.PI / 2) {
+  ctx.beginPath();
+  for (let i = 0; i < n * 2; i++) { const r = i % 2 ? r2 : r1, a = rot + i * Math.PI / n; ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+  ctx.closePath();
+}
+
+// テロップ: 文字ごとのアニメ(fn(i) → {dx,dy,sc,rot,a})付き。縁取りは全文字ぶんを層ごとに描くので隣の字に食い込まない
+function telop(text, x, y, size, o = {}) {
+  const chars = [...text];
+  ctx.save();
+  ctx.translate(x, y); if (o.rot) ctx.rotate(o.rot);
+  const sc = o.scale ?? 1; ctx.scale(sc * (o.sx ?? 1), sc * (o.sy ?? 1));
+  ctx.globalAlpha *= o.alpha ?? 1;
+  ctx.font = `${o.weight ?? 400} ${size}px ${o.font ?? FD}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+  const ls = o.spacing ?? 0;
+  const ws = chars.map(c => ctx.measureText(c).width);
+  const total = ws.reduce((a, b) => a + b, 0) + ls * (chars.length - 1);
+  let cx0 = o.align === 'left' ? 0 : o.align === 'right' ? -total : -total / 2;
+  const pos = []; for (let i = 0; i < chars.length; i++) { pos.push(cx0 + ws[i] / 2); cx0 += ws[i] + ls; }
+  const strokes = o.strokes ?? [['#3A1406', size * .26], ['#FFFFFF', size * .13]];
+  let fill = o.fill ?? '#FFFFFF';
+  if (Array.isArray(fill)) fill = grad(0, -size * .45, 0, size * .45, fill);
+  const anim = i => o.fn ? o.fn(i, chars.length) : {};
+  const each = (cb) => chars.forEach((c, i) => {
+    const a = anim(i); if ((a.a ?? 1) <= 0.001) return;
+    ctx.save(); ctx.translate(pos[i] + (a.dx ?? 0), a.dy ?? 0); if (a.rot) ctx.rotate(a.rot);
+    const s = a.sc ?? 1; ctx.scale(s * (a.sx ?? 1), s * (a.sy ?? 1)); ctx.globalAlpha *= a.a ?? 1; cb(c); ctx.restore();
+  });
+  if (o.shadow !== false) each(c => { ctx.strokeStyle = ctx.fillStyle = 'rgba(10,5,20,.35)'; ctx.lineWidth = strokes[0][1]; ctx.translate(0, size * .08); ctx.strokeText(c, 0, 0); });
+  for (const [col, lw] of strokes) each(c => { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.strokeText(c, 0, 0); });
+  each(c => { ctx.fillStyle = fill; ctx.fillText(c, 0, 0); });
+  if (o.gloss) each(c => { ctx.save(); ctx.beginPath(); ctx.rect(-size, -size, size * 2, size * .62); ctx.clip(); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillText(c, 0, 0); ctx.restore(); });
+  ctx.restore();
+  return total * sc;
+}
+function textW(text, size, font = FD, weight = 400) { ctx.save(); ctx.font = `${weight} ${size}px ${font}`; const w = ctx.measureText(text).width; ctx.restore(); return w; }
+
+// ---------- 色 ----------
+const RANKCOL = { 5: ['#9BE0FF', '#2F8FE2', '#14407A'], 4: ['#A6F0A8', '#2DAE55', '#0F4F26'], 3: ['#FFD3A1', '#D07A2F', '#6A3510'],
+                  2: ['#FFFFFF', '#A8B6C8', '#4A5668'], 1: ['#FFF3A6', '#F2B11B', '#8A4A00'] };
+
+// ---------- 具材スプライト(原点中心・約100px) ----------
+function wavyBand(w, h, amp, n, ph) {
+  ctx.beginPath();
+  for (let i = 0; i <= 24; i++) { const x = -w / 2 + w * i / 24; ctx.lineTo(x, -h / 2 + Math.sin(i / 24 * n * TAU + ph) * amp); }
+  for (let i = 24; i >= 0; i--) { const x = -w / 2 + w * i / 24; ctx.lineTo(x, h / 2 + Math.sin(i / 24 * n * TAU + ph + 1) * amp); }
+  ctx.closePath();
+}
+function jaggedLeaf(len, wid, teeth) {
+  ctx.beginPath(); ctx.moveTo(-len / 2, 0);
+  for (let i = 1; i <= teeth; i++) { const u = i / teeth, x = -len / 2 + len * u, w = Math.sin(u * Math.PI) * wid;
+    ctx.lineTo(x - len / teeth / 2, -w * .65); ctx.lineTo(x, -w); }
+  for (let i = teeth; i >= 1; i--) { const u = i / teeth, x = -len / 2 + len * u, w = Math.sin(u * Math.PI) * wid;
+    ctx.lineTo(x, w); ctx.lineTo(x - len / teeth / 2, w * .65); }
+  ctx.closePath();
+}
+const SPR = {
+  hakusai() {
+    rr(-78, -30, 156, 60, 28); ctx.fillStyle = '#F7F4E8'; ctx.fill(); ctx.strokeStyle = '#DCD5BC'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -33);
+    ctx.bezierCurveTo(30, -42, 50, -26, 70, -34); ctx.bezierCurveTo(95, -24, 92, 0, 86, 6);
+    ctx.bezierCurveTo(96, 24, 70, 36, 50, 30); ctx.bezierCurveTo(30, 40, 12, 32, 0, 33); ctx.closePath();
+    ctx.fillStyle = '#C8E58F'; ctx.fill(); ctx.strokeStyle = '#97C25E'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#E3DDC6'; ctx.lineWidth = 4;
+    for (const y of [-14, 0, 14]) { ctx.beginPath(); ctx.moveTo(-66, y * .9); ctx.quadraticCurveTo(-20, y * 1.1, 10, y); ctx.stroke(); }
+    ctx.strokeStyle = '#A9D06E'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(70, -4); ctx.moveTo(30, 0); ctx.lineTo(50, -18); ctx.moveTo(40, 0); ctx.lineTo(60, 18); ctx.stroke();
+  },
+  pork(c1 = '#F1BFAA', c2 = '#D99A82', fat = '#FFF5EC') {
+    wavyBand(170, 58, 6, 2.2, 0); ctx.fillStyle = c1; ctx.fill(); ctx.strokeStyle = c2; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = fat; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    for (const yy of [-10, 11]) { ctx.beginPath(); for (let i = 0; i <= 20; i++) { const x = -74 + 148 * i / 20; ctx.lineTo(x, yy + Math.sin(i / 20 * 4.4 * Math.PI + yy) * 5); } ctx.stroke(); }
+  },
+  beef() {
+    wavyBand(180, 72, 8, 1.6, .5); ctx.fillStyle = '#93432C'; ctx.fill(); ctx.strokeStyle = '#5E2414'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#C98063'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    for (const [a, b, c] of [[-60, -14, 20], [-20, 8, 40], [10, -20, 30], [-50, 20, 25], [30, 18, 35]]) { ctx.beginPath(); ctx.moveTo(a, b); ctx.quadraticCurveTo(a + c / 2, b - 8, a + c, b + 3); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(255,240,220,.4)'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(-70, -24); ctx.quadraticCurveTo(0, -36, 66, -22); ctx.stroke();
+  },
+  tofu(grill = false) {
+    rr(-44, -4, 88, 32, 8); ctx.fillStyle = grill ? '#D9B07A' : '#ECE5D2'; ctx.fill();
+    rr(-44, -40, 88, 46, 9); ctx.fillStyle = grill ? '#F0D9AE' : '#FFFDF6'; ctx.fill();
+    ctx.strokeStyle = grill ? '#B9884C' : '#D8CFB6'; ctx.lineWidth = 3; ctx.stroke();
+    if (grill) { ctx.strokeStyle = '#A8682C'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      for (const x of [-26, -6, 14, 32]) { ctx.beginPath(); ctx.moveTo(x - 8, -32); ctx.lineTo(x + 6, -2); ctx.stroke(); } }
+  },
+  shimeji() {
+    const tips = [[-34, -18], [-15, -32], [4, -38], [22, -30], [38, -16]];
+    ctx.lineCap = 'round';
+    for (const [x, y] of tips) { ctx.strokeStyle = '#D9CBB0'; ctx.lineWidth = 13; ctx.beginPath(); ctx.moveTo(0, 30); ctx.quadraticCurveTo(x * .3, 0, x, y); ctx.stroke();
+      ctx.strokeStyle = '#F5EDDC'; ctx.lineWidth = 8; ctx.stroke(); }
+    for (const [x, y] of tips) { ell(x, y, 17, 11); ctx.fillStyle = '#A4815B'; ctx.fill(); ell(x - 2, y - 4, 10, 5); ctx.fillStyle = '#C4A27C'; ctx.fill(); }
+  },
+  shiitake() {
+    circ(0, 0, 42); ctx.fillStyle = rgrad(-10, -12, 4, 46, [[0, '#9C653D'], [1, '#5A3117']]); ctx.fill();
+    ctx.strokeStyle = '#E8D5B5'; ctx.lineWidth = 4; circ(0, 0, 41); ctx.stroke();
+    ctx.strokeStyle = '#F4E9D3'; ctx.lineWidth = 8; ctx.lineCap = 'round';
+    for (let k = 0; k < 3; k++) { const a = k * Math.PI / 3 + .3; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 24, Math.sin(a) * 24); ctx.lineTo(-Math.cos(a) * 24, -Math.sin(a) * 24); ctx.stroke(); }
+  },
+  carrot() {
+    ctx.beginPath();
+    for (let i = 0; i <= 60; i++) { const a = i / 60 * TAU; const r = 30 + 9 * Math.cos(a * 5); ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+    ctx.closePath(); ctx.fillStyle = '#F47B22'; ctx.fill(); ctx.strokeStyle = '#CF5F14'; ctx.lineWidth = 3; ctx.stroke();
+    circ(0, 0, 14); ctx.fillStyle = '#F9A65C'; ctx.fill();
+  },
+  negi(kind = 'white') {
+    const body = kind === 'green' ? '#79C14C' : '#F6F7EC', end = kind === 'green' ? '#BEE485' : '#E4F1C5', ring = kind === 'green' ? '#5A9E32' : '#BCD98D';
+    rr(-46, -17, 84, 34, 16); ctx.fillStyle = body; ctx.fill(); ctx.strokeStyle = kind === 'green' ? '#4E8A2A' : '#D6D9C2'; ctx.lineWidth = 3; ctx.stroke();
+    ell(36, 0, 12, 17); ctx.fillStyle = end; ctx.fill(); ctx.stroke(); ell(36, 0, 6, 9); ctx.strokeStyle = ring; ctx.stroke();
+    if (kind === 'grill') { ctx.fillStyle = 'rgba(120,60,20,.75)'; for (const [x, y, r] of [[-28, -6, 7], [-8, 5, 9], [12, -7, 6], [-36, 8, 5]]) { ell(x, y, r * 1.4, r * .8); ctx.fill(); } }
+  },
+  nira() {
+    ctx.lineCap = 'round';
+    for (let k = 0; k < 7; k++) { ctx.strokeStyle = k % 2 ? '#56BA5B' : '#3C9C47'; ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.moveTo(-86, -21 + k * 7); ctx.bezierCurveTo(-30, -30 + k * 9, 20, -8 + k * 5, 86, -18 + k * 7 + (k % 3) * 4); ctx.stroke(); }
+  },
+  leafy() {
+    for (const [a, s] of [[-.5, .9], [.4, .8], [0, 1]]) { ctx.save(); ctx.rotate(a); ctx.translate(30, 0); ctx.scale(s, s);
+      jaggedLeaf(100, 26, 6); ctx.fillStyle = '#4FAE52'; ctx.fill(); ctx.strokeStyle = '#2E7D36'; ctx.lineWidth = 3; ctx.stroke();
+      ctx.strokeStyle = '#86D27F'; ctx.beginPath(); ctx.moveTo(-48, 0); ctx.lineTo(46, 0); ctx.stroke(); ctx.restore(); }
+  },
+  shrimp() {
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#E2552C'; ctx.lineWidth = 40; ctx.beginPath(); ctx.arc(0, 0, 32, Math.PI * .85, Math.PI * 2.1); ctx.stroke();
+    ctx.strokeStyle = '#F68352'; ctx.lineWidth = 30; ctx.stroke();
+    ctx.strokeStyle = '#FFD7BD'; ctx.lineWidth = 4;
+    for (let k = 0; k < 6; k++) { const a = Math.PI * (.95 + k * .19); ctx.beginPath(); ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18); ctx.lineTo(Math.cos(a) * 46, Math.sin(a) * 46); ctx.stroke(); }
+    const ta = Math.PI * 2.1, tx = Math.cos(ta) * 32, ty = Math.sin(ta) * 32;
+    ctx.fillStyle = '#D93E22'; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + 30, ty - 4); ctx.lineTo(tx + 22, ty + 24); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#C23A20'; ctx.lineWidth = 2.5; ctx.beginPath(); const ha = Math.PI * .85; ctx.moveTo(Math.cos(ha) * 32, Math.sin(ha) * 32);
+    ctx.quadraticCurveTo(-70, 10, -88, -30); ctx.moveTo(Math.cos(ha) * 32, Math.sin(ha) * 32); ctx.quadraticCurveTo(-60, 30, -90, 4); ctx.stroke();
+    circ(Math.cos(ha) * 34 - 6, Math.sin(ha) * 34 - 6, 4); ctx.fillStyle = '#2A1010'; ctx.fill();
+  },
+  chicken() {
+    ctx.beginPath(); ctx.moveTo(-44, 10); ctx.bezierCurveTo(-52, -26, -10, -40, 14, -30); ctx.bezierCurveTo(46, -34, 56, 0, 42, 18);
+    ctx.bezierCurveTo(30, 36, -30, 38, -44, 10); ctx.closePath();
+    ctx.fillStyle = '#EED6AE'; ctx.fill(); ctx.strokeStyle = '#C9A473'; ctx.lineWidth = 3; ctx.stroke();
+    ell(-6, -14, 26, 10); ctx.fillStyle = '#FAEBCD'; ctx.fill();
+    ctx.strokeStyle = '#D8B887'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-20, 8); ctx.quadraticCurveTo(0, 16, 22, 6); ctx.stroke();
+  },
+  motsu() {
+    const blobs = [[-26, 4, 20], [-6, -10, 22], [16, 0, 21], [30, 14, 16], [-14, 16, 17], [6, 18, 16]];
+    for (const [x, y, r] of blobs) { circ(x, y, r + 3); ctx.fillStyle = '#DDB3A2'; ctx.fill(); }
+    for (const [x, y, r] of blobs) { circ(x, y, r); ctx.fillStyle = '#F6E3D8'; ctx.fill(); }
+    ctx.strokeStyle = '#E2B6A6'; ctx.lineWidth = 3;
+    for (const [x, y, r] of blobs) { ctx.beginPath(); ctx.arc(x, y + 2, r * .55, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+    ell(-8, -16, 10, 5); ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fill();
+  },
+  cabbage() {
+    ctx.beginPath(); ctx.moveTo(-60, -20); ctx.bezierCurveTo(-30, -48, 40, -44, 62, -16); ctx.bezierCurveTo(70, 18, 30, 42, -10, 38); ctx.bezierCurveTo(-56, 36, -76, 6, -60, -20); ctx.closePath();
+    ctx.fillStyle = '#D6EEA6'; ctx.fill(); ctx.strokeStyle = '#A6CB6B'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#F4FADF'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-50, 10); ctx.quadraticCurveTo(0, -6, 56, -10); ctx.moveTo(-10, 2); ctx.lineTo(10, -30); ctx.moveTo(20, -4); ctx.lineTo(36, 26); ctx.stroke();
+  },
+  garlic() { ell(0, 0, 17, 12); ctx.fillStyle = '#F9F1DC'; ctx.fill(); ctx.strokeStyle = '#D5BE92'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#E8D8B2'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(9, 0); ctx.stroke(); },
+  chili() { circ(0, 0, 10); ctx.strokeStyle = '#D5241B'; ctx.lineWidth = 7; ctx.stroke(); ctx.fillStyle = '#F7D46A'; circ(-3, 0, 2.5); ctx.fill(); circ(3, 2, 2.5); ctx.fill(); },
+  kimchi() {
+    ctx.beginPath(); ctx.moveTo(-58, -12); ctx.bezierCurveTo(-40, -40, 20, -46, 56, -22); ctx.bezierCurveTo(70, 0, 50, 30, 20, 32);
+    ctx.bezierCurveTo(-10, 40, -50, 30, -62, 10); ctx.closePath();
+    ctx.fillStyle = '#E04A1F'; ctx.fill(); ctx.strokeStyle = '#A82A10'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = '#F7966A'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-44, -6); ctx.quadraticCurveTo(0, -24, 44, -14); ctx.moveTo(-34, 14); ctx.quadraticCurveTo(0, 2, 30, 12); ctx.stroke();
+    ctx.fillStyle = '#9C1408'; for (const [x, y] of [[-20, -18], [10, 22], [30, -4], [-40, 16], [44, 6]]) { circ(x, y, 3); ctx.fill(); }
+    ell(-6, -22, 18, 5); ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fill();
+  },
+  shirataki() {
+    ctx.lineCap = 'round';
+    for (const [col, lw] of [['#CFCAB8', 9], ['#F7F5EC', 5]]) { ctx.strokeStyle = col; ctx.lineWidth = lw;
+      for (let k = 0; k < 7; k++) { ctx.beginPath(); for (let i = 0; i <= 16; i++) { const x = -70 + 140 * i / 16; ctx.lineTo(x, -18 + k * 6 + Math.sin(i * .9 + k) * 4); } ctx.stroke(); } }
+    rr(-10, -26, 20, 52, 6); ctx.fillStyle = '#E3D6B6'; ctx.fill();
+  },
+};
+const FLAT = new Set(['hakusai', 'pork', 'beef', 'nira', 'leafy', 'shrimp', 'cabbage', 'garlic', 'chili', 'kimchi', 'shirataki', 'carrot', 'shiitake']);
+function sprite(type) {
+  switch (type) {
+    case 'yakidofu': return SPR.tofu(true);
+    case 'negigreen': return SPR.negi('green');
+    case 'negiyaki': return SPR.negi('grill');
+    case 'mizuna': case 'shungiku': return SPR.leafy();
+    default: return SPR[type]();
+  }
+}
+const FLATT = t => FLAT.has(t) || t === 'mizuna' || t === 'shungiku';
+
+// 料理ごとの見た目(器・スープ・具材の配置 [種類, x, y, 回転, 大きさ] を描く順に)
+const DISH_ART = {
+  tonyu: { vessel: 'donabe', body: ['#FBF6EC', '#D9CCB4'], rim: '#FFFFFF', deco: '#3F78C9', soup: ['#FFF9EA', '#EBDDBC'], oil: 0, glow: 'rgba(255,200,120,.30)',
+    items: [['hakusai', -170, -42, -.3, 1.1], ['pork', 40, -58, .15, 1.05], ['mizuna', 190, -38, .5, 1.1], ['shimeji', -60, -26, 0, 1.05], ['tofu', 140, -4, 0, 1],
+      ['pork', -150, 22, -.2, 1.05], ['carrot', 10, 2, 0, 1], ['hakusai', 205, 38, .4, 1], ['tofu', -40, 44, 0, 1], ['shimeji', 95, 46, 0, .95],
+      ['carrot', -225, 48, 0, .85], ['mizuna', -110, 62, -.6, .9]] },
+  motsu: { vessel: 'donabe', body: ['#4A3226', '#22140D'], rim: '#E8D9BE', deco: '#F2E6CF', soup: ['#D9984F', '#9C5A22'], oil: .9, glow: 'rgba(255,150,70,.33)',
+    items: [['cabbage', -180, -45, .3, 1.2], ['cabbage', 160, -50, -.4, 1.2], ['cabbage', 220, 22, .2, 1], ['cabbage', -228, 26, -.2, 1],
+      ['motsu', -95, -22, 0, 1.05], ['motsu', 20, -38, 0, 1.05], ['motsu', 115, -6, 0, 1.05], ['motsu', -40, 26, 0, 1], ['motsu', 86, 46, 0, .95], ['motsu', -146, 44, 0, .95],
+      ['nira', -10, -6, .2, 1.3], ['nira', 30, 10, -.3, 1.2],
+      ['garlic', -62, -52, 0, 1.1], ['garlic', 64, -62, 0, 1.1], ['garlic', 150, 30, 0, 1.1], ['garlic', -122, 4, 0, 1.1], ['garlic', 4, 42, 0, 1.1], ['garlic', 60, -18, 0, 1.1],
+      ['chili', -12, -46, 0, 1.2], ['chili', 104, -34, 0, 1.2], ['chili', -92, 40, 0, 1.2], ['chili', 40, 28, 0, 1.2], ['chili', -40, 2, 0, 1.2]] },
+  yose: { vessel: 'donabe', body: ['#6B4128', '#3A2113'], rim: '#F0E3C9', deco: '#FFFFFF', soup: ['#F2C978', '#C98B33'], oil: .25, glow: 'rgba(255,170,80,.33)',
+    items: [['hakusai', -190, -45, -.4, 1.2], ['hakusai', 172, -56, .5, 1.2], ['shungiku', -40, -62, .2, 1.1], ['chicken', 64, -30, 0, 1], ['chicken', -122, -12, 0, 1],
+      ['shrimp', 176, 2, .3, 1.05], ['shrimp', -212, 22, -.2, 1], ['tofu', -30, 8, 0, 1], ['shiitake', 92, 30, 0, 1], ['shiitake', -132, 42, 0, 1],
+      ['negi', 228, 44, -.3, 1], ['negi', 12, 54, .2, 1], ['carrot', -58, 58, 0, .9], ['carrot', 150, 62, 0, .85], ['carrot', -210, 66, 0, .8], ['shungiku', 70, -58, -.5, .9]] },
+  suki: { vessel: 'iron', body: ['#3C3936', '#141312'], rim: '#55504A', deco: null, soup: ['#8A4A1E', '#4C230B'], oil: .5, glow: 'rgba(255,140,60,.35)',
+    items: [['shirataki', -192, -40, -.2, 1.2], ['shungiku', 174, -50, .4, 1.2], ['shirataki', 120, -44, .3, .9], ['yakidofu', -205, 32, 0, 1.1], ['yakidofu', 222, 22, 0, 1.05],
+      ['beef', -40, -42, .1, 1.3], ['beef', 62, -16, -.2, 1.35], ['beef', -72, 18, .25, 1.3], ['beef', 52, 40, -.1, 1.25],
+      ['negiyaki', 152, 58, -.4, 1], ['negiyaki', -150, 66, .4, 1], ['shiitake', 0, 68, 0, .85]] },
+  kimchi: { vessel: 'donabe', body: ['#2E2A2A', '#0E0C0C'], rim: '#4B4545', deco: '#E9533A', soup: ['#F0602E', '#A8230F'], oil: 1, glow: 'rgba(255,90,40,.42)',
+    items: [['kimchi', -182, -42, .2, 1.3], ['kimchi', 162, -46, -.3, 1.3], ['nira', -20, -56, .1, 1.1], ['pork', -62, -14, .2, 1.2], ['pork', 92, 2, -.25, 1.2],
+      ['tofu', -186, 24, 0, 1.05], ['tofu', 204, 28, 0, 1.05], ['kimchi', 10, 26, .5, 1.2], ['kimchi', -92, 52, -.4, 1], ['negigreen', 124, 58, -.3, 1],
+      ['negigreen', -232, 58, .4, .9], ['pork', 32, 62, .1, 1], ['nira', 152, -10, -.6, .9]] },
+};
+
+// ---------- 鍋 ----------
+const RX = 300, RY = 105;
+function steam(cx, cy, t, k = 1, spread = 1) {
+  if (k <= 0) return;
+  ctx.save(); ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < 14; i++) {
+    const p = (t * .32 + hash(i + 3)) % 1;
+    const x = cx + (hash(i) - .5) * 440 * spread + Math.sin(t * 1.4 + i * 2) * 40 * p;
+    const y = cy - 30 - p * 470;
+    const r = 50 + p * 110;
+    const a = Math.sin(p * Math.PI) * .26 * k;
+    ctx.fillStyle = rgrad(x, y, 0, r, [[0, `rgba(255,255,255,${a})`], [1, 'rgba(255,255,255,0)']]);
+    circ(x, y, r); ctx.fill();
+  }
+  ctx.restore();
+  // 漫画っぽい湯気の線
+  ctx.save(); ctx.lineCap = 'round'; ctx.strokeStyle = `rgba(255,255,255,${.75 * k})`; ctx.lineWidth = 11;
+  for (let j = 0; j < 3; j++) {
+    const bx = cx + (j - 1) * 120, p = (t * .5 + j * .33) % 1, a = Math.sin(p * Math.PI);
+    ctx.globalAlpha = a; ctx.beginPath();
+    for (let i = 0; i <= 20; i++) { const u = i / 20; ctx.lineTo(bx + Math.sin(u * 7 + t * 5 + j) * 18, cy - 90 - p * 60 - u * 150); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function lidShape() {
+  ctx.beginPath(); ctx.moveTo(-338, 0);
+  ctx.bezierCurveTo(-338, -150, -170, -205, 0, -205); ctx.bezierCurveTo(170, -205, 338, -150, 338, 0);
+  ctx.ellipse(0, 0, 338, 118, 0, 0, Math.PI, false); ctx.closePath();
+}
+function drawLid(art, x, y, rot, sc) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  lidShape(); ctx.fillStyle = grad(-300, -200, 300, 60, [art.body[0], art.body[1]]); ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
+  ctx.save(); lidShape(); ctx.clip();
+  ell(-120, -130, 120, 50); ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fill();
+  ctx.lineWidth = 26; ctx.strokeStyle = art.rim; ctx.beginPath(); ctx.ellipse(0, 0, 330, 112, 0, 0, Math.PI); ctx.stroke();
+  if (art.deco) { ctx.strokeStyle = art.deco; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(k * 110 - 30, -60 - Math.abs(k) * -10); ctx.quadraticCurveTo(k * 110, -95 + Math.abs(k) * 14, k * 110 + 30, -60); ctx.stroke(); } }
+  ctx.restore();
+  // つまみ
+  rr(-40, -238, 80, 42, 16); ctx.fillStyle = art.rim; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 4; ctx.stroke();
+  ell(0, -238, 40, 13); ctx.fillStyle = '#FFFFFF'; ctx.globalAlpha = .5; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.restore();
+}
+// dish: DISH_ART のキー / o: {t, appear(具材が飛び込む開始秒), lid: {x,y,rot}|null, steamK, bubbles}
+function drawPot(dish, cx, cy, sc, o) {
+  const art = DISH_ART[dish], t = o.t;
+  const iron = art.vessel === 'iron';
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(sc * (o.sx ?? 1), sc * (o.sy ?? 1));
+  const depth = iron ? 70 : 190, orx = iron ? 345 : 338, ory = iron ? 122 : 120;
+  // 取っ手
+  ctx.fillStyle = art.body[0];
+  if (iron) { ctx.strokeStyle = '#2A2826'; ctx.lineWidth = 16; for (const s of [-1, 1]) { ctx.beginPath(); ctx.ellipse(s * 362, 18, 38, 26, 0, 0, TAU); ctx.stroke(); } }
+  else { for (const s of [-1, 1]) { rr(s > 0 ? 318 : -378, -6, 60, 40, 16); ctx.fillStyle = grad(0, -6, 0, 34, [art.body[0], art.body[1]]); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.3)'; ctx.lineWidth = 4; ctx.stroke(); } }
+  // 胴
+  ctx.beginPath(); ctx.moveTo(-orx, 0);
+  if (iron) { ctx.lineTo(-orx + 14, depth); ctx.ellipse(0, depth, orx - 14, ory - 8, 0, Math.PI, 0, true); ctx.lineTo(orx, 0); }
+  else { ctx.bezierCurveTo(-orx, 130, -230, depth, 0, depth); ctx.bezierCurveTo(230, depth, orx, 130, orx, 0); }
+  ctx.closePath();
+  ctx.fillStyle = grad(-orx, 0, orx, 0, [art.body[1], art.body[0], art.body[0], art.body[1]]); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 5; ctx.stroke();
+  if (art.deco && !iron) { ctx.save(); ctx.clip(); ctx.strokeStyle = art.deco; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.globalAlpha = .85;
+    for (let k = -3; k <= 3; k++) { const x = k * 92; ctx.beginPath(); ctx.moveTo(x - 26, 112); ctx.quadraticCurveTo(x, 80, x + 26, 112); ctx.stroke(); circ(x, 140, 6); ctx.fillStyle = art.deco; ctx.fill(); }
+    ctx.restore(); }
+  ell(-150, 90, 90, 26); ctx.fillStyle = 'rgba(255,255,255,.10)'; ctx.fill();
+  // 縁(外周)
+  ell(0, 0, orx, ory); ctx.fillStyle = art.rim; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 4; ctx.stroke();
+  // スープ
+  ell(0, 4, RX, RY); ctx.fillStyle = rgrad(0, -10, 20, RX, [[0, art.soup[0]], [1, art.soup[1]]]); ctx.fill();
+  ctx.save(); ell(0, 4, RX, RY); ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,.22)'; ell(0, -RY * .9, RX * 1.05, RY * .55); ctx.fill();   // 奥の縁の影
+  if (art.oil) { for (let i = 0; i < 16; i++) { const a = hash(i + 40) * TAU, r = Math.sqrt(hash(i + 60)) * .9;
+    const x = Math.cos(a) * RX * r + Math.sin(t * .6 + i) * 6, y = Math.sin(a) * RY * r;
+    ell(x, y, 9 + hash(i) * 10, 4 + hash(i) * 3); ctx.fillStyle = `rgba(255,230,150,${.32 * art.oil})`; ctx.fill(); } }
+  // 泡(ぐつぐつ)
+  for (let i = 0; i < 18; i++) {
+    const life = .9 + hash(i + 7) * .8, ph = (t / life + hash(i + 9)) % 1;
+    const a = hash(i + 11 + Math.floor(t / life + hash(i + 9))) * TAU, r = Math.sqrt(hash(i + 13 + Math.floor(t / life + hash(i + 9)) * 3)) * .92;
+    const x = Math.cos(a) * RX * r, y = Math.sin(a) * RY * r;
+    if (ph < .8) { const br = 5 + 12 * Math.sin(ph / .8 * Math.PI / 2); circ(x, y, br); ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 2; ctx.stroke(); }
+    else { ctx.strokeStyle = `rgba(255,255,255,${(1 - ph) * 3})`; ctx.lineWidth = 2; circ(x, y, 18 + (ph - .8) * 60); ctx.stroke(); }
+  }
+  ctx.restore();
+  // 具材(奥の縁より上にはみ出すのは OK、手前は縁で隠れる)
+  if (o.appear != null) {
+    ctx.save(); ctx.beginPath(); ctx.rect(-orx, -400, orx * 2, 400); ctx.ellipse(0, 4, RX + 4, RY + 4, 0, 0, TAU); ctx.clip();
+    art.items.forEach(([type, x, y, rot, s], i) => {
+      const at = o.appear + i * .045, k = popIn(t, at, .4, 2.4);
+      if (k <= 0) return;
+      const drop = (1 - eOutCubic(P(t, at, .3))) * -120;
+      const bob = Math.sin(t * 2.6 + i * 1.7) * 2.5;
+      ctx.save(); ctx.translate(x, y + drop + bob);
+      if (FLATT(type)) { ctx.scale(s * k, s * k * .62); ctx.rotate(rot); }
+      else { ctx.scale(s * k * .92, s * k * .92); ctx.rotate(rot * .3); }
+      sprite(type); ctx.restore();
+    });
+    ctx.restore();
+  }
+  // 手前の縁
+  ctx.lineWidth = 24; ctx.strokeStyle = art.rim; ctx.beginPath(); ctx.ellipse(0, 2, orx - 12, ory - 10, 0, .02, Math.PI - .02); ctx.stroke();
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.2)'; ctx.beginPath(); ctx.ellipse(0, 0, orx, ory, 0, 0, Math.PI); ctx.stroke();
+  ctx.restore();
+  if (o.lid) drawLid(art, cx + o.lid.x * sc, cy + o.lid.y * sc, o.lid.rot, sc);
+}
+function eggBowl(x, y, sc) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
+  ell(0, 52, 80, 18); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-82, 0); ctx.bezierCurveTo(-78, 50, -40, 60, 0, 60); ctx.bezierCurveTo(40, 60, 78, 50, 82, 0); ctx.closePath();
+  ctx.fillStyle = grad(-80, 0, 80, 0, ['#C9D9EA', '#FFFFFF', '#C9D9EA']); ctx.fill();
+  ctx.strokeStyle = '#3F6FB4'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-70, 30); ctx.quadraticCurveTo(0, 52, 70, 30); ctx.stroke();
+  ell(0, 0, 82, 26); ctx.fillStyle = '#F4F7FB'; ctx.fill(); ell(0, 2, 70, 20); ctx.fillStyle = '#FFF6DE'; ctx.fill();
+  ell(-4, 2, 30, 14); ctx.fillStyle = rgrad(-10, -4, 2, 30, [[0, '#FFD45A'], [1, '#F59A0C']]); ctx.fill();
+  ell(-12, -3, 8, 4); ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.fill();
+  ctx.restore();
+}
+
+// ---------- 背景・装飾 ----------
+function background(top, bottom, glow, raysCol, raysA, t, cy = 980) {
+  ctx.fillStyle = grad(0, 0, 0, H, [top, bottom]); ctx.fillRect(-60, -60, W + 120, H + 120);
+  if (raysA > 0) {
+    ctx.save(); ctx.translate(540, cy); ctx.rotate(t * .12); ctx.fillStyle = raysCol; ctx.globalAlpha = raysA;
+    for (let i = 0; i < 16; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 1700, i * TAU / 16, i * TAU / 16 + TAU / 32); ctx.closePath(); ctx.fill(); }
+    ctx.restore();
+  }
+  if (glow) { ctx.fillStyle = rgrad(540, cy, 0, 720, [[0, glow], [1, 'rgba(0,0,0,0)']]); ctx.fillRect(-60, -60, W + 120, H + 120); }
+}
+function snow(t, n = 70, a = .85) {
+  ctx.fillStyle = '#FFFFFF';
+  for (let i = 0; i < n; i++) {
+    const sp = 70 + hash(i + 200) * 110, r = 3 + hash(i + 300) * 6;
+    const x = (hash(i) * (W + 80) - 40 + Math.sin(t * .9 + i) * 26 + W) % (W + 80) - 20;
+    const y = (hash(i + 100) * (H + 60) + t * sp) % (H + 60) - 30;
+    ctx.globalAlpha = a * (.45 + hash(i + 400) * .55); circ(x, y, r); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+function snowflake(x, y, r, rot, col = '#FFFFFF') {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineWidth = r * .16;
+  for (let k = 0; k < 6; k++) { ctx.rotate(TAU / 6); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -r);
+    ctx.moveTo(0, -r * .55); ctx.lineTo(-r * .25, -r * .78); ctx.moveTo(0, -r * .55); ctx.lineTo(r * .25, -r * .78); ctx.stroke(); }
+  ctx.restore();
+}
+function table(y0) {
+  ctx.fillStyle = grad(0, y0, 0, H, ['#A66B3C', '#6B4024']); ctx.fillRect(-60, y0, W + 120, H - y0 + 60);
+  ctx.strokeStyle = 'rgba(60,30,10,.35)'; ctx.lineWidth = 4;
+  let y = y0 + 40, step = 46; while (y < H + 40) { ctx.beginPath(); ctx.moveTo(-60, y); ctx.lineTo(W + 60, y); ctx.stroke(); step *= 1.25; y += step; }
+  ctx.fillStyle = 'rgba(255,220,170,.35)'; ctx.fillRect(-60, y0, W + 120, 8);
+}
+function potShadow(cx, cy, sc, k) {
+  ctx.save(); ctx.globalAlpha = k;
+  ctx.fillStyle = rgrad(cx, cy, 10, 380 * sc, [[0, 'rgba(0,0,0,.45)'], [1, 'rgba(0,0,0,0)']]);
+  ctx.translate(cx, cy); ctx.scale(1, .2); circ(0, 0, 380 * sc); ctx.fill(); ctx.restore();
+  // 鍋敷き
+  ctx.save(); ctx.translate(cx, cy - 6); ctx.scale(1, .2);
+  circ(0, 0, 300 * sc); ctx.fillStyle = '#C9A15F'; ctx.fill(); ctx.strokeStyle = '#9E7638'; ctx.lineWidth = 14; ctx.stroke();
+  for (let r = 260; r > 60; r -= 50) { circ(0, 0, r * sc); ctx.strokeStyle = 'rgba(120,85,35,.5)'; ctx.lineWidth = 8; ctx.stroke(); }
+  ctx.restore();
+}
+function header(t, a = 1) {
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a;
+  rr(120, 112, 840, 104, 52); ctx.fillStyle = 'rgba(16,26,70,.92)'; ctx.fill(); ctx.lineWidth = 7; ctx.strokeStyle = '#F7CF55'; ctx.stroke();
+  telop('冬に食べたい お鍋ランキング', 540, 166, 54, { strokes: [['#0B1440', 10]], shadow: false, fill: ['#FFFFFF', '#DDEBFF'] });
+  snowflake(88, 164, 30, t * .8); snowflake(992, 164, 30, -t * .8);
+  ctx.restore();
+}
+function sparkle(x, y, r, a) {
+  if (a <= 0) return;
+  ctx.save(); ctx.translate(x, y); ctx.globalAlpha = a; ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath(); ctx.moveTo(0, -r); ctx.quadraticCurveTo(0, 0, r, 0); ctx.quadraticCurveTo(0, 0, 0, r); ctx.quadraticCurveTo(0, 0, -r, 0); ctx.quadraticCurveTo(0, 0, 0, -r); ctx.fill();
+  ctx.restore();
+}
+function sparkles(cx, cy, w, h, t, t0, n = 6, seed = 0) {
+  if (t < t0) return;
+  for (let i = 0; i < n; i++) {
+    const ph = (t - t0) * (1.3 + hash(i + seed) * .8) + hash(i + seed + 5);
+    const x = cx + (hash(i + seed + 20) - .5) * w, y = cy + (hash(i + seed + 30) - .5) * h;
+    sparkle(x, y, 14 + hash(i + seed) * 20, Math.max(0, Math.sin(ph * Math.PI * 2)) * clamp((t - t0) * 4));
+  }
+}
+function medal(cx, cy, rank, sc, rot) {
+  const [c1, c2, c3] = RANKCOL[rank];
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc, sc);
+  // リボン
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 150, 30); ctx.lineTo(s * 250, 40); ctx.lineTo(s * 215, 78); ctx.lineTo(s * 260, 116); ctx.lineTo(s * 140, 100); ctx.closePath();
+    ctx.fillStyle = c3; ctx.fill(); }
+  rr(-205, -78, 410, 156, 78); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.save(); ctx.translate(0, 10); ctx.fill(); ctx.restore();
+  rr(-205, -78, 410, 156, 78); ctx.fillStyle = grad(0, -78, 0, 78, [c1, c2]); ctx.fill();
+  ctx.lineWidth = 10; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+  rr(-188, -61, 376, 122, 61); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.stroke();
+  const st = [[c3, 22]];
+  telop('第', -120, 6, 66, { strokes: st, shadow: false });
+  telop(String(rank), 0, 2, 140, { strokes: [[c3, 26]], shadow: false, fill: ['#FFFFFF', '#FFF2C4'] });
+  telop('位', 120, 6, 66, { strokes: st, shadow: false });
+  ctx.restore();
+}
+function crown(x, y, sc, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(sc, sc);
+  ctx.beginPath(); ctx.moveTo(-90, 40); ctx.lineTo(-100, -40); ctx.lineTo(-50, 0); ctx.lineTo(0, -60); ctx.lineTo(50, 0); ctx.lineTo(100, -40); ctx.lineTo(90, 40); ctx.closePath();
+  ctx.fillStyle = grad(0, -60, 0, 40, ['#FFF3A6', '#F2B11B', '#C57A00']); ctx.fill(); ctx.lineWidth = 8; ctx.strokeStyle = '#7A3E00'; ctx.lineJoin = 'round'; ctx.stroke();
+  for (const [jx, jy, c] of [[-100, -40, '#FF4D6D'], [0, -60, '#4DC3FF'], [100, -40, '#5BE37D']]) { circ(jx, jy, 13); ctx.fillStyle = c; ctx.fill(); ctx.lineWidth = 5; ctx.stroke(); }
+  rr(-90, 22, 180, 22, 8); ctx.fillStyle = '#FFE680'; ctx.fill(); ctx.lineWidth = 6; ctx.stroke();
+  ctx.restore();
+}
+function impact(cx, cy, p, col = '#FFFFFF') {
+  if (p <= 0 || p >= 1) return;
+  ctx.save(); ctx.globalAlpha = 1 - p; ctx.strokeStyle = col; ctx.lineWidth = 14 * (1 - p) + 2;
+  ell(cx, cy, 120 + p * 380, 60 + p * 190); ctx.stroke();
+  ctx.lineCap = 'round'; ctx.lineWidth = 10;
+  for (let i = 0; i < 12; i++) { const a = i * TAU / 12 + .2, r0 = 200 + p * 260, r1 = r0 + 90 * (1 - p);
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * .55); ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * .55); ctx.stroke(); }
+  ctx.restore();
+}
+function stars(cx, cy, n, filledUpTo, r = 26, gap = 60) {
+  for (let i = 0; i < 5; i++) {
+    const k = clamp(filledUpTo - i), x = cx + (i - 2) * gap;
+    starPath(x, cy, r, r * .48); ctx.fillStyle = '#D9D3C7'; ctx.fill();
+    if (i < n && k > 0) { ctx.save(); ctx.translate(x, cy); const s = eOutBack(k, 3); ctx.scale(s, s); starPath(0, 0, r, r * .48); ctx.fillStyle = grad(0, -r, 0, r, ['#FFE36B', '#FFAA00']); ctx.fill();
+      ctx.lineWidth = 4; ctx.strokeStyle = '#C46A00'; ctx.lineJoin = 'round'; ctx.stroke(); ctx.restore(); }
+  }
+}
+function pill(cx, cy, label, labelCol, content, contentW, k) {
+  if (k <= 0) return;
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(k, k);
+  ctx.font = `900 42px ${FR}`; const lw = ctx.measureText(label).width + 56;
+  const w = lw + contentW + 40, h = 86, x0 = -w / 2;
+  rr(x0, -h / 2 + 8, w, h, h / 2); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fill();
+  rr(x0, -h / 2, w, h, h / 2); ctx.fillStyle = '#FFFFFF'; ctx.fill(); ctx.lineWidth = 6; ctx.strokeStyle = labelCol; ctx.stroke();
+  rr(x0, -h / 2, lw, h, h / 2); ctx.fillStyle = labelCol; ctx.fill();
+  ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, x0 + lw / 2, 3);
+  content(x0 + lw + 20, 0);
+  ctx.restore();
+}
+
+// ---------- 字幕 ----------
+const NOSTART = '、。！？…〜ー」）!?';
+function wrapJa(text, maxW) {
+  const out = []; let cur = '';
+  for (const ch of [...text]) {
+    if (ctx.measureText(cur + ch).width > maxW && cur && !NOSTART.includes(ch)) {
+      // 直近の句読点の後ろで折り返せるならそこで
+      const m = Math.max(...['、', '！', '？', '…'].map(p => cur.lastIndexOf(p)));
+      if (m >= 0 && m < cur.length - 1 && cur.length - m <= 8) { out.push(cur.slice(0, m + 1)); cur = cur.slice(m + 1) + ch; }
+      else { out.push(cur); cur = ch; }
+    } else cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+const SPK = { zunda: { col: '#5DBB3F', dark: '#2E7A1C', name: 'ずんだもん' }, metan: { col: '#E9549A', dark: '#9C2463', name: '四国めたん' } };
+function subtitle(t) {
+  const ln = TL.lines.find(l => t >= l.start - .06 && t < l.end + .28 && l.scene !== 'outro');
+  if (!ln) return;
+  const sp = SPK[ln.speaker];
+  const a = P(t, ln.start - .06, .14), out = P(t, ln.end + .16, .12);
+  const sc = (.82 + .18 * eOutBack(a, 2.5)) * (1 - .08 * out);
+  ctx.save(); ctx.font = `900 54px ${FR}`;
+  const lines = ln.text.split('|').flatMap(seg => wrapJa(seg, 800)), lh = 70;
+  const bw = 880, bh = 56 + lines.length * lh, bx = 50, cyb = 1550;
+  ctx.translate(bx + bw / 2, cyb); ctx.scale(sc, sc); ctx.globalAlpha = a * (1 - out);
+  rr(-bw / 2, -bh / 2 + 10, bw, bh, 38); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+  rr(-bw / 2, -bh / 2, bw, bh, 38); ctx.fillStyle = '#FFFFFF'; ctx.fill(); ctx.lineWidth = 8; ctx.strokeStyle = sp.col; ctx.stroke();
+  // 名札
+  ctx.font = `900 34px ${FR}`; const nw = ctx.measureText(sp.name).width + 44;
+  rr(-bw / 2 + 34, -bh / 2 - 30, nw, 56, 28); ctx.fillStyle = sp.col; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+  ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(sp.name, -bw / 2 + 34 + nw / 2, -bh / 2 - 1);
+  ctx.font = `900 54px ${FR}`; ctx.fillStyle = '#2B201C';
+  lines.forEach((s, i) => ctx.fillText(s, 0, -((lines.length - 1) * lh) / 2 + i * lh + 12));
+  ctx.restore();
+}
+
+// ---------- シーン ----------
+function shakeOf(lt, hits) {
+  let a = 0; for (const [at, amp] of hits) { const d = lt - at; if (d >= 0 && d < .32) a += amp * Math.pow(1 - d / .32, 2); }
+  return a;
+}
+function sceneIntro(s, lt, t) {
+  const ev = s.ev;
+  background('#0C1A4A', '#3A2E74', 'rgba(255,150,70,.35)', '#FFFFFF', .05, t, 1180);
+  snow(t, 90, .95);
+  table(1330);
+  const art = DISH_ART.yose;
+  // カタカタ鳴るフタ
+  const rat = lt < 2.6 ? 1 : .55;
+  const jig = Math.abs(Math.sin(lt * 34)) * 9 * rat, jr = Math.sin(lt * 23) * .035 * rat;
+  const pin = eOutBounce(P(lt, 0, .5));
+  const py = 1250 + (1 - pin) * 700;
+  potShadow(540, 1388, .85, pin);
+  steam(540, py - 140, t, .6);
+  drawPot('yose', 540, py, .85, { t, appear: null, lid: { x: 0, y: -jig, rot: jr } });
+  // 湯気がフタの隙間から
+  for (let i = 0; i < 6; i++) { const p = (lt * 1.6 + i / 6) % 1, sx = i % 2 ? 1 : -1;
+    const x = 540 + sx * (290 + p * 120), y = py - 20 - p * 160; ctx.fillStyle = `rgba(255,255,255,${.5 * Math.sin(p * Math.PI)})`; circ(x, y, 20 + p * 40); ctx.fill(); }
+  telop('カタカタ', 875, py - 185 + Math.sin(lt * 30) * 4, 56, { font: FR, weight: 900, rot: .18, strokes: [['#5A2A0A', 14], ['#FFFFFF', 0.01]], fill: '#FFE37A', fn: i => ({ dy: Math.sin(lt * 40 + i) * 5 }) });
+
+  // タイトル(文字ごとに落ちてくる)
+  const drop = (t0, k = 1) => (i) => { const p = P(lt, t0 + i * .055, .42); return { dy: (1 - eOutBounce(p)) * -520 * k, a: p > 0 ? 1 : 0, sy: 1 + .25 * Math.sin(P(lt, t0 + i * .055 + .3, .2) * Math.PI) * -.6 }; };
+  const pulse = 1 + .06 * Math.sin(P(lt, ev.title, .3) * Math.PI);
+  ctx.save(); ctx.translate(540, 650); ctx.scale(pulse, pulse); ctx.translate(-540, -650);
+  telop('冬に食べたい', 540, 420, 118, { fill: ['#FFFFFF', '#D6F0FF'], strokes: [['#0E2357', 38], ['#56B8FF', 18]], fn: drop(.05) });
+  const nab = P(lt, .38, .4);
+  telop('お鍋', 540, 650, 300, { fill: ['#FFF6B0', '#FFB627', '#FF6A14'], strokes: [['#4A1404', 74], ['#FFFFFF', 38]], gloss: true,
+    fn: i => { const p = P(lt, .38 + i * .08, .42); return { dy: (1 - eOutBounce(p)) * -700, a: p > 0 ? 1 : 0, rot: Math.sin(lt * 3 + i * 2) * .04 }; } });
+  telop('ランキング', 540, 885, 168, { fill: ['#FFFFFF', '#FFE2E2'], strokes: [['#4A1404', 50], ['#E8452E', 26]], fn: drop(.7) });
+  ctx.restore();
+  // TOP5 シール
+  const tk = popIn(lt, ev.title - .05, .45, 3);
+  if (tk > 0) { ctx.save(); ctx.translate(880, 560); ctx.rotate(.22 + Math.sin(lt * 4) * .04); ctx.scale(tk, tk);
+    starPath(0, 0, 128, 104, 16); ctx.fillStyle = '#E8332E'; ctx.fill(); ctx.lineWidth = 9; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+    telop('TOP', 0, -32, 56, { strokes: [['#7A0F0B', 14]], shadow: false });
+    telop('5', 0, 34, 104, { strokes: [['#7A0F0B', 18]], shadow: false, fill: ['#FFFFFF', '#FFE37A'] });
+    ctx.restore(); }
+  sparkles(540, 650, 900, 600, t, ev.go, 8, 3);
+  // 上の段: 「さむ〜い!!」→「独断と偏見で選ぶ」
+  const sOut = P(lt, ev.title - .1, .25);
+  if (lt >= ev.samui && sOut < 1) {
+    const k = popIn(lt, ev.samui, .35, 3) * (1 - eInCubic(sOut));
+    telop('さむ〜い！！', 540, 250, 104, { scale: k, fill: ['#FFFFFF', '#BFE6FF'], strokes: [['#0B2A66', 34], ['#7FD0FF', 16]],
+      fn: i => ({ dx: (hash(Math.floor(t * 30) + i) - .5) * 12, dy: (hash(Math.floor(t * 30) + i + 50) - .5) * 12 }) });
+    for (let i = 0; i < 3; i++) { ctx.save(); ctx.globalAlpha = k; snowflake(150 + i * 390, 250 + (i === 1 ? -95 : 70), 26, t * (i - 1)); ctx.restore(); }
+  }
+  const dk = popIn(lt, ev.title + .05, .4, 2.4);
+  if (dk > 0) { ctx.save(); ctx.translate(540, 250); ctx.scale(dk, dk); ctx.rotate(-.03);
+    rr(-300, -50, 600, 100, 50); ctx.fillStyle = '#FFFFFF'; ctx.fill(); ctx.lineWidth = 8; ctx.strokeStyle = '#E8452E'; ctx.stroke();
+    telop('独断と偏見で選ぶ', 0, 2, 56, { font: FR, weight: 900, fill: '#E8452E', strokes: [['#FFFFFF', .01]], shadow: false });
+    ctx.restore(); }
+}
+
+function sceneRank(s, lt, t) {
+  const ev = s.ev, r = s.rank, top = r === 1;
+  const art = DISH_ART[s.dish];
+  if (top) background('#4A0A16', '#B02A1A', 'rgba(255,190,60,.45)', '#FFD34D', .22, t);
+  else background('#0C1A4A', '#33306E', art.glow, '#FFFFFF', .05, t);
+  snow(t, top ? 30 : 60, top ? .5 : .8);
+  table(1090);
+  header(t);
+  // 鍋が落ちてきてバウンド
+  const pp = P(lt, ev.pot, .55), land = eOutBounce(pp);
+  const py = 975 - (1 - land) * 900;
+  const squash = pp > .35 ? 1 - .06 * Math.sin(P(lt, ev.pot + .2, .25) * Math.PI) : 1;
+  if (lt >= ev.pot) {
+    potShadow(540, 1150, 1, land);
+    const stk = top ? 1.6 : clamp((lt - ev.pot - .4) * 2) * 1.0;
+    let lid = null;
+    if (top) { const lp = P(lt, .0, .75); lid = lp < 1 ? { x: lp * 520, y: -eOutCubic(lp) * 1500, rot: lp * 2.8 } : null; }
+    steam(540, py - 20, t, stk);
+    drawPot(s.dish, 540, py, 1, { t, appear: ev.pot + (top ? .05 : .35), lid, sx: 2 - squash, sy: squash });
+    if (s.dish === 'suki') eggBowl(880, 1150, .95 * popIn(lt, ev.pot + .7, .4));
+    if (top) { // フタが開いた瞬間の湯気ボワッ
+      const bp = P(lt, 0, .9); if (bp < 1) { ctx.save(); ctx.globalAlpha = (1 - bp) * .9;
+        for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI + Math.PI, d = 100 + eOutCubic(bp) * 340; ctx.fillStyle = '#FFFFFF'; circ(540 + Math.cos(a) * d * 1.2, 940 + Math.sin(a) * d * .7, 60 + bp * 80); ctx.fill(); }
+        ctx.restore(); } }
+    // グツグツ
+    const gk = clamp((lt - ev.pot - .6) * 3);
+    if (gk > 0) { telop('グツグツ', 190, 1065, 50, { font: FR, weight: 900, alpha: gk, rot: -.12, fill: '#FFF3C4', strokes: [['#7A2E08', 14]], fn: i => ({ dy: Math.sin(t * 12 + i * 1.3) * 6 }) });
+      telop('グツグツ', 900, 1000, 44, { font: FR, weight: 900, alpha: gk * .9, rot: .14, fill: '#FFF3C4', strokes: [['#7A2E08', 12]], fn: i => ({ dy: Math.cos(t * 11 + i * 1.3) * 6 }) }); }
+  }
+  // 順位メダル(ドン!)
+  if (top) {
+    const k = popIn(lt, .05, .5, 2.6);
+    if (k > 0) { medal(540, 372, 1, k, -.04 + Math.sin(t * 2) * .02); crown(540, 262, k * .9, Math.sin(t * 3) * .08); }
+  } else {
+    const sp = P(lt, ev.stamp - .16, .16);
+    if (sp > 0) { const settle = lt > ev.stamp ? 1 + .07 * Math.sin((lt - ev.stamp) * 26) * Math.exp(-(lt - ev.stamp) * 7) : 1;
+      medal(540, 372, r, lerp(2.9, 1, eInCubic(sp)) * settle, lerp(-.5, -.05, sp)); }
+    impact(540, 372, P(lt, ev.stamp, .4), RANKCOL[r][0]);
+  }
+  // 料理名
+  const nk = popIn(lt, ev.name, .45, 2.4);
+  if (nk > 0) {
+    const n = s.name, size = n.length >= 4 ? 176 : 196;
+    const wob = Math.sin((lt - ev.name) * 16) * Math.exp(-(lt - ev.name) * 5) * .12;
+    telop(n, 540, 590, size, { scale: nk, rot: wob, gloss: true,
+      fill: top ? ['#FFFBD6', '#FFD23F', '#F28A0E'] : ['#FFFFFF', '#FFF3B8', '#FFD45E'],
+      strokes: top ? [['#4A0A06', 52], ['#FFFFFF', 28]] : [['#3A1406', 48], [RANKCOL[r][1], 26]],
+      fn: i => ({ dy: Math.sin(t * 3.2 + i * .9) * 5 }) });
+    sparkles(540, 590, 760, 220, t, ev.name + .2, top ? 10 : 5, r * 10);
+  }
+  // リアクション文字
+  const pops = s.pops;
+  [[ev.pop1t, pops[0], 245, 790, -.16, top ? '#FFE24D' : '#FFB3D1', '#8A1446'], [ev.pop2t, pops[1], 815, 830, .13, top ? '#FFFFFF' : '#B8F28C', '#1F5A12']].forEach(([at, txt, x, y, rot, fill, sk], j) => {
+    const k = lt < at ? 0 : eOutElastic(P(lt, at, .7));
+    if (k <= 0) return;
+    const size = Math.min(80, 470 / [...txt].length);
+    const hw = textW(txt, size) / 2 + size * .3;
+    x = clamp(x, 30 + hw, W - 30 - hw);
+    telop(txt, x, y + Math.sin(t * 4 + j) * 7, size, { scale: k, rot: rot + Math.sin(t * 3 + j) * .03, fill: [fill, '#FFFFFF'], strokes: [[sk, size * .3], ['#FFFFFF', size * .14]] });
+  });
+  // タグ
+  const t1 = popIn(lt, ev.tag1, .4, 2.6);
+  pill(500, 1258, 'ポカポカ度', RANKCOL[r][1] === '#A8B6C8' ? '#7C8BA0' : RANKCOL[r][1], (x0, y) => stars(x0 + 150, y, s.poka, (lt - ev.tag1 - .15) / .09, 25, 58), 300, t1);
+  const t2 = popIn(lt, ev.tag2, .4, 2.6);
+  ctx.font = `900 46px ${FR}`; const sw = ctx.measureText('▶ ' + s.shime).width;
+  pill(500, 1364, 'シメ', '#E8452E', (x0, y) => { ctx.fillStyle = '#2B201C'; ctx.font = `900 46px ${FR}`; ctx.textAlign = 'left'; ctx.fillText('▶ ' + s.shime, x0, y + 3); }, sw, t2);
+  if (top) confetti(lt, t);
+}
+function confetti(lt, t) {
+  const cols = ['#FF4D6D', '#FFD23F', '#4DC3FF', '#5BE37D', '#FFFFFF', '#FF9F1C', '#B388FF'];
+  for (let i = 0; i < 90; i++) {
+    let x, y;
+    if (i < 45) { // 中央から噴き出す
+      const a = -Math.PI / 2 + (hash(i) - .5) * 2.6, v = 900 + hash(i + 1) * 900, tt = lt;
+      x = 540 + Math.cos(a) * v * tt * .9 + Math.sin(tt * 3 + i) * 30; y = 900 + Math.sin(a) * v * tt + 900 * tt * tt;
+      if (y > H + 50) continue;
+    } else { // 上から降り続ける
+      const sp = 220 + hash(i + 2) * 160;
+      x = hash(i + 3) * W + Math.sin(t * 2 + i) * 40; y = (hash(i + 4) * H + lt * sp) % (H + 100) - 60 - (lt < .5 ? H : 0);
+      if (y < -60) continue;
+    }
+    ctx.save(); ctx.translate(x, y); ctx.rotate(t * (2 + hash(i + 5) * 4) + i); ctx.scale(Math.cos(t * (5 + hash(i + 6) * 6) + i), 1);
+    ctx.fillStyle = cols[i % cols.length]; ctx.fillRect(-9, -15, 18, 30); ctx.restore();
+  }
+}
+function sceneDrum(s, lt, t) {
+  const k = P(lt, .2, s.dur - .3);  // 緊張度 0→1
+  background('#060A1E', '#1C1238', 'rgba(255,120,60,.18)', '#FFFFFF', 0, t);
+  // スポットライト
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (const [sx, ph] of [[120, 0], [960, 2.1]]) {
+    const ang = Math.atan2(1000, 540 - sx) + Math.sin(lt * (2.2 + k * 3) + ph) * .28;
+    ctx.save(); ctx.translate(sx, -80); ctx.rotate(ang - Math.PI / 2);
+    ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(30, 0); ctx.lineTo(260, 1500); ctx.lineTo(-260, 1500); ctx.closePath();
+    ctx.fillStyle = grad(0, 0, 0, 1500, ['rgba(255,240,200,.30)', 'rgba(255,240,200,0)']); ctx.fill(); ctx.restore();
+  }
+  ctx.restore();
+  snow(t, 30, .4);
+  table(1090);
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(-60, 1090, W + 120, H);
+  header(t, .9);
+  const amp = 3 + k * 16;
+  const jig = Math.abs(Math.sin(lt * (30 + k * 30))) * amp, jr = Math.sin(lt * 27) * .02 * (1 + k * 2);
+  potShadow(540, 1150, 1, 1);
+  drawPot('kimchi', 540, 975, 1, { t, appear: null, lid: { x: 0, y: -jig, rot: jr } });
+  for (let i = 0; i < 8; i++) { const p = (lt * (1.4 + k * 2) + i / 8) % 1, sx = i % 2 ? 1 : -1;
+    ctx.fillStyle = `rgba(255,255,255,${.55 * Math.sin(p * Math.PI)})`; circ(540 + sx * (300 + p * 130), 950 - p * 180, 22 + p * 46); ctx.fill(); }
+  // ？マーク
+  for (let i = 0; i < 4; i++) { const qa = popIn(lt, .3 + i * .25, .4);
+    telop('？', [180, 900, 250, 840][i], [760, 720, 1010, 1040][i] + Math.sin(t * 3 + i) * 14, 96, { scale: qa, rot: Math.sin(t * 2 + i) * .2, fill: '#FFE37A', strokes: [['#3A1406', 26]] }); }
+  const sh = (hash(Math.floor(t * 30)) - .5) * k * 14;
+  telop('第1位は…？', 540 + sh, 470, 150, { scale: (popIn(lt, .1, .4) || 0) * (1 + .04 * Math.sin(lt * 18) * k), fill: ['#FFFBD6', '#FFD23F', '#F28A0E'], strokes: [['#3A1406', 46], ['#FFFFFF', 22]], gloss: true });
+  const dr = P(lt, s.ev.l1end, .3);
+  if (dr > 0) telop('ドゥルルルル…', 540, 1290, 84, { alpha: dr, font: FR, weight: 900, fill: '#FFFFFF', strokes: [['#3A1406', 24]],
+    fn: i => ({ dy: (hash(Math.floor(t * 30) * 7 + i) - .5) * (6 + k * 22), rot: (hash(Math.floor(t * 30) + i * 3) - .5) * .2 }) });
+}
+function sceneOutro(s, lt, t) {
+  const ev = s.ev;
+  background('#0C1A4A', '#3A2E74', 'rgba(255,150,70,.25)', '#FFFFFF', .05, t, 700);
+  snow(t, 80, .9);
+  telop('TOP5 まとめ', 540, 238, 96, { scale: popIn(lt, .05, .4), fill: ['#FFFFFF', '#FFE9A8'], strokes: [['#0B1440', 30], ['#F7CF55', 14]] });
+  TL.ranking.forEach((d, i) => {
+    const at = .25 + i * .14, p = P(lt, at, .45);
+    if (p <= 0) return;
+    const x = (1 - eOutBack(p, 1.6)) * 1100, y = 410 + i * 134, top = d.rank === 1;
+    ctx.save(); ctx.translate(x, 0);
+    rr(110, y - 56, 860, 112, 56); ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.save(); ctx.translate(0, 8); ctx.fill(); ctx.restore();
+    rr(110, y - 56, 860, 112, 56); ctx.fillStyle = top ? '#FFF6D6' : '#FFFFFF'; ctx.fill(); ctx.lineWidth = top ? 9 : 5; ctx.strokeStyle = RANKCOL[d.rank][1]; ctx.stroke();
+    circ(180, y, 46); ctx.fillStyle = grad(0, y - 46, 0, y + 46, [RANKCOL[d.rank][0], RANKCOL[d.rank][1]]); ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+    telop(String(d.rank), 180, y + 2, 60, { strokes: [[RANKCOL[d.rank][2], 14]], shadow: false });
+    telop(d.name, 252, y + 2, 68, { align: 'left', fill: '#2B1A12', strokes: [['#FFFFFF', .01]], shadow: false });
+    telop('位', 214, y + 30, 26, { strokes: [[RANKCOL[d.rank][2], 8]], shadow: false });
+    // ミニ鍋アイコン
+    const art = DISH_ART[d.id];
+    ctx.save(); ctx.translate(880, y + 4);
+    ctx.beginPath(); ctx.moveTo(-58, -6); ctx.bezierCurveTo(-58, 30, -30, 40, 0, 40); ctx.bezierCurveTo(30, 40, 58, 30, 58, -6); ctx.closePath(); ctx.fillStyle = art.body[1]; ctx.fill();
+    ell(0, -6, 58, 20); ctx.fillStyle = art.rim; ctx.fill(); ell(0, -5, 49, 15); ctx.fillStyle = art.soup[0]; ctx.fill();
+    for (let j = 0; j < 3; j++) { const p2 = (t * .6 + j / 3) % 1; ctx.strokeStyle = `rgba(160,170,200,${Math.sin(p2 * Math.PI) * .8})`; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath();
+      for (let q = 0; q <= 8; q++) ctx.lineTo((j - 1) * 22 + Math.sin(q * .9 + t * 4) * 5, -24 - p2 * 20 - q * 5); ctx.stroke(); }
+    ctx.restore();
+    if (top) crown(150, y - 58, .38, -.3 + Math.sin(t * 3) * .06);
+    ctx.restore();
+  });
+  // コメント誘導
+  const ck = popIn(lt, ev.ask - .05, .45, 2.4);
+  if (ck > 0) {
+    ctx.save(); ctx.translate(540, 1205); ctx.scale(ck, ck); ctx.rotate(Math.sin(t * 2.5) * .015);
+    rr(-440, -118, 880, 236, 60); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.save(); ctx.translate(0, 10); ctx.fill(); ctx.restore();
+    rr(-440, -118, 880, 236, 60); ctx.fillStyle = '#FFE14D'; ctx.fill(); ctx.lineWidth = 9; ctx.strokeStyle = '#4A1404'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-60, 116); ctx.lineTo(-10, 176); ctx.lineTo(10, 116); ctx.closePath(); ctx.fillStyle = '#FFE14D'; ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#FFE14D'; ctx.fillRect(-56, 108, 62, 12);
+    telop('あなたの推し鍋はどれ？', 0, -42, 68, { fill: '#2B1A12', strokes: [['#FFFFFF', 14]], shadow: false });
+    const c2 = P(lt, ev.comment, .3);
+    telop('コメントで教えてね！', 0, 52, 62, { font: FR, weight: 900, fill: '#E8332E', strokes: [['#FFFFFF', 12]], shadow: false, scale: .9 + .1 * eOutBack(c2, 3), alpha: .35 + .65 * c2 });
+    ctx.restore();
+  }
+  const fk = popIn(lt, ev.follow, .45, 2.6);
+  if (fk > 0) {
+    const pu = 1 + .05 * Math.sin(lt * 9);
+    ctx.save(); ctx.translate(540, 1420); ctx.scale(fk * pu, fk * pu);
+    rr(-350, -58, 700, 116, 58); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.save(); ctx.translate(0, 8); ctx.fill(); ctx.restore();
+    rr(-350, -58, 700, 116, 58); ctx.fillStyle = grad(0, -58, 0, 58, ['#FF6B86', '#E8274F']); ctx.fill(); ctx.lineWidth = 7; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+    telop('フォローよろしくなのだ！', 40, 2, 48, { font: FR, weight: 900, fill: '#FFFFFF', strokes: [['#8A0F2A', 12]], shadow: false });
+    // 枝豆アイコン
+    ctx.save(); ctx.translate(-292, 2); ctx.rotate(-.5); rr(-20, -44, 40, 88, 20); ctx.fillStyle = '#7CCB4E'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#3E8A22'; ctx.stroke();
+    for (const by of [-24, 0, 24]) { circ(0, by, 12); ctx.fillStyle = '#A8E57A'; ctx.fill(); } ctx.restore();
+    ctx.restore();
+  }
+  ctx.globalAlpha = .9;
+  telop('音声：VOICEVOX:四国めたん／VOICEVOX:ずんだもん', 540, 1555, 30, { font: FR, weight: 800, fill: '#FFFFFF', strokes: [['#0B1440', 8]], shadow: false });
+  ctx.globalAlpha = 1;
+  sparkles(540, 760, 900, 900, t, ev.follow, 8, 77);
+}
+
+function drawScene(s, lt, t) {
+  const ev = s.ev;
+  let hits = [];
+  if (s.kind === 'intro') hits = [[.55, 16], [ev.title, 10]];
+  else if (s.kind === 'rank') hits = s.rank === 1 ? [[0, 30], [ev.name, 10]] : [[ev.stamp, 20]];
+  const a = shakeOf(lt, hits), f = Math.floor(t * 30);
+  ctx.save(); ctx.translate((hash(f) - .5) * 2 * a, (hash(f + 999) - .5) * 2 * a);
+  if (s.kind === 'intro') sceneIntro(s, lt, t);
+  else if (s.kind === 'rank') sceneRank(s, lt, t);
+  else if (s.kind === 'drum') sceneDrum(s, lt, t);
+  else sceneOutro(s, lt, t);
+  ctx.restore();
+}
+
+// 場面転換: 斜めの帯が右から入って左へ抜ける
+const WIPE = .44;
+function wipeBand(phase, p, col) {
+  const sk = 420;
+  let x0, x1;
+  if (phase === 1) { x0 = lerp(W + sk, -sk, eInOut(p)); x1 = W + sk * 2; } else { x0 = -sk * 2; x1 = lerp(W + sk, -sk, eInOut(p)); }
+  ctx.save(); ctx.beginPath(); ctx.moveTo(x0 + sk, 0); ctx.lineTo(x1 + sk, 0); ctx.lineTo(x1 - sk, H); ctx.lineTo(x0 - sk, H); ctx.closePath();
+  ctx.fillStyle = col[1]; ctx.fill(); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,.22)';
+  for (let i = -6; i < 14; i++) { const x = i * 160; ctx.beginPath(); ctx.moveTo(x + sk, 0); ctx.lineTo(x + sk + 60, 0); ctx.lineTo(x - sk + 60, H); ctx.lineTo(x - sk, H); ctx.closePath(); ctx.fill(); }
+  for (let i = 0; i < 6; i++) snowflake(((i * 211) % W), 200 + i * 300, 50, i);
+  ctx.restore();
+  ctx.save(); ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 16;
+  for (const x of [x0, x1]) { ctx.beginPath(); ctx.moveTo(x + sk, 0); ctx.lineTo(x - sk, H); ctx.stroke(); }
+  ctx.restore();
+}
+
+function sceneIndex(t) {
+  const sc = TL.scenes; for (let i = sc.length - 1; i >= 0; i--) if (t >= sc[i].start) return i; return 0;
+}
+window.render = function (t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const i = sceneIndex(t), s = TL.scenes[i], lt = t - s.start;
+  const wipe = i > 0 && !(s.kind === 'rank' && s.rank === 1);
+  const col = s.kind === 'rank' ? RANKCOL[s.rank] : s.kind === 'drum' ? ['#000', '#2A1F5C'] : ['#000', '#E8452E'];
+  if (wipe && lt < WIPE / 2) { const pv = TL.scenes[i - 1]; drawScene(pv, pv.dur + lt, t); wipeBand(1, lt / (WIPE / 2), col); }
+  else { drawScene(s, lt, t); if (wipe && lt < WIPE) wipeBand(2, (lt - WIPE / 2) / (WIPE / 2), col); }
+  if (!window.NO_SUB) subtitle(t);
+  // フラッシュ(1位の直前・直後)
+  let fl = 0;
+  if (s.kind === 'drum') fl = P(lt, s.dur - .12, .12);
+  if (s.kind === 'rank' && s.rank === 1) fl = 1 - P(lt, 0, .35);
+  if (fl > 0) { ctx.fillStyle = `rgba(255,255,240,${fl})`; ctx.fillRect(0, 0, W, H); }
+};
+
+// フォント読み込み(使う文字だけのサブセットを確実に取得してから描く)
+const ALLTEXT = [
+  ...TL.lines.map(l => l.text), ...TL.ranking.map(d => d.name + d.shime + d.pops.join('')),
+  '冬に食べたい お鍋ランキング カタカタ グツグツ さむ〜い！！ 独断と偏見で選ぶ TOP5 まとめ 第位 ポカポカ度 シメ ▶ ？ 第1位は…？ ドゥルルルル…',
+  'あなたの推し鍋はどれ？ コメントで教えてね！ フォローよろしくなのだ！ 音声：VOICEVOX:四国めたん／ずんだもん 0123456789',
+].join('');
+window.READY = (async () => {
+  await Promise.all([
+    document.fonts.load(`400 100px ${FD}`, ALLTEXT),
+    document.fonts.load(`800 100px ${FR}`, ALLTEXT),
+    document.fonts.load(`900 100px ${FR}`, ALLTEXT),
+  ]);
+  await document.fonts.ready;
+})();
+
+if (!/capture/.test(location.search)) {
+  const fixed = new URLSearchParams(location.search).get('t');
+  window.READY.then(() => {
+    if (fixed != null) { render(parseFloat(fixed)); return; }
+    const t0 = performance.now();
+    const loop = () => { render(((performance.now() - t0) / 1000) % TL.total); requestAnimationFrame(loop); };
+    loop();
+  });
+}
+</script>
+</body>
+</html>
