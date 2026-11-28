@@ -857,7 +857,7 @@ const SCENES = {
   },
 
   shoji(u, d, t, fx) {
-    const pokeT = A.hits.poke[0], mM = TL.marks.moiiyo, lAns = lineBy('私の声が');
+    const pokeT = A.hits.poke[0], mM = TL.marks.moiiyo, lAns = lineBy('言ってしまってから');
     const z = smooth(0, d, u);
     camFill(1.0 + 0.34 * z * z, lerp(540, HOLE[0], z), lerp(930, HOLE[1], z));
     ctx.drawImage(A.shojiPaper, 0, 0);
@@ -876,7 +876,7 @@ const SCENES = {
     }
     if (t >= pokeT) {
       const eyeA = t < pokeT + 0.6 ? 0 : smooth(pokeT + 0.6, pokeT + 0.9, t) * (t < gone ? 1 : 1 - smooth(gone, gone + 0.12, t));
-      drawHole(ctx, t, pokeT, eyeA, t < gone ? smooth(mM + 0.1, mM + 0.5, t) : 0);
+      drawHole(ctx, t, pokeT, eyeA, t < gone ? 0.55 * smooth(mM + 0.1, mM + 0.6, t) : 0);   // 笑って三日月形に細くなる(閉じきらない)
     }
     ctx.drawImage(A.shojiFrame, 0, 0);
     fx.vig = 0.85; fx.grain = 0.13; fx.flick = 0.02;
