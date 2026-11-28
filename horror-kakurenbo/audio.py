@@ -27,7 +27,7 @@ BYPASS = ('G', 'K', 'K2', 'K3', 'M')   # 囁き・子どもの声などはピー
 PROCESSED = ('G', 'C', 'CF', 'K', 'K2', 'K3', 'M')
 SFX_REL = {'knock_wood': -1.0, 'knock_soft': -7.0, 'knock_glass': -3.5, 'knock_door': 0.5, 'title_hit': 2.0,
            'knock_slide': -0.5, 'coin': -4.0, 'chalk': -9.0, 'chalk_snap': -6.0, 'chime': -11.0, 'crow': -15.0,
-           'higurashi': -10.0, 'furin': -12.0, 'rin': -3.0, 'steps': -9.0, 'poke': -3.0, 'page': -8.0, 'flips': -8.0, 'chorus': -9.0, 'strike': -6.0,
+           'higurashi': -10.0, 'furin': -12.0, 'rin': -3.0, 'steps': -9.0, 'poke': -3.0, 'page': -8.0, 'flips': -8.0, 'chorus': -9.0, 'strike': -6.0, 'pat': -7.0, 'slide': -5.0,
            'dread_hit': -1.0, 'thunder': 0.0, 'heartbeat': -7.0, 'riser': 1.0, 'scare': 8.5}
 BED_REL = {'drone': -13.0, 'high': -30.0, 'room': -24.0, 'wind': -31.0, 'hum': -27.0, 'tinnitus': -34.0}
 
@@ -108,12 +108,14 @@ TIMELINE = [
     ('gap', 0.5),
     ('say', 'K3', 'もーいーかーい', '「もういいかい」', {'dur': 2.2469}),
     ('gap', 0.3),
-    ('sfx', 'poke', 0.9),
+    ('sfx', 'pat', 0.9, {'hits': [0.0, 0.38]}),                # 小さな両手が障子に押し当てられる
     ('say', 'N', 'もう、限界でした。'),
     ('gap', 0.45),
     ('mark', 'moiiyo'),
     ('say', 'MY', 'もう、いいよ。やめて。', '「もう、いいよ……やめて……」'),   # 「やめて」のつもりの「もういいよ」
-    ('gap', 0.7),
+    ('gap', 0.15),
+    ('mark', 'slide'),
+    ('sfx', 'slide', 0.55),                                      # 誰もいなくなった障子が、ひとりでに少し開く
     ('say', 'N', '言ってしまってから、気づいたんです。'),
     ('gap', 0.35),
     ('scene', 'black'),
@@ -527,6 +529,23 @@ def clock_strike():
     return reverb((y + hit) * np.minimum(1, t / 0.002), 1.3, 0.3, damp=3500, seed=53)
 
 
+def paper_pat():
+    """小さな手が、障子紙にぺたりと押し当てられる音"""
+    t = T(0.4)
+    thump = lp(rng.standard_normal(len(t)), 500) * np.exp(-t / 0.01) + np.sin(2 * np.pi * 170 * t) * np.exp(-t / 0.03) * 0.6
+    rustle = bp(rng.standard_normal(len(t)), 900, 4500) * np.exp(-t / 0.05) * 0.35
+    return reverb(thump + rustle, 0.6, 0.2, seed=55)
+
+def shoji_slide():
+    """障子が敷居をすべって少し開く音(木のこすれ + 小さながたつき)"""
+    t = T(0.9); p = np.clip(t / 0.55, 0, 1)
+    env = np.sin(np.pi * p) ** 0.6 * (t < 0.55)
+    rub = bp(rng.standard_normal(len(t)), 250, 2200) * (1 + 0.6 * np.sin(2 * np.pi * 31 * t)) * env
+    stop = modes([(210, 0.5, 0.03), (520, 0.25, 0.02)], 0.3)
+    out = np.zeros(len(t)); out += rub; i = int(0.55 * SR); out[i:i + len(stop)] += stop[:len(out) - i]
+    return reverb(out, 0.7, 0.25, damp=3000, seed=56)
+
+
 def build_timeline():
     t = 0.0; scenes = []; lines = []; sfx = []; marks = {}; voice_clips = []
     for ev in TIMELINE:
@@ -657,6 +676,10 @@ def main():
         elif nm == 'flips':
             for i, h in enumerate(e['hits']): place(h, page_flip(), SFX_REL[nm] + 0.5 * i)
             place(e['hits'][0] - 0.05, madadayo_chorus(e['hits']), SFX_REL['chorus'])
+        elif nm == 'pat':
+            for h in e['hits']: place(h, paper_pat(), SFX_REL[nm])
+        elif nm == 'slide':
+            place(t, shoji_slide(), SFX_REL[nm])
         elif nm == 'strike':
             for h in e['hits']: place(h, clock_strike(), SFX_REL[nm])
         elif nm == 'steps':

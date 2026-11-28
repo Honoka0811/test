@@ -711,6 +711,39 @@ function footprint(g, x, z, a, right) {
   g.restore();
 }
 
+
+// 紙に押し当てられた子どもの手(手のひら + 開いた短い指)。side = 0 左手 / 1 右手
+function childHand(g, x, y, s, rot, col, side) {
+  g.save(); g.translate(x, y); g.rotate(rot); g.scale(side ? -s : s, s); g.fillStyle = col;
+  g.beginPath(); g.ellipse(0, 0, 33, 38, 0, 0, 7); g.fill();
+  for (const [fx, fy, a, l] of [[-24, -24, -0.34, 30], [-8, -33, -0.11, 37], [9, -34, 0.07, 39], [24, -27, 0.3, 32]]) {
+    g.save(); g.translate(fx, fy); g.rotate(a); roundRect(g, -7, -l, 14, l + 10, 7); g.fill(); g.restore();
+  }
+  g.save(); g.translate(30, 10); g.rotate(1.05); roundRect(g, -7, -30, 14, 36, 7); g.fill(); g.restore();
+  roundRect(g, -20, 26, 40, 34, 12); g.fill();
+  g.restore();
+}
+
+// 障子の向こうの影(紙に映る)。ap = 近さ 0..1、a = 濃さ、tilt = 首のかしげ、hands = 両手の濃さ、drop = 手がずり落ちる量
+function shojiShadow(g, ap, a, tilt, hands, drop) {
+  const gv = c => { const v = Math.round(255 * (1 - clamp(c))); return `rgb(${v},${v},${Math.min(255, v + 8)})`; };
+  g.save(); g.globalCompositeOperation = 'multiply';
+  g.filter = `blur(${lerp(24, 3, ap)}px)`; g.fillStyle = gv(a);
+  const sc = lerp(0.75, 1.15, ap);
+  g.translate(645, 1460); g.scale(sc, sc);
+  g.save(); g.translate(0, -505); g.rotate(tilt); g.translate(0, 505);
+  roundRect(g, -78, -690, 156, 180, 64); g.fill();
+  g.restore();
+  g.fillRect(-26, -520, 52, 50);
+  g.beginPath(); g.moveTo(-92, -480); g.lineTo(92, -480); g.lineTo(205, -330); g.lineTo(195, 0); g.lineTo(-195, 0); g.lineTo(-205, -330); g.closePath(); g.fill();
+  g.filter = 'blur(2px)';                                   // 紙に押し当てた手は輪郭がくっきりする
+  for (const [i, x, y, rot] of [[0, -178, -610, -0.18], [1, 188, -625, 0.16]]) {
+    if (!hands[i] || hands[i] <= 0) continue;
+    childHand(g, x, y + drop, 1.0, rot, gv(Math.min(0.95, a * 1.06) * hands[i]), i);
+  }
+  g.restore();
+}
+
 const SCENES = {
   engawa(u, d, t, fx) {
     camFill(1.0 + 0.1 * smooth(0, d, u), 640, 900);
@@ -857,28 +890,27 @@ const SCENES = {
   },
 
   shoji(u, d, t, fx) {
-    const pokeT = A.hits.poke[0], mM = TL.marks.moiiyo, lAns = lineBy('言ってしまってから');
+    const pats = A.hits.pat, mM = TL.marks.moiiyo, sl = TL.marks.slide;
     const z = smooth(0, d, u);
-    camFill(1.0 + 0.34 * z * z, lerp(540, HOLE[0], z), lerp(930, HOLE[1], z));
+    camFill(1.0 + 0.3 * z * z, lerp(540, 600, z), lerp(930, 860, z));
     ctx.drawImage(A.shojiPaper, 0, 0);
     const k3 = TL.lines.find(l => l.voice === 'K3');
-    const ap = smooth(S('shoji').start + 0.3, k3.start, t), gone = lAns.start + 0.9;
-    const silA = t < gone ? 1 : 1 - smooth(gone, gone + 0.15, t);
-    if (silA > 0) {                                     // 障子の向こうの影が近づいてくる
-      ctx.save(); ctx.globalCompositeOperation = 'multiply'; ctx.filter = `blur(${lerp(24, 3, ap)}px)`;
-      const sc = lerp(0.75, 1.15, ap), a = lerp(0.3, 0.9, ap) * silA, gv = Math.round(255 * (1 - a));
-      ctx.fillStyle = `rgb(${gv},${gv},${Math.min(255, gv + 8)})`;
-      ctx.translate(645, 1460); ctx.scale(sc, sc);
-      roundRect(ctx, -78, -690, 156, 180, 64); ctx.fill();
-      ctx.fillRect(-26, -520, 52, 50);
-      ctx.beginPath(); ctx.moveTo(-92, -480); ctx.lineTo(92, -480); ctx.lineTo(205, -330); ctx.lineTo(195, 0); ctx.lineTo(-195, 0); ctx.lineTo(-205, -330); ctx.closePath(); ctx.fill();
+    const ap = smooth(S('shoji').start + 0.3, k3.start, t);              // 影が近づいてくる
+    const tilt = 0.34 * smooth(k3.start + 0.3, k3.end + 0.2, t);         // 「もーいーかーい」で、ゆっくり首をかしげる
+    const leave = smooth(mM + 1.2, sl - 0.05, t);                        // 「もう、いいよ」のあと、影がすっと消える
+    const hands = pats.map(h => smooth(h, h + 0.06, t));                 // 小さな両手が紙に押し当てられる
+    const drop = 70 * smooth(mM + 0.6, sl, t);                           // 手がずるりと下がる
+    if (leave < 1) shojiShadow(ctx, ap, lerp(0.3, 0.9, ap) * (1 - leave), tilt, hands, drop);
+    ctx.drawImage(A.shojiFrame, 0, 0);
+    const gap = t >= sl ? 74 * easeOut((t - sl) / 0.55) : 0;             // 誰もいなくなった障子が、ひとりでに少し開く
+    if (gap > 0.5) {
+      const gr = ctx.createLinearGradient(540, 0, 540 + gap, 0); gr.addColorStop(0, '#010102'); gr.addColorStop(1, '#06080c');
+      ctx.fillStyle = gr; ctx.fillRect(540, 262, gap + 8, 1340);
+      ctx.save(); ctx.beginPath(); ctx.rect(540 + gap, 0, SHOJI.x1 - 540 - gap, H); ctx.clip();
+      ctx.drawImage(A.shojiPaper, 540, 0, 540, H, 540 + gap, 0, 540, H);
+      ctx.drawImage(A.shojiFrame, 540, 0, 540, H, 540 + gap, 0, 540, H);
       ctx.restore();
     }
-    if (t >= pokeT) {
-      const eyeA = t < pokeT + 0.6 ? 0 : smooth(pokeT + 0.6, pokeT + 0.9, t) * (t < gone ? 1 : 1 - smooth(gone, gone + 0.12, t));
-      drawHole(ctx, t, pokeT, eyeA, t < gone ? 0.55 * smooth(mM + 0.1, mM + 0.6, t) : 0);   // 笑って三日月形に細くなる(閉じきらない)
-    }
-    ctx.drawImage(A.shojiFrame, 0, 0);
     fx.vig = 0.85; fx.grain = 0.13; fx.flick = 0.02;
   },
 
@@ -906,14 +938,12 @@ const SCENES = {
   },
 
   outro(u, d, t, fx) {
-    camFill(1.12, HOLE[0], HOLE[1] + 60);
+    camFill(1.08, 600, 900);
     ctx.drawImage(A.shojiPaper, 0, 0);
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
-    camFill(1.12, HOLE[0], HOLE[1] + 60);
-    const lc = TL.marks.last_call;
-    drawHole(ctx, t, -10, smooth(lc + 0.15, lc + 0.5, t), 0);
+    const lc = TL.marks.last_call, a = smooth(lc - 0.6, lc + 0.4, t);     // 最後の呼び声とともに、首をかしげた影が浮かぶ
+    if (a > 0) shojiShadow(ctx, 0.85, 0.75 * a, 0.34, [0, 0], 0);
     ctx.drawImage(A.shojiFrame, 0, 0);
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
     const ca = smooth(1.0, 1.8, u);
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = `500 30px ${SERIF}`;
     ctx.fillStyle = rgba(210, 205, 200, 0.6 * ca); ctx.fillText('ナレーション  VOICEVOX:四国めたん', 540, 1640);
