@@ -38,6 +38,14 @@ VOICES = {
     'Q': dict(style=4, speed=0.9, pitch=-0.07, inton=0.8, pause=1.4),     # おばあちゃんの言いつけ(セクシーを低く、ゆっくり)
     'QD': dict(style=4, speed=1.02, pitch=-0.07, inton=0.8, pause=1.1),   # おばあちゃんの日記
     'H': dict(style=37, speed=1.0, pitch=0.0, inton=1.0, pause=1.25),     # ヒソヒソ
+    # 子どもの声・答えは、歌唱だと不自然だったので話し声で「遠くへ呼ぶ」ように伸ばして読ませる
+    'K': dict(style=0, speed=0.85, pitch=0.05, inton=1.2, pause=1.0),     # あまあま「もーいーかーい」(childify で子どもの声に)
+    'M': dict(style=2, speed=0.85, pitch=0.0, inton=1.2, pause=1.0),      # ノーマル「もーいーよー」(語り手と同じ声)
+    'HM': dict(style=37, speed=0.85, pitch=0.0, inton=1.2, pause=1.0),    # ヒソヒソ「まーだだよー」
+    'G': dict(style=36, speed=0.9, pitch=0.0, inton=1.1, pause=1.0),      # ささやき「みーつけた」
+    'Q': dict(style=4, speed=0.9, pitch=-0.07, inton=0.8, pause=1.4),     # おばあちゃんの言いつけ(セクシーを低く、ゆっくり)
+    'QD': dict(style=4, speed=1.02, pitch=-0.07, inton=0.8, pause=1.1),   # おばあちゃんの日記
+    'H': dict(style=37, speed=1.0, pitch=0.0, inton=1.0, pause=1.25),     # ヒソヒソ
     # ここから下は歌唱(楽譜 → 歌の先生 波音リツ(6000) が音程を作り、四国めたんの声で歌う)。notes = (歌詞, MIDI音高, 秒)
     'G': dict(sing=3037, notes=[('み', 72, 0.42), ('つ', 69, 0.14), ('け', 69, 0.16), ('た', 69, 0.55)]),   # ヒソヒソ「みーつけた」
     'K': dict(sing=3000, notes=[('も', 72, 0.55), ('い', 69, 0.55), ('か', 72, 0.3), ('い', 69, 0.75)]),    # あまあま「もーいーかーい」
@@ -73,7 +81,7 @@ TIMELINE = [
     ('scene', 'engawa'),
     ('sfx', 'higurashi', 0.0),
     ('gap', 0.5),
-    ('say', 'K', 'もういいかい', '「もういいかい」'),
+    ('say', 'K', 'もーいーかーい', '「もういいかい」', {'dur': 2.247}),
     ('gap', 0.3),
     ('say', 'N', 'おばあちゃんの家には、絶対に言っちゃいけない言葉がありました。'),
     ('gap', 0.4),
@@ -108,9 +116,9 @@ TIMELINE = [
     ('sfx', 'strike', 1.3, {'hits': [0.15]}),                 # 柱時計が一つ = 午前一時
     ('say', 'N', 'お葬式の夜。押入れの中から、声がしたんです。'),
     ('gap', 0.5),
-    ('say', 'K2', 'もういいかい', '「もういいかい」'),
+    ('say', 'K2', 'もーいーかーい', '「もういいかい」', {'dur': 2.247}),
     ('gap', 0.45),
-    ('say', 'HM', 'まあだだよ', '「まあだだよ」'),
+    ('say', 'HM', 'まーだだよー', '「まあだだよ」', {'dur': 1.5749}),
     ('gap', 0.5),
     ('scene', 'rouka'),
     ('sfx', 'strike', 1.75, {'hits': [0.1, 1.05]}),           # 二つ = 午前二時
@@ -124,19 +132,19 @@ TIMELINE = [
     ('sfx', 'strike', 2.75, {'hits': [0.15, 1.05, 1.95]}),    # 三つ = 午前三時
     ('say', 'N', 'そして、午前三時。'),
     ('gap', 0.5),
-    ('say', 'K3', 'もういいかい', '「もういいかい」'),
+    ('say', 'K3', 'もーいーかーい', '「もういいかい」', {'dur': 2.2469}),
     ('gap', 0.3),
     ('sfx', 'poke', 0.9),
     ('say', 'N', 'まあだだよ、と言いかけたとき。', '「まあだだよ」と言いかけたとき。'),
     ('gap', 0.4),
     ('mark', 'moiiyo'),
-    ('say', 'M', 'もういいよ', '「もういいよ」'),
+    ('say', 'M', 'もーいーよー', '「もういいよ」', {'dur': 1.8809}),
     ('gap', 0.35),
     ('say', 'N', '私の声が、私の後ろで、答えたんです。'),
     ('gap', 0.3),
     ('scene', 'black'),
     ('gap', 0.8),
-    ('say', 'G', 'みいつけた', 'みいつけた'),
+    ('say', 'G', 'みーつけた', 'みいつけた', {'dur': 1.5316}),
     ('gap', 0.06),
     ('scene', 'scare'),
     ('sfx', 'scare', 1.35),
@@ -145,7 +153,7 @@ TIMELINE = [
     ('say', 'H', 'あなたなら、なんて答えますか?'),
     ('gap', 0.5),
     ('mark', 'last_call'),
-    ('say', 'K3', 'もういいかい', '「もういいかい」'),
+    ('say', 'K3', 'もーいーかーい', '「もういいかい」', {'dur': 2.247}),
     ('gap', 0.5),
 ]
 
@@ -559,6 +567,7 @@ def build_timeline():
         elif k == 'say':
             key, text = ev[1], ev[2]
             cap = ev[3] if len(ev) > 3 else text
+            opt = ev[4] if len(ev) > 4 else {}      # {'dur': 秒} で台詞の長さを固定(映像を描き直さずに声だけ差し替えるため)
             core = None
             if key in ('C', 'CF'):
                 x = chant(text, key == 'CF')
@@ -572,6 +581,7 @@ def build_timeline():
                 x, core = behind(x)
             voice_clips.append((t, key, x))
             dur = (core if core else x.shape[-1] / SR) - (GHOST_PRE if key == 'G' else 0)
+            if 'dur' in opt: dur = opt['dur']
             lines.append({'start': round(t, 4), 'end': round(t + dur, 4), 'text': cap, 'voice': key})
             t += dur
         elif k == 'sfx':
